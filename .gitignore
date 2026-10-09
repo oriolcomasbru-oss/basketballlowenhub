@@ -1,0 +1,16 @@
+# Secrets / local env
+.env
+.env.*
+!.env.example
+
+# Netlify
+.netlify/
+
+# Node
+node_modules/
+
+# Delivery zips / OS noise
+*.zip
+.DS_Store
+Thumbs.db
+desktop.ini

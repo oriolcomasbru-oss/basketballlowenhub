@@ -1,0 +1,10 @@
+LÖWEN COACHES HUB — empezar en Cowork
+=====================================
+1) Descomprime esta carpeta en tu espacio de trabajo de Cowork.
+2) En el primer mensaje a Claude (Cowork), dile:
+   "Trabaja sobre index.html de esta carpeta. Lee HANDOFF-lowen-coaches-hub.md
+    y README.md antes de tocar nada. Cuando entregue cambios, valida y crea un
+    zip nuevo numerado (index.html + netlify.toml + netlify/functions/sheets.js)."
+3) Reglas clave (están en el README): no imprimir defaultState(); overrides .phx
+   en el ÚLTIMO bloque <style>; validar con node --check + balance de llaves.
+4) Tras cada entrega: subir el zip a Netlify + Ctrl+Shift+R.
