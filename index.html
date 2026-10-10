@@ -17825,7 +17825,11 @@ async function pickUser(u, scope){
     h("div",{class:"dialog-foot"}, h("button",{class:"btn",onclick:closeDialog},"Cancel"), h("button",{class:"btn primary",onclick:submit},"Sign in"))));
   setTimeout(()=>pw.focus(),40);
 }
-function openChangePassword(u){
+/* Two ways in. The first sign-in with a starting password is not a choice: there is no
+   Cancel and saving is what lets you in. The other is somebody already inside who wants
+   a different password - asked for from the user chip - and that one can be backed out
+   of and leaves you where you were. */
+function openChangePassword(u, byChoice){
   const p1=h("input",{type:"password", placeholder:"New password", autocomplete:"new-password"});
   const p2=h("input",{type:"password", placeholder:"Repeat it", autocomplete:"new-password"});
   const err=h("div",{class:"login-err"});
@@ -17836,18 +17840,32 @@ function openChangePassword(u){
     try{
       const res=await sbrpc("change_password",{p_token:SB_TOKEN, p_new:p1.value});
       if(!res || res.ok!==true){ err.textContent=(res&&res.error)||"No se pudo cambiar"; return; }
-      closeDialog(); enterAs(u);
+      closeDialog();
+      if(byChoice) toast("Password changed"); else enterAs(u);
     }catch(e){ err.textContent="Error: "+e.message; }
   };
   p2.addEventListener("keydown",e=>{ if(e.key==="Enter") submit(); });
   openDialog(h("div",{class:"login-dlg"},
-    h("h3",{},"First sign-in — choose your password"),
-    h("div",{class:"login-sub"},"For security, pick a new password."),
+    h("h3",{}, byChoice ? "Change password · "+u : "First sign-in — choose your password"),
+    h("div",{class:"login-sub"}, byChoice ? "At least 8 characters." : "For security, pick a new password."),
     h("div",{class:"field"}, h("label",{},"New password"), p1),
     h("div",{class:"field"}, h("label",{},"Repeat"), p2),
     err,
-    h("div",{class:"dialog-foot"}, h("button",{class:"btn primary",onclick:submit},"Save and sign in"))));
+    h("div",{class:"dialog-foot"},
+      byChoice ? h("button",{class:"btn",onclick:closeDialog},"Cancel") : null,
+      h("button",{class:"btn primary",onclick:submit}, byChoice ? "Save" : "Save and sign in"))));
   setTimeout(()=>p1.focus(),40);
+}
+/* The chip used to sign you out the moment it was touched. It asks now, because it is
+   also the only place a password can be changed from. */
+function openUserMenu(){
+  if(!currentUser || !SB_TOKEN){ logout(); return; }
+  openDialog(h("div",{class:"login-dlg"},
+    h("h3",{}, "Signed in as "+currentUser),
+    h("div",{class:"dialog-foot"},
+      h("button",{class:"btn",onclick:closeDialog},"Cancel"),
+      h("button",{class:"btn",onclick:()=>{ closeDialog(); openChangePassword(currentUser, true); }},"Change password"),
+      h("button",{class:"btn primary",onclick:()=>{ closeDialog(); logout(); }},"Sign out"))));
 }
 function openSetup(u){
   const pw=h("input",{type:"password", placeholder:"Choose a password"});
@@ -17907,7 +17925,7 @@ async function enterAs(u){ currentUser=u; await Store.set("kv","currentUser",u);
   /* the clock starts here AND on a restored session; see init() */
   try{ useStart(); }catch(e){}
   try{ loadPlayerView(); }catch(e){} }
-function renderUser(){ $("#userInitial").textContent = currentUser? currentUser[0] : "?"; $("#userChip").title = currentUser? ("User: "+currentUser+" — switch") : "Select user"; }
+function renderUser(){ $("#userInitial").textContent = currentUser? currentUser[0] : "?"; $("#userChip").title = currentUser? ("User: "+currentUser+" — change password or sign out") : "Select user"; }
 /* The app is ready: the splash fades and what is under it becomes visible. Called from
    both ends of the boot - the cover opening and a restored session going straight in -
    and from a timer, because a splash that stays up because something threw is worse
@@ -19072,7 +19090,7 @@ function wireEvents(){
     c.roster=c.nego=c.second=c.market=c.discarded=anyOpen; applyCollapse(); persist(); };
   $("#collapseAllBtn").onclick=collapseAll; $("#collapseMenuBtn").onclick=collapseAll;
 
-  $("#userChip").onclick=logout;
+  $("#userChip").onclick=openUserMenu;
   document.querySelectorAll(".tb-tab[data-view]").forEach(b=>b.onclick=()=>{ const v=b.dataset.view; if(v==="teamscout") state.ui.ts={mode:"overview"}; if(v==="oppscout") state.ui.os={mode:"overview"}; if(v==="gameplan") state.ui.gp={mode:"overview"}; if(v==="planification") state.ui.planTab="home"; persist(); setView(v); });
   /* The two arrows were taken out of the bar. The history itself is kept - applyView
      still records it - so nothing else has to change, but these two lines looked the
