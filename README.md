@@ -13,6 +13,9 @@ Se despliega en **Netlify** (backend Supabase, sync desde Google Sheets).
 - `netlify/functions/sheets.js` — proxy de los CSV de Google Sheets.
 
 ## Desplegar
+Repo: `github.com/oriolcomasbru-oss/basketballlowenhub`. Netlify despliega solo con cada push a `main`.
+
+Método manual (antiguo):
 Empaquetar los 3 en `coaches-hub-netlifyN.zip` → arrastrar a Netlify → abrir web → **Ctrl+Shift+R**.
 (No se puede probar en vivo desde el entorno de build; se valida con `node --check` + balance de llaves.)
 
