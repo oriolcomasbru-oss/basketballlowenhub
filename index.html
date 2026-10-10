@@ -5040,6 +5040,10 @@ async function syncDocs(force){
          folder of fifty is a handful of round trips rather than fifty of them. */
       const need=(folder==="game"||folder==="practice") ? [] : list.filter(f=>{
         const d=D.files[f.id];
+        /* a session sheet is opened once for a second reason, whatever its name says:
+           whether there is five on five in it, which decides if a day with no tagging
+           export is a day somebody forgot or a day there was nothing to tag */
+        if(folder==="practicedoc" && (!d || d.five===undefined) && !(d && d.tried5 && !force)) return true;
         /* a name that carries its day needs nobody to open the file */
         if(_docDateInName(f.name)) return false;
         if(d && d.date) return false;
@@ -5055,6 +5059,9 @@ async function syncDocs(force){
             +"&name="+encodeURIComponent(f.name), {cache:"no-store"});
           const j=await r.json();
           D.files[f.id].tried=1;
+          /* true, false, or null when the sheet could not be read - and only once the
+             function has actually answered, so a dropped request is asked again */
+          if(r.ok && j && ("five" in j)){ D.files[f.id].five=j.five; D.files[f.id].tried5=1; }
           if(j && j.date){ D.files[f.id].date=j.date; D.files[f.id].how=j.how||"read"; }
           else if(j) D.files[f.id].how=j.err? ("could not read it: "+j.err) : "no date inside it";
         }catch(e){ D.files[f.id].tried=1; D.files[f.id].how="could not read it"; }
@@ -6138,14 +6145,44 @@ function loadRepStats(keys, after){
    written outside it and dropped in the Drive folder - the staff does both - and the
    tagging counts from either the folder listing this app keeps or the one the stats
    module reads, because whichever answers first is the same answer. */
+/* A TRAINING WITH NO TAGGING EXPORT IS NOT ALWAYS A TRAINING SOMEBODY FORGOT.
+   The export is the five on five. A session of drills, shooting and five on nought has
+   nothing in it to tag, and its row was red all the same - so the red marks were mostly
+   noise, and the one day that really was missing a file looked like all the others.
+   The session sheet says which it is. Red is kept for exactly one case: the sheet has
+   five on five in it and there is no export. A sheet with none is in order as it is; a
+   sheet that has not been read yet, or a day with no sheet at all, says nothing either
+   way and is left grey.
+     done  sheet and export both in          green
+     na    no five on five, nothing to tag    grey, filled - nothing is owed
+     open  five on five and no export         red
+     wait  not known                          grey ring                                 */
+function praFive(iso){
+  const fs=(docIndex().day[iso]||[]).filter(f=>f.folder==="practicedoc");
+  if(!fs.length) return undefined;
+  if(fs.some(f=>f.five===true)) return true;
+  if(fs.every(f=>f.five===false)) return false;
+  return undefined;
+}
 function praStatCls(iso){
   const DX=docIndex(), TX=tagIndex();
   const sheet=(sessionsFor(iso)||[]).some(se=>(se.blocks||[]).length)
     || ((DX.day[iso]||[]).length>0);
   const tagged=((TX.day[iso]||[]).length>0) || !!(_praFiles && _praFiles[iso]);
   const known=_praFiles!==null || Object.keys(TX.day).length>0 || !!docsState().at;
-  if(!known) return sheet? "wait" : "open";
-  return (sheet && tagged) ? "done" : "open";
+  if(tagged) return sheet? "done" : (known? "done" : "wait");
+  if(!known) return "wait";
+  const five=praFive(iso);
+  if(five===true) return "open";
+  if(five===false) return "na";
+  return "wait";
+}
+function praStatSay(iso){
+  const c=praStatCls(iso);
+  return c==="done" ? "Tagged — the export is in"
+    : c==="na"   ? "No five on five in this session — nothing to tag"
+    : c==="open" ? "Five on five in the session sheet and no tagging export"
+    : "Not known yet — no session sheet read for this day";
 }
 function loadPraFiles(after){
   if(_praFiles!==null) return;
@@ -6180,7 +6217,8 @@ function seasonGrid(kind){
     let done=0, tot=0;
     items.forEach(x=>{
       if(x.type==="game" && !playerMaySeeGame(gameKey(x.g))) return;
-      tot++; const c = x.type==="game" ? repStatCls(gameKey(x.g), slot) : praStatCls(x.date); if(c==="done") done++; });
+      /* a training with nothing to tag is in order, so it counts as closed */
+      tot++; const c = x.type==="game" ? repStatCls(gameKey(x.g), slot) : praStatCls(x.date); if(c==="done"||c==="na") done++; });
     const col=h("div",{class:"year-month"+(isThisMonth(k)?" cur-month":"")},
       h("div",{class:"ym-head static"}, label, h("span",{class:"ym-cnt"+(done===tot?" all":"")}, done+"/"+tot)));
     items.forEach(x=>{
@@ -6201,7 +6239,7 @@ function seasonGrid(kind){
       } else {
         const sh=(DXg.day[x.date]||[])[0]||null, tg=(TXg.day[x.date]||[])[0]||null;
         col.appendChild(h("div",{class:"ym-row training clk"+((sh||tg)?" has-doc":""), onclick:()=>{ state.ui.ts={mode:"training",date:x.date,idx:0}; renderTeamScout(); }},
-          h("span",{class:"ym-st "+praStatCls(x.date)}),
+          h("span",{class:"ym-st "+praStatCls(x.date), title:praStatSay(x.date)}),
           h("span",{class:"ym-date"}, x.date.slice(8)+"/"+x.date.slice(5,7)),
           h("span",{class:"ts-tr"},"Training"+(x.n>1?" \u00d7"+x.n:"")),
           docDot(sh, "Session sheet"), docDot(tg, "Practice tagging")));
@@ -24702,6 +24740,11 @@ body.dark .st-done{color:#6fd7a0;background:rgba(47,163,96,.15)}
 .ym-st.done{background:#2fa360}
 .ym-st.open{background:transparent;box-shadow:inset 0 0 0 1.5px #c4494c}
 .ym-st.wait{background:transparent;box-shadow:inset 0 0 0 1.5px var(--line-strong,#d7dbe0)}
+/* nothing owed: a session with no five on five in it has nothing to tag */
+.ym-st.na{background:var(--line-strong,#c9ced6)}
+/* and the one that is owed is a filled red dot, on a training row only: a game's open
+   report keeps its ring */
+.ym-row.training .ym-st.open{background:#c4494c;box-shadow:none}
 .ym-cnt{margin-left:auto;font:700 10px ui-sans-serif,system-ui,sans-serif;letter-spacing:.06em;
   color:var(--ink-faint,#8a919c);font-variant-numeric:tabular-nums}
 .ym-cnt.all{color:#2fa360}

@@ -194,6 +194,173 @@ function pdfText(buf) {
   return parts.join(" ").replace(/\s+/g, " ").slice(0, 200000);
 }
 
+/* ================= the words on a session sheet =====================================
+
+   pdfText above pulls the literal strings out of a PDF and reads them as they stand. That
+   works for a file whose fonts use a standard encoding. The session sheets are printed
+   from a Mac, and every font in them is a subset with its own private code table: the
+   byte for "A" is whatever slot the letter happened to get, and the only thing that says
+   which is the font's ToUnicode map. Read as they stand, those strings are noise, which
+   is why not one of these sheets ever gave up a date or a word.
+
+   So this reads them properly: every object in the file, the code table of each font,
+   the name each page calls a font by, and then the text operators with the table of the
+   font that is current when they run. It is still no PDF library - no encryption, no
+   object streams - and it fails soft: a file it cannot follow gives back nothing, and
+   the caller says "could not be read" instead of guessing.
+
+   What it is for: whether a training had five on five in it. A session with none has
+   nothing to tag, so a day with no tagging export is only a missing file when the sheet
+   says there was five on five. */
+function pdfObjects(hay) {
+  var out = {}, re = /(\d+)\s+\d+\s+obj\b/g, m;
+  while ((m = re.exec(hay))) {
+    var start = m.index + m[0].length;
+    var end = hay.indexOf("endobj", start);
+    if (end < 0) break;
+    var body = hay.slice(start, end);
+    var sm = /stream\r?\n/.exec(body);
+    var o = { dict: body, a: -1, b: -1 };
+    if (sm) {
+      o.dict = body.slice(0, sm.index);
+      o.a = start + sm.index + sm[0].length;
+      var de = hay.indexOf("endstream", o.a);
+      o.b = (de < 0 || de > end) ? end : de;
+    }
+    out[m[1]] = o;
+    re.lastIndex = end;
+  }
+  return out;
+}
+function pdfStreamOf(buf, o, zlib) {
+  if (!o || o.a < 0) return "";
+  var raw = buf.slice(o.a, o.b);
+  if (/\/FlateDecode/.test(o.dict)) {
+    /* the line break before "endstream" is not part of the data, and an inflater that is
+       strict about what follows the end of the stream refuses the whole thing over it:
+       tried as written, then without the break */
+    var ends = [o.b], k;
+    if (buf[o.b - 1] === 10) { ends.unshift(o.b - 1); if (buf[o.b - 2] === 13) ends.unshift(o.b - 2); }
+    else if (buf[o.b - 1] === 13) ends.unshift(o.b - 1);
+    for (k = 0; k < ends.length; k++) {
+      try { var r1 = zlib.inflateSync(buf.slice(o.a, ends[k])); if (r1 && r1.length) return r1.toString("latin1"); } catch (e) {}
+    }
+    for (k = 0; k < ends.length; k++) {
+      try { var r2 = zlib.inflateRawSync(buf.slice(o.a, ends[k])); if (r2 && r2.length) return r2.toString("latin1"); } catch (e2) {}
+    }
+    return "";
+  }
+  if (/\/(DCTDecode|JPXDecode|CCITTFaxDecode|LZWDecode|ASCII85Decode)/.test(o.dict)) return "";
+  return raw.toString("latin1");
+}
+function pdfHexStr(h) {
+  var s = "";
+  if (h.length % 4) h = h.length < 4 ? ("0000" + h).slice(-4) : h;
+  for (var i = 0; i + 4 <= h.length; i += 4) s += String.fromCharCode(parseInt(h.substr(i, 4), 16));
+  return s;
+}
+function pdfCMap(txt) {
+  var map = {}, bytes = 1;
+  var cs = /begincodespacerange\s*<([0-9a-fA-F]+)>/.exec(txt);
+  if (cs) bytes = Math.max(1, cs[1].length / 2);
+  txt.replace(/beginbfchar([\s\S]*?)endbfchar/g, function (_, b) {
+    b.replace(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]*)>/g, function (__, a, d) { map[parseInt(a, 16)] = pdfHexStr(d); });
+  });
+  txt.replace(/beginbfrange([\s\S]*?)endbfrange/g, function (_, b) {
+    b.replace(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*(?:<([0-9a-fA-F]+)>|\[([^\]]*)\])/g, function (__, a, z, d, arr) {
+      var lo = parseInt(a, 16), hi = parseInt(z, 16), c;
+      if (d !== undefined) {
+        var pre = d.length > 4 ? pdfHexStr(d.slice(0, d.length - 4)) : "";
+        var last = parseInt(d.slice(-4), 16);
+        for (c = lo; c <= hi && c - lo < 4096; c++) map[c] = pre + String.fromCharCode(last + (c - lo));
+      } else {
+        (arr.match(/<([0-9a-fA-F]*)>/g) || []).forEach(function (it, i) { map[lo + i] = pdfHexStr(it.slice(1, -1)); });
+      }
+    });
+  });
+  return { map: map, bytes: bytes };
+}
+function pdfLitBytes(s) {          /* "(...)" without the brackets -> array of byte values */
+  var out = [], i = 0;
+  while (i < s.length) {
+    var ch = s.charCodeAt(i);
+    if (ch === 92) {               /* backslash */
+      var n = s[i + 1];
+      if (n >= "0" && n <= "7") { var oct = /^[0-7]{1,3}/.exec(s.slice(i + 1))[0]; out.push(parseInt(oct, 8) & 255); i += 1 + oct.length; continue; }
+      var esc = { n: 10, r: 13, t: 9, b: 8, f: 12 };
+      if (n === "\n") { i += 2; continue; }
+      if (n === "\r") { i += (s[i + 2] === "\n") ? 3 : 2; continue; }
+      out.push(esc[n] !== undefined ? esc[n] : s.charCodeAt(i + 1)); i += 2; continue;
+    }
+    out.push(ch & 255); i++;
+  }
+  return out;
+}
+function pdfHexBytes(h) {
+  h = h.replace(/\s+/g, ""); if (h.length % 2) h += "0";
+  var out = []; for (var i = 0; i < h.length; i += 2) out.push(parseInt(h.substr(i, 2), 16));
+  return out;
+}
+function pdfDecode(bytes, font) {
+  var s = "", i;
+  if (!font) { for (i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]); return s; }
+  var w = font.bytes || 1;
+  for (i = 0; i + w <= bytes.length; i += w) {
+    var code = 0; for (var k = 0; k < w; k++) code = code * 256 + bytes[i + k];
+    var u = font.map[code];
+    s += (u !== undefined) ? u : (w === 1 && code >= 32 && code < 127 ? String.fromCharCode(code) : "");
+  }
+  return s;
+}
+function pdfTextMapped(buf, zlib) {
+  var hay = buf.toString("latin1");
+  var objs = pdfObjects(hay), id;
+  /* which font object carries which code table */
+  var fontMap = {};
+  for (id in objs) {
+    var tu = /\/ToUnicode\s+(\d+)\s+\d+\s+R/.exec(objs[id].dict);
+    if (tu && objs[tu[1]]) fontMap[id] = pdfCMap(pdfStreamOf(buf, objs[tu[1]], zlib));
+  }
+  /* and under which name a page calls it: "/TT2 9 0 R" wherever it is written */
+  var names = {};
+  for (id in objs) {
+    objs[id].dict.replace(/\/([A-Za-z0-9_.+\-]+)\s+(\d+)\s+\d+\s+R/g, function (_, nm, ref) {
+      if (fontMap[ref]) names[nm] = fontMap[ref];
+    });
+  }
+  var parts = [];
+  var re = /\/([A-Za-z0-9_.+\-]+)\s+-?[\d.]+\s+Tf|\[((?:\((?:\\[\s\S]|[^\\)])*\)|<[0-9a-fA-F\s]*>|[^\]\(<])*)\]\s*TJ|\(((?:\\[\s\S]|[^\\)])*)\)\s*(?:Tj|'|")|<([0-9a-fA-F\s]*)>\s*Tj|\b(ET|T\*|Td|TD|Tm)\b/g;
+  for (id in objs) {
+    var o = objs[id];
+    if (o.a < 0) continue;
+    if (/\/Subtype\s*\/Image|\/FontFile|\/Type\s*\/XRef|\/Type\s*\/ObjStm/.test(o.dict)) continue;
+    var st = pdfStreamOf(buf, o, zlib);
+    if (!st || st.indexOf("BT") < 0 || !/T[jJ]/.test(st)) continue;
+    var cur = null, m;
+    re.lastIndex = 0;
+    while ((m = re.exec(st))) {
+      if (m[1] !== undefined) { cur = names[m[1]] || null; continue; }
+      if (m[2] !== undefined) {
+        var seg = "";
+        m[2].replace(/\(((?:\\[\s\S]|[^\\)])*)\)|<([0-9a-fA-F\s]*)>|(-?\d+(?:\.\d+)?)/g, function (_, lit, hx, num) {
+          if (lit !== undefined) seg += pdfDecode(pdfLitBytes(lit), cur);
+          else if (hx !== undefined) seg += pdfDecode(pdfHexBytes(hx), cur);
+          else if (+num < -180) seg += " ";      /* a gap wide enough to be a space */
+        });
+        parts.push(seg); continue;
+      }
+      if (m[3] !== undefined) { parts.push(pdfDecode(pdfLitBytes(m[3]), cur)); continue; }
+      if (m[4] !== undefined) { parts.push(pdfDecode(pdfHexBytes(m[4]), cur)); continue; }
+      parts.push(m[5] === "ET" ? "\n" : " ");
+    }
+  }
+  return parts.join("").replace(/[ \t]+/g, " ").replace(/\s*\n\s*/g, "\n").trim().slice(0, 200000);
+}
+/* five on five, however the sheet writes it: 5x5, 5 X 5, 5v5, 5vs5, 5c5, 5 on 5, 5:5 */
+function has5x5(text) {
+  return /(^|[^0-9])5\s*(?:x|×|v|vs\.?|c|contra|on|against|gegen|:)\s*5(?![0-9])/i.test(String(text || ""));
+}
+
 const MONTHS = {
   jan:1, january:1, ene:1, enero:1, gen:1, januar:1, gener:1,
   feb:2, february:2, febrero:2, februar:2, febrer:2,
@@ -398,20 +565,32 @@ exports.handler = async (event) => {
       if (!buf) {
         return json(200, { id: p.doc, name: name, date: byName ? byName.date : null,
           how: byName ? ("name \u00b7 " + byName.how) : null, found: byName ? [byName] : [],
-          text: 0, err: "could not open the file (" + last + ")" });
+          five: null, text: 0, err: "could not open the file (" + last + ")" });
       }
       const isPdf = buf.slice(0, 5).toString("latin1") === "%PDF-";
-      const text = plain ? plain.replace(/\s+/g, " ").slice(0, 200000) : (isPdf ? pdfText(buf) : "");
+      /* the words as the fonts really spell them, when the file can be followed; the old
+         reading of the raw strings only as the fallback it now is */
+      let mapped = "";
+      if (isPdf && !plain) { try { mapped = pdfTextMapped(buf, zlib); } catch (e) { mapped = ""; } }
+      const words = plain || mapped;
+      const text = plain ? plain.replace(/\s+/g, " ").slice(0, 200000)
+        : (mapped.length > 40 ? mapped.replace(/\s+/g, " ") : (isPdf ? pdfText(buf) : ""));
+      /* five on five in it, yes or no - and null when the sheet gave up too little to say */
+      const five = words.replace(/\s+/g, "").length > 40 ? has5x5(words) : null;
       const found = findDates(text);
       /* what is written inside beats what somebody typed in the file name, but a file
          that cannot be read still answers with whatever the name said */
-      const best = found[0] || byName || null;
+      /* The name wins when it carries a date. It is the one the staff typed, and now that
+         the sheets can be read the inside turns out to be a trap: the header says
+         "2026/27" and then "AUG 5", and a reader hunting for a day finds "27 AUG" in it. */
+      const best = byName || found[0] || null;
       return json(200, {
         id: p.doc, name: name,
         date: best ? best.date : null,
-        how: best ? (found[0] ? best.how : "name \u00b7 " + best.how) : null,
+        how: best ? (byName ? "name \u00b7 " + best.how : best.how) : null,
         found: found.slice(0, 6),
         fromName: byName ? byName.date : null,
+        five: five,
         text: text.length,
         kind: plain ? "exported text" : (isPdf ? "pdf" : "other"),
         sample: text.slice(0, 180)
@@ -473,4 +652,5 @@ exports.handler = async (event) => {
 
 /* exported for the offline checks in /tmp — no effect at runtime */
 module.exports._t = { pdfText: pdfText, pdfStreams: pdfStreams, findDates: findDates, dateFromName: dateFromName,
+                      pdfTextMapped: pdfTextMapped, has5x5: has5x5,
                       keepInFolder: keepInFolder, fileRe: fileRe };
