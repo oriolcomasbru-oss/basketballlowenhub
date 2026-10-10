@@ -49,22 +49,12 @@ begin
   n:=n+1; insert into _selftest values(n,'jugador, con escritas y post game: partes recibidas','sections,postSections,players,status',
     (select string_agg(k,',' order by array_position(array['sections','postSections','cards','roles','players','status'],k)) from jsonb_object_keys(x->'data') k),'');
 
-  -- ---- what a coach is handed ----
-  update accounts set perms=jsonb_set(jsonb_set(coalesce(perms,'{}'),'{view,pregame}','true',true),'{view,postgame}','false',true) where scope='coach' and username=u_ro;
-  x := get_report(t_ro,'zztest|trim')->'report';
-  n:=n+1; insert into _selftest values(n,'coach sin vista de post game: partes recibidas','sections,cards,roles,players,status',
-    (select string_agg(k,',' order by array_position(array['sections','postSections','cards','roles','players','status'],k)) from jsonb_object_keys(x->'data') k),'');
-  n:=n+1; insert into _selftest values(n,'coach con vista de pre game: hoja del staff','entregada', case when coalesce(x->>'html','')='' then 'vacía' else 'entregada' end,'');
-
-  update accounts set perms=jsonb_set(jsonb_set(coalesce(perms,'{}'),'{view,pregame}','false',true),'{view,postgame}','true',true) where scope='coach' and username=u_ro;
-  x := get_report(t_ro,'zztest|trim')->'report';
-  n:=n+1; insert into _selftest values(n,'coach sin vista de pre game: partes recibidas','postSections,status',
-    (select string_agg(k,',' order by array_position(array['sections','postSections','cards','roles','players','status'],k)) from jsonb_object_keys(x->'data') k),'');
-  n:=n+1; insert into _selftest values(n,'coach sin vista de pre game: hoja del staff','vacía', case when coalesce(x->>'html','')='' then 'vacía' else 'entregada' end,'');
-
+  -- ---- what a coach is handed: everything, whatever his Sees boxes say ----
   update accounts set perms=jsonb_set(jsonb_set(coalesce(perms,'{}'),'{view,pregame}','false',true),'{view,postgame}','false',true) where scope='coach' and username=u_ro;
-  r := get_report(t_ro,'zztest|trim');
-  n:=n+1; insert into _selftest values(n,'coach sin ninguna de las dos vistas lee el informe','denegado', case when (r->>'ok')='true' then 'permitido' else 'denegado' end,'');
+  x := get_report(t_ro,'zztest|trim')->'report';
+  n:=n+1; insert into _selftest values(n,'coach, incluso sin las casillas de vista: partes recibidas','sections,postSections,cards,roles,players,status',
+    (select string_agg(k,',' order by array_position(array['sections','postSections','cards','roles','players','status'],k)) from jsonb_object_keys(x->'data') k),'');
+  n:=n+1; insert into _selftest values(n,'coach: hoja del staff','entregada', case when coalesce(x->>'html','')='' then 'vacía' else 'entregada' end,'');
 
   -- ---- what a coach may write ----
   r := save_report(t_ed,'zztest|trim','postgame','',null,doc0 || '{"postSections":["POST2"]}'::jsonb,null);
