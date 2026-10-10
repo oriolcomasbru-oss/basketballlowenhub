@@ -6325,7 +6325,7 @@ function repStatusBar(rep, slot, mayEdit, key, g, redraw){
       setRepDone(rep, slot, !done);
       btn.disabled=true;
       try{
-        const r=await sbrpc("save_report",{p_token:SB_TOKEN,p_key:key,p_kind:(rep.kind||"pregame"),
+        const r=await sbrpc("save_report",{p_token:SB_TOKEN,p_key:key,p_kind:(slot==="post"?"postgame":"pregame"),
           p_opponent:(g&&g.opponent)||"",p_date:(g&&g.date)||null,p_data:rep.data,p_html:null});
         if(!(r&&r.ok)){ setRepDone(rep, slot, done); toast((r&&r.error)||"Not saved"); }
       }catch(e){ setRepDone(rep, slot, done); toast("Not saved — "+(e.message||"no connection")); }
@@ -9039,7 +9039,10 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
   const pushNow=()=>{
     if(!SB_TOKEN){ repSaveState("err","Not saved — session expired, log in again"); return Promise.resolve(null); }
     repSaveState("busy","Saving…");
-    return sbrpc("save_report",{p_token:SB_TOKEN,p_key:key,p_kind:(rep.kind||"pregame"),
+    /* the kind sent is the screen being written from, not the kind the record happens to
+       be stored under: the two halves of a game are one record, and the server checks the
+       right to edit against the half this screen is */
+    return sbrpc("save_report",{p_token:SB_TOKEN,p_key:key,p_kind:(kind==="postgame"?"postgame":"pregame"),
       p_opponent:g.opponent||"",p_date:g.date||null,p_data:rep.data,p_html:null})
       .then(r=>{ if(r&&r.ok) repSaveState("ok","Saved "+_repClock());
                  else repSaveState("err","Not saved"+((r&&r.error)?" — "+r.error:"")); return r; })
