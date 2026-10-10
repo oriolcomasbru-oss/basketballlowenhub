@@ -12685,12 +12685,30 @@ function renderPlanSection(sec, canEd, save, allSecs){
         const bar = (side==="off" ? plan.offbar : plan.defbar)[q];
         const gen=plan.gen[q];
         const lines=String(gen[side]||"").split(/\n+/).map(x=>x.trim()).filter(Boolean);
-        /* a colour is in this quarter's box when it is on this quarter's rail, or when
-           something was written for it under this quarter's name; a text with no quarter
-           on it belongs to both and so cannot, on its own, put a colour in a quarter
-           that never uses it */
-        const idx=[0,1,2,3].filter(i=> canEd || bar.some(v=>v===i+1)
-          || gpLegendParts(legs[i]).some(p=>p.tag===q));
+        /* WHAT WAS TYPED INTO A COLOUR THAT IS NOT ON THE RAIL IS GENERAL, AND IT WAS
+           BEING HIDDEN. Before there was a place for the general concepts, the only place
+           to write "FIRST PLAY = ...", "SAFETY SET = ..." was a colour's text box - one of
+           the four that was not painted on any minute. Those plans are still stored that
+           way. The old key listed every colour that had text, painted or not, so they
+           showed; the box per quarter only looked at the colours on that quarter's rail,
+           so in every plan written like that the general concepts simply vanished.
+           A text is read as general for this quarter when its colour is not on this
+           quarter's rail and either it is written for this quarter by name ("Q1: ...") or
+           it carries no quarter and its colour is on no rail at all. The one case left out
+           is a text with no quarter whose colour IS painted in the other quarter: that is
+           the other quarter's rotation, not a rule for this one. */
+        const bars = side==="off" ? plan.offbar : plan.defbar;
+        const onNoRail = i => !GP_HALF.some(Q=>bars[Q].some(v=>v===i+1));
+        const loose=[];
+        if(!canEd) [0,1,2,3].forEach(i=>{
+          if(bar.some(v=>v===i+1)) return;
+          gpLegendParts(legs[i]).forEach(p=>{
+            if(p.tag===q || (!p.tag && onNoRail(i))){ const t=p.calls.join(" / "); if(t) loose.push(t); }
+          });
+        });
+        lines.unshift.apply(lines, loose);
+        /* a colour is a band in this quarter's box only when it is on this quarter's rail */
+        const idx=[0,1,2,3].filter(i=> canEd || bar.some(v=>v===i+1));
         if(!canEd && !lines.length && !idx.length) return;
         any=true;
         const grp=h("div",{class:"gp3-kgrp"}, h("div",{class:"gp3-kt"}, sd[1]));
