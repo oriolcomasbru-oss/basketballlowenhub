@@ -6394,6 +6394,18 @@ async function loadScout(body, g, key, kind, from){
       again));
     return;
   }
+  /* A PLAYER ONLY OPENS A GAME THAT HAS BEEN PUBLISHED. The list already leaves the others
+     out, but the list is not the only way in: the app reopens whatever game was on screen
+     last time, and on a shared computer that is the game the coach had open. The server
+     had refused the report, and this went on to draw the page anyway from the league feed
+     and the roles board. Anything short of a published report sends him back to the list. */
+  if(isPlayerUser() && !(rep && rep.share_state==="published")){
+    toast("That game has not been shared with the players yet");
+    if(from==="gameplan"){ state.ui.gp={mode:"overview"}; persist(); renderGamePlan(); }
+    else if(from==="oppscout"){ state.ui.os={mode:"overview"}; persist(); renderOppScout(); }
+    else { state.ui.ts={mode:"overview"}; persist(); renderTeamScout(); }
+    return;
+  }
   rep = rep || {key,kind,opponent:g.opponent,game_date:g.date,data:{players:[]},html:"",share_state:"private"};
   rep.data=rep.data||{}; rep.data.players=rep.data.players||[];
   renderScout(body, g, key, kind, from, rep);
@@ -17946,7 +17958,14 @@ function openForgot(u, rec){
 }
 function saveSession(){ try{ localStorage.setItem("lowenSess", JSON.stringify({token:SB_TOKEN, username:currentUser, scope:SB_SCOPE})); }catch(e){} }
 function clearSession(){ try{ localStorage.removeItem("lowenSess"); }catch(e){} SB_TOKEN=null; SB_ME=null; SB_SCOPE=null; }
-async function logout(){ try{ useStop(); }catch(e){} try{ if(SB_TOKEN) await sbrpc("logout",{p_token:SB_TOKEN}); }catch(e){} clearSession(); currentUser=null; try{ await Store.set("kv","currentUser",null); }catch(e){} showCover(); }
+async function logout(){ try{ useStop(); }catch(e){} try{ if(SB_TOKEN) await sbrpc("logout",{p_token:SB_TOKEN}); }catch(e){} clearSession(); currentUser=null; try{ await Store.set("kv","currentUser",null); }catch(e){}
+  /* The next person at this computer starts clean. The game left open and everything read
+     from the server stayed in the page after signing out - reports, their share states,
+     the Drive lists - and the next account, a player after a coach, was shown them. The
+     open game is closed and the page is loaded again, which empties all of it at once. */
+  try{ state.ui.os={mode:"overview"}; state.ui.ts={mode:"overview"}; state.ui.gp={mode:"overview"};
+       await Store.set("kv","appState", clone(state)); }catch(e){}
+  try{ location.reload(); }catch(e){ showCover(); } }
 async function enterAs(u){ currentUser=u; await Store.set("kv","currentUser",u); ensurePerms(); (state.sessionsLog=state.sessionsLog||[]).push({user:u,ts:Date.now()}); persist(); saveSession(); renderUser(); applyPerms(); hideCover();
   /* the clock starts here AND on a restored session; see init() */
   try{ useStart(); }catch(e){}
