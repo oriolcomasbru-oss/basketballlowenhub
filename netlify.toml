@@ -3,6 +3,51 @@
 [functions]
   directory = "netlify/functions"
 
+# The site is published from the repo root, so everything in the repo would be a public
+# address: the functions' source (with the Drive folder ids in it), the SQL and the
+# internal notes. These are answered with a 404 instead. /.netlify/functions/* is a
+# different path and keeps working.
+[[redirects]]
+  from = "/netlify/*"
+  to = "/404.html"
+  status = 404
+  force = true
+[[redirects]]
+  from = "/supabase/*"
+  to = "/404.html"
+  status = 404
+  force = true
+[[redirects]]
+  from = "/README.md"
+  to = "/404.html"
+  status = 404
+  force = true
+[[redirects]]
+  from = "/HANDOFF-lowen-coaches-hub.md"
+  to = "/404.html"
+  status = 404
+  force = true
+[[redirects]]
+  from = "/BBL-API.md"
+  to = "/404.html"
+  status = 404
+  force = true
+[[redirects]]
+  from = "/JSON-SCHEMAS.md"
+  to = "/404.html"
+  status = 404
+  force = true
+[[redirects]]
+  from = "/STATS-SETUP.md"
+  to = "/404.html"
+  status = 404
+  force = true
+[[redirects]]
+  from = "/START-HERE.txt"
+  to = "/404.html"
+  status = 404
+  force = true
+
 [[headers]]
   for = "/*"
   [headers.values]
