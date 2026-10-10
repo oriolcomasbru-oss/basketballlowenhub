@@ -5339,7 +5339,8 @@ function defaultPerms(){
     "Keith":mk(all,Object.assign({},none,{playerdev:true})),
     "Liviu":mk(all,Object.assign({},none,{playerdev:true})),
     "Pedro":mk(all,Object.assign({},none)),
-    "Joan Marc":mk(Object.assign({},all,{playerdb:false,rooster:false}),Object.assign({},none))
+    "Joan Marc":mk(Object.assign({},all,{playerdb:false,rooster:false}),Object.assign({},none)),
+    "Fabienne":mk(Object.assign({},none,{league:true}),Object.assign({},none))
   };
 }
 function ensurePerms(){
@@ -17794,7 +17795,7 @@ function applyCollapse(){
 
 /* ---------------- Users · Cover · Messages ---------------- */
 /* the order Oriol asked for; anyone not named here follows at the end */
-const USERS=["Ramon","Oriol","Keith","Liviu","Joan Marc","Nils","Pedro"];
+const USERS=["Ramon","Oriol","Keith","Liviu","Joan Marc","Nils","Pedro","Fabienne"];
 const SECTIONS=[["Calendar","calendar"],["Planning","planification"],["Post game/practice","teamscout"],["Pre game","oppscout"],["Player development","playerdev"],["Player database","playerdb"],["Rooster","rooster"]];
 let currentUser=null;
 /* The player list is the Rooster, so it follows the squad instead of a second
