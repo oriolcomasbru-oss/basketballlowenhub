@@ -6443,6 +6443,40 @@ function renderScout(body, g, key, kind, from, rep){
     HEAD.querySelectorAll(".scout-headbit").forEach(n=>n.remove());
     const bit=n=>{ if(!n) return; n.classList.add("scout-headbit"); HEAD.appendChild(n); };
     bit(h("div",{class:"spacer scout-headbit"}));
+    /* THE PLAYERS SWITCH HAD FALLEN OFF THE PAGE. When the tools moved up into this header
+       row the select that publishes a game stayed behind in the old layout below, which is
+       never drawn any more - so there was no way left to say which pre game the squad may
+       open. It is one button here: it says what the players have right now and pressing it
+       changes that. Staff who cannot edit the pre game see the state and cannot change it;
+       a player does not see it at all. */
+    if(kind==="pregame" && from==="oppscout" && !isPlayerUser()){
+      const pub = rep.share_state==="published";
+      const sb=h("button",{class:"btn"}, pub ? "● Players: visible" : "○ Players: hidden");
+      sb.style.cssText = pub ? "border-color:#2e9e6b;color:#1f7a50;font-weight:700"
+                             : "border-color:#c9a3a3;color:#9a4b4b;font-weight:700";
+      sb.title = pub ? "Every player account can open this game. Click to hide it from them."
+                     : "Only staff can open this game. Click to let the players see it.";
+      sb.disabled = !mayEdit;
+      sb.onclick=async ()=>{
+        const want = pub ? "hidden" : "published";
+        sb.disabled=true;
+        try{
+          let r=await sbrpc("set_share",{p_token:SB_TOKEN,p_key:key,p_state:want});
+          /* a game nobody has written in yet has no record to publish: make it, then publish */
+          if(r && r.ok!==true && /no existe/i.test(String(r.error||""))){
+            const s2=await sbrpc("save_report",{p_token:SB_TOKEN,p_key:key,p_kind:"pregame",
+              p_opponent:g.opponent||"",p_date:g.date||null,p_data:rep.data,p_html:null});
+            if(s2 && s2.ok) r=await sbrpc("set_share",{p_token:SB_TOKEN,p_key:key,p_state:want});
+            else r=s2;
+          }
+          if(r && r.ok){ rep.share_state=want; try{ repStatSet(key, rep); }catch(e){}
+            toast(want==="published" ? "Players can see this game" : "Hidden from players"); }
+          else toast((r&&r.error)||"Could not change it");
+        }catch(e){ toast("Could not change it — "+((e&&e.message)||"no connection")); }
+        renderScout(body,g,key,kind,from,rep);
+      };
+      bit(sb);
+    }
     if(editBtn) bit(editBtn);
   }
   if(!HEAD) body.appendChild(h("div",{class:"scout-tools"},
