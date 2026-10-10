@@ -18041,7 +18041,7 @@ function applyCollapse(){
 
 /* ---------------- Users · Cover · Messages ---------------- */
 /* the order Oriol asked for; anyone not named here follows at the end */
-const USERS=["Ramon","Oriol","Keith","Liviu","Joan Marc","Nils","Pedro","Fabienne"];
+const USERS=["Ramon","Oriol","Keith","Liviu","Joan Marc","Nils","Pedro","Fabienne","Marc Ribas"];
 const SECTIONS=[["Calendar","calendar"],["Planning","planification"],["Post game/practice","teamscout"],["Pre game","oppscout"],["Player development","playerdev"],["Player database","playerdb"],["Rooster","rooster"]];
 let currentUser=null;
 /* The player list is the Rooster, so it follows the squad instead of a second
@@ -24370,7 +24370,18 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
    their key sets. */
 /* the second row takes whatever the left column makes spare, so the key sets start right
    under the quarters instead of drifting down the page */
-.gp2-sheet.gp3-sheet{grid-template-columns:210px minmax(0,1fr);grid-template-rows:auto 1fr}
+.gp2-sheet.gp3-sheet{grid-template-columns:268px minmax(0,1fr);grid-template-rows:auto 1fr}
+/* THE MINUTES TABLE WAS WIDER THAN ITS COLUMN and ran out over the board: the column was
+   sized for the pairs, and the table that moved into it carries four figures a row and a
+   heading in spaced capitals. The column is wider, the table is told to stay inside it,
+   and its heading is set tighter so the figures decide the width instead of the title. */
+.gp3-sheet > .gp2-rail{min-width:0;overflow:hidden}
+.gp2-rail table.gp2-min{table-layout:fixed;width:100%}
+.gp2-rail .gp2-min th{letter-spacing:.04em;font-size:8.5px;white-space:nowrap;overflow:hidden;text-overflow:clip}
+.gp2-rail .gp2-min th:first-child,.gp2-rail .gp2-min td.nm{width:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gp2-rail .gp2-min th:nth-child(2),.gp2-rail .gp2-min th:nth-child(3){width:12%}
+.gp2-rail .gp2-min td.map{white-space:nowrap}
+.gp2-rail .gp2-min tr.sum td.map{font-size:10.5px}
 .gp3-sheet > .gp2-rail{grid-column:1;grid-row:1 / span 2}
 .gp3-sheet > .gp2-mid{grid-column:2;grid-row:1}
 .gp3-sheet > .gp3-ks{grid-column:2;grid-row:2}

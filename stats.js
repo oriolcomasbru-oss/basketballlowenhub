@@ -419,6 +419,58 @@
     return o;
   }
 
+  /* TAG AND BACK IN A PRACTICE FILE.
+
+     The pass above needs a defensive clip to run our possession against, and a practice
+     file has none: five on five in training is two of our own teams, and both ends are
+     tagged as attacks. So the table never appeared for a training - only the rebounding
+     on our own misses did. But the situation is there all the same: the action that
+     follows a shot IS the possession the other five had to get back for.
+
+     The staff's own rule, as written:
+       TAG   the row before ended on a long shot        M3, ML2, C3, CL2
+       BACK  the row before ended at the rim or lost it  C2, M2, Turnover
+       - the action is not a SECOND CHANCE (that is the same team again, nobody ran back)
+       - it opens no more than ten seconds after the one before closed, which leaves out
+         balls out of bounds, the end of a possession, a stop in the drill and a repeat
+       - the points are what the action scored: C1 one, C2 and CL2 two, C3 three
+
+     Every such action is a possession defended, and what it scored is what was given
+     up. The ones that carry "Transition Attack Poss" are counted a second time on their
+     own, because that is the narrower thing - what the balance itself conceded - and the
+     two questions are not the same question. */
+  function buildTransPractice(rows) {
+    var mk = function () { return { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, tn: 0, tpts: 0 }; };
+    var o = { tag: mk(), back: mk() };
+    rows.forEach(function (r) {
+      if (r.def) return;
+      if (LONG_END.some(function (x) { return has(r.tags, x); })) o.tag.of++;
+      else if (!has(r.tags, "Offensive foul") && CLOSE_END.some(function (x) { return has(r.tags, x); })) o.back.of++;
+      var ml = count(r.tags, "M3") + count(r.tags, "ML2"), mp = count(r.tags, "M2");
+      var ore = count(r.tags, "Offensive Rebound") + count(r.tags, "OREB");
+      o.tag.miss += ml; o.back.miss += mp;
+      if (ore) {
+        if (ml && !mp) o.tag.oreb += Math.min(ore, ml);
+        else if (mp && !ml) o.back.oreb += Math.min(ore, mp);
+      }
+    });
+    for (var i = 1; i < rows.length; i++) {
+      var d = rows[i], pv = rows[i - 1];
+      if (pv.def) continue;
+      if (String(d.cat || "").trim().toUpperCase() === "SECOND CHANCE") continue;
+      if (d.a - pv.b > TRANS_GAP) continue;
+      var dead = has(pv.tags, "Offensive foul");
+      var kind = LONG_END.some(function (x) { return has(pv.tags, x); }) ? "tag"
+        : (!dead && CLOSE_END.some(function (x) { return has(pv.tags, x); })) ? "back" : null;
+      if (!kind) continue;
+      if (d.def && fouledOnTheRebound(d, pv)) continue;
+      var p = points(d.tags);
+      o[kind].n++; o[kind].pts += p;
+      if (has(d.tags, "Transition Attack Poss")) { o[kind].tn++; o[kind].tpts += p; }
+    }
+    return o;
+  }
+
   /* A possession can carry more than one play type, so the shares are of the
      possessions that carry any at all and can add past 100%. */
   function playAgg(list) {
@@ -561,7 +613,7 @@
     /* on the raw rows, not on the merged possessions: a SECOND CHANCE row folds
        into the one before it, and the merged tags would then hold two misses */
     return { poss: poss, kind: "practice", oreb: orebSplit(offRows),
-             trans: buildTransDef(rows), defN: defN };
+             trans: buildTransPractice(rows), defN: defN };
   }
 
   function touchTable(poss) {
@@ -978,20 +1030,27 @@
        marks; when they are not, the block says so rather than drawing an empty
        table, and what is left of the question — the rebounding on our own
        misses — is the smaller table under it. */
-    var TD = { tag: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0 },
-               back: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0 } }, defClips = 0;
+    var TDF = ["n", "pts", "of", "miss", "oreb", "tn", "tpts"];
+    var tdZero = function () { var z = {}; TDF.forEach(function (f) { z[f] = 0; }); return z; };
+    var TD = { tag: tdZero(), back: tdZero() }, defClips = 0;
     sets.forEach(function (s) {
       defClips += s.defN || 0;
       var t = s.trans; if (!t) return;
       ["tag", "back"].forEach(function (k) {
-        ["n", "pts", "of", "miss", "oreb"].forEach(function (f) { TD[k][f] += t[k][f] || 0; });
+        TDF.forEach(function (f) { TD[k][f] += t[k][f] || 0; });
       });
     });
     var tdAny = (TD.tag.n + TD.back.n) > 0;
-    if (defClips > 0) {
+    /* A training has no defensive clips - it is two of our own fives - so the possession
+       defended is the action that follows the shot. See buildTransPractice for the rule.
+       What was missing here was the volume and what it cost: how many times we had to tag
+       up or get back, and the points given up each time. */
+    if (tdAny) {
       var sTD = section("Transition defense \u2014 TAG and BACK",
-        tdAny ? "Only the 5x5: a possession of ours pairs with a defensive clip that opens within ten seconds, which is the only place that happens."
-              : "There are defensive clips in these sessions but none opens within ten seconds of one of ours, so no transition situation can be read.");
+        "The possession counted is the action that follows one of ours: not a second chance, " +
+        "and opening within ten seconds of ours ending, which is live play and nothing else. " +
+        "DER is what that action scored, per possession. The last two columns are the ones " +
+        "tagged as a transition attack, on their own.");
       var tdRowP = function (lbl, o, marks) {
         var share = 100 * o.n / Math.max(1, TD.tag.n + TD.back.n);
         var ppp = o.n ? o.pts / o.n : null;
@@ -1001,20 +1060,26 @@
           o.pts,
           /* points conceded: the one direction that turns round - see pppStepD */
           { v: f2(ppp), cls: "sx-cell " + pppStepD(ppp) + (o.n < SMALL ? " sx-small" : "") },
+          o.tn, o.tpts,
           marks] };
       };
+      var tdAll = tdZero();
+      TDF.forEach(function (f) { tdAll[f] = TD.tag[f] + TD.back[f]; });
+      var tdTot = tdRowP("TAG + BACK", tdAll, "");
+      tdTot.cls = "sx-totrow";
       sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%",
-        "Situations", "Pts conceded", "PPP", "We finished on"], [
+        "Possessions", "Pts conceded", "DER", "In transition", "Trans. pts", "We finished on"], [
         tdRowP("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2"),
-        tdRowP("BACK \u00b7 after a shot at the rim or a turnover", TD.back, "C2 \u00b7 M2 \u00b7 Turnover")
+        tdRowP("BACK \u00b7 after a shot at the rim or a turnover", TD.back, "C2 \u00b7 M2 \u00b7 Turnover"),
+        tdTot
       ]));
-      sTD.appendChild(el("div", "sx-sub", defClips + (defClips === 1 ? " defensive clip" : " defensive clips") +
-        " in " + sets.length + (sets.length === 1 ? " session" : " sessions") + "."));
+      sTD.appendChild(el("div", "sx-sub", sets.length + (sets.length === 1 ? " session" : " sessions") +
+        (defClips ? " \u00b7 " + defClips + (defClips === 1 ? " defensive clip" : " defensive clips") : "") + "."));
       sTD.appendChild(leagueOrbLine());
       root.appendChild(sTD);
     } else {
       root.appendChild(section("Transition defense \u2014 TAG and BACK",
-        "Nothing to read: these sessions carry no defensive clip, so there is no possession of theirs to run ours against. Tag both ends of the 5x5 and this becomes the same table as the game report."));
+        "Nothing to read: no action in these sessions opens within ten seconds of a shot or a turnover of ours, so there is no possession to get back for. It appears with the first stretch of live five on five."));
     }
 
     /* Same split as the post-game block, without the TAG/BACK names: there is
@@ -2900,37 +2965,58 @@
   }
 
   /* ---- 03 · tag and back, across the games ----------------------------- */
-  function trTagBack(root, games) {
-    var sec = trSection(root, "03", "Transition defense — TAG and BACK, game by game",
-      "TAG is the possession that ended on a long shot, BACK the one that ended at the rim or " +
-      "in a turnover. The number is what they scored per possession running off each.");
-    var pts = games.filter(function (g) { return g.m && g.m.trans; }).map(function (g) {
+  /*  Every training and every game on one line of dates, the way the paint touches are.
+      It was the games alone, because a training had no way to be read for this; it has
+      one now (buildTransPractice), so a session of either kind with at least one such
+      possession is a point here. The two are not measured on the same thing - in a game
+      the possession defended is the opponent's, in a training it is our other five - and
+      the chart marks which is which rather than pretending they are one series.          */
+  function trTagBack(root, sessions) {
+    var sec = trSection(root, "03", "Transition defense — TAG and BACK, every session",
+      "TAG is the possession that follows one of ours ending on a long shot, BACK the one that " +
+      "follows a shot at the rim or a turnover. The number is the DER on each: what was scored " +
+      "per possession. Games and trainings share the dates; the marker says which is which.");
+    var pts = sessions.filter(function (g) {
+      return g.m && g.m.trans && (g.m.trans.tag.n + g.m.trans.back.n) > 0;
+    }).map(function (g) {
       var t = g.m.trans;
-      return { d: g.d, kind: "game", label: g.label,
+      return { d: g.d, kind: g.kind, label: g.label || g.d,
         s: { tagN: t.tag.n, tagP: t.tag.pts, backN: t.back.n, backP: t.back.pts,
              tagPpp: t.tag.n ? t.tag.pts / t.tag.n : NaN,
              backPpp: t.back.n ? t.back.pts / t.back.n : NaN,
+             allPpp: (t.tag.n + t.back.n) ? (t.tag.pts + t.back.pts) / (t.tag.n + t.back.n) : NaN,
              tagOf: t.tag.of, backOf: t.back.of } };
     });
-    if (!pts.length) { sec.appendChild(el("div", "sx-empty", "No game carries it yet.")); return null; }
+    if (!pts.length) { sec.appendChild(el("div", "sx-empty", "No session carries it yet.")); return null; }
     sec.appendChild(timelineChart("", "", pts, [
-      { name: "After a long shot (TAG)", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2 },
-      { name: "After a shot at the rim or a turnover (BACK)", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2 }
-    ], { axisFmt: f2, height: 190, kinds: false }));
-    var tAll = pts.reduce(function (a, p) { return a + p.s.tagN; }, 0);
-    var tPts = pts.reduce(function (a, p) { return a + p.s.tagP; }, 0);
-    var bAll = pts.reduce(function (a, p) { return a + p.s.backN; }, 0);
-    var bPts = pts.reduce(function (a, p) { return a + p.s.backP; }, 0);
-    sec.appendChild(trTable(["Game", "TAG poss", "TAG pts", "TAG PPP", "BACK poss", "BACK pts", "BACK PPP", "Worse end"],
-      pts.map(function (p) {
-        var worse = (isFinite(p.s.tagPpp) && isFinite(p.s.backPpp))
-          ? (p.s.tagPpp > p.s.backPpp ? "TAG" : "BACK") : "—";
-        return [p.label, p.s.tagN, p.s.tagP, { v: f2(p.s.tagPpp), cls: "sx-vol " + volStep(100 * Math.min(1.5, p.s.tagPpp || 0) / 1.5) },
-          p.s.backN, p.s.backP, { v: f2(p.s.backPpp), cls: "sx-vol " + volStep(100 * Math.min(1.5, p.s.backPpp || 0) / 1.5) },
-          worse];
-      }).concat([{ cls: "tr-tot", cells: ["Every game", tAll, tPts, f2(tAll ? tPts / tAll : NaN),
-        bAll, bPts, f2(bAll ? bPts / bAll : NaN), (tAll && bAll) ? (tPts / tAll > bPts / bAll ? "TAG" : "BACK") : "—"] }]),
-      { sort: false }));
+      { name: "TAG — DER after a long shot", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2 },
+      { name: "BACK — DER after a shot at the rim or a turnover", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2 }
+    ], { axisFmt: f2, height: 200 }));
+    var sum = function (list, f) { return list.reduce(function (a, p) { return a + p.s[f]; }, 0); };
+    var tot = function (label, list) {
+      var tN = sum(list, "tagN"), tP = sum(list, "tagP"), bN = sum(list, "backN"), bP = sum(list, "backP");
+      return { cls: "tr-tot", cells: [label, "", tN, tP, f2(tN ? tP / tN : NaN),
+        bN, bP, f2(bN ? bP / bN : NaN), f2((tN + bN) ? (tP + bP) / (tN + bN) : NaN),
+        (tN && bN) ? (tP / tN > bP / bN ? "TAG" : "BACK") : "—"] };
+    };
+    var gm = pts.filter(function (p) { return p.kind === "game"; });
+    var tr = pts.filter(function (p) { return p.kind !== "game"; });
+    var rows = pts.map(function (p) {
+      var worse = (isFinite(p.s.tagPpp) && isFinite(p.s.backPpp))
+        ? (p.s.tagPpp > p.s.backPpp ? "TAG" : "BACK") : "—";
+      var cell = function (v) { return isFinite(v)
+        ? { v: f2(v), cls: "sx-vol " + volStep(100 * Math.min(1.5, v || 0) / 1.5) } : { v: "—", cls: "tr-none" }; };
+      return [p.kind === "game" ? p.label : p.d, p.kind === "game" ? "Game" : "Training",
+        p.s.tagN, p.s.tagP, cell(p.s.tagPpp), p.s.backN, p.s.backP, cell(p.s.backPpp), cell(p.s.allPpp), worse];
+    });
+    if (gm.length) rows.push(tot("Every game", gm));
+    if (tr.length) rows.push(tot("Every training", tr));
+    if (gm.length && tr.length) rows.push(tot("Everything", pts));
+    sec.appendChild(trTable(["Session", "Type", "TAG poss", "TAG pts", "TAG DER", "BACK poss", "BACK pts", "BACK DER", "Both DER", "Worse end"],
+      rows, { sort: false }));
+    /* the headline figure stays the games': it is the one measured against an opponent */
+    var head = gm.length ? gm : pts;
+    var tAll = sum(head, "tagN"), tPts = sum(head, "tagP"), bAll = sum(head, "backN"), bPts = sum(head, "backP");
     return { tag: tAll ? tPts / tAll : NaN, back: bAll ? bPts / bAll : NaN, pts: pts };
   }
 
@@ -3424,7 +3510,7 @@
       "is the reading.",
       pts, "br", { target: false, what: "Reversal" });
 
-    var tb = trTagBack(root, games);
+    var tb = trTagBack(root, live);
     var phases = trPhases(root, games);
     var sets4 = trSets(root, games);
 
