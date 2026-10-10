@@ -12737,6 +12737,9 @@ function renderPlanSection(sec, canEd, save, allSecs){
         });
         card.appendChild(grp);
       });
+      /* how much is written in it, so the printed sheet can set a full box a size down */
+      if(card.querySelectorAll(".gp3-gl").length + card.querySelectorAll(".gp3-ki").length*1.5 > 14.5)
+        card.classList.add("dense");
       return any? card : null;
     }
   }
@@ -12839,6 +12842,9 @@ function renderPlanSection(sec, canEd, save, allSecs){
       const card=quarterCard(q);
       mid.appendChild(h("div",{class:"gp3-qrow"+(card?"":" solo")}, quarterBoard(q), card));
     });
+    /* both boxes are set the same size: one quarter in smaller type than the other reads
+       as one mattering less */
+    if(mid.querySelector(".gp3-qc.dense")) mid.querySelectorAll(".gp3-qc").forEach(c=>c.classList.add("dense"));
     sheet.classList.add("gp3-sheet");
     sheet.appendChild(left); sheet.appendChild(mid);
     sheet.appendChild(keySetsBlock());
@@ -24425,6 +24431,99 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
   body.printing-gp .gp3-qrow .gp3-qc .gp3-kgrp+.gp3-kgrp{margin-top:.8mm}
   body.printing-gp .gp3-qrow .gp3-qc .gp3-ki{padding:.35mm 1mm .35mm 1.3mm;margin-top:.4mm}
   body.printing-gp .gp3-minw .gp2-min td{font-size:7pt;line-height:1.02;padding-top:0;padding-bottom:0}
+}
+/* THE PRINTED SHEET IS READ ON THE BENCH, DURING THE GAME. Not studied: glanced at, at
+   arm's length, in the seconds a timeout or a free throw gives. Everything on it had
+   been set for fitting - six and seven point type, headings in pale grey capitals - which
+   is a sheet you can check and not one you can scan. So the sizes are set by what has to
+   be found fastest: who is on the floor and when they change, what we run in this
+   stretch, the general rules of the quarter, who guards whom, and what they call. Type
+   is larger and black throughout, headings are heavy rules instead of grey labels, and
+   the general lines are a label column and a value column so the eye runs down one side.
+   The minutes are the one block nobody needs in a game, so they are the one that stays
+   small. */
+@media print{
+  body.printing-gp #print-area,body.printing-gp #print-area *{color:#0d0f13}
+  /* the board */
+  body.printing-gp .gp3-qrow > .gp3-qc{flex:0 0 90mm}
+  body.printing-gp .gp2-qn{font-size:19pt;line-height:1}
+  body.printing-gp .gp2-qs{font-size:7.5pt;color:#0d0f13}
+  body.printing-gp .gp2-qh{margin-bottom:1mm}
+  body.printing-gp .gp2-st{height:7.4mm;font-size:10.2pt;font-weight:700}
+  body.printing-gp .gp2-st.f{border:1px solid #6d7580}
+  body.printing-gp .gp2-st.in{border:2px solid #7a5f10}
+  body.printing-gp .gp2-rl{height:5.8mm;font-size:9pt;letter-spacing:.04em}
+  body.printing-gp .gp2-tick{height:4.6mm;font-size:8.8pt;font-weight:700;color:#0d0f13}
+  body.printing-gp .gp2-pos{font-size:12pt}
+  body.printing-gp .gp2-lbl{font-size:7pt;font-weight:800;color:#0d0f13}
+  /* the quarter's box */
+  body.printing-gp .gp3-qrow .gp3-qc{border:1.4px solid #0d0f13;padding:1mm 1.8mm .8mm}
+  body.printing-gp .gp3-qrow .gp3-qh{font-size:12pt;margin-bottom:.6mm}
+  body.printing-gp .gp3-qh span{font-size:6.5pt;color:#0d0f13}
+  body.printing-gp .gp3-qrow .gp3-qc .gp3-kt{font-size:8pt;font-weight:800;letter-spacing:.14em;border-bottom:1.2px solid #0d0f13;padding-bottom:.3mm}
+  body.printing-gp .gp3-qrow .gp3-gen{padding:.7mm 0 .8mm}
+  body.printing-gp .gp3-qrow .gp3-gen.many{column-gap:3.5mm}
+  body.printing-gp .gp3-qrow .gp3-gl{font-size:8.6pt;line-height:1.22;padding:.15mm 0;color:#0d0f13}
+  body.printing-gp .gp3-qrow .gp3-gl b{font-size:8.6pt;font-weight:800}
+  body.printing-gp .gp3-gl b::after{color:#0d0f13}
+  body.printing-gp .gp3-qrow .gp3-qc .gp3-ki{border-left-width:6px;padding:.6mm 1.2mm .6mm 1.6mm;margin-top:.6mm}
+  body.printing-gp .gp3-qrow .gp3-ktag{font-size:7.6pt;font-weight:800;padding:.2mm 1.1mm}
+  body.printing-gp .gp3-qrow .gp3-ktext{font-size:9.2pt;font-weight:700;line-height:1.15}
+  /* the band under the quarters */
+  body.printing-gp .gp2-sec{font-size:8.2pt;font-weight:800;letter-spacing:.14em;color:#0d0f13;
+    border-bottom:1.2px solid #0d0f13;padding-bottom:.4mm;margin-bottom:1mm}
+  body.printing-gp .gp3-sheet > .gp2-rail{flex:0 0 138mm;gap:4.5mm}
+  body.printing-gp .gp3-sheet > .gp2-rail > .gp2-pairs{flex:0 0 48mm}
+  body.printing-gp .gp2-u{font-size:10.5pt;font-weight:800}
+  body.printing-gp .gp2-t{font-size:9.6pt;font-weight:600;color:#0d0f13}
+  body.printing-gp .gp2-pair{padding:.35mm 0;border-bottom:.6px solid #9aa1ac}
+  body.printing-gp .gp3-minw .gp2-min td{font-size:6.8pt}
+  body.printing-gp .gp3-minw .gp2-min th{font-size:6pt;color:#0d0f13}
+  body.printing-gp .gp2-min .x2{color:#0d0f13}
+  /* their key sets: the call is what is heard, so the call is the heavy end of the line */
+  body.printing-gp .gp3-sheet > .gp3-ks{flex:1 1 120mm}
+  body.printing-gp .gp3-kso{font-size:9pt}
+  body.printing-gp .gp3-kg{margin-bottom:1.4mm}
+  body.printing-gp .gp3-kgh{border-bottom:1.2px solid #0d0f13;padding-bottom:.3mm}
+  body.printing-gp .gp3-kgh b{font-size:8pt;font-weight:800}
+  body.printing-gp .gp3-kgh span{font-size:6.8pt;color:#0d0f13}
+  body.printing-gp .gp3-kr{padding:.3mm 0;border-bottom:.6px solid #9aa1ac}
+  body.printing-gp .gp3-kn{font-size:8.6pt;font-weight:600}
+  body.printing-gp .gp3-kc{font-size:8.4pt;font-weight:800;border:1px solid #0d0f13;padding:0 1mm;line-height:1.25}
+  body.printing-gp .gp3-kc.none{border-color:transparent;font-weight:500}
+  body.printing-gp .gp3-ksn{font-size:8pt;color:#0d0f13}
+  /* and it still has to be one sheet. The larger type is paid for where it costs least:
+     the box is wider so a general line stays on one line, the minutes are as tight as a
+     column of figures goes, and a family of key sets may run on into the next column
+     instead of leaving a gap under the one before. */
+  body.printing-gp .gp3-qrow > .gp3-qc{flex:0 0 102mm}
+  body.printing-gp .gp2-st{font-size:9.8pt}
+  body.printing-gp .gp3-qrow .gp3-gl,body.printing-gp .gp3-qrow .gp3-gl b{font-size:8.2pt}
+  body.printing-gp .gp3-sheet > .gp2-rail{flex:0 0 150mm;gap:4mm}
+  body.printing-gp .gp3-sheet > .gp2-rail > .gp2-pairs{flex:0 0 46mm}
+  body.printing-gp .gp3-sheet > .gp3-ks{flex:1 1 110mm}
+  body.printing-gp .gp3-minw .gp2-min td{font-size:6.6pt;line-height:1;padding:0 0 0 3px}
+  body.printing-gp .gp3-minw .gp2-min th{padding:0 0 0 3px}
+  body.printing-gp .gp3-minw .gp2-min tr.sum td{padding-top:.3mm}
+  body.printing-gp .gp3-kg{break-inside:auto;page-break-inside:auto}
+  body.printing-gp .gp3-kgh{break-after:avoid;page-break-after:avoid;flex-wrap:nowrap}
+  body.printing-gp .gp3-kgh b{white-space:nowrap}
+  body.printing-gp .gp3-kgh span{font-size:6.2pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  body.printing-gp .gp3-kr{break-inside:avoid}
+  /* a set's name is never cut short on paper: it wraps under itself beside its call */
+  body.printing-gp .gp3-kn{white-space:normal;overflow:visible;line-height:1.15}
+  body.printing-gp .gp3-kc{max-width:none}
+  body.printing-gp .gp3-minw .gp2-min th{font-size:5.4pt;letter-spacing:0}
+  body.printing-gp .gp3-minw .gp2-min tr.sum .x2{display:none}
+  /* a quarter with a lot written in it - four colours of offence, three of defence - is
+     set a size down rather than pushed onto a second page */
+  body.printing-gp .gp3-qrow .gp3-qc.dense .gp3-gl,body.printing-gp .gp3-qrow .gp3-qc.dense .gp3-gl b{font-size:7.4pt;line-height:1.15}
+  body.printing-gp .gp3-qrow .gp3-qc.dense .gp3-ktext{font-size:8.2pt;line-height:1.1}
+  body.printing-gp .gp3-qrow .gp3-qc.dense .gp3-ktag{font-size:6.8pt}
+  body.printing-gp .gp3-qrow .gp3-qc.dense .gp3-ki{padding-top:.3mm;padding-bottom:.3mm;margin-top:.4mm}
+  body.printing-gp .gp3-qrow .gp3-qc.dense .gp3-kt{font-size:7.2pt}
+  body.printing-gp .gp3-qrow .gp3-qc.dense .gp3-gen{padding:.4mm 0 .4mm}
+  body.printing-gp .gp3-qrow .gp3-qc.dense .gp3-qh{font-size:10.5pt;margin-bottom:.2mm}
 }
 
 /* ===================================================================
