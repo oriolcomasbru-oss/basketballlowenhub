@@ -5040,6 +5040,8 @@ async function syncDocs(force){
          folder of fifty is a handful of round trips rather than fifty of them. */
       const need=(folder==="game"||folder==="practice") ? [] : list.filter(f=>{
         const d=D.files[f.id];
+        /* a name that carries its day needs nobody to open the file */
+        if(_docDateInName(f.name)) return false;
         if(d && d.date) return false;
         if(d && d.tried && !force) return false;
         if(folder==="practicedoc") return true;
@@ -5070,10 +5072,24 @@ async function syncDocs(force){
   } finally { _docsBusy=false; }
 }
 function _docDateInName(name){
-  const m=String(name||"").match(/(20\d{2})[-_.\/](\d{1,2})[-_.\/](\d{1,2})/)
-       || String(name||"").match(/(\d{1,2})[-_.\/](\d{1,2})[-_.\/](20\d{2})/);
-  if(!m) return null;
   const p2=n=>(n<10?"0":"")+n;
+  const s0=String(name||"");
+  const m=s0.match(/(20\d{2})[-_.\/](\d{1,2})[-_.\/](\d{1,2})/)
+       || s0.match(/(\d{1,2})[-_.\/](\d{1,2})[-_.\/](20\d{2})/);
+  /* THE WAY THIS STAFF ACTUALLY NAMES THEM: "Practice 12 21_8_26.pdf", "10_9_26 Mock
+     Rotation BREMERHAVEN.pdf" - day, month and a two-digit year. Only four-digit years
+     were understood, so not one of these names gave a date; every sheet then had to be
+     opened to look for one inside, and these PDFs do not give their text up, so most of
+     them were never placed on the calendar at all. Day first, as everywhere on these
+     sheets, and never a space as the separator, so "Practice 12 21_8_26" cannot be read
+     as the twelfth of the twenty-first. */
+  if(!m){
+    const k=s0.match(/(?:^|[^\d])(\d{1,2})[-_.\/](\d{1,2})[-_.\/](\d{2})(?!\d)/);
+    if(!k) return null;
+    const dd=+k[1], mm=+k[2];
+    if(mm<1||mm>12||dd<1||dd>31) return null;
+    return (2000+ +k[3])+"-"+p2(mm)+"-"+p2(dd);
+  }
   const y=m[1].length===4? +m[1] : +m[3];
   const a=m[1].length===4? +m[2] : +m[2];
   const b=m[1].length===4? +m[3] : +m[1];
@@ -5154,7 +5170,9 @@ function docIndex(){
   const all=Object.keys(D.files).map(k=>D.files[k]);
   /* ---- session sheets: the day is the answer */
   all.filter(f=>f.folder==="practicedoc").forEach(f=>{
-    const d=f.date||_docDateInName(f.name);
+    /* the date in the name is the one the staff wrote, so it wins over one fished out of
+       the inside of the file */
+    const d=_docDateInName(f.name)||f.date;
     if(d) (out.day[d]=out.day[d]||[]).push(f);
     else out.unmatched.push(f);
   });
@@ -5173,7 +5191,7 @@ function docIndex(){
     if(!gs.length){ fs.forEach(f=>out.unmatched.push(f)); return; }
     if(gs.length===1){ fs.forEach(f=>{ out.game[gs[0].id]=f; }); return; }
     /* two fixtures, so the file's own date decides which */
-    const dOf=f=>f.date || _docDateInName(f.name) || (f.drive? String(f.drive).slice(0,10) : "");
+    const dOf=f=>_docDateInName(f.name) || f.date || (f.drive? String(f.drive).slice(0,10) : "");
     const dated=fs.filter(f=>dOf(f)), plain=fs.filter(f=>!dOf(f));
     const taken={};
     dated.forEach(f=>{

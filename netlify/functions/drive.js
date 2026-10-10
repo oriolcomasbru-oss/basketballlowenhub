@@ -250,7 +250,10 @@ function findDates(text) {
 }
 /* the file name is tried first for a game plan, and as a fallback for a session sheet */
 function dateFromName(name) {
-  const f = findDates(String(name || "").replace(/_/g, " "));
+  /* "Practice 12 21_8_26.pdf": an underscore between two numbers is the date's own
+     separator, not a space. Turned into spaces the day, the month and the year stopped
+     being a date at all and no name written this way ever gave one. */
+  const f = findDates(String(name || "").replace(/(\d)_(?=\d)/g, "$1/").replace(/_/g, " "));
   return f.length ? f[0] : null;
 }
 
