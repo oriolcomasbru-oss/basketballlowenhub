@@ -5624,6 +5624,24 @@ async function openAdmin(){
   openDialog(wrap);
   await refreshAdmin(body);
 }
+/* EVERY NEW ACCOUNT USED TO START ON THE SAME PASSWORD, and that password was written in
+   this file, which is served to anyone who opens the site. With the names on the cover,
+   an account nobody had signed into yet was open to whoever tried it first.
+
+   A starting password is made up here now, a different one for each account, and the
+   server no longer has a default to fall back on. It is shown once, in this panel, to be
+   passed on by hand; only its hash is kept, so it cannot be looked up again - a lost one
+   is replaced with Reset pass. The alphabet leaves out the letters and digits that get
+   misread when a password is read out or copied from a phone. */
+function tempPass(){
+  const A="abcdefghjkmnpqrstuvwxyz23456789";
+  const b=new Uint32Array(8); crypto.getRandomValues(b);
+  let s2="";
+  b.forEach((n,i)=>{ if(i===4) s2+="-"; s2+=A[n%A.length]; });
+  return "Lw-"+s2;
+}
+let _admTemps=[];   /* [{u,p}] made in this visit to the panel, newest last */
+function admTempAdd(u,p){ _admTemps=_admTemps.filter(x=>x.u!==u); _admTemps.push({u:u,p:p}); }
 async function refreshAdmin(body){
   body.innerHTML="";
   let data, sources=[], log=[];
@@ -5634,6 +5652,19 @@ async function refreshAdmin(body){
   try{ const l=await sbrpc("admin_sessions",{p_token:SB_TOKEN,p_limit:80}); log=(l&&l.log)||[]; }catch(e){}
   const accounts=(data.accounts||[]);
   const coaches=accounts.filter(a=>a.scope==="coach"), players=accounts.filter(a=>a.scope==="player");
+
+  /* the starting passwords made in this visit: shown until dismissed, never stored */
+  if(_admTemps.length){
+    const box=h("div",{class:"adm-bulk", style:"flex-direction:column;align-items:flex-start;gap:6px"});
+    box.appendChild(h("b",{},"Starting passwords — copy them now, they are not shown again"));
+    const pre=h("pre",{style:"margin:0;font:13px/1.5 ui-monospace,Consolas,monospace;user-select:all;white-space:pre-wrap"},
+      _admTemps.map(x=>x.u+"\t"+x.p).join("\n"));
+    box.appendChild(pre);
+    box.appendChild(h("div",{style:"display:flex;gap:8px"},
+      h("button",{class:"btn", onclick:async ()=>{ try{ await navigator.clipboard.writeText(pre.textContent); toast("Copied"); }catch(e){ toast("Select the text and copy it"); } }},"Copy"),
+      h("button",{class:"btn", onclick:()=>{ _admTemps=[]; refreshAdmin(body); }},"Dismiss")));
+    body.appendChild(box);
+  }
 
   /* One button to give every player in the Rooster an account. Accounts live on
      the server, so this has to be pressed from here — it cannot be shipped. */
@@ -5651,12 +5682,14 @@ async function refreshAdmin(body){
     for(let i=0;i<missing.length;i++){
       bulkBtn.textContent="Creating "+(i+1)+" of "+missing.length+"…";
       try{
+        const tmp=tempPass();
         const r=await sbrpc("admin_add_account",{p_token:SB_TOKEN,p_scope:"player",
-          p_username:missing[i],p_role:"player",p_temp:"Lowen2026"});
+          p_username:missing[i],p_role:"player",p_temp:tmp});
         if(!r||r.ok!==true) failed.push(missing[i]+(r&&r.error?(" ("+r.error+")"):""));
+        else if(r.created!==false) admTempAdd(missing[i], tmp);
       }catch(e){ failed.push(missing[i]+" ("+e.message+")"); }
     }
-    toast(failed.length? (failed.length+" could not be created") : "Created · temporary password Lowen2026");
+    toast(failed.length? (failed.length+" could not be created") : "Created · starting passwords listed at the top");
     if(failed.length) bulkNote.textContent="Could not create: "+failed.join(", ");
     refreshAdmin(body);
   };
@@ -5710,8 +5743,10 @@ async function refreshAdmin(body){
     return h("div",{class:"adm-permwrap"}, g);
   };
   const resetBtn=(a)=>{ const b=h("button",{class:"btn"},"Reset pass"); b.onclick=async ()=>{
-      const tmp=prompt("Temporary password for "+a.username+" (changed on next sign-in):","Lowen2026"); if(!tmp) return;
-      try{ const r=await sbrpc("admin_reset_password",{p_token:SB_TOKEN,p_username:a.username,p_temp:tmp}); toast(r&&r.ok?("Reset OK → "+tmp):"Error"); }catch(e){ toast("Error"); } }; return b; };
+      const tmp=prompt("Temporary password for "+a.username+" (changed on next sign-in, 8 characters or more):",tempPass()); if(!tmp) return;
+      try{ const r=await sbrpc("admin_reset_password",{p_token:SB_TOKEN,p_username:a.username,p_temp:tmp});
+        if(r&&r.ok){ admTempAdd(a.username, tmp); toast("Reset OK"); refreshAdmin(body); }
+        else toast((r&&r.error)||"Error"); }catch(e){ toast("Error"); } }; return b; };
   const removeBtn=(a)=>{ const b=h("button",{class:"btn danger adm-x"},"✕"); b.title="Deactivate"; b.onclick=()=>confirmDialog("Deactivate","Deactivate "+a.username+"?","Deactivate",async ()=>{ try{ await sbrpc("admin_remove_account",{p_token:SB_TOKEN,p_scope:a.scope,p_username:a.username}); refreshAdmin(body); }catch(e){ toast("Error"); } },true); return b; };
 
   // Coaches
@@ -5880,10 +5915,15 @@ function addAccountDlg(scope, body){
   const un=h("input",{type:"text",placeholder:"Username"});
   const err=h("div",{class:"login-err"});
   const submit=async ()=>{ const name=un.value.trim(); if(!name){ err.textContent="Type the username"; return; }
-    try{ const r=await sbrpc("admin_add_account",{p_token:SB_TOKEN,p_scope:scope,p_username:name,p_role:(scope==="coach"?"coach":"player"),p_temp:"Lowen2026"}); if(!r||r.ok!==true){ err.textContent=(r&&r.error)||"Error"; return; } closeDialog(); refreshAdmin(body); toast("Añadido · pass Lowen2026"); }
+    try{ const tmp=tempPass();
+      const r=await sbrpc("admin_add_account",{p_token:SB_TOKEN,p_scope:scope,p_username:name,p_role:(scope==="coach"?"coach":"player"),p_temp:tmp}); if(!r||r.ok!==true){ err.textContent=(r&&r.error)||"Error"; return; }
+      if(r.created===false){ err.textContent="That username already exists"; return; }
+      admTempAdd(name, tmp);
+      /* the panel is a dialog and so was this, so it is opened again rather than refreshed */
+      closeDialog(); openAdmin(); toast("Added · starting password listed at the top"); }
     catch(e){ err.textContent="Error: "+e.message; } };
   openDialog(h("div",{class:"login-dlg"}, h("h3",{},"Add "+scope),
-    h("div",{class:"field"}, h("label",{},"Username"), un), h("div",{class:"login-sub"},"Starting password: Lowen2026 (changed on first sign-in)."), err,
+    h("div",{class:"field"}, h("label",{},"Username"), un), h("div",{class:"login-sub"},"A starting password is made up for this account and shown in the panel (changed on first sign-in)."), err,
     h("div",{class:"dialog-foot"}, h("button",{class:"btn",onclick:closeDialog},"Cancel"), h("button",{class:"btn primary",onclick:submit},"Add"))));
   setTimeout(()=>un.focus(),40);
 }
@@ -17791,7 +17831,7 @@ function openChangePassword(u){
   const err=h("div",{class:"login-err"});
   const submit=async ()=>{
     err.textContent="";
-    if((p1.value||"").length<4){ err.textContent="Mínimo 4 caracteres."; return; }
+    if((p1.value||"").length<8){ err.textContent="At least 8 characters."; return; }
     if(p1.value!==p2.value){ err.textContent="No coinciden."; return; }
     try{
       const res=await sbrpc("change_password",{p_token:SB_TOKEN, p_new:p1.value});
