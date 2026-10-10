@@ -12704,8 +12704,20 @@ function renderPlanSection(sec, canEd, save, allSecs){
           ta.value=gen[side]||"";
           ta.addEventListener("input",()=>{ gen[side]=ta.value; save(); });
           grp.appendChild(h("div",{class:"gp3-gen"}, ta));
-        } else if(lines.length){
-          const g=h("div",{class:"gp3-gen"+(lines.length>=4?" many":"")});
+        }
+        /* A COLOUR THAT IS UP FOR THE WHOLE QUARTER IS NOT ABOUT A ROTATION. A colour says
+           "these minutes, these five"; painted across all ten it says nothing of the kind -
+           it is the rule for the quarter, and that is a general line. The defence is the
+           usual case: one colour end to end with "RED + LAST / FELIPE = FIRST D = BITE" in
+           it, which on the staff's sheet is plain text and here was drawn as a coloured
+           band beside the ones that really are tied to minutes. It is read as general, and
+           goes first, where the sheet has it. The editor still shows it under its colour. */
+        const whole = canEd ? [] : idx.filter(i=>bar.every(v=>v===i+1) && gpLegQText(legs[i], q));
+        /* and a colour with nothing written for this quarter has nothing to say in the box */
+        const bands = idx.filter(i=>whole.indexOf(i)<0 && (canEd || gpLegQText(legs[i], q)));
+        if(!canEd && (lines.length || whole.length)){
+          const g=h("div",{class:"gp3-gen"+((lines.length+whole.length)>=4?" many":"")});
+          whole.forEach(i=>g.appendChild(h("div",{class:"gp3-gl all"}, h("span",{}, gpLegQText(legs[i], q)))));
           lines.forEach(ln=>{
             const k=ln.indexOf("=");
             g.appendChild(k>0
@@ -12714,10 +12726,13 @@ function renderPlanSection(sec, canEd, save, allSecs){
           });
           grp.appendChild(g);
         }
-        /* by colour: the band, the minutes it covers, the calls, and who is out there */
-        idx.forEach(i=>{
+        /* by colour: a filled band, as on the sheet, with the minutes it covers in front.
+           The fill is what says "this goes with a colour" - a pale tint with a stripe down
+           the side read as one more line of text - and the outline in the same colour is
+           there for the printer that drops fills. */
+        bands.forEach(i=>{
           const item=h("div",{class:"gp3-ki"});
-          item.style.borderLeftColor=colors[i]; item.style.backgroundColor=colors[i]+"1f";
+          item.style.borderColor=colors[i]; item.style.backgroundColor=colors[i]+"52";
           const span=gpBarSpan(bar, i+1);
           const line=h("div",{class:"gp3-kl"});
           line.appendChild(h("span",{class:"gp3-ktag"+(span?"":" off")}, span || "not on the rail"));
@@ -24349,7 +24364,8 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .gp3-gl b::after{content:" =";font-weight:500;color:var(--ink-faint,#8a919c)}
 .gp3-gta{display:block;width:100%;resize:vertical;min-height:54px;border:1px dotted var(--line-strong,#d7dbe0);
   border-radius:4px;padding:4px 6px;font:500 12px/1.4 'Inter',sans-serif;box-sizing:border-box}
-.gp3-qc .gp3-ki{border-bottom:0;border-radius:0 4px 4px 0;padding:5px 8px 5px 8px;margin-top:3px}
+.gp3-qc .gp3-ki{border:2px solid transparent;border-left-width:8px;border-radius:4px;padding:5px 8px 5px 8px;margin-top:4px}
+.gp3-gl.all span{font:700 12.5px/1.3 'Oswald',sans-serif;letter-spacing:.035em;text-transform:uppercase;color:var(--ink)}
 .gp3-qc .gp3-kl{align-items:baseline;flex-wrap:nowrap;gap:7px}
 .gp3-ktext{flex:1 1 0;min-width:0;font:600 12.5px/1.3 'Oswald',sans-serif;letter-spacing:.035em;text-transform:uppercase;color:var(--ink)}
 .gp3-ktag.off{background:transparent;color:var(--ink-faint,#8a919c);box-shadow:inset 0 0 0 1px var(--line-strong,#d7dbe0);font-weight:500}
@@ -24466,7 +24482,8 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
   body.printing-gp .gp3-qrow .gp3-gl{font-size:8.6pt;line-height:1.22;padding:.15mm 0;color:#0d0f13}
   body.printing-gp .gp3-qrow .gp3-gl b{font-size:8.6pt;font-weight:800}
   body.printing-gp .gp3-gl b::after{color:#0d0f13}
-  body.printing-gp .gp3-qrow .gp3-qc .gp3-ki{border-left-width:6px;padding:.6mm 1.2mm .6mm 1.6mm;margin-top:.6mm}
+  body.printing-gp .gp3-qrow .gp3-qc .gp3-ki{border-width:1.6px;border-left-width:7px;border-style:solid;padding:.6mm 1.2mm .6mm 1.6mm;margin-top:.7mm}
+  body.printing-gp .gp3-gl.all span{font-size:9pt;font-weight:800}
   body.printing-gp .gp3-qrow .gp3-ktag{font-size:7.6pt;font-weight:800;padding:.2mm 1.1mm}
   body.printing-gp .gp3-qrow .gp3-ktext{font-size:9.2pt;font-weight:700;line-height:1.15}
   /* the band under the quarters */

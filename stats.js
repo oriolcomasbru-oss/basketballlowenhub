@@ -3584,12 +3584,12 @@
         { l: "Last", v: pct0f(pt.last), cls: pt.last >= 70 ? "good" : pt.last >= 60 ? "" : "bad" },
         { l: "Season", v: pct0f(pt.avg) }, { l: "Target", v: "70%" } ],
       timelineChart("", "", pts, gamesMeasured("pt"),
-        { max: 100, axisFmt: pct0f, height: 128, ref: { v: 70, label: "70%" } })));
+        { max: 100, axisFmt: pct0f, height: 210, ref: { v: 70, label: "70%" } })));
     if (br) dash.appendChild(tdCard("Ball reversals", "same measure", [
         { l: "Last", v: pct0f(br.last), cls: br.last >= br.avg ? "good" : "bad" },
         { l: "Season", v: pct0f(br.avg) } ],
       timelineChart("", "", pts, gamesMeasured("br"),
-        { max: 100, axisFmt: pct0f, height: 128, ref: { v: br.avg, label: "avg" } })));
+        { max: 100, axisFmt: pct0f, height: 210, ref: { v: br.avg, label: "avg" } })));
     var oerGet = function (s) { return s.poss ? s.pts / s.poss : NaN; };
     var oerAvg = meanOf(pts, oerGet), oerLast = lastOf(pts, oerGet);
     if (isFinite(oerAvg)) dash.appendChild(tdCard("Offence", "points per possession", [
@@ -3599,18 +3599,20 @@
         { name: "Games", color: "var(--tl-1)", get: function (s) { return s.phased ? oerGet(s) : NaN; }, fmt: f2 },
         { name: "Trainings", color: "var(--tl-1)", dash: true, hollow: true,
           get: function (s) { return s.phased ? NaN : oerGet(s); }, fmt: f2 } ],
-        { axisFmt: f2, height: 128, ref: { v: oerAvg, label: "avg" } })));
+        { axisFmt: f2, height: 210, ref: { v: oerAvg, label: "avg" } })));
     if (tb && tb.pts && tb.pts.length) dash.appendChild(tdCard("Transition defense", "DER after our shot — lower is better", [
         { l: "TAG", v: f2(tb.tag) }, { l: "BACK", v: f2(tb.back) } ],
       timelineChart("", "", tb.pts, [
         { name: "TAG", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2 },
         { name: "BACK", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2 } ],
-        { axisFmt: f2, height: 128 })));
+        { axisFmt: f2, height: 210 })));
     var heat = tdPhaseHeat(games);
     if (heat) dash.appendChild(tdCard("Where our possessions came from",
       "share of each game · points per possession underneath", null, heat, "wide"));
-    var pj = tdProjection(proj, games.length);
-    if (pj) dash.appendChild(tdCard("If we keep this trend", "where each measure is in five games", null, pj, "wide"));
+    /* The projection is not on the dashboard. With a season of real sessions every row of
+       it read "no clear trend", which is the honest answer and an empty panel: it stays
+       under Full detail for whoever wants the working, and a measure that IS heading
+       somewhere already says so in the key ideas at the top. */
     root.appendChild(dash);
 
     /* ---------------------------------------------------------------- the detail */
@@ -3702,17 +3704,38 @@
       var t = tot[k] || (tot[k] = { n: 0, pts: 0 }); t.n += e.n; t.pts += e.pts; all += e.n; }); });
     keys.sort(function (a, b) { return ((tot[b] || {}).n || 0) - ((tot[a] || {}).n || 0); });
     var wrap = el("div", "td-heatwrap"), t = el("table", "td-heat");
-    var hr = el("tr");
-    hr.appendChild(el("th", "l", "Phase"));
-    games.forEach(function (g) { hr.appendChild(el("th", null, g.label)); });
-    hr.appendChild(el("th", "sum", "Season"));
-    t.appendChild(hr);
-    var cell = function (share, ppp, n, cls) {
-      var td = el("td", (cls || "") + (share == null ? " none" : " sx-vol " + volStep(Math.min(100, share * 2))));
-      if (share == null) { td.textContent = "—"; return td; }
+    /* Two numbers stacked in one cell with a dot between them had to be decoded. Each
+       game is two columns with their own headings instead: how much of the game the phase
+       was, as a bar that fills with the share, and what it scored per possession, tinted
+       green above the season's own average for that game and red below it. */
+    var allPts = 0; keys.forEach(function (k) { allPts += (tot[k] || {}).pts || 0; });
+    var seasonPpp = all ? allPts / all : NaN;
+    var h1 = el("tr"), h2 = el("tr", "sub");
+    var ph = el("th", "l", "Phase"); ph.rowSpan = 2; h1.appendChild(ph);
+    games.forEach(function (g) {
+      var th = el("th", "g", g.label); th.colSpan = 2; h1.appendChild(th);
+      h2.appendChild(el("th", null, "% of game")); h2.appendChild(el("th", null, "pts / poss"));
+    });
+    var ths = el("th", "g sum", "Season"); ths.colSpan = 3; h1.appendChild(ths);
+    h2.appendChild(el("th", "sum", "% of all")); h2.appendChild(el("th", "sum", "pts / poss")); h2.appendChild(el("th", "sum", "poss"));
+    t.appendChild(h1); t.appendChild(h2);
+    var shareCell = function (share, n, cls) {
+      var td = el("td", "pc" + (cls ? " " + cls : ""));
+      if (share == null) { td.className += " none"; td.textContent = "—"; return td; }
+      var bar = el("span", "bar"); bar.style.width = Math.max(2, Math.min(100, share)) + "%";
+      td.appendChild(bar);
       td.appendChild(el("b", null, Math.round(share) + "%"));
-      td.appendChild(el("i", null, f2(ppp) + " · " + n));
-      td.title = n + " possessions · " + f2(ppp) + " points per possession";
+      td.title = n + " possessions";
+      return td;
+    };
+    var pppCell = function (v, n, cls) {
+      var td = el("td", "pp" + (cls ? " " + cls : ""));
+      if (v == null) { td.className += " none"; td.textContent = "—"; return td; }
+      td.textContent = f2(v);
+      /* under four possessions a rate is an anecdote: shown, not judged */
+      if (n >= 4 && isFinite(seasonPpp)) td.className += (v >= seasonPpp + 0.1 ? " hi" : v <= seasonPpp - 0.1 ? " lo" : "");
+      else td.className += " thin";
+      td.title = n + " possessions";
       return td;
     };
     keys.forEach(function (k) {
@@ -3720,14 +3743,20 @@
       tr.appendChild(el("td", "l", k));
       per.forEach(function (p) {
         var e = p.m[k];
-        tr.appendChild(e && p.tot ? cell(100 * e.n / p.tot, e.pts / e.n, e.n) : cell(null));
+        if (e && p.tot) { tr.appendChild(shareCell(100 * e.n / p.tot, e.n)); tr.appendChild(pppCell(e.pts / e.n, e.n)); }
+        else { tr.appendChild(shareCell(null)); tr.appendChild(pppCell(null)); }
       });
       var s = tot[k];
-      tr.appendChild(s && all ? cell(100 * s.n / all, s.pts / s.n, s.n, "sum") : cell(null));
+      if (s && all) {
+        tr.appendChild(shareCell(100 * s.n / all, s.n, "sum")); tr.appendChild(pppCell(s.pts / s.n, s.n, "sum"));
+        tr.appendChild(el("td", "n sum", String(s.n)));
+      } else { tr.appendChild(shareCell(null, 0, "sum")); tr.appendChild(pppCell(null, 0, "sum")); tr.appendChild(el("td", "n sum", "—")); }
       t.appendChild(tr);
     });
     wrap.appendChild(t);
-    wrap.appendChild(el("div", "td-note", "Big number: share of that game's possessions. Small: points per possession · possessions."));
+    wrap.appendChild(el("div", "td-note", "% of game: how many of that game's possessions started in this phase — the bar fills with it. " +
+      "pts / poss: points scored per possession from it; green is above our season average of " + f2(seasonPpp) +
+      ", red below, grey is fewer than four possessions."));
     return wrap;
   }
 
@@ -4066,7 +4095,8 @@
          its own — every one of them carries its glyph. */
       ".tr-sec{margin-bottom:20px}",
       /* ---- the compact dashboard: cards side by side, the detail on request ---- */
-      ".td-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px;margin:0 0 14px}",
+      /* one chart a row, the full width: forty-odd sessions in a card a quarter of the page wide is a smudge of dots */
+      ".td-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin:0 0 14px}",
       ".td-card{background:var(--panel,#fff);border:1px solid var(--line-strong,#d7dbe0);border-radius:12px;",
       "  padding:11px 13px 9px;min-width:0;box-sizing:border-box}",
       ".td-card.wide{grid-column:1/-1}",
@@ -4090,12 +4120,21 @@
       "  padding:2px 4px 4px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
       ".td-heat th.l,.td-heat td.l{text-align:left;width:170px}",
       ".td-heat td.l{font:700 12px/1.2 'Inter',sans-serif;color:var(--ink);padding:0 6px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
-      ".td-heat td{text-align:center;border-radius:6px;padding:5px 4px;min-width:64px}",
-      ".td-heat td b{display:block;font:800 15px/1 'Oswald',sans-serif;font-variant-numeric:tabular-nums}",
-      ".td-heat td i{display:block;margin-top:3px;font:600 9.5px/1 'IBM Plex Mono',monospace;font-style:normal;opacity:.82}",
-      ".td-heat td.none{color:var(--ink-faint);background:transparent;font-weight:400}",
-      ".td-heat th.sum,.td-heat td.sum{width:92px}",
-      ".td-heat td.sum{box-shadow:inset 0 0 0 2px var(--ink,#15181f)}",
+      ".td-heat th.g{font-size:10.5px;color:var(--ink);border-bottom:2px solid var(--ink,#15181f);padding-bottom:3px}",
+      ".td-heat tr.sub th{font-size:8.5px;letter-spacing:.06em;padding-top:3px}",
+      ".td-heat td{text-align:center;border-radius:5px;padding:0 4px;height:26px;font-variant-numeric:tabular-nums}",
+      ".td-heat td.pc{position:relative;text-align:left;background:var(--panel-2,#f1f3f5);overflow:hidden;padding:0}",
+      ".td-heat td.pc .bar{position:absolute;left:0;top:0;bottom:0;background:#9fb2d6;border-radius:5px 0 0 5px}",
+      ".td-heat td.pc b{position:relative;display:block;padding:0 7px;font:800 14px/26px 'Oswald',sans-serif;color:#12161d}",
+      ".td-heat td.pp{font:700 12.5px/26px 'IBM Plex Mono',monospace;color:var(--ink);background:var(--panel-2,#f1f3f5)}",
+      ".td-heat td.pp.hi{background:#cfe9dc;color:#0f5c40}.td-heat td.pp.lo{background:#f6d5cf;color:#8f2418}",
+      ".td-heat td.pp.thin{color:var(--ink-faint);font-weight:500}",
+      ".td-heat td.n{font:600 12px/26px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}",
+      ".td-heat td.none{color:var(--line-strong,#c9ced6);background:transparent;text-align:center;font-weight:400}",
+      ".td-heat td.pc.none{line-height:26px}",
+      ".td-heat td.sum.pc .bar{background:#7f95c2}",
+      ".td-heat td.sum{box-shadow:inset 0 0 0 1.5px var(--ink,#15181f)}",
+      ".td-heat th.sum{color:var(--ink)}",
       /* the projection as rows */
       ".td-proj{display:grid;gap:8px}",
       ".td-pr{display:grid;grid-template-columns:170px 78px minmax(120px,1fr) 96px;column-gap:14px;row-gap:3px;align-items:center;",
