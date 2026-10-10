@@ -16710,19 +16710,21 @@ function _lgClock(L){
    the efficiency ranking: the pairing a staff actually uses is a different fact from the
    pairing that works. */
 var LG_SHRINK=60;
-function _lgUnitPick(rows, teamBase){
-  const ok=rows.filter(u=>u.poss>=LG_UNIT_MIN && u.oer!=null && u.der!=null);
+function _lgUnitPick(rows, minPoss){
+  /* the bar is the built-in one unless the staff has set a higher one on the panel */
+  const bar=Math.max(LG_UNIT_MIN, +minPoss||0);
+  const ok=rows.filter(u=>u.poss>=bar && u.oer!=null && u.der!=null);
   const w=u=>u.poss/(u.poss+LG_SHRINK);
   const adj=(v,base)=>(u)=>{ const x=v(u); return x==null? null : base+(x-base)*w(u); };
   return { pool:ok, adj:adj, w:w };
 }
-function _lgUnitSummary(L, rows2, rows3, names, div){
+function _lgUnitSummary(L, rows2, rows3, names, div, minPoss){
   const nm=id=>_lgWho(names[id], true) || "#?";
   const who=u=>u.ids.map(nm).join(" · ");
   const blocks=[];
   [[2,"Pairs",rows2],[3,"Trios",rows3]].forEach(gr=>{
     const all=gr[2]||[];
-    const P=_lgUnitPick(all);
+    const P=_lgUnitPick(all, minPoss);
     const pool=P.pool;
     if(pool.length<3) return;
     const base=k=>{ const v=pool.map(u=>u[k]).filter(x=>x!=null);
@@ -16849,7 +16851,31 @@ function _lgUnits(L){
     seg.appendChild(h("button",{class:"lg-seg-b"+(size===o[0]?" act":""),
       onclick:()=>{ L.unSize=o[0]; persist(); _lgRerender(); }}, o[1]));
   });
-  const box=_lgPanel("Combinations", h("div",{class:"lg-navrow"}, pick, seg, ven.seg, pg.seg));
+  /* THE VOLUME CUT. Sorted on OER, DER or Net, the top of the table is whatever was on the
+     floor for a handful of possessions and happened to score on all of them - true, and
+     worth nothing. Those rows were only dimmed; this takes them out. It is a number the
+     staff sets, because how much is enough depends on the question: forty possessions is
+     a lot for a five and very little for a pair. The number is read in the units of the
+     Possessions column - per game while that is what the column shows, season totals
+     otherwise - so the cut is always a line you can see in the table, and each of the two
+     keeps its own value. Empty or 0 is no cut. */
+  const minKey=pg.per? "unMinPg" : "unMin";
+  const minShown=(isFinite(+L[minKey]) && +L[minKey]>0)? Math.round(+L[minKey]*10)/10 : 0;
+  const minIn=h("input",{type:"number", min:"0", step:(pg.per?"1":"10"), placeholder:"0", inputmode:"decimal",
+    style:"width:60px;border:0;border-left:1px solid var(--line,#e6e8ec);background:transparent;"
+      +"color:var(--ink,#1c1c1c);font:inherit;font-size:11px;font-family:'IBM Plex Mono',monospace;"
+      +"padding:3px 6px;text-align:right;outline:none"});
+  minIn.value=minShown? String(minShown) : "";
+  const setMin=()=>{ const v=Math.max(0, Math.round((+minIn.value||0)*10)/10);
+    if(v===minShown) return; L[minKey]=v; persist(); _lgRerender(); };
+  minIn.addEventListener("change", setMin);
+  minIn.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); minIn.blur(); } });
+  const minUnit=pg.per? "possessions per game" : "possessions";
+  const minBox=h("div",{class:"lg-seg",
+      title:"Leave out combinations with fewer "+minUnit+" than this, as counted in the Possessions column (offence plus defence). Empty shows all."},
+    h("span",{class:"lg-seg-b"+(minShown?" act":""), style:"cursor:default;border-left:0"},
+      pg.per? "Min poss / game" : "Min poss"), minIn);
+  const box=_lgPanel("Combinations", h("div",{class:"lg-navrow"}, pick, seg, ven.seg, pg.seg, size!==0? minBox : null));
   if(!d || !(d.players||[]).length){ box.appendChild(_lgNoData(L,tid)); return box; }
   const names=_lgNames(d);
   const nm=id=>_lgWho(names[id], true) || "#?";
@@ -16866,6 +16892,8 @@ function _lgUnits(L){
   const gp=(ven.v==="home")? gpH : (ven.v==="away")? gpA : gpAll;
   const div=pg.per? (gp||1) : 1;
   const nPoss=v=>pg.per? (v/div).toFixed(1) : String(v);
+  /* the cut as a count of possessions, whatever unit it was typed in */
+  const minP=pg.per? minShown*div : minShown;
 
   if(size===0){
     /* on/off is one row per player, so here the chips mean "these players' rows" - any of
@@ -16947,14 +16975,22 @@ function _lgUnits(L){
     return { oP:g(u.offPoss,u.hOffPoss), oT:g(u.offPts,u.hOffPts),
              dP:g(u.defPoss,u.hDefPoss), dT:g(u.defPts,u.hDefPts) };
   };
-  const rows=raw.map(u=>{
+  const rowsAll=raw.map(u=>{
     const x=side(u);
     const oer=(x.oT!=null&&x.oP)? 100*x.oT/x.oP : (ven.v==="all"? u.oer : null);
     const der=(x.dT!=null&&x.dP)? 100*x.dT/x.dP : (ven.v==="all"? u.der : null);
     return { ids:u.ids, poss:x.oP+x.dP, oer:oer, der:der,
              net:(oer!=null&&der!=null)? oer-der : null };
   }).filter(u=>u.poss>0);
-  if(!rows.length){ box.appendChild(h("div",{class:"lg-empty"},"Nothing in this split yet.")); return box; }
+  if(!rowsAll.length){ box.appendChild(h("div",{class:"lg-empty"},"Nothing in this split yet.")); return box; }
+  /* compared as printed, so a row showing 25.0 is never dropped by a minimum of 25 */
+  const rows=minP? rowsAll.filter(u=>(pg.per? Math.round(u.poss/div*10)/10 : u.poss)>=minShown) : rowsAll;
+  if(!rows.length){
+    const top=nPoss(Math.round(Math.max.apply(null, rowsAll.map(u=>u.poss))));
+    box.appendChild(h("div",{class:"lg-empty"},
+      "No combination here reaches "+minShown+" "+minUnit+" — the most used has "+top+". Lower the minimum."));
+    return box;
+  }
 
   const UDEF={k:"poss", d:-1};
   const UGET={ poss:u=>u.poss, oer:u=>u.oer, der:u=>u.der, net:u=>u.net };
@@ -16984,8 +17020,11 @@ function _lgUnits(L){
     }
     box.appendChild(_lgPickCard(L, names, sel, stat, div));
   }
-  const sum=_lgUnitSummary(L, forSize(2), forSize(3), names, div);
+  const sum=_lgUnitSummary(L, forSize(2), forSize(3), names, div, minP);
   if(sum) box.appendChild(sum);
+  if(minP) box.appendChild(h("div",{class:"cmb-fn", style:"margin:2px 0 8px"},
+    rows.length+" of "+rowsAll.length+" combinations have "+minShown+" "+minUnit+" or more"
+    +(rows.length>24? " · the first 24 in this order are shown" : "")));
 
   const tbl=h("table",{class:"lg-tbl lg-cmb"});
   tbl.appendChild(h("tr",{class:"lg-tbl-h"},
@@ -17012,7 +17051,11 @@ function _lgUnits(L){
     +"club's average in proportion to how little has been seen of them \u2014 the figure shown is the real one, "
     +"the order is what is adjusted. Most used is volume alone, which is a different question. Under "
     +LG_UNIT_MIN+" possessions is dimmed: a net over that few carries an error of about "
-    +(1.63/Math.sqrt(LG_UNIT_MIN)).toFixed(2)+" per possession.");
+    +(1.63/Math.sqrt(LG_UNIT_MIN)).toFixed(2)+" per possession."
+    +" Min poss leaves out of the table, and of the reading, every combination under the number you set"
+    +(minP? " — now "+minShown+" "+minUnit+(pg.per? " ("+Math.round(minP)+" in all)" : "")
+        +", which is an error of about "+(1.63/Math.sqrt(minP)).toFixed(2)+" per possession" : "")
+    +".");
   return box;
 }
 
