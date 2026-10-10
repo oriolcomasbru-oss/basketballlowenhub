@@ -12480,12 +12480,19 @@ function _gpOnFloor(plan, side, idx){
 /* what was typed for a colour, taken apart: " · " (or a line break, or ";") starts a new
    line, "Q1:" at the front of one is its tag, and "/" separates the calls */
 function gpLegendParts(text){
-  return String(text||"").split(/\s+[·•|]\s+|\s*;\s*|\n+/).map(part=>{
-    const p=part.trim(); if(!p) return null;
-    const m=p.match(/^(Q[1-4]|[1-4]Q|H[12]|OT)\s*[:\-–]\s*(.*)$/i);
+  /* A quarter's name starts a new part wherever it turns up, not only after a " · ":
+     "Q1: A / B  Q2: C / D", "Q1: A / B / Q2: C" and "Q1 = A, Q2 = C" are all two parts.
+     Read only at a " · " the second quarter stayed glued to the first one's text, and
+     what was written for one quarter was shown in the other or in both. */
+  const src=String(text||"").replace(/\s*[\/,]?\s*\b((?:Q[1-4]|[1-4]Q)\s*[:=])/gi, " · $1");
+  return src.split(/\s+[·•|]\s+|\s*;\s*|\n+/).map(part=>{
+    const p=part.trim().replace(/^[·•|]\s*/, ""); if(!p) return null;
+    const m=p.match(/^(Q[1-4]|[1-4]Q|H[12]|OT)\s*[:=\-–]\s*(.*)$/i);
     const rest=m? m[2] : p;
     const calls=rest.split("/").map(x=>x.trim()).filter(Boolean);
-    return (calls.length || m)? { tag:m? m[1].toUpperCase() : "", calls:calls } : null;
+    /* "1Q" and "Q1" are the same quarter */
+    const tag=m? m[1].toUpperCase().replace(/^([1-4])Q$/, "Q$1") : "";
+    return (calls.length || m)? { tag:tag, calls:calls } : null;
   }).filter(Boolean);
 }
 /* A colour's text is one sentence for both quarters, tagged where they differ:
