@@ -12521,6 +12521,16 @@ function gpBarSpan(bar, idx){
     return a===b? (a+"'") : (a+"'–"+b+"'");
   }).join(" · ");
 }
+/* the same stretch, the way the staff's own sheet names it: FIRST 4', NEXT 4', LAST 2'.
+   A stretch that opens the quarter is FIRST, one that closes it is LAST, and whatever is
+   in between is NEXT, each with how many minutes it runs. */
+function gpBarName(bar, idx){
+  return _gpSegs(bar).filter(sg=>sg.v===idx).map(sg=>{
+    const w = sg.at===0 ? (sg.len===GP_COLS ? "ALL" : "FIRST")
+            : (sg.at+sg.len===GP_COLS ? "LAST" : "NEXT");
+    return w+" "+sg.len+"′";
+  }).join(" · ");
+}
 function _gpOnFloorQ(plan, side, idx, q){
   const bar=(side==="off"? plan.offbar : plan.defbar)[q]||[];
   const seen={};
@@ -12760,7 +12770,10 @@ function renderPlanSection(sec, canEd, save, allSecs){
           item.style.borderColor=colors[i]; item.style.backgroundColor=colors[i]+"52";
           const span=gpBarSpan(bar, i+1);
           const line=h("div",{class:"gp3-kl"});
-          line.appendChild(h("span",{class:"gp3-ktag"+(span?"":" off")}, span || "not on the rail"));
+          /* named as on the sheet - FIRST 4', NEXT 4', LAST 2' - with the clock on the hover */
+          const tagEl=h("span",{class:"gp3-ktag"+(span?"":" off")}, span ? gpBarName(bar, i+1) : "not on the rail");
+          if(span) tagEl.title="On the clock: "+span;
+          line.appendChild(tagEl);
           if(canEd){
             const inp=h("input",{class:"gp2-in gp3-kin", placeholder:(side==="off"?"Sets for this colour — set / set":"Rules for this colour…")});
             inp.value=gpLegQText(legs[i], q);
