@@ -2985,7 +2985,10 @@
              tagPpp: t.tag.n ? t.tag.pts / t.tag.n : NaN,
              backPpp: t.back.n ? t.back.pts / t.back.n : NaN,
              allPpp: (t.tag.n + t.back.n) ? (t.tag.pts + t.back.pts) / (t.tag.n + t.back.n) : NaN,
-             tagOf: t.tag.of, backOf: t.back.of } };
+             tagOf: t.tag.of, backOf: t.back.of,
+             /* the DER of the whole game: what they scored over the possessions they had */
+             der: (g.kind === "game" && g.m.dposs && g.m.dposs.length && g.m.oppPts != null)
+               ? g.m.oppPts / g.m.dposs.length : NaN } };
     });
     if (!pts.length) { sec.appendChild(el("div", "sx-empty", "No session carries it yet.")); return null; }
     sec.appendChild(timelineChart("", "", pts, [
@@ -3490,8 +3493,22 @@
       wrapB.appendChild(det);
       head.appendChild(wrapB);
     }
-    root.appendChild(head);
+    /* WHAT WAS READ AND WHAT WAS LEFT OUT IS FOR THE DAY SOMETHING LOOKS WRONG. It opened
+       the page as a block of seven lines - which files, which dates were borrowed from
+       the calendar, how many plans have no tagging - and a staff reading its trends had
+       to get past it every time. It is one quiet line now, closed, and the whole account
+       is still behind it for when a number does not add up. */
+    var about = document.createElement("details");
+    about.className = "td-about";
+    var aboutSum = document.createElement("summary");
+    aboutSum.textContent = live.filter(function (x) { return x.kind === "practice"; }).length + " trainings · " +
+      games.length + " games" + (live.length ? " · " + live[0].d + " → " + live[live.length - 1].d : "") +
+      (dropped.length ? " · " + dropped.length + " left out" : "") + " · what was read";
+    about.appendChild(aboutSum);
+    about.appendChild(head);
+    root.appendChild(about);
     if (!live.length) {
+      about.open = true;
       root.appendChild(el("div", "sx-empty", "Nothing with five on five in it yet."));
       return;
     }
@@ -3580,32 +3597,48 @@
       var v = list.map(function (p) { return get(p.s); }).filter(isFinite);
       return v.length ? v.reduce(function (a, x) { return a + x; }, 0) / v.length : NaN; };
 
-    if (pt) dash.appendChild(tdCard("Paint touches", "the 70% measure", [
-        { l: "Last", v: pct0f(pt.last), cls: pt.last >= 70 ? "good" : pt.last >= 60 ? "" : "bad" },
-        { l: "Season", v: pct0f(pt.avg) }, { l: "Target", v: "70%" } ],
-      timelineChart("", "", pts, gamesMeasured("pt"),
-        { max: 100, axisFmt: pct0f, height: 210, ref: { v: 70, label: "70%" } })));
-    if (br) dash.appendChild(tdCard("Ball reversals", "same measure", [
-        { l: "Last", v: pct0f(br.last), cls: br.last >= br.avg ? "good" : "bad" },
-        { l: "Season", v: pct0f(br.avg) } ],
-      timelineChart("", "", pts, gamesMeasured("br"),
-        { max: 100, axisFmt: pct0f, height: 210, ref: { v: br.avg, label: "avg" } })));
+    /* THE RATING RIDES UNDER THE MEASURE IT ANSWERS FOR. A paint touch is not the point;
+       the point is whether touching the paint scores. So the OER is not a chart of its
+       own: it is a band under the paint touches and under the ball reversals, on the
+       same dates, and a night is read straight down - 76% there, and what it scored
+       right below. The same goes for the other end: under TAG and BACK, which are the
+       DER on two kinds of possession, sits the DER on all of them. */
     var oerGet = function (s) { return s.poss ? s.pts / s.poss : NaN; };
     var oerAvg = meanOf(pts, oerGet), oerLast = lastOf(pts, oerGet);
-    if (isFinite(oerAvg)) dash.appendChild(tdCard("Offence", "points per possession", [
-        { l: "Last", v: f2(oerLast), cls: oerLast >= oerAvg ? "good" : "bad" },
-        { l: "Season", v: f2(oerAvg) } ],
-      timelineChart("", "", pts, [
-        { name: "Games", color: "var(--tl-1)", get: function (s) { return s.phased ? oerGet(s) : NaN; }, fmt: f2 },
-        { name: "Trainings", color: "var(--tl-1)", dash: true, hollow: true,
-          get: function (s) { return s.phased ? NaN : oerGet(s); }, fmt: f2 } ],
-        { axisFmt: f2, height: 210, ref: { v: oerAvg, label: "avg" } })));
-    if (tb && tb.pts && tb.pts.length) dash.appendChild(tdCard("Transition defense", "DER after our shot — lower is better", [
-        { l: "TAG", v: f2(tb.tag) }, { l: "BACK", v: f2(tb.back) } ],
-      timelineChart("", "", tb.pts, [
-        { name: "TAG", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2 },
-        { name: "BACK", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2 } ],
-        { axisFmt: f2, height: 210 })));
+    var oerBand = function () { return { name: "OER — points per possession", get: oerGet, fmt: f2,
+      color: "var(--tl-1)", height: 64 }; };
+    var oerKpi = isFinite(oerAvg) ? [
+      { l: "OER last", v: f2(oerLast), cls: oerLast >= oerAvg ? "good" : "bad" },
+      { l: "OER season", v: f2(oerAvg) } ] : [];
+    if (pt) dash.appendChild(tdCard("Paint touches · OER", "the 70% measure, and what we scored the same day underneath", [
+        { l: "Last", v: pct0f(pt.last), cls: pt.last >= 70 ? "good" : pt.last >= 60 ? "" : "bad" },
+        { l: "Season", v: pct0f(pt.avg) }, { l: "Target", v: "70%" } ].concat(oerKpi),
+      timelineChart("", "", pts, gamesMeasured("pt"),
+        { max: 100, axisFmt: pct0f, height: 200, ref: { v: 70, label: "70%" }, under: oerBand() })));
+    if (br) dash.appendChild(tdCard("Ball reversals · OER", "the same measure, and what we scored the same day underneath", [
+        { l: "Last", v: pct0f(br.last), cls: br.last >= br.avg ? "good" : "bad" },
+        { l: "Season", v: pct0f(br.avg) } ].concat(oerKpi),
+      timelineChart("", "", pts, gamesMeasured("br"),
+        { max: 100, axisFmt: pct0f, height: 200, ref: { v: br.avg, label: "avg" }, under: oerBand() })));
+    if (tb && tb.pts && tb.pts.length) {
+      var derGet = function (s) { return s.der; };
+      var derAvg = meanOf(tb.pts, derGet), derLast = lastOf(tb.pts, derGet);
+      var tOpt = { axisFmt: f2, height: 200 }, tKpi = [{ l: "TAG", v: f2(tb.tag) }, { l: "BACK", v: f2(tb.back) }];
+      /* a training has no DER of its own - both fives are ours, so what one concedes is
+         what the other scores and the figure would just be the OER again - so the band
+         carries the games, where there is an opponent to concede to */
+      if (isFinite(derAvg)) {
+        tOpt.under = { name: "DER — points conceded per possession, whole game", get: derGet, fmt: f2,
+          color: "var(--tl-2)", height: 64 };
+        tKpi.push({ l: "DER last", v: f2(derLast), cls: derLast <= derAvg ? "good" : "bad" });
+        tKpi.push({ l: "DER season", v: f2(derAvg) });
+      }
+      dash.appendChild(tdCard("Transition defense · DER", "DER after our shot (TAG, BACK), and the DER of the whole game underneath — lower is better",
+        tKpi,
+        timelineChart("", "", tb.pts, [
+          { name: "TAG", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2 },
+          { name: "BACK", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2 } ], tOpt)));
+    }
     var heat = tdPhaseHeat(games);
     if (heat) dash.appendChild(tdCard("Where our possessions came from",
       "share of each game · points per possession underneath", null, heat, "wide"));
@@ -4100,6 +4133,15 @@
       ".td-card{background:var(--panel,#fff);border:1px solid var(--line-strong,#d7dbe0);border-radius:12px;",
       "  padding:11px 13px 9px;min-width:0;box-sizing:border-box}",
       ".td-card.wide{grid-column:1/-1}",
+      /* what was read: one closed line at the top, the account behind it */
+      ".td-about{margin:0 0 10px}",
+      ".td-about > summary{cursor:pointer;list-style:none;font-size:11px;color:var(--ink-faint);padding:2px 0;user-select:none}",
+      ".td-about > summary::-webkit-details-marker{display:none}",
+      ".td-about > summary::before{content:'\\25b8  '}",
+      ".td-about[open] > summary::before{content:'\\25be  '}",
+      ".td-about > summary:hover{color:var(--ink)}",
+      ".td-about > .sx-sec{margin:8px 0 0}",
+      ".td-kpis{flex-wrap:wrap;justify-content:flex-end;row-gap:6px}",
       ".td-h{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px}",
       ".td-t{min-width:0}",
       ".td-t b{display:block;font:800 13px/1.15 'Oswald',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink)}",
