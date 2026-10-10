@@ -9209,7 +9209,7 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
          for the section that is about them, never for our own */
 
     } else if(sec.kind==="plan"){
-      block.appendChild(renderPlanSection(sec, canEd, save));
+      block.appendChild(renderPlanSection(sec, canEd, save, secs));
     } else if(sec.role==="summary"){
       block.appendChild(renderSummarySection(sec, canEd, save));
     } else {
@@ -12466,7 +12466,18 @@ function _gpOnFloor(plan, side, idx){
   return Object.keys(seen).sort((a,b)=>seen[b]-seen[a]).slice(0,5)
     .map(id=>{ const pl=_gpById(plan,id); return pl?pl.name:""; }).filter(Boolean);
 }
-function renderPlanSection(sec, canEd, save){
+/* what was typed for a colour, taken apart: " · " (or a line break, or ";") starts a new
+   line, "Q1:" at the front of one is its tag, and "/" separates the calls */
+function gpLegendParts(text){
+  return String(text||"").split(/\s+[·•|]\s+|\s*;\s*|\n+/).map(part=>{
+    const p=part.trim(); if(!p) return null;
+    const m=p.match(/^(Q[1-4]|[1-4]Q|H[12]|OT)\s*[:\-–]\s*(.*)$/i);
+    const rest=m? m[2] : p;
+    const calls=rest.split("/").map(x=>x.trim()).filter(Boolean);
+    return (calls.length || m)? { tag:m? m[1].toUpperCase() : "", calls:calls } : null;
+  }).filter(Boolean);
+}
+function renderPlanSection(sec, canEd, save, allSecs){
   const plan=planEnsure(sec);
   const box=h("div",{class:"gp-wrap gp2"});
   const sel={ id:_planSel };
@@ -12524,12 +12535,18 @@ function renderPlanSection(sec, canEd, save){
           td.addEventListener("drop",e=>{ e.preventDefault(); td.classList.remove("over"); let pid=""; try{pid=e.dataTransfer.getData("text/plain");}catch(_){}; if(pid){ plan.grid[q][r][c]=pid; save(); redraw(); } });
           tr.appendChild(td); }
       } else {
-        _gpStints(plan.grid[q][r]||[]).forEach(st=>{
-          const pl=st.id?_gpById(plan,st.id):null;
-          const td=h("td",{class:"gp2-st"+(st.id?" f":"")+(st.at>0&&st.id?" in":""), colspan:String(st.len)});
-          if(st.at>0 && st.id) td.appendChild(h("span",{class:"gp2-at"}, (GP_COLS-st.at)+"'"));
+        /* ONE CELL A MINUTE, THE NAME IN EVERY ONE, FOR EVERYBODY. The reader's board had
+           been drawn as stints - one wide block per spell with the name once in the middle -
+           while the editor kept a cell a minute, so the same plan looked like two different
+           documents depending on who opened it. The staff reads this down a column: who is
+           on the floor at the six-minute mark is five names in a line, and a name floating
+           in the middle of a block four minutes wide is not in that line. The gold edge
+           still marks the minute a man comes in. */
+        for(let c=0;c<GP_COLS;c++){ const id=plan.grid[q][r][c]; const pl=id?_gpById(plan,id):null;
+          const isnew = c>0 && id && id!==plan.grid[q][r][c-1];
+          const td=h("td",{class:"gp2-st"+(pl?" f":"")+(isnew?" in":"")});
           td.appendChild(h("span",{class:"gp2-nm"}, pl?pl.name:""));
-          tr.appendChild(td); });
+          tr.appendChild(td); }
       }
       tbl.appendChild(tr);
     });
@@ -12596,27 +12613,115 @@ function renderPlanSection(sec, canEd, save){
     return wrap;
   }
 
+  /* THE COLOUR KEY, IN AN ORDER THE EYE CAN FOLLOW. It was eight entries in one run -
+     offence and defence with nothing between them - each a grey sentence exactly as it was
+     typed ("Q1: ATOS / 1 / 15 · Q2: ATOS / 1 / ELBOW 2"), with the men on the floor in
+     bold underneath, so the heaviest thing in the block was the least important. Three
+     levels now. Offence and defence are two groups under their own heading. Inside a
+     colour, what was typed is taken apart at the marks the staff already uses: " · "
+     starts a new line, "Q1:" in front of a line becomes a tag, and "/" separates the
+     calls, each of which is its own piece. The names go last and quiet. Nothing about how
+     it is typed changes; the editor still shows the sentence. */
   function keyBlock(){
-    const wrap=h("div",{});
+    const wrap=h("div",{class:"gp3-key"});
     wrap.appendChild(h("div",{class:"gp2-sec"},"What each colour means"));
-    const list=h("div",{class:"gp2-key"});
-    const add=(side,i)=>{
+    [["off","Offense"],["def","Defense"]].forEach(sd=>{
+      const side=sd[0];
       const colors = side==="off" ? GP_OFFCOLORS : GP_DEFCOLORS;
       const legs = side==="off" ? plan.offleg : plan.defleg;
-      const used = GP_HALF.some(q=>(side==="off"?plan.offbar:plan.defbar)[q].some(v=>v===i+1));
-      if(!canEd && !used && !String(legs[i]||"").trim()) return;
-      const sw=h("span",{class:"gp2-sw"}); sw.style.background=colors[i];
-      const cell=h("div",{class:"gp2-ke"});
-      if(canEd){ const inp=h("input",{class:"gp2-in", placeholder:(side==="off"?"Sets we run with this colour…":"Defensive rules for this colour…"), value:legs[i]||""});
-        inp.addEventListener("input",()=>{ legs[i]=inp.value; save(); }); cell.appendChild(inp); }
-      else cell.appendChild(h("div",{class:"gp2-kd"}, legs[i]||""));
-      const who=_gpOnFloor(plan, side, i+1);
-      if(who.length) cell.appendChild(h("div",{class:"gp2-kw"}, who.join(" · ")));
-      list.appendChild(sw); list.appendChild(cell);
+      const bars = side==="off" ? plan.offbar : plan.defbar;
+      const idx=[0,1,2,3].filter(i=> canEd || String(legs[i]||"").trim()
+        || GP_HALF.some(q=>bars[q].some(v=>v===i+1)));
+      if(!idx.length) return;
+      const grp=h("div",{class:"gp3-kgrp"}, h("div",{class:"gp3-kt"}, sd[1]));
+      idx.forEach(i=>{
+        const item=h("div",{class:"gp3-ki"}); item.style.borderLeftColor=colors[i];
+        if(canEd){ const inp=h("input",{class:"gp2-in", placeholder:(side==="off"?"Q1: set / set · Q2: set / set":"Defensive rules for this colour…"), value:legs[i]||""});
+          inp.addEventListener("input",()=>{ legs[i]=inp.value; save(); }); item.appendChild(inp); }
+        else {
+          const parts=gpLegendParts(legs[i]);
+          if(!parts.length) item.appendChild(h("div",{class:"gp3-kl none"},"—"));
+          parts.forEach(p=>{
+            const line=h("div",{class:"gp3-kl"});
+            if(p.tag) line.appendChild(h("span",{class:"gp3-ktag"}, p.tag));
+            p.calls.forEach(c=>line.appendChild(h("span",{class:"gp3-kcall"}, c)));
+            item.appendChild(line);
+          });
+        }
+        const who=_gpOnFloor(plan, side, i+1);
+        if(who.length) item.appendChild(h("div",{class:"gp3-kwho"}, who.join(" · ")));
+        grp.appendChild(item);
+      });
+      wrap.appendChild(grp);
+    });
+    return wrap;
+  }
+
+  /* THEIR KEY SETS, UNDER THE BOARD. The sets this staff starred in the pre-game playbook
+     are the ones the plan is built against, and they lived three screens away from it.
+     They are listed here by family - open court, half court by how it starts, sideline,
+     baseline - with the name and what the opponent shouts for it, which is the pair a
+     bench needs: hear the call, know the set. Nothing is chosen here; the stars are the
+     same ones, read from the same place, and the names are the ones the staff gave them.
+     It is laid out in columns so it stays short under the two quarters, on the screen and
+     on the printed sheet. */
+  function keySetsBlock(){
+    const wrap=h("div",{class:"gp3-ks"});
+    const opp=_scoutOpponent||"";
+    wrap.appendChild(h("div",{class:"gp2-sec gp3-ksh"}, "Their key sets",
+      opp? h("span",{class:"gp3-kso"}, opp) : null));
+    const body=h("div",{class:"gp3-ksb"});
+    wrap.appendChild(body);
+    let tid=""; try{ tid=_preClub()||""; }catch(e){}
+    const edits={};
+    (allSecs||[]).forEach(s2=>((s2&&s2.items)||[]).forEach(it=>{ if(it&&it.pbEdit) Object.assign(edits, it.pbEdit); }));
+    const nameOf=l=>edits[l]||l;
+    const stored=()=>{ try{ return tid? _clubKeyLabels(leagueState(), tid) : []; }catch(e){ return []; } };
+    const BAND=["Open court","Half court","SLOB","BLOB"];
+    let ROWS=null, FAIL="";
+    const say=t=>{ body.innerHTML=""; body.appendChild(h("div",{class:"gp3-ksn"}, t)); };
+    const draw=()=>{
+      if(ROWS===null && !FAIL){ say("Reading the tagging…"); return; }
+      const rows=ROWS||[];
+      const marked=rows.filter(r=>{ try{ return _pbKeyRead(r.label); }catch(e){ return false; } });
+      const seen={}; marked.forEach(r=>{ seen[r.label]=1; });
+      const extra=stored().filter(l=>!seen[l]);
+      if(!marked.length && !extra.length){
+        say("No key sets marked for this opponent yet — drag them into KEY SETS in the pre game playbook.");
+        return;
+      }
+      body.innerHTML="";
+      const groups={}, order=[];
+      const put=(g,sub,rank,name,call)=>{ const k=g+"\u0000"+sub;
+        if(!groups[k]){ groups[k]={g:g,sub:sub,rank:rank,items:[]}; order.push(k); }
+        groups[k].items.push({name:name, call:call}); };
+      marked.forEach(r=>{ const bi=BAND.indexOf(r.band);
+        put(r.band||"Other", (r.band==="SLOB"||r.band==="BLOB")? "" : (r.kind||""), bi<0? 8 : bi, nameOf(r.label), r.call||""); });
+      /* a starred set the tagging no longer lists is still a key set: it is shown, and it
+         says why it has no family and no call */
+      extra.forEach(l=>put(FAIL? "Key sets" : "Not in the tagging", "", 9, nameOf(l), ""));
+      /* inside a band, what they call comes before what just happens */
+      const SUB=["Called set","After timeout","Ball screen, no call","Vs zone","No structure","Early offense","Fastbreak","Press break"];
+      const sr=x=>{ const i=SUB.indexOf(x); return i<0? SUB.length : i; };
+      order.sort((a,b)=>groups[a].rank-groups[b].rank || sr(groups[a].sub)-sr(groups[b].sub)
+        || groups[a].sub.localeCompare(groups[b].sub));
+      order.forEach(k=>{ const G=groups[k];
+        G.items.sort((a,b)=>String(a.name).localeCompare(String(b.name), undefined, {numeric:true}));
+        const box=h("div",{class:"gp3-kg"},
+          h("div",{class:"gp3-kgh"}, h("b",{}, G.g), G.sub? h("span",{}, G.sub) : null));
+        G.items.forEach(it=>box.appendChild(h("div",{class:"gp3-kr"},
+          h("span",{class:"gp3-kn"}, it.name),
+          it.call? h("span",{class:"gp3-kc"}, it.call) : h("span",{class:"gp3-kc none"},"—"))));
+        body.appendChild(box);
+      });
+      if(FAIL) body.appendChild(h("div",{class:"gp3-ksn"}, FAIL));
     };
-    [0,1,2,3].forEach(i=>add("off",i));
-    [0,1,2,3].forEach(i=>add("def",i));
-    wrap.appendChild(list);
+    draw();
+    try{ if(tid) _clubPull(tid, ()=>{ try{ draw(); }catch(e){} }); }catch(e){}
+    if(opp && window.ScoutPre && window.ScoutPre.sets){
+      window.ScoutPre.sets(opp, null).then(res=>{ ROWS=(res&&res.rows)||[]; draw(); })
+        .catch(()=>{ ROWS=[]; FAIL="The tagging could not be read, so the families and the calls are missing."; draw(); });
+    } else { ROWS=[]; if(!opp) FAIL=""; draw(); }
     return wrap;
   }
 
@@ -12647,13 +12752,20 @@ function renderPlanSection(sec, canEd, save){
     const mid=h("div",{class:"gp2-mid"}, quarterBoard("Q1"), quarterBoard("Q2"));
     const right=h("div",{class:"gp2-aside"}, minutesBlock(), keyBlock());
     sheet.appendChild(left); sheet.appendChild(mid); sheet.appendChild(right);
+    sheet.appendChild(keySetsBlock());
     box.appendChild(sheet);
 
     const foot=h("div",{class:"gp2-foot"},
       h("span",{}, h("i",{class:"gp2-mark"}), "Gold edge = the sub comes in"),
       h("span",{},"Each block is one stint · 50 minutes per quarter"));
     const pr=h("button",{class:"btn sm gp2-print"},"🖨 Print A4");
-    pr.addEventListener("click",()=>gpPrintSheet(sheet));
+    /* what is printed is the reader's sheet, whoever presses the button: printed from the
+       editor it came out with unlabelled rails and the colour key as raw sentences */
+    pr.addEventListener("click",()=>{
+      if(!canEd){ gpPrintSheet(sheet); return; }
+      const ro=renderPlanSection(sec, false, ()=>{}, allSecs).querySelector(".gp2-sheet");
+      if(ro) gpPrintSheet(ro, true); else gpPrintSheet(sheet);
+    });
     foot.appendChild(pr);
     box.appendChild(foot);
   }
@@ -12661,10 +12773,12 @@ function renderPlanSection(sec, canEd, save){
   return box;
 }
 /* the sheet prints on its own: the app is hidden, a read-only copy goes to #print-area */
-function gpPrintSheet(sheetEl){
+function gpPrintSheet(sheetEl, own){
   const area=$("#print-area"); if(!area) return;
   area.innerHTML="";
-  const clone=sheetEl.cloneNode(true);
+  /* a sheet built for the printer is used as it is, so what is still being read into it -
+     the key sets come from the tagging - lands on the page; one on screen is copied */
+  const clone=own? sheetEl : sheetEl.cloneNode(true);
   clone.classList.add("gp2-printcopy");
   clone.querySelectorAll("input").forEach(inp=>{ const sp=document.createElement("span"); sp.className=inp.className.indexOf("them")>=0?"gp2-t":"gp2-u"; sp.textContent=inp.value||""; inp.replaceWith(sp); });
   clone.querySelectorAll("button").forEach(b=>b.remove());
@@ -12672,7 +12786,7 @@ function gpPrintSheet(sheetEl){
   document.body.classList.add("printing","printing-gp");
   const done=()=>{ document.body.classList.remove("printing","printing-gp"); area.innerHTML=""; window.removeEventListener("afterprint",done); };
   window.addEventListener("afterprint",done);
-  setTimeout(()=>window.print(),60);
+  setTimeout(()=>window.print(), own? 500 : 60);
 }
 function renderScoutReRender(body, rep, key, g, canEd){
   // re-render only the sections part (remove old .rs-sections and rebuild)
@@ -24034,6 +24148,87 @@ table.gp2-min{border-collapse:collapse;width:100%}
 .gp2-rail .gp2-t{white-space:nowrap;font-size:11px}
 .gp2-rail .gp2-pair{grid-template-columns:minmax(0,1fr) auto}
 .gp2-rail .gp2-pair .gp2-x{grid-column:2}
+
+/* ===== game plan: a name in every minute, the colour key in three levels, their key sets ===== */
+/* the sheet has a fourth block now: the key sets sit under the two quarters, in the middle
+   column, while the pairs and the minutes run the full height on either side */
+.gp2-sheet > .gp2-rail{grid-column:1;grid-row:1 / span 2}
+.gp2-sheet > .gp2-mid{grid-column:2;grid-row:1}
+.gp2-sheet > .gp2-aside{grid-column:3;grid-row:1 / span 2}
+.gp2-sheet > .gp3-ks{grid-column:2;grid-row:2}
+@media(max-width:1180px){
+  .gp2-sheet > .gp2-rail,.gp2-sheet > .gp2-mid,.gp2-sheet > .gp2-aside,.gp2-sheet > .gp3-ks{grid-column:auto;grid-row:auto}
+}
+/* a cell is one minute, so the name has a tenth of the board: tighter, never clipped short */
+.gp2-st .gp2-nm{padding:0 2px;letter-spacing:.01em}
+/* colour key: group heading, then a colour, then its lines, then who is on the floor */
+.gp3-kgrp+.gp3-kgrp{margin-top:14px}
+.gp3-kt{font:700 11px 'Oswald',sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--ink);
+  padding-bottom:4px;margin-bottom:2px;border-bottom:2px solid var(--ink)}
+/* the colour is a border, not a fill: a printer prints borders whatever its settings say */
+.gp3-ki{border-left:7px solid transparent;padding:7px 0 7px 10px;border-bottom:1px solid var(--line,#eef0f3);min-width:0}
+.gp3-kgrp .gp3-ki:last-child{border-bottom:0}
+.gp3-kl{display:flex;flex-wrap:wrap;align-items:center;gap:4px 5px}
+.gp3-kl+.gp3-kl{margin-top:5px}
+.gp3-kl.none{color:var(--ink-faint,#8a919c);font:500 12px 'Inter',sans-serif}
+.gp3-ktag{flex:0 0 auto;font:700 9.5px 'IBM Plex Mono',monospace;letter-spacing:.04em;color:var(--panel,#fff);
+  background:var(--ink,#15181f);border-radius:3px;padding:2px 5px;line-height:1.1}
+.gp3-kcall{font:600 12px 'Oswald',sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--ink);
+  border:1px solid var(--line-strong,#d7dbe0);border-radius:4px;padding:1px 6px;line-height:1.35;white-space:nowrap}
+.gp3-kwho{margin-top:5px;font:500 9.5px 'Inter',sans-serif;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-faint,#8a919c);line-height:1.35}
+/* their key sets */
+.gp3-ks{margin-top:16px;padding-top:12px;border-top:1px solid var(--line,#e6e8ec);min-width:0}
+.gp3-ksh{display:flex;align-items:baseline;gap:10px}
+.gp3-kso{font:700 12px 'Oswald',sans-serif;letter-spacing:.06em;color:var(--ink)}
+.gp3-ksb{column-width:210px;column-gap:24px}
+.gp3-kg{break-inside:avoid;page-break-inside:avoid;margin-bottom:10px}
+.gp3-kgh{display:flex;align-items:baseline;gap:7px;padding-bottom:3px;margin-bottom:1px;border-bottom:2px solid var(--ink)}
+.gp3-kgh b{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--ink)}
+.gp3-kgh span{font:500 9.5px 'Inter',sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint,#8a919c)}
+.gp3-kr{display:flex;align-items:baseline;gap:8px;padding:3px 0;border-bottom:1px solid var(--line,#eef0f3)}
+.gp3-kn{flex:1 1 auto;min-width:0;font:600 12px 'Inter',sans-serif;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gp3-kc{flex:0 0 auto;max-width:55%;font:700 11px 'IBM Plex Mono',monospace;color:var(--ink);border:1px solid var(--line-strong,#d7dbe0);
+  border-radius:3px;padding:0 6px;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gp3-kc.none{border-color:transparent;color:var(--ink-faint,#8a919c);font-weight:500}
+.gp3-ksn{font:500 11.5px 'Inter',sans-serif;color:var(--ink-faint,#8a919c);padding:2px 0 6px;column-span:all}
+@media print{
+  /* One sheet. The board gives up a little height so the band under it has room for a
+     fourth block: pairs, minutes, the colour key and their key sets, side by side. */
+  body.printing-gp .gp2-st{height:7mm;font-size:10pt}
+  body.printing-gp .gp2-st .gp2-nm{padding:0 1px}
+  body.printing-gp .gp2-qn{font-size:14pt}
+  body.printing-gp .gp2-q+.gp2-q{margin-top:2.5mm}
+  body.printing-gp .gp2-sheet{column-gap:5mm;row-gap:2.5mm}
+  body.printing-gp .gp2-sheet > .gp2-rail{flex:0 0 40mm}
+  body.printing-gp .gp2-sheet > .gp2-aside{flex:1 1 146mm;gap:5mm}
+  body.printing-gp .gp2-aside > div:first-child{flex:0 0 50mm;min-width:0}
+  /* offence and defence side by side: the key is eight colours at its longest, and in one
+     column that alone was taller than the room left under the board */
+  body.printing-gp .gp3-key{display:grid;grid-template-columns:1fr 1fr;column-gap:4mm;align-content:start}
+  body.printing-gp .gp3-key > .gp2-sec{grid-column:1 / -1}
+  body.printing-gp .gp3-kgrp+.gp3-kgrp{margin-top:0}
+  body.printing-gp .gp2-sheet > .gp3-ks{order:4;flex:1 1 80mm;margin:0;padding:0;border:0}
+  body.printing-gp .gp3-ksb{column-width:auto;column-count:2;column-gap:4mm}
+  body.printing-gp .gp3-kg{margin-bottom:1.6mm}
+  body.printing-gp .gp3-kgh{padding-bottom:.4mm;border-bottom:1px solid #15181f}
+  body.printing-gp .gp3-kgh b{font-size:7pt}
+  body.printing-gp .gp3-kgh span{font-size:6.2pt}
+  body.printing-gp .gp3-kr{padding:.25mm 0;border-bottom:.5px solid #c9ced6}
+  body.printing-gp .gp3-kn{font-size:7.4pt}
+  body.printing-gp .gp3-kc{font-size:7pt;padding:0 3px;line-height:1.3;border-color:#8b939d}
+  body.printing-gp .gp3-kc.none{border-color:transparent}
+  body.printing-gp .gp3-kso{font-size:8pt}
+  body.printing-gp .gp3-ksn{font-size:7pt}
+  body.printing-gp .gp3-kt{font-size:7.2pt;padding-bottom:.4mm;margin-bottom:0;border-bottom:1px solid #15181f}
+  body.printing-gp .gp3-ki{border-left-width:4px;padding:.6mm 0 .6mm 1.8mm;border-bottom:.5px solid #c9ced6}
+  body.printing-gp .gp3-kl{gap:.6mm 1mm}
+  body.printing-gp .gp3-kl+.gp3-kl{margin-top:.6mm}
+  /* dark on white with an outline: a printer that drops fills would leave white on white */
+  body.printing-gp .gp3-ktag{font-size:6.2pt;font-weight:800;padding:.2mm 1mm;color:#15181f;background:transparent;border:1px solid #15181f}
+  body.printing-gp .gp3-kcall{font-size:7.4pt;padding:0 1.2mm;line-height:1.25;border-color:#8b939d}
+  body.printing-gp .gp3-kwho{font-size:6pt;margin-top:.5mm;line-height:1.2;color:#5b6472}
+}
 
 /* ===================================================================
    v55 · TYPE SYSTEM — one scale for the whole app
