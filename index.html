@@ -12756,8 +12756,8 @@ function renderPlanSection(sec, canEd, save, allSecs){
     box.appendChild(sheet);
 
     const foot=h("div",{class:"gp2-foot"},
-      h("span",{}, h("i",{class:"gp2-mark"}), "Gold edge = the sub comes in"),
-      h("span",{},"Each block is one stint · 50 minutes per quarter"));
+      h("span",{}, h("i",{class:"gp2-mark"}), "Yellow = the minute a sub comes in"),
+      h("span",{},"One cell is one minute · 50 minutes per quarter"));
     const pr=h("button",{class:"btn sm gp2-print"},"🖨 Print A4");
     /* what is printed is the reader's sheet, whoever presses the button: printed from the
        editor it came out with unlabelled rails and the colour key as raw sentences */
@@ -24228,6 +24228,19 @@ table.gp2-min{border-collapse:collapse;width:100%}
   body.printing-gp .gp3-ktag{font-size:6.2pt;font-weight:800;padding:.2mm 1mm;color:#15181f;background:transparent;border:1px solid #15181f}
   body.printing-gp .gp3-kcall{font-size:7.4pt;padding:0 1.2mm;line-height:1.25;border-color:#8b939d}
   body.printing-gp .gp3-kwho{font-size:6pt;margin-top:.5mm;line-height:1.2;color:#5b6472}
+}
+/* THE MINUTE A MAN COMES IN IS YELLOW. It was a two-pixel gold line down the left edge of
+   the cell, which is a detail you find once you know to look for it; on a board of a
+   hundred identical grey cells the substitutions are the thing being looked for. The whole
+   cell is filled now - a soft yellow, not a highlighter - and its outline is gold, so the
+   changes read as a pattern across the quarter from where the bench sits. */
+.gp2-q{--gp-in-bg:#f7e39a;--gp-in-line:#c9a227}
+body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.95)}
+.gp2-st.in{background-color:var(--gp-in-bg,#f7e39a);box-shadow:inset 0 0 0 1.5px var(--gp-in-line,#c9a227)}
+.gp2-mark{width:13px;height:11px;border-radius:2px;background:#f7e39a;box-shadow:inset 0 0 0 1.5px #c9a227}
+@media print{
+  /* the fill is asked for, and the outline is there for the printer that drops fills */
+  body.printing-gp .gp2-st.in{background-color:#f7e39a!important;box-shadow:none;border:1.6px solid #a8801a}
 }
 
 /* ===================================================================
