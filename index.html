@@ -7201,6 +7201,7 @@ function importPlanJSON(sec,raw){
   if(Array.isArray(d.pairs2)) p.pairs2=pairs(d.pairs2);
   if(Array.isArray(d.offleg)) p.offleg=d.offleg.slice(0,4);
   if(Array.isArray(d.defleg)) p.defleg=d.defleg.slice(0,4);
+  if(d.gen && typeof d.gen==="object" && !Array.isArray(d.gen)) p.gen=d.gen;
   /* The grid was taken as given, which meant its cells had to carry the pool's
      internal ids — and those are made up on the spot here, so a grid could never
      actually be imported. Cells are read as player names and matched to the pool,
@@ -7510,7 +7511,7 @@ function _riMatchSlot(k) {
 /* -------------------------------------------------------------- plan rules */
 function _riValidatePlan(p, E, W) {
   if (_riType(p) !== "object") { E.push('"plan" must be an object, found ' + _riType(p) + "."); return null; }
-  _riUnknown(p, ["pool", "pairs1", "pairs2", "offleg", "defleg", "grid", "offbar", "defbar"], '"plan"', E);
+  _riUnknown(p, ["pool", "pairs1", "pairs2", "offleg", "defleg", "gen", "grid", "offbar", "defbar"], '"plan"', E);
   const out = {};
 
   if (p.pool !== undefined) {
@@ -7550,6 +7551,11 @@ function _riValidatePlan(p, E, W) {
     if (!p[k].every(x => x == null || _riIsText(x))) { E.push('"plan.' + k + '" must contain text labels only.'); return; }
     out[k] = p[k].slice(0, 4).map(x => (x == null ? "" : String(x)));
   });
+  /* the general concepts of each quarter: {Q1:{off:"line\nline", def:"…"}, Q2:{…}} */
+  if (p.gen !== undefined) {
+    if (!p.gen || typeof p.gen !== "object" || Array.isArray(p.gen)) E.push('"plan.gen" must be an object like {"Q1":{"off":"…","def":"…"},"Q2":{…}}.');
+    else out.gen = p.gen;
+  }
 
   ["offbar", "defbar"].forEach(k => {
     if (p[k] === undefined) return;
@@ -7742,7 +7748,7 @@ function reportToJSON(secs, kind, g){
     if(pl && pl.plan && Array.isArray(pl.plan.pool) && pl.plan.pool.length){
       const p=pl.plan, byId={}; p.pool.forEach(x=>byId[x.id]=x.name);
       const o={ pool:p.pool.map(x=>x.name) };
-      ["pairs1","pairs2","offleg","defleg"].forEach(k=>{ if(p[k]) o[k]=p[k]; });
+      ["pairs1","pairs2","offleg","defleg","gen"].forEach(k=>{ if(p[k]) o[k]=p[k]; });
       if(p.grid){ o.grid={}; Object.keys(p.grid).forEach(q=>{ o.grid[q]=(p.grid[q]||[]).map(row=>row.map(id=>id?(byId[id]||null):null)); }); }
       ["offbar","defbar"].forEach(k=>{ if(p[k]) o[k]=p[k]; });
       out.plan=o;
@@ -7853,7 +7859,7 @@ function _riApplyPlan(sec, p) {
     const prev = Array.isArray(cur.pool) ? cur.pool : [];
     cur.pool = p.pool.map(nm => { const ex = prev.find(q => (q.name || "").toUpperCase() === nm); return ex ? { id: ex.id, name: nm } : { id: uid(), name: nm }; });
   }
-  ["pairs1", "pairs2", "offleg", "defleg"].forEach(k => { if (p[k]) cur[k] = p[k]; });
+  ["pairs1", "pairs2", "offleg", "defleg", "gen"].forEach(k => { if (p[k]) cur[k] = p[k]; });
   ["offbar", "defbar"].forEach(k => { if (p[k]) { cur[k] = cur[k] || {}; Object.keys(p[k]).forEach(q => { cur[k][q] = p[k][q]; }); } });
   if (p.grid) {
     const pool = Array.isArray(cur.pool) ? cur.pool : (cur.pool = []);
@@ -12429,6 +12435,11 @@ function planEnsure(sec){
   GP_HALF.forEach(q=>{ p.offbar[q]=fixBar(p.offbar[q]); p.defbar[q]=fixBar(p.defbar[q]); });
   const fixLeg=(a)=>{ if(!Array.isArray(a)) a=["","","",""]; for(let i=0;i<4;i++){ if(a[i]==null) a[i]=""; } return a.slice(0,4); };
   p.offleg=fixLeg(p.offleg); p.defleg=fixLeg(p.defleg);
+  /* what holds for the whole quarter, whoever is on the floor: one text per quarter and
+     side, a concept a line ("FIRST PLAY = BENNY-ZABA DHO") */
+  p.gen=(p.gen&&typeof p.gen==="object"&&!Array.isArray(p.gen))?p.gen:{};
+  GP_HALF.forEach(q=>{ const g=(p.gen[q]&&typeof p.gen[q]==="object")?p.gen[q]:{};
+    p.gen[q]={ off:String(g.off||""), def:String(g.def||"") }; });
   p.pairs1=Array.isArray(p.pairs1)?p.pairs1:(Array.isArray(p.pairs)?p.pairs:[{us:"",them:""}]);
   p.pairs2=Array.isArray(p.pairs2)?p.pairs2:[{us:"",them:""}];
   return p;
@@ -12477,6 +12488,40 @@ function gpLegendParts(text){
     return (calls.length || m)? { tag:m? m[1].toUpperCase() : "", calls:calls } : null;
   }).filter(Boolean);
 }
+/* A colour's text is one sentence for both quarters, tagged where they differ:
+   "Q1: ATOS / 1 · Q2: ELBOW 2". These read and write one quarter's share of it, so the
+   page can show - and the editor can ask for - each quarter on its own while what is
+   stored, imported and exported stays the sentence it always was. A line with no tag
+   belongs to both. */
+function gpLegQ(text, q){
+  return gpLegendParts(text).filter(p=>!p.tag || p.tag===q);
+}
+function gpLegQText(text, q){
+  return gpLegQ(text, q).map(p=>p.calls.join(" / ")).filter(Boolean).join(" / ");
+}
+function gpLegQSet(text, q, value){
+  const out=[];
+  GP_HALF.forEach(Q=>{
+    const v=(Q===q? String(value||"") : gpLegQText(text, Q)).replace(/\s+[·•|]\s+|;|\n/g," / ").trim();
+    if(v) out.push(Q+": "+v);
+  });
+  return out.join(" · ");
+}
+/* the minutes of a quarter a colour is up for, as the clock shows them: "10'–6'" */
+function gpBarSpan(bar, idx){
+  return _gpSegs(bar).filter(sg=>sg.v===idx).map(sg=>{
+    const a=GP_COLS-sg.at, b=GP_COLS-sg.at-sg.len+1;
+    return a===b? (a+"'") : (a+"'–"+b+"'");
+  }).join(" · ");
+}
+function _gpOnFloorQ(plan, side, idx, q){
+  const bar=(side==="off"? plan.offbar : plan.defbar)[q]||[];
+  const seen={};
+  for(let c=0;c<GP_COLS;c++){ if((bar[c]||0)!==idx) continue;
+    for(let r=0;r<GP_ROWS.length;r++){ const id=plan.grid[q][r][c]; if(id) seen[id]=(seen[id]||0)+1; } }
+  return Object.keys(seen).sort((a,b)=>seen[b]-seen[a])
+    .map(id=>{ const pl=_gpById(plan,id); return pl?pl.name:""; }).filter(Boolean);
+}
 function renderPlanSection(sec, canEd, save, allSecs){
   const plan=planEnsure(sec);
   const box=h("div",{class:"gp-wrap gp2"});
@@ -12505,7 +12550,8 @@ function renderPlanSection(sec, canEd, save, allSecs){
     } else {
       _gpSegs(bars).forEach(sg=>{
         const td=h("td",{class:"gp2-rl"+(sg.v===3?" ink":""), colspan:String(sg.len)});
-        if(sg.v){ td.style.background=colors[sg.v-1]; td.textContent=(legs[sg.v-1]||"").trim(); }
+        /* this quarter's share of the colour's text, not the sentence for both */
+        if(sg.v){ td.style.background=colors[sg.v-1]; td.textContent=gpLegQText(legs[sg.v-1], q); }
         tr.appendChild(td); });
     }
     return tr;
@@ -12593,7 +12639,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
     const rows=plan.pool.slice().sort((a,b)=>(totals[b.id]||0)-(totals[a.id]||0))
       .filter(pl=>canEd || (totals[pl.id]||0)>0);
     const max=Math.max(1, ...rows.map(pl=>totals[pl.id]||0));
-    const wrap=h("div",{});
+    const wrap=h("div",{class:"gp3-minw"});
     wrap.appendChild(h("div",{class:"gp2-sec"},"Minutes"));
     const tbl=h("table",{class:"gp2-min"});
     tbl.appendChild(h("tr",{}, h("th",{},"Player"), h("th",{},"Q1"), h("th",{},"Q2"), h("th",{},"Mapped → game"), h("th",{class:"bar"},"")));
@@ -12613,48 +12659,86 @@ function renderPlanSection(sec, canEd, save, allSecs){
     return wrap;
   }
 
-  /* THE COLOUR KEY, IN AN ORDER THE EYE CAN FOLLOW. It was eight entries in one run -
-     offence and defence with nothing between them - each a grey sentence exactly as it was
-     typed ("Q1: ATOS / 1 / 15 · Q2: ATOS / 1 / ELBOW 2"), with the men on the floor in
-     bold underneath, so the heaviest thing in the block was the least important. Three
-     levels now. Offence and defence are two groups under their own heading. Inside a
-     colour, what was typed is taken apart at the marks the staff already uses: " · "
-     starts a new line, "Q1:" in front of a line becomes a tag, and "/" separates the
-     calls, each of which is its own piece. The names go last and quiet. Nothing about how
-     it is typed changes; the editor still shows the sentence. */
-  function keyBlock(){
-    const wrap=h("div",{class:"gp3-key"});
-    wrap.appendChild(h("div",{class:"gp2-sec"},"What each colour means"));
-    [["off","Offense"],["def","Defense"]].forEach(sd=>{
-      const side=sd[0];
-      const colors = side==="off" ? GP_OFFCOLORS : GP_DEFCOLORS;
-      const legs = side==="off" ? plan.offleg : plan.defleg;
-      const bars = side==="off" ? plan.offbar : plan.defbar;
-      const idx=[0,1,2,3].filter(i=> canEd || String(legs[i]||"").trim()
-        || GP_HALF.some(q=>bars[q].some(v=>v===i+1)));
-      if(!idx.length) return;
-      const grp=h("div",{class:"gp3-kgrp"}, h("div",{class:"gp3-kt"}, sd[1]));
-      idx.forEach(i=>{
-        const item=h("div",{class:"gp3-ki"}); item.style.borderLeftColor=colors[i];
-        if(canEd){ const inp=h("input",{class:"gp2-in", placeholder:(side==="off"?"Q1: set / set · Q2: set / set":"Defensive rules for this colour…"), value:legs[i]||""});
-          inp.addEventListener("input",()=>{ legs[i]=inp.value; save(); }); item.appendChild(inp); }
-        else {
-          const parts=gpLegendParts(legs[i]);
-          if(!parts.length) item.appendChild(h("div",{class:"gp3-kl none"},"—"));
-          parts.forEach(p=>{
-            const line=h("div",{class:"gp3-kl"});
-            if(p.tag) line.appendChild(h("span",{class:"gp3-ktag"}, p.tag));
-            p.calls.forEach(c=>line.appendChild(h("span",{class:"gp3-kcall"}, c)));
-            item.appendChild(line);
+  /* THE PLAN OF EACH QUARTER: WHAT IS GENERAL, AND WHAT GOES WITH A COLOUR.
+     On the sheet this staff writes by hand a quarter is one box. At the top of it, with
+     no colour, are the things that hold for the whole quarter whoever is on the floor -
+     first play, second play, the safety set, what to run after an offensive rebound or a
+     free throw. Under them, on a coloured band, is what belongs to a stretch of minutes
+     and the five playing it. The page had only the second kind, so the first kind ended
+     up typed into a colour, where it read as if it were tied to a rotation.
+
+     So the key is laid out the way the sheet is. One box per quarter; inside it offence
+     and then defence; inside each, the general lines first, plain, and the colours after
+     them, each on its own band with the minutes it is up for read off the rail. The
+     general lines are a new text, one concept a line, "NAME = what". A colour's text is
+     still the one sentence it always was - the box shows the quarter's share of it. */
+  /* and the box sits beside its own quarter's board, the way it does on that sheet: the
+     rotation on the left, what the quarter is about on the right, read in one look */
+  function quarterCard(q){
+    {
+      const card=h("div",{class:"gp3-qc"}, h("div",{class:"gp3-qh"}, q, h("span",{}, "plan")));
+      let any=false;
+      [["off","Offense"],["def","Defense"]].forEach(sd=>{
+        const side=sd[0];
+        const colors = side==="off" ? GP_OFFCOLORS : GP_DEFCOLORS;
+        const legs = side==="off" ? plan.offleg : plan.defleg;
+        const bar = (side==="off" ? plan.offbar : plan.defbar)[q];
+        const gen=plan.gen[q];
+        const lines=String(gen[side]||"").split(/\n+/).map(x=>x.trim()).filter(Boolean);
+        /* a colour is in this quarter's box when it is on this quarter's rail, or when
+           something was written for it under this quarter's name; a text with no quarter
+           on it belongs to both and so cannot, on its own, put a colour in a quarter
+           that never uses it */
+        const idx=[0,1,2,3].filter(i=> canEd || bar.some(v=>v===i+1)
+          || gpLegendParts(legs[i]).some(p=>p.tag===q));
+        if(!canEd && !lines.length && !idx.length) return;
+        any=true;
+        const grp=h("div",{class:"gp3-kgrp"}, h("div",{class:"gp3-kt"}, sd[1]));
+        /* general: no colour, because it is not about who is on the floor */
+        if(canEd){
+          const ta=h("textarea",{class:"gp2-in gp3-gta",
+            rows:String(Math.max(3, String(gen[side]||"").split("\n").length+1)),
+            placeholder:(side==="off"
+              ? "General, one per line — FIRST PLAY = … / SAFETY SET = … / AFTER FT = …"
+              : "General, one per line — AFTER FT OR 3 = …")});
+          ta.value=gen[side]||"";
+          ta.addEventListener("input",()=>{ gen[side]=ta.value; save(); });
+          grp.appendChild(h("div",{class:"gp3-gen"}, ta));
+        } else if(lines.length){
+          const g=h("div",{class:"gp3-gen"+(lines.length>=4?" many":"")});
+          lines.forEach(ln=>{
+            const k=ln.indexOf("=");
+            g.appendChild(k>0
+              ? h("div",{class:"gp3-gl"}, h("b",{}, ln.slice(0,k).trim()), h("span",{}, ln.slice(k+1).trim()))
+              : h("div",{class:"gp3-gl"}, h("span",{}, ln)));
           });
+          grp.appendChild(g);
         }
-        const who=_gpOnFloor(plan, side, i+1);
-        if(who.length) item.appendChild(h("div",{class:"gp3-kwho"}, who.join(" · ")));
-        grp.appendChild(item);
+        /* by colour: the band, the minutes it covers, the calls, and who is out there */
+        idx.forEach(i=>{
+          const item=h("div",{class:"gp3-ki"});
+          item.style.borderLeftColor=colors[i]; item.style.backgroundColor=colors[i]+"1f";
+          const span=gpBarSpan(bar, i+1);
+          const line=h("div",{class:"gp3-kl"});
+          line.appendChild(h("span",{class:"gp3-ktag"+(span?"":" off")}, span || "not on the rail"));
+          if(canEd){
+            const inp=h("input",{class:"gp2-in gp3-kin", placeholder:(side==="off"?"Sets for this colour — set / set":"Rules for this colour…")});
+            inp.value=gpLegQText(legs[i], q);
+            inp.addEventListener("input",()=>{ legs[i]=gpLegQSet(legs[i], q, inp.value); save(); });
+            line.appendChild(inp);
+          } else {
+            /* as it was written: "E.2 + EARLY OFF = 7 / 5" is one thought, and cutting it
+               at every stroke turned it into pieces that meant something else */
+            line.appendChild(h("span",{class:"gp3-ktext"}, gpLegQText(legs[i], q) || "—"));
+          }
+          item.appendChild(line);
+          /* who is on the floor is no longer repeated here: the board is right beside it */
+          grp.appendChild(item);
+        });
+        card.appendChild(grp);
       });
-      wrap.appendChild(grp);
-    });
-    return wrap;
+      return any? card : null;
+    }
   }
 
   /* THEIR KEY SETS, UNDER THE BOARD. The sets this staff starred in the pre-game playbook
@@ -12749,9 +12833,14 @@ function renderPlanSection(sec, canEd, save, allSecs){
     const left=h("div",{class:"gp2-rail"});
     left.appendChild(pairsBlock("Defensive pairs", plan.pairs1));
     left.appendChild(pairsBlock("Off the bench", plan.pairs2));
-    const mid=h("div",{class:"gp2-mid"}, quarterBoard("Q1"), quarterBoard("Q2"));
-    const right=h("div",{class:"gp2-aside"}, minutesBlock(), keyBlock());
-    sheet.appendChild(left); sheet.appendChild(mid); sheet.appendChild(right);
+    left.appendChild(minutesBlock());
+    const mid=h("div",{class:"gp2-mid"});
+    GP_HALF.forEach(q=>{
+      const card=quarterCard(q);
+      mid.appendChild(h("div",{class:"gp3-qrow"+(card?"":" solo")}, quarterBoard(q), card));
+    });
+    sheet.classList.add("gp3-sheet");
+    sheet.appendChild(left); sheet.appendChild(mid);
     sheet.appendChild(keySetsBlock());
     box.appendChild(sheet);
 
@@ -24241,6 +24330,90 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 @media print{
   /* the fill is asked for, and the outline is there for the printer that drops fills */
   body.printing-gp .gp2-st.in{background-color:#f7e39a!important;box-shadow:none;border:1.6px solid #a8801a}
+}
+/* the plan of a quarter: one box, the general lines plain, the colours on their bands */
+.gp3-qc{border:1.5px solid var(--ink,#15181f);border-radius:6px;padding:8px 10px 6px}
+.gp3-qc+.gp3-qc{margin-top:12px}
+.gp3-qh{font:700 17px 'Oswald',sans-serif;letter-spacing:.05em;color:var(--ink);line-height:1;margin-bottom:6px}
+.gp3-qc .gp3-kgrp+.gp3-kgrp{margin-top:10px}
+.gp3-qc .gp3-kt{font-size:10px;letter-spacing:.18em;border-bottom-width:1px;padding-bottom:2px;margin-bottom:0}
+.gp3-gen{padding:5px 0 6px}
+.gp3-gl{font:500 12px/1.35 'Inter',sans-serif;color:var(--ink-soft,#5b6472);padding:1.5px 0}
+.gp3-gl b{font:700 11.5px 'Oswald',sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--ink);margin-right:6px}
+.gp3-gl b::after{content:" =";font-weight:500;color:var(--ink-faint,#8a919c)}
+.gp3-gta{display:block;width:100%;resize:vertical;min-height:54px;border:1px dotted var(--line-strong,#d7dbe0);
+  border-radius:4px;padding:4px 6px;font:500 12px/1.4 'Inter',sans-serif;box-sizing:border-box}
+.gp3-qc .gp3-ki{border-bottom:0;border-radius:0 4px 4px 0;padding:5px 8px 5px 8px;margin-top:3px}
+.gp3-qc .gp3-kl{align-items:baseline;flex-wrap:nowrap;gap:7px}
+.gp3-ktext{flex:1 1 0;min-width:0;font:600 12.5px/1.3 'Oswald',sans-serif;letter-spacing:.035em;text-transform:uppercase;color:var(--ink)}
+.gp3-ktag.off{background:transparent;color:var(--ink-faint,#8a919c);box-shadow:inset 0 0 0 1px var(--line-strong,#d7dbe0);font-weight:500}
+.gp3-qc .gp3-kcall{background:var(--panel,#fff)}
+.gp3-kin{flex:1 1 120px;min-width:0;width:auto}
+@media print{
+  body.printing-gp .gp3-qc{border:1px solid #15181f;border-radius:1mm;padding:1mm 1.6mm .8mm}
+  body.printing-gp .gp3-qc+.gp3-qc{margin-top:0}
+  body.printing-gp .gp3-qh{font-size:10pt;margin-bottom:.8mm}
+  body.printing-gp .gp3-qc .gp3-kgrp+.gp3-kgrp{margin-top:1.2mm}
+  body.printing-gp .gp3-qc .gp3-kt{font-size:6.4pt;padding-bottom:.2mm;border-bottom:.5px solid #15181f}
+  body.printing-gp .gp3-gen{padding:.5mm 0 .6mm}
+  body.printing-gp .gp3-gl{font-size:7pt;line-height:1.2;padding:.1mm 0;color:#2c333d}
+  body.printing-gp .gp3-gl b{font-size:7pt;margin-right:1mm}
+  body.printing-gp .gp3-qc .gp3-ki{padding:.5mm 1mm .5mm 1.4mm;margin-top:.5mm;border-bottom:0}
+  body.printing-gp .gp3-ktag.off{box-shadow:none;border:.5px solid #8b939d;color:#5b6472}
+  body.printing-gp .gp3-qc .gp3-kcall{background:#fff}
+  body.printing-gp .gp3-qc .gp3-kl{gap:1.2mm}
+  body.printing-gp .gp3-ktext{font-size:7.4pt;line-height:1.15}
+}
+/* THE SHEET, LAID OUT LIKE THE ONE THEY WRITE BY HAND. Each quarter is a row: its board,
+   and beside it the box that says what the quarter is about. Down the left are the things
+   that are about the whole half - the pairs and the minutes - and under the two quarters,
+   their key sets. */
+/* the second row takes whatever the left column makes spare, so the key sets start right
+   under the quarters instead of drifting down the page */
+.gp2-sheet.gp3-sheet{grid-template-columns:210px minmax(0,1fr);grid-template-rows:auto 1fr}
+.gp3-sheet > .gp2-rail{grid-column:1;grid-row:1 / span 2}
+.gp3-sheet > .gp2-mid{grid-column:2;grid-row:1}
+.gp3-sheet > .gp3-ks{grid-column:2;grid-row:2}
+.gp3-qrow{display:grid;grid-template-columns:minmax(0,1fr) 310px;column-gap:16px;align-items:start}
+.gp3-qrow.solo{grid-template-columns:minmax(0,1fr)}
+.gp3-qrow+.gp3-qrow{margin-top:18px}
+.gp3-qh{display:flex;align-items:baseline;gap:7px}
+.gp3-qh span{font:600 9.5px 'Inter',sans-serif;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint,#8a919c)}
+.gp3-minw{margin-top:20px}
+.gp2-rail .gp2-min td.bar,.gp2-rail .gp2-min th.bar{display:none}
+.gp2-rail .gp2-min td{padding-left:5px}
+@media(max-width:1380px){ .gp3-qrow{grid-template-columns:minmax(0,1fr);row-gap:10px} }
+@media(max-width:1180px){
+  .gp2-sheet.gp3-sheet{grid-template-columns:1fr}
+  .gp3-sheet > .gp2-rail,.gp3-sheet > .gp2-mid,.gp3-sheet > .gp3-ks{grid-column:auto;grid-row:auto}
+}
+@media print{
+  /* each quarter with its box, full width; under them one band: the two lists of pairs,
+     the minutes and the key sets */
+  body.printing-gp .gp3-qrow{display:flex;gap:4mm;align-items:stretch}
+  body.printing-gp .gp3-qrow > .gp2-q{flex:1 1 0;min-width:0}
+  body.printing-gp .gp3-qrow > .gp3-qc{flex:0 0 78mm;box-sizing:border-box}
+  body.printing-gp .gp3-qrow+.gp3-qrow{margin-top:2.5mm}
+  body.printing-gp .gp3-qh span{font-size:5.6pt}
+  body.printing-gp .gp2-st{font-size:9.5pt}
+  body.printing-gp .gp3-sheet > .gp2-rail{order:2;flex:0 0 150mm;display:flex;gap:5mm;align-items:flex-start;border:0;padding:0}
+  body.printing-gp .gp3-sheet > .gp2-rail > .gp2-pairs{flex:0 0 45mm;min-width:0}
+  body.printing-gp .gp3-sheet > .gp2-rail > .gp2-pairs+.gp2-pairs{margin-top:0}
+  body.printing-gp .gp3-sheet > .gp2-rail > .gp3-minw{flex:1 1 0;min-width:0;margin-top:0}
+  body.printing-gp .gp3-sheet > .gp3-ks{order:3;flex:1 1 110mm;margin:0;padding:0;border:0}
+  body.printing-gp .gp3-sheet .gp3-ksb{column-count:3;column-gap:4mm}
+  /* the box must not be taller than the board beside it, or the two quarters and the band
+     under them stop fitting on the sheet: the general lines run in two columns here, and
+     the minutes are set as tight as a table of figures can be */
+  body.printing-gp .gp3-qrow .gp3-gen.many{columns:2;column-gap:3mm}
+  body.printing-gp .gp3-qrow .gp3-gl{break-inside:avoid;font-size:6.7pt}
+  body.printing-gp .gp3-qrow .gp3-gl b{font-size:6.7pt}
+  body.printing-gp .gp3-qrow .gp3-ktext{font-size:7.1pt}
+  body.printing-gp .gp3-qrow .gp3-qc{padding:.8mm 1.5mm .6mm}
+  body.printing-gp .gp3-qrow .gp3-qh{font-size:9pt;margin-bottom:.5mm}
+  body.printing-gp .gp3-qrow .gp3-qc .gp3-kgrp+.gp3-kgrp{margin-top:.8mm}
+  body.printing-gp .gp3-qrow .gp3-qc .gp3-ki{padding:.35mm 1mm .35mm 1.3mm;margin-top:.4mm}
+  body.printing-gp .gp3-minw .gp2-min td{font-size:7pt;line-height:1.02;padding-top:0;padding-bottom:0}
 }
 
 /* ===================================================================
