@@ -2955,7 +2955,8 @@ try{ window.LowenDriveFetch=driveFetch; }catch(e){}
    gate is the exception: it is never granted by an absence. */
 const SB_SECT_MAP={ planification:"planification", calendar:"calendar", teamscout:"postgame",
   oppscout:"pregame", trends:"trends", playerdev:"playerdev", playerdb:"playerdb",
-  rooster:"rooster", prob:"prob", backup:"backup" };
+  rooster:"rooster", prob:"prob", backup:"backup",
+  league:"league", gameplan:"gameplan", playbook:"playbook" };
 function sbPermsToHub(perms){
   const out={view:{},edit:{}};
   ["view","edit"].forEach(k=>{
@@ -5610,7 +5611,7 @@ function renderGate(root, label, onOk){
     may? h("button",{class:"btn primary", onclick:onOk},"Accept & continue")
        : h("span",{class:"gate-locked"},"🔒 Restricted"))));
 }
-const SB_SECTS=[["planification","Planning"],["calendar","Calendar"],["pregame","Pre game"],["postgame","Post game"],["trends","Trends"],["playerdev","Player dev"],["playerdb","Player DB"],["rooster","Rooster"],["prob","PROB"],["backup","Backups"],
+const SB_SECTS=[["league","League"],["planification","Planning"],["calendar","Calendar"],["pregame","Pre game"],["postgame","Post game"],["trends","Trends"],["gameplan","Game plan"],["playbook","Playbook"],["playerdev","Player dev"],["playerdb","Player DB"],["rooster","Rooster"],["prob","PROB"],["backup","Backups"],
   /* not a screen: the right to go past the under-construction notice on any of them */
   [WIP_KEY,"Under construction"]];
 async function openAdmin(){
@@ -5663,7 +5664,13 @@ async function refreshAdmin(body){
   body.appendChild(bulkBar);
 
   const permToggle=(a,kind,sec)=>{
-    const cb=h("input",{type:"checkbox"}); cb.checked=!!(a.perms&&a.perms[kind]&&a.perms[kind][sec]);
+    /* The box shows what the account actually gets, not only what is written down. A
+       screen nobody has decided about is visible - canView reads absence that way - so
+       its Sees box is ticked. Backups and the under-construction pass are the two that
+       have to be granted, and nothing is ever editable until somebody says so. */
+    const pv=a.perms&&a.perms[kind]?a.perms[kind][sec]:undefined;
+    const cb=h("input",{type:"checkbox"});
+    cb.checked=(pv===undefined && kind==="view" && sec!=="backup" && sec!==WIP_KEY) ? true : !!pv;
     cb.addEventListener("change",async ()=>{ try{ const r=await sbrpc("admin_set_perm",{p_token:SB_TOKEN,p_username:a.username,p_kind:kind,p_section:sec,p_value:cb.checked}); if(!r||r.ok!==true){ cb.checked=!cb.checked; toast("Could not save"); } }catch(e){ cb.checked=!cb.checked; toast("Error"); } });
     /* the name used to ride beside every box; it is the column heading now, so the label
        keeps only the title, which is what a cursor resting on a bare box needs */
@@ -5680,6 +5687,7 @@ async function refreshAdmin(body){
   const PERM_SHORT={planification:"Planning",calendar:"Calendar",pregame:"Pre game",
     postgame:"Post game",trends:"Trends",playerdev:"Player dev",playerdb:"Player DB",
     rooster:"Rooster",prob:"PROB",backup:"Backups",
+    league:"League",gameplan:"Game plan",playbook:"Playbook",
     /* the only name too long for a column of eleven; the full one is on the hover */
     [WIP_KEY]:"Under constr."};
   const permGrid=(a)=>{
