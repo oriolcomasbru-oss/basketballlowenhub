@@ -40,6 +40,7 @@ const FOLDERS = {
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, OPTIONS",
+  "access-control-allow-headers": "authorization, content-type",
   "cache-control": "no-store"
 };
 const UA = { "user-agent": "Mozilla/5.0 (compatible; CoachesHub/1.0)" };
@@ -253,6 +254,71 @@ function dateFromName(name) {
   return f.length ? f[0] : null;
 }
 
+/* ================= who is asking ====================================================
+
+   This function used to answer anybody: the address was enough to list every folder and
+   download every file in it, signed in or not. The app hid the tabs, but hiding a tab is
+   not the same as refusing the data behind it.
+
+   Every request now carries the session token the app got from Supabase at sign-in, and
+   the token is checked there (the same `me` call the app makes on a reload) before
+   anything is read from Drive. No token, or one Supabase does not recognise, is a 401.
+
+   A staff account reads everything. A player account reads the opponent-tagging folder
+   and the files inside it, which is what the pre-game report is built from, and nothing
+   else. Anything that is not clearly staff is treated as a player: a field missing from
+   the answer must leave somebody with less, never with more. */
+const SB_URL = (process.env.SUPABASE_URL || "https://smpahparklfuzxmgviql.supabase.co").replace(/\/+$/, "");
+const SB_KEY = process.env.SUPABASE_KEY || "sb_publishable_FGaC9HnZp9zpRBAgmW1CVQ_EaIRnYEk";
+const PLAYER_FOLDERS = ["pregame"];
+const WHO_TTL = 60 * 1000, LIST_TTL = 5 * 60 * 1000;
+const whoCache = {};    // token -> {at, who}
+const listCache = {};   // folder -> {at, ids}
+
+function bearer(event) {
+  const h = event.headers || {};
+  const m = /^Bearer\s+(.+)$/i.exec(h.authorization || h.Authorization || "");
+  return m ? m[1].trim() : "";
+}
+async function whoIs(token) {
+  if (!token) return null;
+  const hit = whoCache[token];
+  if (hit && Date.now() - hit.at < WHO_TTL) return hit.who;
+  const r = await fetch(SB_URL + "/rest/v1/rpc/me", {
+    method: "POST",
+    headers: { "content-type": "application/json", apikey: SB_KEY, authorization: "Bearer " + SB_KEY },
+    body: JSON.stringify({ p_token: token })
+  });
+  let j = null;
+  try { j = await r.json(); } catch (e) {}
+  if (!r.ok || !j || j.ok !== true) return null;
+  const scope = String(j.scope || j.role || "").toLowerCase();
+  const who = { username: j.username || "", staff: scope === "coach" || scope === "admin", scope: scope };
+  whoCache[token] = { at: Date.now(), who: who };
+  return who;
+}
+async function listFolder(folder, key) {
+  const id = FOLDERS[folder];
+  if (key) {
+    try { return { mode: "api", files: await listApi(id, key, folder) }; }
+    catch (e) { /* fall through to the public read */ }
+  }
+  return { mode: "public", files: await listPublic(id, folder) };
+}
+/* a player may open a file only if it sits in a folder a player may list */
+async function playerMayOpen(fileId, key) {
+  for (const f of PLAYER_FOLDERS) {
+    if (!FOLDERS[f]) continue;
+    let c = listCache[f];
+    if (!c || Date.now() - c.at > LIST_TTL) {
+      const got = await listFolder(f, key);
+      c = listCache[f] = { at: Date.now(), ids: got.files.map(x => x.id) };
+    }
+    if (c.ids.indexOf(fileId) >= 0) return true;
+  }
+  return false;
+}
+
 /* ----------------------------------------------------------------- handler */
 exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
@@ -260,12 +326,19 @@ exports.handler = async (event) => {
   const p = event.queryStringParameters || {};
   const key = process.env.GDRIVE_API_KEY || "";
 
+  let who = null;
+  try { who = await whoIs(bearer(event)); }
+  catch (e) { return json(502, { error: "could not check the session (" + ((e && e.message) || e) + ")" }); }
+  if (!who) return json(401, { error: "sign in to read this" });
+  const denied = () => json(403, { error: "this account may not read that" });
+
   try {
     if (p.folder) {
       const id = FOLDERS[p.folder];
       if (!id) return json(400, { error: p.folder==="pregame"
         ? "the opponent-tagging folder is not configured — set GDRIVE_FOLDER_PREGAME on the site"
         : "unknown folder, use game, practice, pregame, gameplan or practicedoc" });
+      if (!who.staff && PLAYER_FOLDERS.indexOf(p.folder) < 0) return denied();
 
       if (key) {
         try { return json(200, { folder: p.folder, mode: "api", files: await listApi(id, key, p.folder) }); }
@@ -286,6 +359,8 @@ exports.handler = async (event) => {
        a function container does not live long enough for a cache to be worth anything. */
     if (p.doc) {
       if (!/^[A-Za-z0-9_-]{10,}$/.test(p.doc)) return json(400, { error: "bad file id" });
+      /* game plans and session sheets: staff only */
+      if (!who.staff) return denied();
       const name = p.name || "";
       const byName = dateFromName(name);
       /* A Google Doc or Slides file has no bytes to download - alt=media answers 403 on
@@ -342,6 +417,7 @@ exports.handler = async (event) => {
 
     if (p.file) {
       if (!/^[A-Za-z0-9_-]{10,}$/.test(p.file)) return json(400, { error: "bad file id" });
+      if (!who.staff && !(await playerMayOpen(p.file, key))) return denied();
       /* A call sheet kept as a native Google Sheet has no bytes to download: alt=media
          answers 403 on it and uc?export=download hands back a sign-in page. It has to be
          EXPORTED, and it is exported as .xlsx so that what arrives here is the same

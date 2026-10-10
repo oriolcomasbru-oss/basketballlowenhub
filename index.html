@@ -2935,6 +2935,16 @@ async function sbrpc(fn, params){
   if(!r.ok) throw new Error((body&&(body.message||body.error))||("HTTP "+r.status));
   return body;
 }
+/* The Drive function checks who is asking, so every call to it carries the session
+   token. With nobody signed in there is nothing to send and the function would refuse,
+   so the call is not made at all. stats.js and scoutpre.js reach this by name. */
+function driveFetch(url, opts){
+  if(!SB_TOKEN) return Promise.reject(new Error("Sign in to load this"));
+  opts=Object.assign({}, opts);
+  opts.headers=Object.assign({}, opts.headers, {"Authorization":"Bearer "+SB_TOKEN});
+  return fetch(url, opts);
+}
+try{ window.LowenDriveFetch=driveFetch; }catch(e){}
 /* A SECTION THE SERVER HAS NEVER HEARD OF IS NOT A DENIAL.
    The server keeps one flag per section it knows about. A section added to the app since
    — Trends, PROB — is simply not in its answer, and this used to turn that absence into
@@ -4959,6 +4969,8 @@ function _docOpponent(name, opponents){
 }
 async function syncDocs(force){
   if(_docsBusy) return;
+  /* before sign-in there is nothing to ask with; not marked as tried, so it runs after */
+  if(!SB_TOKEN) return;
   if(_docsTried && !force) return;
   _docsBusy=true; _docsTried=true;
   const D=docsState();
@@ -4971,7 +4983,7 @@ async function syncDocs(force){
     for(const folder of ["gameplan","practicedoc","game","practice"]){
       let list=[];
       try{
-        const r=await fetch(DOCS_FN+"?folder="+folder, {cache:"no-store"});
+        const r=await driveFetch(DOCS_FN+"?folder="+folder, {cache:"no-store"});
         const j=await r.json();
         if(j && j.error) throw new Error(j.error);
         list=(j&&j.files)||[];
@@ -5013,7 +5025,7 @@ async function syncDocs(force){
       D.pending[folder]=need.length;
       const readOne=async f=>{
         try{
-          const r=await fetch(DOCS_FN+"?doc="+encodeURIComponent(f.id)
+          const r=await driveFetch(DOCS_FN+"?doc="+encodeURIComponent(f.id)
             +"&name="+encodeURIComponent(f.name), {cache:"no-store"});
           const j=await r.json();
           D.files[f.id].tried=1;
@@ -12161,7 +12173,9 @@ let _scoutPlayersSlot=false;
 function taggedCounts(){
   if(_tagCounts) return Promise.resolve(_tagCounts);
   if(_tagCountsP) return _tagCountsP;
-  const list=(f)=>fetch("/.netlify/functions/drive?folder="+f).then(r=>r.json()).then(j=>(j&&j.files)||[]).catch(()=>[]);
+  /* nothing is kept from before sign-in, so the real counts are read once somebody is in */
+  if(!SB_TOKEN) return Promise.resolve({games:0, trainings:0, pregameFiles:[]});
+  const list=(f)=>driveFetch("/.netlify/functions/drive?folder="+f).then(r=>r.json()).then(j=>(j&&j.files)||[]).catch(()=>[]);
   _tagCountsP=Promise.all([list("game"),list("practice"),list("pregame")]).then(([g,t,pg])=>{
     _tagCounts={games:g.length, trainings:t.length, pregameFiles:pg}; return _tagCounts; });
   return _tagCountsP;

@@ -43,9 +43,14 @@
 
   /* ================================================================= fetch */
 
+  /* the Drive function wants the session token; the app hands over a fetch that adds it */
+  function dfetch(url) {
+    return window.LowenDriveFetch ? window.LowenDriveFetch(url) : fetch(url);
+  }
+
   function listFolder() {
     if (!cacheList) {
-      cacheList = fetch(FN + "?folder=" + FOLDER)
+      cacheList = dfetch(FN + "?folder=" + FOLDER)
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (j.error) throw new Error(j.error);
@@ -70,7 +75,7 @@
   function getBuf(fileId) {
     cacheKeep(fileId);
     if (!cacheFile[fileId]) {
-      cacheFile[fileId] = fetch(FN + "?file=" + encodeURIComponent(fileId))
+      cacheFile[fileId] = dfetch(FN + "?file=" + encodeURIComponent(fileId))
         .then(function (r) {
           if (!r.ok) {
             return r.json().then(

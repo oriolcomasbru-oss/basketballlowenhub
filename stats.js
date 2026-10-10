@@ -30,14 +30,21 @@
 
   /* ---------------------------------------------------------------- fetch */
 
+  /* the Drive function wants the session token; the app hands over a fetch that adds it */
+  function dfetch(url) {
+    return window.LowenDriveFetch ? window.LowenDriveFetch(url) : fetch(url);
+  }
+
   function listFolder(kind) {
     if (!cacheList[kind]) {
-      cacheList[kind] = fetch(FN + "?folder=" + kind)
+      cacheList[kind] = dfetch(FN + "?folder=" + kind)
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (j.error) throw new Error(j.error);
           return j.files || [];
-        });
+        })
+        /* a failed list must not be cached: asked before sign-in, it would stay failed */
+        .catch(function (e) { delete cacheList[kind]; throw e; });
     }
     return cacheList[kind];
   }
@@ -54,7 +61,7 @@
   function getRows(fileId) {
     cacheKeep(fileId);
     if (!cacheFile[fileId]) {
-      cacheFile[fileId] = fetch(FN + "?file=" + encodeURIComponent(fileId))
+      cacheFile[fileId] = dfetch(FN + "?file=" + encodeURIComponent(fileId))
         .then(function (r) {
           if (!r.ok) return r.json().then(function (j) { throw new Error((j && j.error) || "download failed"); },
                                           function () { throw new Error("download failed"); });

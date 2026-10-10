@@ -6,6 +6,9 @@
 # Netlify
 .netlify/
 
+# Local tooling (preview server, editor settings)
+.claude/
+
 # Node
 node_modules/
 
