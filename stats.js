@@ -3280,7 +3280,8 @@
         var good = M.higherIsBetter ? f.b > 0 : f.b < 0;
         var firm = f.r2 >= 0.3 && ys.length >= 4;
         var kind = !firm ? "" : (good ? "up" : "down");
-        out.push({ name: M.name, slope: f.b, end: end, r2: f.r2, good: good, firm: firm, fmt: M.fmt });
+        out.push({ name: M.name, slope: f.b, end: end, r2: f.r2, good: good, firm: firm, fmt: M.fmt,
+                   last: last, mean: f.mean, n: ys.length, clamp: M.clamp || null });
         return [{ v: M.name },
           M.fmt(last), M.fmt(f.mean),
           /* a slope that rounds to nothing is flat, and "+0.00" reads as a measurement */
@@ -3496,23 +3497,32 @@
     }
     var hl = el("div"); root.appendChild(hl);   /* the highlights go on top, built last */
 
+    /* THE PAGE WAS SIX SECTIONS ONE UNDER ANOTHER, each with its chart, its table and its
+       paragraphs, and reading it meant scrolling through all of it to find the one thing
+       wanted. It is a dashboard now: the pictures first, small and side by side, and the
+       full sections - every table and every sentence that was here before - built exactly
+       as they were but kept off the page until one is asked for. So they are built into
+       `stage` and not into the page, and the sets, which are a table and never a chart,
+       get a place of their own at the bottom. */
+    var stage = el("div"), setsHost = el("div");
+
     var pts = live.map(function (x) { return { d: x.d, kind: x.kind, label: x.label || x.d, s: x.s }; });
     var bits = [];
 
-    var pt = trMeasure(root, "01", "Paint touches \u2014 the 70% measure",
+    var pt = trMeasure(stage, "01", "Paint touches \u2014 the 70% measure",
       "The rule the reports use: a fastbreak counts whole, and in every other phase the " +
       "possession counts when it touched the paint \u2014 over the possessions played. 70% is the " +
       "target, 65 and 60 the lines under it.",
       pts, "pt", { target: true, what: "Paint touch" });
-    var br = trMeasure(root, "02", "Ball reversals \u2014 the same measure",
+    var br = trMeasure(stage, "02", "Ball reversals \u2014 the same measure",
       "The same arithmetic, counting a reversal instead of a paint touch. No target is drawn " +
       "on it, because the reports do not grade it either \u2014 the line against the season average " +
       "is the reading.",
       pts, "br", { target: false, what: "Reversal" });
 
-    var tb = trTagBack(root, live);
-    var phases = trPhases(root, games);
-    var sets4 = trSets(root, games);
+    var tb = trTagBack(stage, live);
+    var phases = trPhases(stage, games);
+    var sets4 = trSets(setsHost, games);
 
     var METRICS = [
       { name: "Paint touches \u2014 the 70% measure", get: function (s) { return measured(s, "pt"); },
@@ -3522,7 +3532,7 @@
       { name: "Points per possession", get: function (s) { return s.poss ? s.ppp : NaN; },
         fmt: f2, higherIsBetter: true, clamp: [0, 2.5] }
     ];
-    var proj = trProjection(root, games, METRICS);
+    var proj = trProjection(stage, games, METRICS);
 
     /* ---- and the marks, read off what was just drawn ---- */
     if (pt && pt.vals.length > 1) {
@@ -3555,6 +3565,229 @@
         note: "in five games, on this trend" });
     });
     trHighlights(hl, bits);
+
+    /* ---------------------------------------------------------------- the dashboard */
+    var dash = el("div", "td-grid");
+    var gamesMeasured = function (key) { return [
+      { name: "Games", color: "var(--tl-3)",
+        get: function (s) { return s.phased ? measured(s, key) : NaN; }, fmt: pct0f },
+      { name: "Trainings (floor)", color: "var(--tl-3)", dash: true, hollow: true,
+        get: function (s) { return s.phased ? NaN : measured(s, key); }, fmt: pct0f } ]; };
+    var lastOf = function (list, get) {
+      for (var i = list.length - 1; i >= 0; i--) { var v = get(list[i].s); if (isFinite(v)) return v; }
+      return NaN; };
+    var meanOf = function (list, get) {
+      var v = list.map(function (p) { return get(p.s); }).filter(isFinite);
+      return v.length ? v.reduce(function (a, x) { return a + x; }, 0) / v.length : NaN; };
+
+    if (pt) dash.appendChild(tdCard("Paint touches", "the 70% measure", [
+        { l: "Last", v: pct0f(pt.last), cls: pt.last >= 70 ? "good" : pt.last >= 60 ? "" : "bad" },
+        { l: "Season", v: pct0f(pt.avg) }, { l: "Target", v: "70%" } ],
+      timelineChart("", "", pts, gamesMeasured("pt"),
+        { max: 100, axisFmt: pct0f, height: 128, ref: { v: 70, label: "70%" } })));
+    if (br) dash.appendChild(tdCard("Ball reversals", "same measure", [
+        { l: "Last", v: pct0f(br.last), cls: br.last >= br.avg ? "good" : "bad" },
+        { l: "Season", v: pct0f(br.avg) } ],
+      timelineChart("", "", pts, gamesMeasured("br"),
+        { max: 100, axisFmt: pct0f, height: 128, ref: { v: br.avg, label: "avg" } })));
+    var oerGet = function (s) { return s.poss ? s.pts / s.poss : NaN; };
+    var oerAvg = meanOf(pts, oerGet), oerLast = lastOf(pts, oerGet);
+    if (isFinite(oerAvg)) dash.appendChild(tdCard("Offence", "points per possession", [
+        { l: "Last", v: f2(oerLast), cls: oerLast >= oerAvg ? "good" : "bad" },
+        { l: "Season", v: f2(oerAvg) } ],
+      timelineChart("", "", pts, [
+        { name: "Games", color: "var(--tl-1)", get: function (s) { return s.phased ? oerGet(s) : NaN; }, fmt: f2 },
+        { name: "Trainings", color: "var(--tl-1)", dash: true, hollow: true,
+          get: function (s) { return s.phased ? NaN : oerGet(s); }, fmt: f2 } ],
+        { axisFmt: f2, height: 128, ref: { v: oerAvg, label: "avg" } })));
+    if (tb && tb.pts && tb.pts.length) dash.appendChild(tdCard("Transition defense", "DER after our shot — lower is better", [
+        { l: "TAG", v: f2(tb.tag) }, { l: "BACK", v: f2(tb.back) } ],
+      timelineChart("", "", tb.pts, [
+        { name: "TAG", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2 },
+        { name: "BACK", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2 } ],
+        { axisFmt: f2, height: 128 })));
+    var heat = tdPhaseHeat(games);
+    if (heat) dash.appendChild(tdCard("Where our possessions came from",
+      "share of each game · points per possession underneath", null, heat, "wide"));
+    var pj = tdProjection(proj, games.length);
+    if (pj) dash.appendChild(tdCard("If we keep this trend", "where each measure is in five games", null, pj, "wide"));
+    root.appendChild(dash);
+
+    /* ---------------------------------------------------------------- the detail */
+    var secs = [].slice.call(stage.children);
+    if (secs.length) {
+      var pick = el("div", "td-pick");
+      pick.appendChild(el("span", "td-pick-l", "Full detail"));
+      var body = el("div", "td-detail");
+      var NAMES = { "01": "Paint touches", "02": "Ball reversals", "03": "TAG / BACK",
+                    "04": "Possession origin", "06": "Projection" };
+      var open = null, btns = [];
+      secs.forEach(function (sec) {
+        var no = (sec.querySelector(".tr-no") || {}).textContent || "";
+        var b = el("button", "td-pick-b", NAMES[no] || ((sec.querySelector(".sx-h") || {}).textContent || no));
+        b.type = "button";
+        b.addEventListener("click", function () {
+          var same = open === sec;
+          while (body.firstChild) body.removeChild(body.firstChild);
+          btns.forEach(function (x) { x.classList.remove("on"); });
+          open = same ? null : sec;
+          if (open) { body.appendChild(sec); b.classList.add("on"); }
+        });
+        btns.push(b); pick.appendChild(b);
+      });
+      pick.appendChild(el("span", "td-pick-n", "the table and the reading behind each panel — click again to close"));
+      root.appendChild(pick);
+      root.appendChild(body);
+    }
+
+    /* ---------------------------------------------------------------- the sets */
+    if (setsHost.firstChild) {
+      var ss = setsHost.firstChild;
+      ss.classList.add("tr-sets");
+      var no5 = ss.querySelector(".tr-no"); if (no5) no5.textContent = "SETS";
+      var h5 = ss.querySelector(".sx-h"); if (h5) h5.textContent = "Systems efficiency — every set we called, game by game";
+      root.appendChild(ss);
+    }
+  }
+
+  /* ---- the dashboard's own pieces --------------------------------------- */
+  function tdCard(title, sub, kpis, bodyNode, cls) {
+    var c = el("div", "td-card" + (cls ? " " + cls : ""));
+    var h = el("div", "td-h");
+    var t = el("div", "td-t");
+    t.appendChild(el("b", null, title));
+    if (sub) t.appendChild(el("span", null, sub));
+    h.appendChild(t);
+    if (kpis && kpis.length) {
+      var k = el("div", "td-kpis");
+      kpis.forEach(function (x) {
+        var one = el("div", "td-kpi" + (x.cls ? " " + x.cls : ""));
+        one.appendChild(el("i", null, x.l));
+        one.appendChild(el("b", null, x.v));
+        k.appendChild(one);
+      });
+      h.appendChild(k);
+    }
+    c.appendChild(h);
+    if (bodyNode) c.appendChild(bodyNode);
+    return c;
+  }
+
+  /*  WHERE THE POSSESSIONS CAME FROM, AS A GRID AND NOT AS SEVEN LINES.
+      Two charts of seven lines each answered this, and seven lines crossing over four
+      games is a knot: nobody can say from it how much of last Saturday was transition.
+      It is a grid. A row is a phase, a column is a game, and the cell says what share of
+      that game the phase was - the darker the cell, the more of the game it was - with
+      what it returned per possession written small under it. Read across, a row is how
+      the phase has moved from game to game; read down, a column is the shape of one
+      night. The season is the last two columns.                                         */
+  function tdPhaseHeat(games) {
+    if (!games.length) return null;
+    var known = PHASE_ROW.map(function (x) { return x.k; }), extra = [];
+    var per = games.map(function (g) {
+      var m = {}, tot = 0;
+      (g.m && g.m.poss ? g.m.poss : []).forEach(function (q) {
+        var k = phaseOf(q.first);
+        if (known.indexOf(k) < 0 && extra.indexOf(k) < 0) extra.push(k);
+        var e = m[k] || (m[k] = { n: 0, pts: 0 });
+        e.n++; e.pts += q.pts || 0; tot++;
+      });
+      return { m: m, tot: tot };
+    });
+    var keys = known.concat(extra).filter(function (k) { return per.some(function (p) { return (p.m[k] || {}).n; }); });
+    if (!keys.length) return null;
+    var tot = {}, all = 0;
+    per.forEach(function (p) { keys.forEach(function (k) {
+      var e = p.m[k]; if (!e) return;
+      var t = tot[k] || (tot[k] = { n: 0, pts: 0 }); t.n += e.n; t.pts += e.pts; all += e.n; }); });
+    keys.sort(function (a, b) { return ((tot[b] || {}).n || 0) - ((tot[a] || {}).n || 0); });
+    var wrap = el("div", "td-heatwrap"), t = el("table", "td-heat");
+    var hr = el("tr");
+    hr.appendChild(el("th", "l", "Phase"));
+    games.forEach(function (g) { hr.appendChild(el("th", null, g.label)); });
+    hr.appendChild(el("th", "sum", "Season"));
+    t.appendChild(hr);
+    var cell = function (share, ppp, n, cls) {
+      var td = el("td", (cls || "") + (share == null ? " none" : " sx-vol " + volStep(Math.min(100, share * 2))));
+      if (share == null) { td.textContent = "—"; return td; }
+      td.appendChild(el("b", null, Math.round(share) + "%"));
+      td.appendChild(el("i", null, f2(ppp) + " · " + n));
+      td.title = n + " possessions · " + f2(ppp) + " points per possession";
+      return td;
+    };
+    keys.forEach(function (k) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "l", k));
+      per.forEach(function (p) {
+        var e = p.m[k];
+        tr.appendChild(e && p.tot ? cell(100 * e.n / p.tot, e.pts / e.n, e.n) : cell(null));
+      });
+      var s = tot[k];
+      tr.appendChild(s && all ? cell(100 * s.n / all, s.pts / s.n, s.n, "sum") : cell(null));
+      t.appendChild(tr);
+    });
+    wrap.appendChild(t);
+    wrap.appendChild(el("div", "td-note", "Big number: share of that game's possessions. Small: points per possession · possessions."));
+    return wrap;
+  }
+
+  /*  THE NEXT FIVE GAMES, SAID THE WAY ONE WOULD SAY IT.
+      The table had seven columns - now, average, slope per game, the value in five, R²
+      and a reading - which is the working, not the answer. The answer is one line per
+      measure: where it is, where it is going, and whether that can be believed. So each
+      measure is a row with the last game on the left, an arrow, and where the trend puts
+      it in five games on the right, on a bar that shows the two against the season. When
+      the games are too irregular for a line to mean anything the row says exactly that,
+      in words, and draws no arrow - a guess is not dressed up as a forecast.             */
+  function tdProjection(proj, nGames) {
+    if (!proj || !proj.length) {
+      if (nGames >= 3) return null;
+      return el("div", "sx-empty", "Three games are the fewest a trend can be read from. There are " + nGames + ".");
+    }
+    var box = el("div", "td-proj");
+    proj.forEach(function (r) {
+      var row = el("div", "td-pr" + (r.firm ? (r.good ? " up" : " down") : " flat"));
+      row.appendChild(el("div", "td-pr-n", r.name.replace(/ —.*$/, "")));
+      var now = el("div", "td-pr-v");
+      now.appendChild(el("i", null, "last game")); now.appendChild(el("b", null, r.fmt(r.last)));
+      row.appendChild(now);
+      /* the bar: season average as a tick, the last game and the projection as dots */
+      /* a percentage is drawn on the whole 0-100; anything else on the stretch it moves in */
+      var mn = Math.min(r.last, r.end, r.mean), mx = Math.max(r.last, r.end, r.mean), lo, hi;
+      if (r.clamp && r.clamp[1] > 10) { lo = 0; hi = 100; }
+      else { var pad = (mx - mn) * 0.6 || 0.2; lo = mn - pad; hi = mx + pad; }
+      var at = function (v) { return Math.max(0, Math.min(100, 100 * (v - lo) / ((hi - lo) || 1))); };
+      var bar = el("div", "td-pr-bar");
+      var avg = el("span", "td-pr-avg"); avg.style.left = at(r.mean) + "%"; avg.title = "season average " + r.fmt(r.mean);
+      bar.appendChild(avg);
+      if (r.firm) {
+        var seg = el("span", "td-pr-seg");
+        seg.style.left = Math.min(at(r.last), at(r.end)) + "%";
+        seg.style.width = Math.abs(at(r.end) - at(r.last)) + "%";
+        bar.appendChild(seg);
+      }
+      var d1 = el("span", "td-pr-dot now"); d1.style.left = at(r.last) + "%"; bar.appendChild(d1);
+      if (r.firm) { var d2 = el("span", "td-pr-dot end"); d2.style.left = at(r.end) + "%"; bar.appendChild(d2); }
+      row.appendChild(bar);
+      var end = el("div", "td-pr-v end");
+      if (r.firm) {
+        end.appendChild(el("i", null, "in 5 games"));
+        end.appendChild(el("b", null, (r.end >= r.last ? "▲ " : "▼ ") + r.fmt(r.end)));
+      } else {
+        end.appendChild(el("i", null, "in 5 games"));
+        end.appendChild(el("b", null, "—"));
+      }
+      row.appendChild(end);
+      row.appendChild(el("div", "td-pr-say", r.firm
+        ? ((r.good ? "Improving" : "Getting worse") + " · " +
+           (r.fmt(Math.abs(r.slope)) === r.fmt(0) ? "barely moving" : ((r.slope >= 0 ? "+" : "−") + r.fmt(Math.abs(r.slope)) + " a game")) +
+           " · season average " + r.fmt(r.mean))
+        : ("No clear trend — the games go up and down too much to project · season average " + r.fmt(r.mean))));
+      box.appendChild(row);
+    });
+    box.appendChild(el("div", "td-note", "Grey tick: season average. Dark dot: the last game. Coloured dot: where a straight line through the " +
+      nGames + " games played puts it five games from now."));
+    return box;
   }
 
   function hookTrends(host) {
@@ -3832,6 +4065,90 @@
          the wrong way. They are chips at the top and a tint in the table, never colour on
          its own — every one of them carries its glyph. */
       ".tr-sec{margin-bottom:20px}",
+      /* ---- the compact dashboard: cards side by side, the detail on request ---- */
+      ".td-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px;margin:0 0 14px}",
+      ".td-card{background:var(--panel,#fff);border:1px solid var(--line-strong,#d7dbe0);border-radius:12px;",
+      "  padding:11px 13px 9px;min-width:0;box-sizing:border-box}",
+      ".td-card.wide{grid-column:1/-1}",
+      ".td-h{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px}",
+      ".td-t{min-width:0}",
+      ".td-t b{display:block;font:800 13px/1.15 'Oswald',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink)}",
+      ".td-t span{display:block;margin-top:2px;font-size:10.5px;color:var(--ink-faint);line-height:1.3}",
+      ".td-kpis{display:flex;gap:14px;flex:0 0 auto}",
+      ".td-kpi{text-align:right}",
+      ".td-kpi i{display:block;font:600 9px/1 'Inter',sans-serif;font-style:normal;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}",
+      ".td-kpi b{display:block;margin-top:3px;font:800 19px/1 'Oswald',sans-serif;color:var(--ink);font-variant-numeric:tabular-nums}",
+      ".td-kpi.good b{color:#17805a}.td-kpi.bad b{color:#c53727}",
+      ".td-card .sx-sec.tl{margin:0;display:block}",
+      ".td-card .sx-sec.tl > .sx-h{display:none}",
+      ".td-card .tl-legend{margin:0 0 2px;font-size:10px}",
+      ".td-note{margin-top:7px;font-size:10.5px;color:var(--ink-faint);line-height:1.4}",
+      /* phases as a grid */
+      ".td-heatwrap{overflow-x:auto}",
+      "table.td-heat{border-collapse:separate;border-spacing:3px;width:100%;table-layout:fixed}",
+      ".td-heat th{font:700 9.5px/1.2 'Inter',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);",
+      "  padding:2px 4px 4px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+      ".td-heat th.l,.td-heat td.l{text-align:left;width:170px}",
+      ".td-heat td.l{font:700 12px/1.2 'Inter',sans-serif;color:var(--ink);padding:0 6px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".td-heat td{text-align:center;border-radius:6px;padding:5px 4px;min-width:64px}",
+      ".td-heat td b{display:block;font:800 15px/1 'Oswald',sans-serif;font-variant-numeric:tabular-nums}",
+      ".td-heat td i{display:block;margin-top:3px;font:600 9.5px/1 'IBM Plex Mono',monospace;font-style:normal;opacity:.82}",
+      ".td-heat td.none{color:var(--ink-faint);background:transparent;font-weight:400}",
+      ".td-heat th.sum,.td-heat td.sum{width:92px}",
+      ".td-heat td.sum{box-shadow:inset 0 0 0 2px var(--ink,#15181f)}",
+      /* the projection as rows */
+      ".td-proj{display:grid;gap:8px}",
+      ".td-pr{display:grid;grid-template-columns:170px 78px minmax(120px,1fr) 96px;column-gap:14px;row-gap:3px;align-items:center;",
+      "  padding:8px 10px;border-radius:9px;background:var(--panel-2,#f6f7f9);border-left:5px solid var(--line-strong,#d7dbe0)}",
+      ".td-pr.up{border-left-color:#17805a}.td-pr.down{border-left-color:#c53727}",
+      ".td-pr-n{font:800 12.5px/1.2 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}",
+      ".td-pr-v i{display:block;font:600 9px/1 'Inter',sans-serif;font-style:normal;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint)}",
+      ".td-pr-v b{display:block;margin-top:3px;font:800 20px/1 'Oswald',sans-serif;color:var(--ink);font-variant-numeric:tabular-nums}",
+      ".td-pr-v.end{text-align:right}",
+      ".td-pr.up .td-pr-v.end b{color:#17805a}.td-pr.down .td-pr-v.end b{color:#c53727}",
+      ".td-pr.flat .td-pr-v.end b{color:var(--ink-faint)}",
+      ".td-pr-bar{position:relative;height:10px;border-radius:5px;background:var(--line,#e4e7ec)}",
+      ".td-pr-avg{position:absolute;top:-4px;bottom:-4px;width:2px;margin-left:-1px;background:var(--ink-faint,#8a919c)}",
+      ".td-pr-seg{position:absolute;top:3px;height:4px;background:var(--ink-faint,#8a919c)}",
+      ".td-pr.up .td-pr-seg{background:#17805a}.td-pr.down .td-pr-seg{background:#c53727}",
+      ".td-pr-dot{position:absolute;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;box-sizing:border-box}",
+      ".td-pr-dot.now{background:var(--ink,#15181f)}",
+      ".td-pr-dot.end{background:var(--panel,#fff);border:3px solid var(--ink-faint)}",
+      ".td-pr.up .td-pr-dot.end{border-color:#17805a}.td-pr.down .td-pr-dot.end{border-color:#c53727}",
+      ".td-pr-say{grid-column:1/-1;font-size:11px;color:var(--ink-soft,#5b6472)}",
+      "@media(max-width:720px){.td-pr{grid-template-columns:1fr 1fr}.td-pr-n,.td-pr-bar{grid-column:1/-1}}",
+      /* the detail picker */
+      ".td-pick{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0 10px;padding-top:12px;border-top:1px solid var(--line-strong,#d7dbe0)}",
+      ".td-pick-l{font:800 11px/1 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--ink);margin-right:6px}",
+      ".td-pick-b{border:1px solid var(--line-strong,#d7dbe0);background:var(--panel,#fff);color:var(--ink);border-radius:8px;",
+      "  font:700 11px/1 'Inter',sans-serif;padding:7px 11px;cursor:pointer}",
+      ".td-pick-b:hover{border-color:var(--ink)}",
+      ".td-pick-b.on{background:var(--ink,#15181f);color:var(--panel,#fff);border-color:var(--ink)}",
+      ".td-pick-n{font-size:10.5px;color:var(--ink-faint);margin-left:6px}",
+      ".td-detail:empty{display:none}",
+      ".td-detail{border:1px solid var(--line-strong,#d7dbe0);border-radius:12px;padding:14px 16px 4px;margin:0 0 18px;background:var(--panel,#fff)}",
+      /* the sets: the name next to its numbers, not a screen away from them */
+      ".tr-sets{margin-top:6px;padding-top:14px;border-top:1px solid var(--line-strong,#d7dbe0)}",
+      ".tr-sets .sx-tablewrap{overflow-x:auto;max-width:100%}",
+      ".tr-sets table.sx-table{width:auto;min-width:0;border-collapse:separate;border-spacing:2px 2px}",
+      ".tr-sets .sx-table th{padding:4px 8px;white-space:nowrap;text-align:center}",
+      ".tr-sets .sx-table th:first-child{text-align:left}",
+      ".tr-sets .sx-table td{padding:5px 9px;text-align:center;white-space:nowrap;min-width:74px;border-radius:5px}",
+      ".tr-sets .sx-table td:first-child,.tr-sets .sx-table th:first-child{position:sticky;left:0;z-index:1;",
+      "  background:var(--panel,#fff);text-align:left;min-width:150px;max-width:210px;overflow:hidden;text-overflow:ellipsis}",
+      ".tr-sets .sx-table td:first-child{font:800 12.5px/1.2 'Oswald',sans-serif;letter-spacing:.04em;text-transform:uppercase;",
+      "  color:var(--ink);border-right:2px solid var(--ink,#15181f);border-radius:0}",
+      ".tr-sets .sx-table tbody tr:hover td{box-shadow:inset 0 2px 0 var(--ink,#15181f),inset 0 -2px 0 var(--ink,#15181f)}",
+      ".tr-sets .sx-table tbody tr:hover td:first-child{background:var(--panel-2,#f1f3f5)}",
+      /* the band is one cell across the table; left unbreakable, its own length was being
+         handed to the first column and pushed every set's numbers a screen away from its name */
+      /* and it has to BE a table cell for that: drawn as a flex box it stops spanning the
+         table, sits in the first column alone and makes that column as wide as its text */
+      ".tr-sets .sx-table tr.tr-bandrow td{display:table-cell}",
+      ".tr-sets .sx-table tr.tr-bandrow td:after{display:none}",
+      ".tr-sets .sx-table tr.tr-bandrow td{position:static;text-align:left;border:0;border-bottom:1px solid var(--line-strong,#d7dbe0);max-width:none;min-width:0;white-space:normal;padding-top:12px;",
+      "  font:800 11px/1 'Oswald',sans-serif;letter-spacing:.14em;color:var(--ink)}",
+      ".tr-sets .sx-table tr.tr-bandrow:hover td{box-shadow:none;background:transparent}",
       ".tr-h{display:flex;align-items:baseline;gap:10px}",
       ".tr-no{font:800 10px/1 'Oswald',sans-serif;letter-spacing:.16em;color:var(--ink-faint);",
       "  border:1px solid var(--line-strong);border-radius:5px;padding:4px 6px}",
