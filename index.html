@@ -4692,14 +4692,14 @@ function _gamePlaceholder(n){ return /\bTBD\b|\bTBA\b|to be (decided|determined|
 async function fillPlaceholderFixtures(list){
   if(!list.some(g=>_gamePlaceholder(g.opponent))) return list;
   let all=[];
+  /* asked fresh, not taken from the league page's saved copy: that copy can be from before
+     the draw, which is exactly when the game it is being asked about was not in it yet */
   try{
-    const L=leagueState();
-    all=(L.games||[]).concat(L.cup||[]);
-    if(!all.length){
-      const j=await fetch("/.netlify/functions/bbl?res=all").then(r=>r.json());
-      all=((j&&j.games)||[]).concat((j&&j.cup)||[]);
-    }
-  }catch(e){ return list; }
+    const j=await fetch("/.netlify/functions/bbl?res=all").then(r=>r.json());
+    all=((j&&j.games)||[]).concat((j&&j.cup)||[]);
+  }catch(e){}
+  if(!all.length){ try{ const L=leagueState(); all=(L.games||[]).concat(L.cup||[]); }catch(e){} }
+  if(!all.length) return list;
   const day=d=>Math.round(new Date(d+"T12:00:00Z").getTime()/86400000);
   return list.map(g=>{
     if(!_gamePlaceholder(g.opponent)) return g;
