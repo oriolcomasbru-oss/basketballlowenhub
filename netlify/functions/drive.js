@@ -361,6 +361,293 @@ function has5x5(text) {
   return /(^|[^0-9])5\s*(?:x|×|v|vs\.?|c|contra|on|against|gegen|:)\s*5(?![0-9])/i.test(String(text || ""));
 }
 
+/* ================= where things sit on a page ========================================
+
+   pdfTextMapped reads the words of a sheet in the order the file happens to hold them,
+   which is enough to ask whether a word is there. A rotation sheet is a table: what a
+   name means depends on the row and the column it sits in, and what a line of the box
+   means depends on the colour painted behind it. So this pass keeps, for every piece of
+   text, the point of the page it is drawn at - through the text matrix and whatever the
+   page has scaled or moved - and every filled block with its colour and its rectangle,
+   whether it was drawn as a rectangle or as a path of four lines. */
+function pdfLayout(buf, zlib, X) {
+  var hay = buf.toString("latin1");
+  var objs = X.pdfObjects(hay), id;
+  var fontMap = {}, names = {};
+  for (id in objs) {
+    var tu = /\/ToUnicode\s+(\d+)\s+\d+\s+R/.exec(objs[id].dict);
+    if (tu && objs[tu[1]]) fontMap[id] = X.pdfCMap(X.pdfStreamOf(buf, objs[tu[1]], zlib));
+  }
+  for (id in objs) {
+    objs[id].dict.replace(/\/([A-Za-z0-9_.+\-]+)\s+(\d+)\s+\d+\s+R/g, function (_, nm, ref) {
+      if (fontMap[ref]) names[nm] = fontMap[ref];
+    });
+  }
+  var mul = function (m, n) {
+    return [m[0] * n[0] + m[1] * n[2], m[0] * n[1] + m[1] * n[3],
+            m[2] * n[0] + m[3] * n[2], m[2] * n[1] + m[3] * n[3],
+            m[4] * n[0] + m[5] * n[2] + n[4], m[4] * n[1] + m[5] * n[3] + n[5]];
+  };
+  var pt = function (m, x, y) { return [x * m[0] + y * m[2] + m[4], x * m[1] + y * m[3] + m[5]]; };
+  var texts = [], fills = [];
+  var TOK = /\((?:\\[\s\S]|[^\\()])*\)|<[0-9a-fA-F\s]*>|\[|\]|\/[^\s\/\[\]()<>]+|[-+]?(?:\d+\.?\d*|\.\d+)|[A-Za-z'"*]+/g;
+  for (id in objs) {
+    var o = objs[id];
+    if (o.a < 0) continue;
+    if (/\/Subtype\s*\/Image|\/FontFile|\/Type\s*\/XRef|\/Type\s*\/ObjStm|\/Length1/.test(o.dict)) continue;
+    var st = X.pdfStreamOf(buf, o, zlib);
+    if (!st || !/\b(re|BT)\b/.test(st)) continue;
+    var ctm = [1, 0, 0, 1, 0, 0], fill = [0, 0, 0], stack = [];
+    var tm = [1, 0, 0, 1, 0, 0], tlm = [1, 0, 0, 1, 0, 0], font = null, size = 0, lead = 0;
+    var ops = [], pend = [], path = [], paths = [], inArr = null, m;
+    var show = function (s) {
+      if (!s) return;
+      var p = pt(mul(tm, ctm), 0, 0);
+      var last = texts[texts.length - 1];
+      if (last && Math.abs(last.x - p[0]) < 0.01 && Math.abs(last.y - p[1]) < 0.01) last.s += s;
+      else texts.push({ x: p[0], y: p[1], s: s, size: size });
+    };
+    var str = function (tok) {
+      return tok[0] === "(" ? X.pdfDecode(X.pdfLitBytes(tok.slice(1, -1)), font)
+                            : X.pdfDecode(X.pdfHexBytes(tok.slice(1, -1)), font);
+    };
+    TOK.lastIndex = 0;
+    while ((m = TOK.exec(st))) {
+      var t = m[0], c0 = t[0];
+      if (t === "[") { inArr = []; continue; }
+      if (t === "]") { ops.push(inArr || []); inArr = null; continue; }
+      if (c0 === "(" || c0 === "<" || c0 === "/" || /^[-+.\d]/.test(t)) {
+        var v = (c0 === "(" || c0 === "<" || c0 === "/") ? t : parseFloat(t);
+        if (inArr) inArr.push(v); else ops.push(v);
+        continue;
+      }
+      var n = ops.length;
+      switch (t) {
+        case "q": stack.push([ctm, fill]); break;
+        case "Q": if (stack.length) { var sv = stack.pop(); ctm = sv[0]; fill = sv[1]; } break;
+        case "cm": if (n >= 6) ctm = mul(ops.slice(n - 6), ctm); break;
+        case "rg": case "sc": case "scn":
+          if (n >= 3 && typeof ops[n - 3] === "number") fill = ops.slice(n - 3);
+          else if (n >= 1 && typeof ops[n - 1] === "number") fill = [ops[n - 1], ops[n - 1], ops[n - 1]];
+          break;
+        case "g": if (n >= 1) fill = [ops[n - 1], ops[n - 1], ops[n - 1]]; break;
+        case "re": if (n >= 4) pend.push(ops.slice(n - 4)); break;
+        /* a block drawn as a path - move, lines, close - is a rectangle all the same */
+        case "m": if (n >= 2) { if (path.length) paths.push(path); path = [pt(ctm, ops[n - 2], ops[n - 1])]; } break;
+        case "l": if (n >= 2) path.push(pt(ctm, ops[n - 2], ops[n - 1])); break;
+        case "c": if (n >= 6) path.push(pt(ctm, ops[n - 2], ops[n - 1])); break;
+        case "f": case "F": case "f*": case "B": case "B*": case "b": case "b*":
+          pend.forEach(function (r) {
+            var a = pt(ctm, r[0], r[1]), b = pt(ctm, r[0] + r[2], r[1] + r[3]);
+            fills.push({ x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]),
+                         w: Math.abs(b[0] - a[0]), h: Math.abs(b[1] - a[1]), rgb: fill.slice() });
+          });
+          if (path.length) paths.push(path);
+          paths.forEach(function (pp) {
+            if (pp.length < 3) return;
+            var xs = pp.map(function (q) { return q[0]; }), ys = pp.map(function (q) { return q[1]; });
+            var x0 = Math.min.apply(null, xs), y0 = Math.min.apply(null, ys);
+            fills.push({ x: x0, y: y0, w: Math.max.apply(null, xs) - x0, h: Math.max.apply(null, ys) - y0, rgb: fill.slice() });
+          });
+          pend = []; path = []; paths = []; break;
+        case "n": case "S": case "s": pend = []; path = []; paths = []; break;
+        case "BT": tm = [1, 0, 0, 1, 0, 0]; tlm = tm; break;
+        case "Tf": if (n >= 2) { font = names[String(ops[n - 2]).slice(1)] || null; size = ops[n - 1]; } break;
+        case "TL": if (n >= 1) lead = ops[n - 1]; break;
+        case "Tm": if (n >= 6) { tm = ops.slice(n - 6); tlm = tm; } break;
+        case "Td": if (n >= 2) { tlm = mul([1, 0, 0, 1, ops[n - 2], ops[n - 1]], tlm); tm = tlm; } break;
+        case "TD": if (n >= 2) { lead = -ops[n - 1]; tlm = mul([1, 0, 0, 1, ops[n - 2], ops[n - 1]], tlm); tm = tlm; } break;
+        case "T*": tlm = mul([1, 0, 0, 1, 0, -lead], tlm); tm = tlm; break;
+        case "Tj": if (n >= 1 && typeof ops[n - 1] === "string") show(str(ops[n - 1])); break;
+        case "'": case '"':
+          tlm = mul([1, 0, 0, 1, 0, -lead], tlm); tm = tlm;
+          if (n >= 1 && typeof ops[n - 1] === "string") show(str(ops[n - 1])); break;
+        case "TJ":
+          if (n >= 1 && Array.isArray(ops[n - 1])) {
+            var seg = "";
+            ops[n - 1].forEach(function (e) {
+              if (typeof e === "string") seg += str(e);
+              else if (typeof e === "number" && e < -180) seg += " ";
+            });
+            show(seg);
+          }
+          break;
+      }
+      ops = [];
+    }
+  }
+  return { texts: texts, fills: fills };
+}
+
+
+/* ================= a game-plan sheet, read into the plan the app keeps ===============
+   The staff's sheet is always the same page: for each quarter a strip of colour, a clock
+   row, five rows of names, and to the right a box with the quarter's general lines, its
+   coloured stretches (FIRST 4', NEXT 4', LAST 2') and the defence. Everything is where it
+   is on the page, so it is read by position. */
+function gpColour(f) {
+  return "#" + f.rgb.map(function (v) {
+    var n = Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16);
+    return n.length < 2 ? "0" + n : n;
+  }).join("");
+}
+function gpIsTint(hex) {          /* a colour, not white, black, grey or the yellow of a sub */
+  if (!/^#[0-9a-f]{6}$/.test(hex)) return false;
+  var r = parseInt(hex.substr(1, 2), 16), g = parseInt(hex.substr(3, 2), 16), b = parseInt(hex.substr(5, 2), 16);
+  if (Math.max(r, g, b) - Math.min(r, g, b) < 24) return false;
+  if (r > 240 && g > 240 && b < 40) return false;
+  return true;
+}
+function parseGamePlan(L) {
+  var warn = [];
+  var T = L.texts.map(function (t) { return { x: t.x, y: t.y, s: String(t.s || "").replace(/\s+/g, " ").trim() }; })
+    .filter(function (t) { return t.s; });
+  var F = L.fills.filter(function (f) { return f.w > 8 && f.h > 4; })
+    .map(function (f) { return { x: f.x, y: f.y, w: f.w, h: f.h, c: gpColour(f) }; })
+    .filter(function (f) { return gpIsTint(f.c); });
+  var clocks = T.filter(function (t) { return /^CLOCK$/i.test(t.s); }).sort(function (a, b) { return b.y - a.y; });
+  if (!clocks.length) return { plan: null, warn: ["no CLOCK row on the page — this is not a rotation sheet"] };
+  var QN = ["Q1", "Q2"];
+  var clean = function (s) {
+    return String(s).replace(/(\d)\s*[«´`'’′»]/g, "$1′").replace(/\s*=\s*/g, " = ").replace(/\s+/g, " ").trim();
+  };
+  var plan = { pool: [], grid: {}, offbar: {}, defbar: {}, offleg: ["", "", "", ""], defleg: ["", "", "", ""], gen: {} };
+  var palette = [null, null, null, null], bandsByQ = {}, poolSeen = {};
+  /* The sheet always uses the same four colours, and the app keeps four of its own in
+     the same order - green, yellow, red, blue. A colour off the sheet takes the slot of
+     the app colour it is nearest to, so green on paper is green on the screen in every
+     game; if that slot is already another colour's, it takes the next free one. */
+  var APP = ["#92d050", "#fdd868", "#f28e86", "#8cb5f9"];
+  var rgbOf = function (h) { return [parseInt(h.substr(1, 2), 16), parseInt(h.substr(3, 2), 16), parseInt(h.substr(5, 2), 16)]; };
+  var slotOf = function (c) {
+    var have = palette.indexOf(c);
+    if (have >= 0) return have;
+    var a = rgbOf(c);
+    var dist = function (k) { var b = rgbOf(APP[k]); return (a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]) + (a[2] - b[2]) * (a[2] - b[2]); };
+    var order = [0, 1, 2, 3].sort(function (i, j) { return dist(i) - dist(j); });
+    for (var k = 0; k < order.length; k++) if (!palette[order[k]]) { palette[order[k]] = c; return order[k]; }
+    return -1;
+  };
+  var addPool = function (n) { n = String(n).toUpperCase(); if (n && !poolSeen[n]) { poolSeen[n] = 1; plan.pool.push(n); } };
+  var POS = ["PG", "SG", "SF", "PF", "C"];
+  clocks.slice(0, 2).forEach(function (ck, qi) {
+    var q = QN[qi];
+    var yTop = ck.y + 30, yBot = clocks[qi + 1] ? clocks[qi + 1].y + 30 : -1e9;
+    var mins = T.filter(function (t) { return Math.abs(t.y - ck.y) < 3 && /^\d{1,2}\s*MIN$/i.test(t.s); })
+      .sort(function (a, b) { return a.x - b.x; });
+    /* the table's edges: the colour strip says exactly, the clock labels nearly */
+    var rail = F.filter(function (f) { return f.y > ck.y && f.y < ck.y + 22 && f.h < 30; });
+    var left, right;
+    if (rail.length) {
+      left = Math.min.apply(null, rail.map(function (f) { return f.x; }));
+      right = Math.max.apply(null, rail.map(function (f) { return f.x + f.w; }));
+    } else if (mins.length >= 2) {
+      var step = (mins[mins.length - 1].x - mins[0].x) / (mins.length - 1);
+      left = mins[0].x - step * 0.25; right = left + step * 10;
+    } else { warn.push(q + ": no clock labels to place the columns by"); left = 55; right = 411; }
+    var colW = (right - left) / 10;
+    var colOf = function (x) { return Math.max(0, Math.min(9, Math.floor((x + 8 - left) / colW))); };
+    /* the five rows */
+    var grid = [];
+    POS.forEach(function (pos) {
+      var lab = T.filter(function (t) { return t.s === pos && t.x < left && t.y < ck.y && t.y > yBot; })
+        .sort(function (a, b) { return b.y - a.y; })[0];
+      var row = [null, null, null, null, null, null, null, null, null, null];
+      if (!lab) { warn.push(q + ": no " + pos + " row"); grid.push(row); return; }
+      var names = T.filter(function (t) { return t.x >= left - 2 && t.x < right && t.y > lab.y - 3 && t.y < lab.y + 10 && t !== lab; })
+        .sort(function (a, b) { return a.x - b.x; });
+      if (names.length === 10) names.forEach(function (t, i) { row[i] = t.s.toUpperCase(); });
+      else { names.forEach(function (t) { row[colOf(t.x)] = t.s.toUpperCase(); });
+        warn.push(q + " " + pos + ": " + names.length + " names found, placed by position"); }
+      row.forEach(function (n) { if (n) addPool(n); });
+      grid.push(row);
+    });
+    plan.grid[q] = grid;
+    /* the strip of colour over the clock row */
+    var bar = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    for (var c = 0; c < 10; c++) {
+      var cx = left + colW * (c + 0.5);
+      var hit = rail.filter(function (f) { return cx >= f.x && cx <= f.x + f.w; })[0];
+      if (!hit) continue;
+      bar[c] = slotOf(hit.c) + 1;
+    }
+    plan.offbar[q] = bar; plan.defbar[q] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    /* the box on the right */
+    var boxLeft = right + 60;
+    /* a bare number out here is a total from the minutes rows, not a line of the box */
+    var box = T.filter(function (t) { return t.x >= boxLeft && t.y < yTop && t.y > yBot - 2 && t.y <= ck.y + 3 && !/^\d+$/.test(t.s); });
+    var lines = [];
+    box.sort(function (a, b) { return (b.y - a.y) || (a.x - b.x); }).forEach(function (t) {
+      var ln = lines[lines.length - 1];
+      if (!ln || Math.abs(ln.y - t.y) > 3) { ln = { y: t.y, items: [] }; lines.push(ln); }
+      ln.items.push(t);
+    });
+    var clusters = [];
+    /* "FIRST 4' = ...": a stretch of minutes and nothing else in front of the equals sign.
+       "LAST 3' DEFENSE = BLACK" is a note that happens to start the same way. */
+    var isBand = function (s) { return /^(FIRST|NEXT|LAST|ALL)\s*\d+(?:\s*-\s*\d+)?\s*[«´`’′»']?\s*(=|$)/i.test(s); };
+    lines.forEach(function (ln) {
+      var cur = null;
+      ln.items.sort(function (a, b) { return a.x - b.x; }).forEach(function (t) {
+        var glue = /^[^A-Za-z0-9(]*=/.test(t.s);
+        var fresh = !cur || (!glue && (isBand(t.s) || (t.s.indexOf("=") > 0 && cur.s.indexOf("=") >= 0)));
+        if (fresh) { cur = { x: t.x, y: t.y, s: t.s }; clusters.push(cur); }
+        else cur.s += " " + t.s;
+      });
+    });
+    var side = "off", gen = { off: [], def: [] }, bands = [];
+    clusters.forEach(function (cl) {
+      var s = clean(cl.s);
+      if (/^DEFEN[SC]E\b/i.test(s)) side = "def";
+      if (isBand(s)) {
+        var fill = F.filter(function (f) { return f.x >= boxLeft - 8 && cl.x >= f.x - 4 && cl.x <= f.x + f.w && cl.y >= f.y - 4 && cl.y <= f.y + f.h + 4; })[0];
+        var eq = s.indexOf("=");
+        bands.push({ label: (eq > 0 ? s.slice(0, eq) : s).trim(), text: eq > 0 ? s.slice(eq + 1).trim() : "", c: fill ? fill.c : "", raw: s });
+      } else gen[side].push(s);
+    });
+    plan.gen[q] = { off: gen.off.join("\n"), def: gen.def.join("\n") };
+    bandsByQ[q] = bands;
+    if (!rail.length) warn.push(q + ": no colour strip over the clock row");
+    /* the squad, in the order the minutes row has it */
+    var ml = T.filter(function (t) { return /^[12]Q\s*MIN$/i.test(t.s) && t.y < ck.y && t.y > yBot; })[0];
+    if (ml) T.filter(function (t) { return t.x > left - 10 && t.x < boxLeft - 20 && t.y > ml.y + 8 && t.y < ml.y + 26 && /^[A-Z][A-Z .'-]{1,14}$/.test(t.s); })
+      .sort(function (a, b) { return a.x - b.x; }).forEach(function (t) { addPool(t.s); });
+  });
+  /* each coloured stretch's text goes to its colour; one whose colour is on no strip is
+     still a concept of the quarter, so it is kept as a general line under its own name */
+  QN.forEach(function (q) {
+    var bar = plan.offbar[q] || [];
+    /* the stretches of this quarter in the order they are played */
+    var runs = [];
+    bar.forEach(function (v) { if (v && runs[runs.length - 1] !== v) runs.push(v); });
+    var nextSeen = 0;
+    (bandsByQ[q] || []).forEach(function (b) {
+      var pi = b.c ? palette.indexOf(b.c) : -1;
+      /* the colour of the line says which stretch it is; when the line's colour is not on
+         the strip, its own name does - FIRST is the one that opens, LAST the one that
+         closes, NEXT whatever comes between, in order */
+      if (pi < 0 || bar.indexOf(pi + 1) < 0) {
+        var w = b.label.toUpperCase(), r = -1;
+        if (/^FIRST|^ALL/.test(w)) r = 0;
+        else if (/^LAST/.test(w)) r = runs.length - 1;
+        else if (/^NEXT/.test(w)) { r = 1 + nextSeen; if (r > runs.length - 2) r = runs.length - 2; }
+        pi = (r >= 0 && r < runs.length) ? runs[r] - 1 : -1;
+      }
+      if (/^NEXT/i.test(b.label)) nextSeen++;
+      if (pi < 0) { plan.gen[q].off += (plan.gen[q].off ? "\n" : "") + b.raw; return; }
+      if (!b.text) return;
+      plan.offleg[pi] += (plan.offleg[pi] ? " · " : "") + q + ": " + b.text;
+    });
+  });
+  if (!plan.grid.Q2) { plan.grid.Q2 = []; plan.offbar.Q2 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; plan.defbar.Q2 = plan.offbar.Q2.slice(); plan.gen.Q2 = { off: "", def: "" }; warn.push("only one quarter on the sheet"); }
+  var filled = 0;
+  QN.forEach(function (q) { (plan.grid[q] || []).forEach(function (r) { r.forEach(function (n) { if (n) filled++; }); }); });
+  return { plan: plan, warn: warn, filled: filled, colours: palette.filter(Boolean) };
+}
+
+const PDFX = { pdfObjects: pdfObjects, pdfStreamOf: pdfStreamOf, pdfCMap: pdfCMap,
+               pdfLitBytes: pdfLitBytes, pdfHexBytes: pdfHexBytes, pdfDecode: pdfDecode };
+
 const MONTHS = {
   jan:1, january:1, ene:1, enero:1, gen:1, januar:1, gener:1,
   feb:2, february:2, febrero:2, februar:2, febrer:2,
@@ -597,6 +884,34 @@ exports.handler = async (event) => {
       });
     }
 
+    /* ?plan=<id> — a rotation sheet read into the plan the app keeps: who is on the floor
+       each minute of each quarter, the colour of each stretch and what is run in it, and
+       the general lines of the quarter. Staff only: it is the game plan. */
+    if (p.plan) {
+      if (!/^[A-Za-z0-9_-]{10,}$/.test(p.plan)) return json(400, { error: "bad file id" });
+      if (!who.staff) return denied();
+      const tg = key
+        ? ["https://www.googleapis.com/drive/v3/files/" + p.plan + "?alt=media&key=" + encodeURIComponent(key),
+           "https://drive.google.com/uc?export=download&id=" + p.plan]
+        : ["https://drive.google.com/uc?export=download&id=" + p.plan,
+           "https://drive.usercontent.google.com/download?id=" + p.plan + "&export=download"];
+      let pb = null, why = "";
+      for (const t of tg) {
+        try {
+          const r = await fetch(t, { headers: UA, redirect: "follow" });
+          if (!r.ok) { why = "status " + r.status; continue; }
+          const b = Buffer.from(await r.arrayBuffer());
+          if (b.slice(0, 5).toString("latin1") !== "%PDF-") { why = "it is not a PDF"; continue; }
+          pb = b; break;
+        } catch (e) { why = (e && e.message) || "download failed"; }
+      }
+      if (!pb) return json(200, { id: p.plan, plan: null, warn: ["could not open the sheet (" + why + ")"] });
+      let got;
+      try { got = parseGamePlan(pdfLayout(pb, zlib, PDFX)); }
+      catch (e) { return json(200, { id: p.plan, plan: null, warn: ["could not read the sheet (" + ((e && e.message) || e) + ")"] }); }
+      return json(200, { id: p.plan, plan: got.plan, warn: got.warn || [], filled: got.filled || 0 });
+    }
+
     if (p.file) {
       if (!/^[A-Za-z0-9_-]{10,}$/.test(p.file)) return json(400, { error: "bad file id" });
       if (!who.staff && !(await playerMayOpen(p.file, key))) return denied();
@@ -653,4 +968,5 @@ exports.handler = async (event) => {
 /* exported for the offline checks in /tmp — no effect at runtime */
 module.exports._t = { pdfText: pdfText, pdfStreams: pdfStreams, findDates: findDates, dateFromName: dateFromName,
                       pdfTextMapped: pdfTextMapped, has5x5: has5x5,
+                      pdfLayout: pdfLayout, parseGamePlan: parseGamePlan, PDFX: PDFX,
                       keepInFolder: keepInFolder, fileRe: fileRe };

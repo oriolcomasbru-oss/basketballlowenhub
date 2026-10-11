@@ -12473,7 +12473,11 @@ function renderStatsSection(sec, canEd, save){
 const GP_ROWS=["PG","SG","SF","PF","C"];
 const GP_HALF=["Q1","Q2"];
 const GP_COLS=10;
-const GP_OFFCOLORS=["#e74c3c","#e67e22","#f1c40f","#c0392b"]; /* offense = warm theme */
+/* The four colours the staff's own sheet paints its stretches with, in the order it uses
+   them: green opens the quarter, yellow follows, red closes it, blue is the fourth. They
+   were a red, an orange, a yellow and a dark red of the app's own, so a plan on the
+   screen and the same plan on paper never looked like the same document. */
+const GP_OFFCOLORS=["#92d050","#fdd868","#f28e86","#8cb5f9"];
 const GP_DEFCOLORS=["#2471a3","#16a085","#8e44ad","#27ae60"]; /* defense = cool theme */
 const GP_DEFAULT_PLAYERS=["DEVIN","GIAN","FERDI","SHELDON","CHIP","BENNY","TAJH","FELIPE","ZABA","EDDY","NOAH","CHRIS","ROMARIO","ESLI"];
 let _planSel=null;
@@ -12605,11 +12609,72 @@ function _gpOnFloorQ(plan, side, idx, q){
   return Object.keys(seen).sort((a,b)=>seen[b]-seen[a])
     .map(id=>{ const pl=_gpById(plan,id); return pl?pl.name:""; }).filter(Boolean);
 }
+/* A GAME PLAN NOBODY TYPED IN IS READ OFF THE SHEET.
+   The staff writes each game's rotation once, on the sheet that goes to the bench, and
+   that sheet is in the Drive folder. The plan here was a second copy somebody had to
+   make by hand, and for the games where nobody did the screen was simply empty - with
+   the finished sheet sitting one folder away. So a plan with nothing in it asks the Drive
+   function to read its game's sheet: the names minute by minute, the colour of each
+   stretch and what is run in it, and the general lines of each quarter.
+   What is read is shown at once, to anyone on the staff. It is written into the report
+   the first time somebody with the right to edit turns editing on, and from then on it is
+   the report's own plan, changed here like any other. A player's browser does not ask:
+   the function answers staff only. */
+const _gpSheetSt=new WeakMap();     /* a plan section -> what became of its sheet, this visit */
+const _gpSheetMemo={};              /* a Drive file -> the function's answer */
+function gpPlanEmpty(plan){
+  if(gpHalfFill(plan)>0) return false;
+  if((plan.offleg||[]).concat(plan.defleg||[]).some(x=>String(x||"").trim())) return false;
+  return !GP_HALF.some(q=>plan.gen && plan.gen[q]
+    && (String(plan.gen[q].off||"").trim() || String(plan.gen[q].def||"").trim()));
+}
+function gpSheetFor(){
+  const g=(state.games||[]).filter(x=>x.opponent===_scoutOpponent && (!_scoutDate || x.date===_scoutDate))[0];
+  if(!g) return null;
+  try{ return docIndex().game[g.id]||null; }catch(e){ return null; }
+}
 function renderPlanSection(sec, canEd, save, allSecs){
   const plan=planEnsure(sec);
   const box=h("div",{class:"gp-wrap gp2"});
   const sel={ id:_planSel };
   const redraw=()=>{ _planSel=sel.id; box.innerHTML=""; build(); };
+
+  if(SB_TOKEN && !isPlayerUser()){
+    const st=_gpSheetSt.get(sec);
+    const keep=()=>{ const s2=_gpSheetSt.get(sec); if(canEd && s2 && s2.ok && !s2.kept){ s2.kept=1; try{ save(); }catch(e){} } };
+    if(st) keep();
+    else if(gpPlanEmpty(plan)){
+      const f=gpSheetFor();
+      if(f){
+        _gpSheetSt.set(sec, {name:f.name, busy:1});
+        const ask=_gpSheetMemo[f.id] || (_gpSheetMemo[f.id]=
+          driveFetch(DOCS_FN+"?plan="+encodeURIComponent(f.id), {cache:"no-store"}).then(r=>r.json()));
+        ask.then(j=>{
+          if(!j || !j.plan || !(j.filled>0)){
+            _gpSheetSt.set(sec, {name:f.name, fail:(j&&j.warn&&j.warn[0])||(j&&j.error)||"nothing could be read from it"});
+            delete _gpSheetMemo[f.id]; redraw(); return;
+          }
+          const err=importPlanJSON(sec, JSON.stringify(j.plan));
+          if(err){ _gpSheetSt.set(sec, {name:f.name, fail:String(err)}); redraw(); return; }
+          planEnsure(sec);
+          _gpSheetSt.set(sec, {name:f.name, ok:1, kept:0, warn:j.warn||[]});
+          keep(); redraw();
+        }).catch(e=>{ delete _gpSheetMemo[f.id];
+          _gpSheetSt.set(sec, {name:f.name, fail:(e&&e.message)||"the Drive could not be reached"}); redraw(); });
+      } else if(!_docsTried || _docsBusy){
+        /* the folder has not been listed yet in this visit, or is being listed right
+           now: wait for the list, then look again */
+        let tries=0;
+        const again=()=>{
+          if(_gpSheetSt.get(sec) || !box.parentNode) return;
+          if(_docsBusy && tries++<40){ setTimeout(again, 1500); return; }
+          if(!gpSheetFor()) return;
+          try{ const fresh=renderPlanSection(sec, canEd, save, allSecs); box.parentNode.replaceChild(fresh, box); }catch(e){}
+        };
+        try{ Promise.resolve(syncDocs(false)).then(()=>setTimeout(again, 50)); }catch(e){}
+      }
+    }
+  }
 
   function stamp(q,r,c){ if(!canEd) return; const cur=plan.grid[q][r][c];
     if(sel.id==="__erase") plan.grid[q][r][c]=null;
@@ -12634,7 +12699,9 @@ function renderPlanSection(sec, canEd, save, allSecs){
       _gpSegs(bars).forEach(sg=>{
         const td=h("td",{class:"gp2-rl"+(sg.v===3?" ink":""), colspan:String(sg.len)});
         /* this quarter's share of the colour's text, not the sentence for both */
-        if(sg.v){ td.style.background=colors[sg.v-1]; td.textContent=gpLegQText(legs[sg.v-1], q); }
+        if(sg.v){ td.style.background=colors[sg.v-1]; td.textContent=gpLegQText(legs[sg.v-1], q);
+          /* the sheet's colours are light, so what is written on them is dark */
+          if(side==="off") td.style.color="#14181f"; }
         tr.appendChild(td); });
     }
     return tr;
@@ -12833,7 +12900,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
            there for the printer that drops fills. */
         bands.forEach(i=>{
           const item=h("div",{class:"gp3-ki"});
-          item.style.borderColor=colors[i]; item.style.backgroundColor=colors[i]+"52";
+          item.style.borderColor=colors[i]; item.style.backgroundColor=colors[i]+(side==="off"?"cc":"52");
           const span=gpBarSpan(bar, i+1);
           const line=h("div",{class:"gp3-kl"});
           /* named as on the sheet - FIRST 4', NEXT 4', LAST 2' - with the clock on the hover */
@@ -12935,6 +13002,15 @@ function renderPlanSection(sec, canEd, save, allSecs){
   }
 
   function build(){
+    const drv=_gpSheetSt.get(sec);
+    if(drv && !(drv.ok && drv.kept)){
+      const drvNote=h("div",{class:"gp-sheetnote no-print"},
+        drv.busy ? "Reading this game's sheet from the Drive — "+drv.name+" …"
+        : drv.fail ? "The sheet in the Drive ("+drv.name+") could not be read: "+drv.fail
+        : "Read from the sheet in the Drive — "+drv.name+". Turn editing on once to keep it in the report.");
+      drvNote.style.cssText="font-size:12px;opacity:.75;margin:0 0 8px;";
+      box.appendChild(drvNote);
+    }
     if(canEd){
       const pool=h("div",{class:"gp-poolbar"});
       pool.appendChild(h("span",{class:"gp-pool-lbl"},"Squad"));
