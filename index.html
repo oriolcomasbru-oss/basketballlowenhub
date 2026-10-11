@@ -6569,6 +6569,8 @@ function renderScout(body, g, key, kind, from, rep){
     /* Post game: the written blocks, with the tagging stats inside the TEAM
        STATS section at the bottom. The placeholder that used to sit here drew
        the same report a second time, above the sections. */
+    /* the game itself first - score, flow, the two box scores - then what the staff wrote */
+    try{ if(!isPlayerUser()) body.appendChild(_lgGameInline(g)); }catch(e){}
     renderReportSections(body, rep, key, g, editable, "postgame");
     return;
   }
@@ -14381,9 +14383,82 @@ function _lgGameClock(t){
   const into=t-base, left=Math.max(0,len-into);
   return (qi<4? "Q"+(qi+1) : "OT"+(qi-3))+" "+Math.floor(left/60)+":"+String(Math.round(left%60)).padStart(2,"0");
 }
-/* Everything the popup shows, worked out once from the feed. H is the home side. */
-function _lgGameModel(g, j){
-  const feed=j.feed||{}, sheet=j.game||{};
+/* THE BOX SCORE OF PART OF A GAME.
+   The feed's team and player lines are the whole game and nothing else. A quarter, or
+   the two a coach wants to look at together, has to be counted from the actions: every
+   shot, rebound, turnover, steal, block and foul carries its period and its player. The
+   minutes and the plus/minus come from who was on the floor - the five the feed names
+   at the start of each period, moved by every substitution after it.
+   The answer has the same shape as the feed's own lines, so everything downstream reads
+   a quarter exactly as it reads a game. */
+function _lgGamePeriodBox(feed, sel){
+  const qi=q=>_lgGameElapsed(q,0).qi;
+  const T={ A:null, B:null }, P={};
+  ["A","B"].forEach(c=>{ T[c]={ type:"team", teamcode:c, FTM:0,FTA:0,P2M:0,P2A:0,P3M:0,P3A:0,FOUL:0,DREB:0,OREB:0,BL:0,STL:0,TOV:0, PTS:0 }; });
+  (feed.teams||[]).forEach(t=>{ if(T[t.teamcode]) T[t.teamcode].id=t.id; });
+  const nums={}; (feed.players||[]).forEach(p=>{ nums[String(p.player_id)]={ num:p.NUM, c:p.teamcode }; });
+  const pl=(id,c,nr)=>{ id=String(id||"");
+    if(!id || id==="0" || !nums[id]) return null;      /* a team action, not a man */
+    return P[id]||(P[id]={ type:"player_stats", id:id, player_id:id, teamcode:nums[id].c||c, NUM:nums[id].num||nr||"",
+      PTS:0,FTM:0,FTA:0,P2M:0,P2A:0,P3M:0,P3A:0,FOUL:0,REB:0,AST:0,BL:0,STL:0,TOV:0,SP:0,DREB:0,OREB:0,EFF:0,PM:0,FOULR:0,_any:1 }); };
+  const acts=(feed.actions||[]).map((a,i)=>({ a:a, q:qi(a.quarter), i:i })).filter(x=>sel[x.q]);
+  /* who is on the floor, period by period */
+  const byQ={}; acts.forEach(x=>{ (byQ[x.q]=byQ[x.q]||[]).push(x.a); });
+  Object.keys(byQ).forEach(qk=>{
+    const len=(+qk<4)?600:300, on={ A:{}, B:{} }; let known={ A:false, B:false };
+    (feed.starters||[]).filter(s=>qi(s.quarter)===+qk).forEach(s=>{
+      [1,2,3,4,5].forEach(n=>{ const id=String(s["player_id"+n]||""); if(id && id!=="0"){ on[s.teamcode][id]=1; known[s.teamcode]=true; } }); });
+    let last=len;
+    const tick=t=>{ const dt=Math.max(0,last-t); last=Math.min(last,t);
+      if(!dt) return;
+      ["A","B"].forEach(c=>{ if(known[c]) Object.keys(on[c]).forEach(id=>{ const p=pl(id,c); if(p) p.SP+=dt; }); }); };
+    byQ[qk].slice().sort((x,y)=>(Number(y.time)||0)-(Number(x.time)||0)).forEach(a=>{
+      const t=Number(a.time)||0, c=a.teamcode;
+      tick(t);
+      if(a.action==="SUBST" && on[c]){ delete on[c][String(a.player_id1)]; const inn=String(a.player_id2||""); if(inn && inn!=="0") on[c][inn]=1; return; }
+      if(a.result==="+" && (a.action==="P2"||a.action==="P3"||a.action==="FT")){
+        const v=(a.action==="P3")?3:(a.action==="P2")?2:1;
+        ["A","B"].forEach(k=>{ if(known[k]) Object.keys(on[k]).forEach(id=>{ const p=pl(id,k); if(p) p.PM+=(k===c? v : -v); }); });
+      }
+    });
+    tick(0);
+  });
+  acts.forEach(x=>{ const a=x.a, c=a.teamcode, t=T[c]; if(!t) return;
+    const p=pl(a.player_id1, c, a.player_nr1), k=a.action, made=(a.result==="+");
+    if(k==="P2"||k==="P3"||k==="FT"){
+      const f=(k==="FT")?"FT":k, v=(k==="P3")?3:(k==="P2")?2:1;
+      t[f+"A"]++; if(p) p[f+"A"]++;
+      if(made){ t[f+"M"]++; t.PTS+=v; if(p){ p[f+"M"]++; p.PTS+=v; }
+        /* the league credits the pass on a basket and also the pass that sent a man to
+           the line, written on the free throw he made */
+        const o=pl(a.player_id2, c, a.player_nr2); if(o && o!==p && o.teamcode===c) o.AST++; }
+    }
+    else if(k==="REB"||k==="TREB"){ const f=(a.info1==="O")?"OREB":"DREB"; t[f]++; if(p && k==="REB"){ p[f]++; p.REB++; } }
+    else if(k==="TO"||k==="TTO"){ t.TOV++; if(p && k==="TO") p.TOV++; }
+    else if(k==="ST"){ t.STL++; if(p) p.STL++; }
+    else if(k==="BL"){ t.BL++; if(p) p.BL++; }
+    else if(k==="FOUL"){ t.FOUL++; if(p) p.FOUL++;
+      /* an offensive foul gives the ball away: the league counts it as a turnover too */
+      if(a.info1==="O"){ t.TOV++; if(p) p.TOV++; } }
+    else if(k==="RFOUL"){ if(p) p.FOULR++; }
+  });
+  const players=Object.keys(P).map(id=>{ const p=P[id];
+    p.EFF=p.PTS+p.REB+p.AST+p.STL+p.BL-(p.P2A+p.P3A-p.P2M-p.P3M)-(p.FTA-p.FTM)-p.TOV;
+    return p; });
+  return { teams:[T.A,T.B], players:players, pts:{ A:T.A.PTS, B:T.B.PTS },
+           actions:acts.map(x=>x.a), shots:(feed.shots||[]).filter(s=>sel[qi(s.q)]) };
+}
+/* Everything the popup shows, worked out once from the feed. H is the home side.
+   sel names the periods to read - {0:1, 2:1} is the first and third quarters - and
+   nothing means the whole game, which is read off the feed's own official lines. */
+function _lgGameModel(g, j, sel){
+  let feed=j.feed||{}; const sheet=j.game||{}, full=feed;
+  if(sel && Object.keys(sel).length){
+    const part=_lgGamePeriodBox(full, sel);
+    let hcode="A"; (full.teams||[]).forEach(t=>{ if(String(t.id)===String(g.homeId)) hcode=t.teamcode; });
+    feed=Object.assign({}, full, { teams:part.teams, players:part.players, actions:part.actions, shots:part.shots });
+    g=Object.assign({}, g, { hs:part.pts[hcode], as:part.pts[hcode==="A"?"B":"A"], _full:g });
+  } else sel=null;
   const tr=(feed.teams||[]);
   /* which letter is the home club: by the club's own id, never by assuming A is home */
   let hc="A";
@@ -14396,7 +14471,7 @@ function _lgGameModel(g, j){
   const starters={};
   (feed.starters||[]).filter(s=>s.quarter==="q1").forEach(s=>{
     [1,2,3,4,5].forEach(i=>{ starters[String(s["player_id"+i])]=1; }); });
-  const players=c=>(feed.players||[]).filter(p=>p.teamcode===c && (Number(p.SP)||0)>0).map(p=>({
+  const players=c=>(feed.players||[]).filter(p=>p.teamcode===c && ((Number(p.SP)||0)>0 || p._any)).map(p=>({
       id:String(p.player_id), num:String(p.NUM||""), name:names[String(p.player_id)]||("#"+p.NUM),
       st:!!starters[String(p.player_id)], sec:Number(p.SP)||0, pts:Number(p.PTS)||0,
       p2m:+p.P2M||0, p2a:+p.P2A||0, p3m:+p.P3M||0, p3a:+p.P3A||0, ftm:+p.FTM||0, fta:+p.FTA||0,
@@ -14422,10 +14497,14 @@ function _lgGameModel(g, j){
   const H=side(hc, g.hs, ac), A=side(ac, g.as, hc);
 
   /* the score as it was built: one step per made shot, in the order of the game clock */
-  const acts=(feed.actions||[]).map((a,i)=>{ const e=_lgGameElapsed(a.quarter, a.time); return { a:a, t:e.t, qi:e.qi, i:i }; })
+  const clocked=list=>(list||[]).map((a,i)=>{ const e=_lgGameElapsed(a.quarter, a.time); return { a:a, t:e.t, qi:e.qi, i:i }; })
     .sort((x,y)=>(x.t-y.t)||(x.i-y.i));
+  /* the line of the score is always the whole game - a margin only means something
+     against what came before it - while everything counted is the periods asked for */
+  const actsAll=clocked(full.actions), acts=sel? clocked(feed.actions) : actsAll;
+  const G0=g._full||g;
   const ev=[]; let hs=0, as=0;
-  acts.forEach(x=>{ const a=x.a;
+  actsAll.forEach(x=>{ const a=x.a;
     if(a.result!=="+") return;
     const v=(a.action==="P3")?3:(a.action==="P2")?2:(a.action==="FT")?1:0;
     if(!v) return;
@@ -14472,9 +14551,9 @@ function _lgGameModel(g, j){
     S.sh2=S.pts? 100*2*S.p2m/S.pts : null; S.sh3=S.pts? 100*3*S.p3m/S.pts : null; S.sh1=S.pts? 100*S.ftm/S.pts : null;
   };
   adv(H,A); adv(A,H);
-  const nq=Math.max(4, (g.quarters||[]).length, acts.length? acts[acts.length-1].qi+1 : 4);
+  const nq=Math.max(4, (G0.quarters||[]).length, actsAll.length? actsAll[actsAll.length-1].qi+1 : 4);
   const total=2400+(nq-4)*300;
-  const flow={ ev:ev, total:total, nq:nq, ok:(hs===g.hs && as===g.as), hs:hs, as:as,
+  const flow={ ev:ev, total:total, nq:nq, ok:(hs===G0.hs && as===G0.as), hs:hs, as:as, sel:sel,
                changes:0, ties:0, maxH:0, maxA:0, atH:0, atA:0, secH:0, secA:0, secT:0, runs:[] };
   let last=0, lt=0, ld=0, run=null;
   ev.forEach(e=>{
@@ -14555,6 +14634,8 @@ function _lgGameLead(g, M){
   }
   for(let q=0;q<F.nq;q++){
     const t0=q<4? q*600 : 2400+(q-4)*300, t1=q<4? t0+600 : t0+300;
+    /* the periods being read are marked on the line of the whole game */
+    if(F.sel && F.sel[q]) svg.appendChild(sv("rect",{x:X(t0),y:T,width:X(t1)-X(t0),height:Ht-T-B,class:"lgg-selq"}));
     if(q) svg.appendChild(sv("line",{x1:X(t0),x2:X(t0),y1:T,y2:Ht-B,class:"lgg-q"}));
     svg.appendChild(sv("text",{x:(X(t0)+X(t1))/2,y:Ht-7,class:"lgg-ax","text-anchor":"middle"}, q<4?("Q"+(q+1)):("OT"+(q-3))));
   }
@@ -14891,13 +14972,47 @@ function _lgGameShots(name, S){
       h("span",{}, h("i",{},"Above the break 3"), z(["w3L","w3R","top3"]))));
 }
 function _lgGameOpen(g){
-  const L=leagueState();
   const old=document.querySelector(".lgg-back"); if(old) old.remove();
-  const body=h("div",{class:"lgg-body"});
   const close=()=>{ back.remove(); document.removeEventListener("keydown", onKey); };
   /* Esc closes what is on top: a player's card first, then the game */
   const onKey=e=>{ if(e.key!=="Escape") return;
     const pl=back.querySelector(".lgg-plback"); if(pl) pl.remove(); else close(); };
+  const back=h("div",{class:"lgg-back", onclick:close}, _lgGamePanel(g, close));
+  document.body.appendChild(back);
+  document.addEventListener("keydown", onKey);
+}
+/* OUR OWN GAME, AT THE TOP OF ITS POST GAME.
+   The same reading of a game the league page opens in a window, drawn in the page: the
+   post game report used to start at the staff's own notes and the tagging, and what the
+   game was - the score by quarter, who was in front, the two box scores - had to be looked
+   up somewhere else first. The report knows the opponent and the day; the league's list
+   of games gives the game that was played against them that day. */
+let _lgAllMemo=null;
+function _lgGameInline(sg){
+  const box=h("div",{class:"lgg-inl"});
+  if(!sg || !sg.date) return box;
+  const L=leagueState();
+  const find=list=>{
+    const mine=(list||[]).filter(x=>_lgDone(x) && (_lgOurs(x.home)||_lgOurs(x.away)));
+    const day=d=>Math.round(new Date(d+"T12:00:00Z").getTime()/86400000);
+    const same=mine.filter(x=>x.date===sg.date);
+    if(same.length) return same[0];
+    /* a game moved by a day in one calendar and not in the other is still that game,
+       as long as the opponent is the one the report is about */
+    const opp=_lgShort(sg.opponent||"").toLowerCase();
+    return mine.filter(x=>x.date && Math.abs(day(x.date)-day(sg.date))<=1 && opp &&
+      (String(x.home||"")+" "+String(x.away||"")).toLowerCase().indexOf(opp)>=0)[0]||null;
+  };
+  const put=list=>{ const g=find(list); if(g){ box.innerHTML=""; box.appendChild(_lgGamePanel(g, null)); } return !!g; };
+  const have=(L.games||[]).concat(L.cup||[]);
+  if(have.length && put(have)) return box;
+  _lgAllMemo=_lgAllMemo || fetch("/.netlify/functions/bbl?res=all").then(r=>r.json());
+  _lgAllMemo.then(j=>{ put(((j&&j.games)||[]).concat((j&&j.cup)||[])); }).catch(()=>{ _lgAllMemo=null; });
+  return box;
+}
+function _lgGamePanel(g, close){
+  const L=leagueState();
+  const body=h("div",{class:"lgg-body"});
   const hw=g.hs>g.as, aw=g.as>g.hs;
   const qs=(g.quarters||[]);
   const qt=h("table",{class:"lgg-qt"});
@@ -14913,8 +15028,8 @@ function _lgGameOpen(g){
   const when=(g.date? g.date.slice(8,10)+"/"+g.date.slice(5,7)+"/"+g.date.slice(0,4) : "")+(g.time?(" · "+g.time):"");
   const meta=[g.phase==="cup"? (g.roundName||"Pokal") : ("easyCredit BBL · Matchday "+(g.day||g.round||"")), when, g.venue,
     g.attendance? (Number(g.attendance).toLocaleString("en")+" spectators") : ""].filter(Boolean).join("  ·  ");
-  const panel=h("div",{class:"lgg", onclick:e=>e.stopPropagation()},
-    h("button",{class:"lgg-x", title:"Close (Esc)", onclick:close},"×"),
+  const panel=h("div",{class:"lgg"+(close?"":" inline"), onclick:e=>e.stopPropagation()},
+    close? h("button",{class:"lgg-x", title:"Close (Esc)", onclick:close},"×") : null,
     h("div",{class:"lgg-meta"}, meta),
     h("div",{class:"lgg-top"},
       h("div",{class:"lgg-team r"+(hw?" w":"")}, h("span",{}, g.home||""), _lgCrest(L, g.homeId||g.home, "lgg-crest")),
@@ -14923,14 +15038,10 @@ function _lgGameOpen(g){
       h("div",{class:"lgg-team"+(aw?" w":"")}, _lgCrest(L, g.awayId||g.away, "lgg-crest"), h("span",{}, g.away||""))),
     qs.length? h("div",{class:"lgg-qtw"}, qt) : null,
     body);
-  const back=h("div",{class:"lgg-back", onclick:close}, panel);
-  document.body.appendChild(back);
-  document.addEventListener("keydown", onKey);
   body.appendChild(h("div",{class:"lg-empty"},"Reading the game sheet…"));
   const ask=_lgGameMemo[g.id] || (_lgGameMemo[g.id]=
     fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(g.id)).then(r=>r.json()));
   ask.then(j=>{
-    if(!back.parentNode) return;
     body.innerHTML="";
     if(!j || !j.feed || !(j.feed.actions||[]).length){
       delete _lgGameMemo[g.id];
@@ -14938,13 +15049,33 @@ function _lgGameOpen(g){
         ((j&&j.errors&&j.errors.length)? " ("+j.errors[0]+")" : "")+"."));
       return;
     }
-    const M=_lgGameModel(g, j);
+    /* WHICH PART OF THE GAME IS BEING READ. Nothing picked is the whole game; any
+       quarters picked, together, are read as one stretch - the first half, the third
+       quarter alone, the second and the fourth. Everything below follows the choice. */
+    const sel={};
+    let nqAll=Math.max(4, qs.length);
+    (j.feed.actions||[]).forEach(a=>{ nqAll=Math.max(nqAll, _lgGameElapsed(a.quarter,0).qi+1); });
+    const qn=i=>i<4?("Q"+(i+1)):("OT"+(i-3));
+    const draw=()=>{
+    body.innerHTML="";
+    const picked=Object.keys(sel).map(Number).sort((a,b)=>a-b);
+    if(picked.length===nqAll){ picked.forEach(k=>delete sel[k]); picked.length=0; }
+    const M=_lgGameModel(g, j, sel);
+    const chip=(lbl, on, fn)=>h("button",{class:"lg-seg-b"+(on?" act":""), onclick:()=>{ fn(); draw(); }}, lbl);
+    const setOnly=list=>{ Object.keys(sel).forEach(k=>delete sel[k]); list.forEach(k=>{ sel[k]=1; }); };
+    const isOnly=list=>picked.length===list.length && list.every(k=>sel[k]);
+    const seg=h("div",{class:"lg-seg"}, chip("Full game", !picked.length, ()=>setOnly([])));
+    for(let i=0;i<nqAll;i++) seg.appendChild(chip(qn(i), !!sel[i], ()=>{ if(sel[i]) delete sel[i]; else sel[i]=1; }));
+    const seg2=h("div",{class:"lg-seg"}, chip("1st half", isOnly([0,1]), ()=>setOnly([0,1])), chip("2nd half", isOnly([2,3]), ()=>setOnly([2,3])));
+    body.appendChild(h("div",{class:"lgg-flt"}, h("span",{class:"lgg-flt-l"},"Read"), seg, seg2,
+      picked.length? h("span",{class:"lgg-flt-s"}, picked.map(qn).join(" + ")+"  ·  "+(g.homeTlc||g.home)+" "+M.H.pts+" – "+M.A.pts+" "+(g.awayTlc||g.away)) : null));
     const sec=(t, kid, sub)=>h("div",{class:"lgg-sec"}, h("div",{class:"lgg-h"}, h("b",{},t), sub?h("span",{},sub):null), kid);
     /* who carried each side, before any table has to be read */
     const lead=(S)=>{ const t=k=>S.pl.slice().sort((a,b)=>b[k]-a[k])[0];
       const one=(k,l)=>{ const p=t(k); return (p&&p[k])? h("span",{}, h("i",{},l), h("b",{}, p[k]), " "+p.name) : null; };
       return h("div",{class:"lgg-ldr"}, one("pts","PTS"), one("reb","REB"), one("ast","AST"), one("pir","PIR")); };
-    if(M.flow.ev.length) body.appendChild(sec("Who was in front", _lgGameLead(g, M), "the margin, minute by minute"));
+    if(M.flow.ev.length) body.appendChild(sec("Who was in front", _lgGameLead(g, M),
+      picked.length? "the whole game; the periods being read are shaded" : "the margin, minute by minute"));
     if(M.H.has && M.A.has){
       /* the plain numbers first; the advanced ones are one press away, not in the way */
       const names=()=>h("div",{class:"lgg-cmp-top"}, h("b",{class:"h"}, g.home||""), h("b",{class:"a"}, g.away||""));
@@ -14958,8 +15089,11 @@ function _lgGameOpen(g){
       body.appendChild(sec("Four factors", _lgGameFour(g, M), "each side in attack and in defence"));
     }
     const pick=(S,O,tlc)=>p=>{
-      const shut=()=>{ const x=panel.querySelector(".lgg-plback"); if(x) x.remove(); };
+      const esc=e=>{ if(e.key==="Escape") shut(); };
+      const shut=()=>{ const x=panel.querySelector(".lgg-plback"); if(x) x.remove(); document.removeEventListener("keydown", esc); };
       shut(); panel.appendChild(_lgGamePlayer(g, M, S, O, p, tlc, shut));
+      /* in the page there is no window to catch Esc, so the card listens for itself */
+      if(!close) document.addEventListener("keydown", esc);
     };
     if(M.H.pl.length || M.A.pl.length) body.appendChild(sec("Players",
       h("div",{}, lead(M.H), _lgGameBox(g.home||"", M.H, pick(M.H,M.A,g.homeTlc||g.home)),
@@ -14996,12 +15130,14 @@ function _lgGameOpen(g){
       s.boxScorePDFUrl? h("a",{href:s.boxScorePDFUrl, target:"_blank", rel:"noopener"},"Official box score (PDF)") : null,
       s.playByPlayPDFUrl? h("a",{href:s.playByPlayPDFUrl, target:"_blank", rel:"noopener"},"Official play by play (PDF)") : null);
     if(links.childNodes.length) body.appendChild(links);
+    };
+    draw();
   }).catch(e=>{
     delete _lgGameMemo[g.id];
-    if(!back.parentNode) return;
     body.innerHTML="";
     body.appendChild(h("div",{class:"lg-empty"},"The game could not be read: "+((e&&e.message)||e)));
   });
+  return panel;
 }
 function _lgMdCol(title, games, tag, grp, selId){
   const col=h("div",{class:"lg-mdc"});
@@ -23878,6 +24014,12 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 .lgg-box tr.first-bench td{border-top:2px solid var(--line-strong,#d2d7df)}
 .lgg-shots{display:grid;grid-template-columns:1fr 1fr;gap:22px}
 .lgg-shots.one{grid-template-columns:1fr;gap:14px}
+.lgg.inline{width:100%;box-shadow:none;margin:0 0 18px}
+.lgg.inline .lgg-flt{position:static}
+.lgg-flt{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:16px;padding:8px 10px;border:1px solid var(--line,#e4e7ec);border-radius:10px;position:sticky;top:0;z-index:5;background:var(--panel,#fff)}
+.lgg-flt-l{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.lgg-flt-s{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600}
+.lgg-selq{fill:var(--ink,#141821);opacity:.07}
 .lgg-shot .presc{margin-top:4px;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}
 .lgg-shot .presc-g{grid-template-columns:repeat(3,minmax(0,1fr))}
 .lgg{width:min(1240px,100%)}
