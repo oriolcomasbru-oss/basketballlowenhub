@@ -6435,7 +6435,29 @@ function repStatusBar(rep, slot, mayEdit, key, g, redraw){
   return statusBar(st, LBL[st], h("span",{class:"st-right"}, note, btn));
 }
 function gameCard(gameId, from){
-  const g=state.games.find(x=>x.id===gameId)||{};
+  /* THE CALENDAR IS READ HERE TOO. It was only read by the list of games, so a page
+     reloaded while a report was open came back with the fixtures it had been saved with
+     - a cup round still called "TBD" after the draw, a game still on its old date - and
+     nothing ever corrected them until somebody went back to the list. */
+  const again=()=>{ if(from==="gameplan") renderGamePlan(); else if(from==="oppscout") renderOppScout(); else renderTeamScout(); };
+  const slotUi=()=>(from==="gameplan")? state.ui.gp : (from==="oppscout")? state.ui.os : state.ui.ts;
+  const before=JSON.stringify(state.games.find(x=>x.id===gameId)||null);
+  loadGamesOnce(()=>{
+    const ui=slotUi();
+    if(!ui || ui.mode!=="game" || ui.gameId!==gameId) return;
+    /* drawn again only when this fixture actually changed, so an open report is not
+       rebuilt under somebody's hands for nothing */
+    if(JSON.stringify(state.games.find(x=>x.id===gameId)||null)!==before) again();
+  });
+  let g=state.games.find(x=>x.id===gameId);
+  if(!g){
+    /* the fixture this report was opened on has been given its real opponent, and with
+       it a new id: the game on the same day is the same game */
+    const m=/^g_(\d{4}-\d{2}-\d{2})_/.exec(String(gameId||""));
+    const same=m? state.games.filter(x=>x.date===m[1]) : [];
+    if(same.length===1){ g=same[0]; const ui=slotUi(); if(ui) ui.gameId=g.id; gameId=g.id; }
+  }
+  g=g||{};
   const kind = (from==="oppscout"||from==="gameplan") ? "pregame" : "postgame";
   const key = (g.date||"")+"|"+scoutSlug(g.opponent||"");
   const wrap=h("div",{});
