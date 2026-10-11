@@ -4712,7 +4712,9 @@ async function fillPlaceholderFixtures(list){
     if(!other || _gamePlaceholder(other)) return g;
     const opp=_gTidy(other), ven=home?"Home":"Away";
     return Object.assign({}, g, { id:"g_"+near.date+"_"+opp.toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,14),
-      date:near.date, opponent:opp, venue:ven, home:home, was:g.opponent });
+      date:near.date, opponent:opp, venue:ven, home:home, was:g.opponent,
+      /* what its report was saved under before the name was known - see loadScout */
+      wasKey:gameKey(g) });
   });
 }
 async function loadGames(){
@@ -4738,7 +4740,8 @@ async function loadGames(){
     const old=take(g);
     if(!old) return g;
     return Object.assign({}, old, { date:g.date, opponent:g.opponent, venue:g.venue,
-      home:g.home, competition:g.competition, src:"sheet" });
+      home:g.home, competition:g.competition, src:"sheet" },
+      g.wasKey? { was:g.was, wasKey:g.wasKey } : {});
   });
   commit(()=>{
     state.games=out.concat(mine).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
@@ -6445,6 +6448,8 @@ function gameCard(gameId, from){
   loadGamesOnce(()=>{
     const ui=slotUi();
     if(!ui || ui.mode!=="game" || ui.gameId!==gameId) return;
+    /* never under somebody who is writing: the report is drawn again the next time it opens */
+    try{ if(EDIT_MODE) return; }catch(e){}
     /* drawn again only when this fixture actually changed, so an open report is not
        rebuilt under somebody's hands for nothing */
     if(JSON.stringify(state.games.find(x=>x.id===gameId)||null)!==before) again();
@@ -6519,9 +6524,49 @@ async function loadScout(body, g, key, kind, from){
     else { state.ui.ts={mode:"overview"}; persist(); renderTeamScout(); }
     return;
   }
+  /* A REPORT WRITTEN BEFORE THE OPPONENT HAD A NAME IS STILL THIS GAME'S REPORT.
+     A report is stored under the day and the opponent. When the calendar's "TBD (Round 2)"
+     became Chemnitz, the game started asking for a report under a name nothing had ever
+     been saved under, and everything the staff had written - the players, the roles, the
+     notes - was left behind under the old name. It opened as a blank report, which to
+     whoever wrote the first one is the work being gone.
+     So a game that took its name from the league also looks under the name it had. If
+     only the earlier report exists, it is copied to the new name and opened; if both
+     exist, nothing is overwritten and the page offers the earlier one back. The earlier
+     record is never deleted. */
+  g.__older=null;
+  if(SB_TOKEN && !isPlayerUser() && g && g.wasKey && g.wasKey!==key){
+    try{
+      const o=await sbrpc("get_report",{p_token:SB_TOKEN,p_key:g.wasKey});
+      const old=(o&&o.ok)? o.report : null;
+      if(old && _repWeight(old)>0){
+        if(!rep || _repWeight(rep)===0){
+          const s=await sbrpc("save_report",{p_token:SB_TOKEN,p_key:key,p_kind:"pregame",p_opponent:g.opponent,
+            p_date:g.date,p_data:old.data||{},p_html:old.html||""});
+          if(s&&s.ok){
+            rep=Object.assign({}, old, {key:key, opponent:g.opponent, game_date:g.date, share_state:(rep&&rep.share_state)||"private"});
+            repStatSet(key, rep);
+            toast("Recovered the report written as "+(g.was||"TBD"));
+          } else g.__older=old;
+        } else if(_repWeight(old)!==_repWeight(rep) || JSON.stringify(old.data||{})!==JSON.stringify(rep.data||{})) g.__older=old;
+      }
+    }catch(e){}
+  }
   rep = rep || {key,kind,opponent:g.opponent,game_date:g.date,data:{players:[]},html:"",share_state:"private"};
   rep.data=rep.data||{}; rep.data.players=rep.data.players||[];
   renderScout(body, g, key, kind, from, rep);
+}
+/* how much somebody has actually written in a report: nothing at all is 0 */
+function _repWeight(rep){
+  if(!rep) return 0;
+  const d=rep.data||{};
+  let n=String(rep.html||"").replace(/<[^>]*>/g,"").trim().length;
+  try{ Object.keys(d).forEach(k=>{ const v=d[k];
+    if(v==null) return;
+    if(Array.isArray(v)){ if(v.length) n+=JSON.stringify(v).length; }
+    else if(typeof v==="object"){ if(Object.keys(v).length) n+=JSON.stringify(v).length; }
+    else if(String(v).trim()) n+=String(v).length; }); }catch(e){}
+  return n;
 }
 function renderScout(body, g, key, kind, from, rep){
   /* #phxRoot is a single node that gets moved into this body. Clearing the body
@@ -6549,6 +6594,24 @@ function renderScout(body, g, key, kind, from, rep){
   if(editBtn) editBtn.onclick=()=>{ setEditMode(!EDIT_MODE); renderScout(body,g,key,kind,from,rep); };
   const saveBtn = mayEdit ? h("button",{class:"btn primary"},"Save") : null;
   if(saveBtn) saveBtn.onclick=async ()=>{ if(!SB_TOKEN){toast("Sign in first");return;} try{ const r=await sbrpc("save_report",{p_token:SB_TOKEN,p_key:key,p_kind:kind,p_opponent:g.opponent,p_date:g.date,p_data:rep.data,p_html:rep.html||""}); if(r&&r.ok) repStatSet(key, rep); toast(r&&r.ok?"Guardado ✓":((r&&r.error)||"Error")); }catch(e){ toast("Error: "+e.message); } };
+  if(g && g.__older && mayEdit){
+    /* both reports exist: say so and let the staff choose, rather than choosing for them */
+    const older=g.__older;
+    const back=h("button",{class:"btn primary"},"Restore it");
+    back.onclick=async ()=>{
+      if(!confirm("Replace what is on this page with the report written as “"+(g.was||"TBD")+"”?\n\nThe earlier report stays saved either way.")) return;
+      try{
+        const s=await sbrpc("save_report",{p_token:SB_TOKEN,p_key:key,p_kind:"pregame",p_opponent:g.opponent,
+          p_date:g.date,p_data:older.data||{},p_html:older.html||""});
+        if(s&&s.ok){ toast("Restored ✓"); g.wasKey=null; g.__older=null; phxPark(); body.innerHTML=""; loadScout(body, g, key, kind, from); }
+        else toast((s&&s.error)||"Could not restore");
+      }catch(e){ toast("Error: "+e.message); }
+    };
+    body.appendChild(h("div",{class:"rs-loadfail"},
+      h("div",{class:"rs-loadfail-t"},"An earlier report for this game is saved as “"+(g.was||"TBD")+"”"),
+      h("div",{class:"rs-loadfail-n"},"It was written before the opponent was known ("+_repWeight(older)+" characters there, "+_repWeight(rep)+" on this page). Nothing has been deleted."),
+      back));
+  }
   const HEAD=body.__head||null;
   if(HEAD){
     /* the row belongs to the card above, so it is emptied of whatever the last render
