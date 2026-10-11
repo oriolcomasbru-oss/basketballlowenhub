@@ -14401,7 +14401,7 @@ function _lgGameModel(g, j){
       st:!!starters[String(p.player_id)], sec:Number(p.SP)||0, pts:Number(p.PTS)||0,
       p2m:+p.P2M||0, p2a:+p.P2A||0, p3m:+p.P3M||0, p3a:+p.P3A||0, ftm:+p.FTM||0, fta:+p.FTA||0,
       or:+p.OREB||0, dr:+p.DREB||0, reb:+p.REB||0, ast:+p.AST||0, stl:+p.STL||0, blk:+p.BL||0,
-      tov:+p.TOV||0, pf:+p.FOUL||0, pm:+p.PM||0, eff:+p.EFF||0 }))
+      tov:+p.TOV||0, pf:+p.FOUL||0, fd:+p.FOULR||0, pm:+p.PM||0, eff:+p.EFF||0 }))
     .sort((a,b)=>(b.st-a.st)||(b.sec-a.sec));
   const side=(c, pts, opp)=>{
     const t=line(c)||{}, pl=players(c), o=line(opp)||{};
@@ -14432,6 +14432,46 @@ function _lgGameModel(g, j){
     if(a.teamcode===hc) hs+=v; else as+=v;
     ev.push({ t:x.t, h:hs, a:as, home:a.teamcode===hc, v:v });
   });
+  /* What the player lines do not carry and the play by play does: the shots of his that
+     were blocked, his points quarter by quarter, and who fed whom. The first is what
+     turns the feed's own index into the PIR - the league's index stops at the box score,
+     the PIR also gives a man the fouls he drew and takes off the ones he made and the
+     shots he had blocked. */
+  const byId={};
+  [H,A].forEach(s=>s.pl.forEach(p=>{ byId[p.id]=p; p.ba=0; p.q=[]; p.to={}; p.from={}; }));
+  acts.forEach(x=>{ const a=x.a, p=byId[String(a.player_id1)]; if(!p) return;
+    const shot=(a.action==="P2"||a.action==="P3");
+    if(shot && a.result==="BL") p.ba++;
+    if(a.result!=="+") return;
+    const v=(a.action==="P3")?3:(a.action==="P2")?2:(a.action==="FT")?1:0;
+    if(!v) return;
+    p.q[x.qi]=(p.q[x.qi]||0)+v;
+    const o=shot? byId[String(a.player_id2)] : null;
+    if(o && o!==p){ p.from[o.id]=(p.from[o.id]||0)+1; o.to[p.id]=(o.to[p.id]||0)+1; }
+  });
+  [H,A].forEach(s=>{
+    s.pl.forEach(p=>{ p.fgm=p.p2m+p.p3m; p.fga=p.p2a+p.p3a;
+      p.pir=p.pts+p.reb+p.ast+p.stl+p.blk+p.fd-(p.fga-p.fgm)-(p.fta-p.ftm)-p.tov-p.ba-p.pf; });
+    s.pir=s.pl.reduce((a,p)=>a+p.pir,0); s.fd=s.pl.reduce((a,p)=>a+p.fd,0);
+    s.sec=s.pl.reduce((a,p)=>a+p.sec,0);
+  });
+  /* the advanced line of a side needs the other side, so it is built once both exist */
+  const adv=(S,O)=>{
+    const tsa=S.fga+0.44*S.fta, min=(S.sec||0)/300 || 40;
+    S.ts=tsa? 100*S.pts/(2*tsa) : null;
+    S.drtg=O.ortg; S.net=(S.ortg!=null&&O.ortg!=null)? S.ortg-O.ortg : null;
+    S.pace=((S.poss+O.poss)/2)*40/min;
+    S.drbp=(S.dr+O.or)? 100*S.dr/(S.dr+O.or) : null;
+    S.trbp=(S.reb+O.reb)? 100*S.reb/(S.reb+O.reb) : null;
+    S.astp=S.fgm? 100*S.ast/S.fgm : null;
+    S.astto=S.tov? S.ast/S.tov : null;
+    S.p3r=S.fga? 100*S.p3a/S.fga : null;
+    S.pps=S.fga? S.pts/S.fga : null;
+    S.stlp=O.poss? 100*S.stl/O.poss : null;
+    S.blkp=O.p2a? 100*S.blk/O.p2a : null;
+    S.sh2=S.pts? 100*2*S.p2m/S.pts : null; S.sh3=S.pts? 100*3*S.p3m/S.pts : null; S.sh1=S.pts? 100*S.ftm/S.pts : null;
+  };
+  adv(H,A); adv(A,H);
   const nq=Math.max(4, (g.quarters||[]).length, acts.length? acts[acts.length-1].qi+1 : 4);
   const total=2400+(nq-4)*300;
   const flow={ ev:ev, total:total, nq:nq, ok:(hs===g.hs && as===g.as), hs:hs, as:as,
@@ -14455,7 +14495,7 @@ function _lgGameModel(g, j){
   /* where the shots came from, on the same half court the season charts use */
   const shots=c=>(feed.shots||[]).filter(s=>s.team===c && (Number(s.x)||Number(s.y))).map(s=>{
     const p=_lgShotXY([0,0,0,s.x,s.y], { x0:LG_SHOT_X0, scale:1500/280 });
-    return { x:p.x, y:p.y, made:!!s.made, three:!!s.three, zone:_lgZoneOf(p.x,p.y,!!s.three) }; });
+    return { x:p.x, y:p.y, made:!!s.made, three:!!s.three, zone:_lgZoneOf(p.x,p.y,!!s.three), pid:String(s.player) }; });
   H.shots=shots(hc); A.shots=shots(ac);
   [H,A].forEach(s=>{ s.paint=s.shots.filter(x=>x.made && !x.three && (x.zone==="rim"||x.zone==="paint")).length*2; });
   return { H:H, A:A, flow:flow, sheet:sheet };
@@ -14528,7 +14568,76 @@ function _lgGameLead(g, M){
     ", not the official "+g.hs+"–"+g.as+": the feed is missing a basket somewhere, so the line is close but not exact."));
   return wrap;
 }
-function _lgGameCompare(g, M){
+/* The four factors, each side's attack and each side's defence. One side's defence is the
+   other side's attack seen from the far end - except the rebound, where the defensive
+   number is the share of the other side's misses we took. */
+function _lgGameFour(g, M){
+  const H=M.H, A=M.A, f1=v=>v==null?"—":v.toFixed(1);
+  const tb=h("table",{class:"lg-tbl lgg-four"});
+  tb.appendChild(h("tr",{}, h("th",{class:"l"}), h("th",{colspan:"4", class:"grp"},"Offense"), h("th",{colspan:"4", class:"grp"},"Defense")));
+  tb.appendChild(h("tr",{}, h("th",{class:"l"},"Team"),
+    ["eFG%","TOV%","ORB%","FT rate","Opp eFG%","Opp TOV%","DRB%","Opp FT rate"].map((c,i)=>h("th",{class:(i%4===0)?"grp":""}, c))));
+  const cell=(v, o, hi, grp)=>h("td",{class:(grp?"grp ":"")+((v!=null&&o!=null&&v!==o&&((v>o)===hi))?"b":"")}, f1(v));
+  [[g.home,H,A],[g.away,A,H]].forEach(r=>{ const S=r[1], O=r[2];
+    tb.appendChild(h("tr",{}, h("td",{class:"l lg-team"}, r[0]||""),
+      cell(S.efg,O.efg,true,true), cell(S.tovp,O.tovp,false), cell(S.orbp,O.orbp,true), cell(S.ftr,O.ftr,true),
+      cell(O.efg,S.efg,false,true), cell(O.tovp,S.tovp,true), cell(S.drbp,O.drbp,true), cell(O.ftr,S.ftr,false)));
+  });
+  return h("div",{}, h("div",{class:"lgg-scroll"}, tb),
+    h("div",{class:"lgg-note"},"eFG% counts a three one and a half times · TOV% is turnovers per 100 possessions · ORB% and DRB% are the share of the available rebounds · FT rate is free throws attempted per 100 field goal attempts. Bold is the better of the two."));
+}
+/* ONE PLAYER'S GAME. Opened from his row in the box score, over the game. */
+function _lgGamePlayer(g, M, S, O, p, tlc, onClose){
+  const f1=v=>(v==null||!isFinite(v))?"—":v.toFixed(1), f2=v=>(v==null||!isFinite(v))?"—":v.toFixed(2);
+  const pc=(m,a)=>a? Math.round(100*m/a)+"%" : "—";
+  const mm=s=>Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
+  const tsa=p.fga+0.44*p.fta;
+  const ts=tsa? 100*p.pts/(2*tsa) : null, efg=p.fga? 100*(p.fgm+0.5*p.p3m)/p.fga : null;
+  /* the share of his side's possessions he ended while he was on the floor */
+  const tmUse=S.fga+0.44*S.fta+S.tov;
+  const usg=(p.sec&&tmUse)? 100*(p.fga+0.44*p.fta+p.tov)*((S.sec||0)/5)/(p.sec*tmUse) : null;
+  const kp=(l,v,s)=>h("div",{class:"lgg-kp"}, h("span",{},l), h("b",{},v), s?h("i",{},s):null);
+  const li=(l,v)=>h("div",{class:"lgg-pl-li"}, h("span",{},l), h("b",{},v));
+  const shots=S.shots.filter(s=>s.pid===p.id);
+  const nm=id=>{ const x=S.pl.filter(q=>q.id===id)[0]; return x? x.name : "?"; };
+  const links=o=>Object.keys(o).sort((a,b)=>o[b]-o[a]).map(k=>nm(k)+" "+o[k]).join(" · ")||"—";
+  const nq=M.flow.nq, mxq=Math.max.apply(null, [1].concat(p.q.map(v=>v||0)));
+  const qbar=h("div",{class:"lgg-pl-q"});
+  for(let i=0;i<nq;i++){ const v=p.q[i]||0;
+    qbar.appendChild(h("div",{}, h("b",{}, v), h("i",{style:"height:"+Math.round(44*v/mxq)+"px"}), h("span",{}, i<4?("Q"+(i+1)):("OT"+(i-3))))); }
+  const card=h("div",{class:"lgg-pl", onclick:e=>e.stopPropagation()},
+    h("button",{class:"lgg-x", title:"Back to the game (Esc)", onclick:onClose},"×"),
+    h("div",{class:"lgg-pl-h"}, h("span",{class:"n"}, "#"+p.num), h("b",{}, p.name),
+      h("i",{}, tlc+" · "+(p.st?"starter":"off the bench")+" · "+mm(p.sec)+" min")),
+    h("div",{class:"lgg-kps six"},
+      kp("Points", p.pts, Math.round(100*p.pts/Math.max(1,S.pts))+"% of the team"),
+      kp("Rebounds", p.reb, p.or+" off · "+p.dr+" def"),
+      kp("Assists", p.ast, p.tov? (f1(p.ast/p.tov)+" per turnover") : "no turnovers"),
+      kp("PIR", p.pir, "league index "+p.eff),
+      kp("+/−", (p.pm>0?"+":"")+p.pm, "team "+(S.pts-O.pts>0?"+":"")+(S.pts-O.pts)),
+      kp("Usage", usg==null?"—":Math.round(usg)+"%", "of possessions ended on the floor")),
+    h("div",{class:"lgg-pl-g"},
+      h("div",{},
+        h("div",{class:"lgg-cmp-h"},"Shooting"),
+        li("Field goals", p.fgm+"/"+p.fga+"  "+pc(p.fgm,p.fga)),
+        li("2 points", p.p2m+"/"+p.p2a+"  "+pc(p.p2m,p.p2a)),
+        li("3 points", p.p3m+"/"+p.p3a+"  "+pc(p.p3m,p.p3a)),
+        li("Free throws", p.ftm+"/"+p.fta+"  "+pc(p.ftm,p.fta)),
+        li("eFG%", f1(efg)), li("True shooting %", f1(ts)),
+        li("Points per shot", p.fga? f2(p.pts/p.fga) : "—"),
+        li("Shots blocked", p.ba),
+        h("div",{class:"lgg-cmp-h"},"The rest"),
+        li("Steals", p.stl), li("Blocks", p.blk), li("Turnovers", p.tov),
+        li("Fouls · fouls drawn", p.pf+" · "+p.fd),
+        li("Per 40 min", p.sec? (f1(p.pts*2400/p.sec)+" pts · "+f1(p.reb*2400/p.sec)+" reb · "+f1(p.ast*2400/p.sec)+" ast") : "—"),
+        h("div",{class:"lgg-cmp-h"},"Points by quarter"), qbar,
+        h("div",{class:"lgg-cmp-h"},"Passing"),
+        li("His assists went to", links(p.to)),
+        li("His baskets were fed by", links(p.from))),
+      shots.length? _lgGameShots("His shots", { shots:shots }) : h("div",{class:"lg-empty"},"No shot from the floor.")));
+  return h("div",{class:"lgg-plback", onclick:onClose}, card);
+}
+function _lgGameCompare(g, M, adv){
   const H=M.H, A=M.A;
   const f1=v=>v==null?"—":v.toFixed(1), i0=v=>v==null?"—":String(Math.round(v));
   const sh=(m,a)=>m+"/"+a+(a?"  "+Math.round(100*m/a)+"%":"");
@@ -14546,14 +14655,43 @@ function _lgGameCompare(g, M){
                                h("i",{class:"a"+(win<0?" w":""), style:"width:"+(100-hw).toFixed(1)+"%"}))),
       h("b",{class:"v r"+(win<0?" w":"")}, txt? txt[1] : i0(av))));
   };
-  head("Four factors");
+  if(adv){
+    const f2=v=>v==null?"—":v.toFixed(2), p0=v=>v==null?"—":Math.round(v)+"%";
+    head("Efficiency");
+    row("Pace", H.pace, A.pace, [f1(H.pace), f1(A.pace)], null, "possessions per 40 minutes, the same for both by definition");
+    row("Offensive rating", H.ortg, A.ortg, [f1(H.ortg), f1(A.ortg)], "hi", "points scored per 100 possessions");
+    row("Defensive rating", H.drtg, A.drtg, [f1(H.drtg), f1(A.drtg)], "lo", "points allowed per 100 possessions");
+    row("Net rating", Math.max(0,H.net||0), Math.max(0,A.net||0), [(H.net>0?"+":"")+f1(H.net), (A.net>0?"+":"")+f1(A.net)], "hi");
+    row("True shooting %", H.ts, A.ts, [f1(H.ts), f1(A.ts)], "hi", "points per shooting chance, free throws included");
+    row("eFG%", H.efg, A.efg, [f1(H.efg), f1(A.efg)], "hi", "a three counts one and a half times");
+    row("Points per shot", H.pps, A.pps, [f2(H.pps), f2(A.pps)], "hi", "points per field goal attempt");
+    head("How the points came");
+    row("From twos", H.sh2, A.sh2, [p0(H.sh2), p0(A.sh2)], null);
+    row("From threes", H.sh3, A.sh3, [p0(H.sh3), p0(A.sh3)], null);
+    row("From the line", H.sh1, A.sh1, [p0(H.sh1), p0(A.sh1)], null);
+    row("Three point rate", H.p3r, A.p3r, [p0(H.p3r), p0(A.p3r)], null, "threes as a share of all field goal attempts");
+    row("FT rate", H.ftr, A.ftr, [f1(H.ftr), f1(A.ftr)], "hi", "free throws attempted per 100 field goal attempts");
+    row("Fouls drawn", H.fd, A.fd, null, "hi");
+    head("Ball and glass");
+    row("Assist %", H.astp, A.astp, [p0(H.astp), p0(A.astp)], "hi", "made baskets that came off a pass");
+    row("Assists per turnover", H.astto, A.astto, [f2(H.astto), f2(A.astto)], "hi");
+    row("Turnover %", H.tovp, A.tovp, [f1(H.tovp), f1(A.tovp)], "lo", "turnovers per 100 possessions");
+    row("Steal %", H.stlp, A.stlp, [f1(H.stlp), f1(A.stlp)], "hi", "steals per 100 possessions of the other side");
+    row("Off. rebound %", H.orbp, A.orbp, [f1(H.orbp), f1(A.orbp)], "hi", "of the misses at our basket end");
+    row("Def. rebound %", H.drbp, A.drbp, [f1(H.drbp), f1(A.drbp)], "hi");
+    row("Total rebound %", H.trbp, A.trbp, [f1(H.trbp), f1(A.trbp)], "hi");
+    row("Block %", H.blkp, A.blkp, [f1(H.blkp), f1(A.blkp)], "hi", "of the other side's two point attempts");
+    return box;
+  }
+  head("The game in two numbers");
   row("Possessions", H.poss, A.poss, null, null, "FGA − OREB + TOV + 0.44 × FTA");
   row("Points per 100 poss.", H.ortg, A.ortg, [f1(H.ortg), f1(A.ortg)], "hi");
-  row("eFG%", H.efg, A.efg, [f1(H.efg), f1(A.efg)], "hi", "a three counts one and a half times");
-  row("Turnover %", H.tovp, A.tovp, [f1(H.tovp), f1(A.tovp)], "lo", "turnovers per 100 possessions");
-  row("Off. rebound %", H.orbp, A.orbp, [f1(H.orbp), f1(A.orbp)], "hi", "of our own misses that could be rebounded");
-  row("FT rate", H.ftr, A.ftr, [f1(H.ftr), f1(A.ftr)], "hi", "free throws attempted per 100 field goal attempts");
+  row("PIR", Math.max(0,H.pir), Math.max(0,A.pir), [String(H.pir), String(A.pir)], "hi",
+      "points + rebounds + assists + steals + blocks + fouls drawn, minus missed shots, turnovers, shots blocked and fouls");
+  row("Index (league)", Math.max(0,H.pl.reduce((a,p)=>a+p.eff,0)), Math.max(0,A.pl.reduce((a,p)=>a+p.eff,0)),
+      [String(H.pl.reduce((a,p)=>a+p.eff,0)), String(A.pl.reduce((a,p)=>a+p.eff,0))], "hi", "the league's own efficiency, without the fouls");
   head("Shooting");
+  row("Field goals", H.fga?H.fgm/H.fga:0, A.fga?A.fgm/A.fga:0, [sh(H.fgm,H.fga), sh(A.fgm,A.fga)], "hi");
   row("2 points", H.p2a?H.p2m/H.p2a:0, A.p2a?A.p2m/A.p2a:0, [sh(H.p2m,H.p2a), sh(A.p2m,A.p2a)], "hi");
   row("3 points", H.p3a?H.p3m/H.p3a:0, A.p3a?A.p3m/A.p3a:0, [sh(H.p3m,H.p3a), sh(A.p3m,A.p3a)], "hi");
   row("Free throws", H.fta?H.ftm/H.fta:0, A.fta?A.ftm/A.fta:0, [sh(H.ftm,H.fta), sh(A.ftm,A.fta)], "hi");
@@ -14573,34 +14711,38 @@ function _lgGameCompare(g, M){
   row("Bench points", H.bench, A.bench, null, "hi", "everybody who did not start the game");
   return box;
 }
-function _lgGameBox(name, S){
+function _lgGameBox(name, S, onPick){
   const mm=s=>Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
   const sh=(m,a)=>a? (m+"/"+a) : "–";
-  const cols=["#","Player","MIN","PTS","2P","3P","FT","OR","DR","REB","AST","STL","BLK","TO","PF","+/−","EFF"];
+  const cols=["#","Player","MIN","PTS","FG","2P","3P","FT","OR","DR","REB","AST","STL","BLK","TO","PF","FD","+/−","PIR"];
   const tb=h("table",{class:"lg-tbl lgg-box"});
   tb.appendChild(h("tr",{}, cols.map((c,i)=>h("th",{class:i===1?"l":""}, c))));
   const mx=k=>Math.max.apply(null, S.pl.map(p=>p[k]).concat([0]));
-  const top={pts:mx("pts"), reb:mx("reb"), ast:mx("ast")};
+  const top={pts:mx("pts"), reb:mx("reb"), ast:mx("ast"), pir:mx("pir")};
   let bench=false;
   S.pl.forEach(p=>{
-    const r=h("tr",{class:(!p.st && !bench)?"first-bench":""},
+    const r=h("tr",{class:"pick"+((!p.st && !bench)?" first-bench":""), title:"Open his game",
+        onclick:onPick?(()=>onPick(p)):null},
       h("td",{class:"lg-pos"}, p.num), h("td",{class:"l lg-team"}, p.name),
       h("td",{}, mm(p.sec)),
       h("td",{class:"b"+(p.pts&&p.pts===top.pts?" top":"")}, p.pts),
+      h("td",{}, sh(p.fgm,p.fga)),
       h("td",{}, sh(p.p2m,p.p2a)), h("td",{}, sh(p.p3m,p.p3a)), h("td",{}, sh(p.ftm,p.fta)),
       h("td",{}, p.or), h("td",{}, p.dr),
       h("td",{class:(p.reb&&p.reb===top.reb)?"top":""}, p.reb),
       h("td",{class:(p.ast&&p.ast===top.ast)?"top":""}, p.ast),
-      h("td",{}, p.stl), h("td",{}, p.blk), h("td",{}, p.tov), h("td",{}, p.pf),
-      h("td",{class:p.pm>0?"pos":(p.pm<0?"neg":"")}, (p.pm>0?"+":"")+p.pm), h("td",{}, p.eff));
+      h("td",{}, p.stl), h("td",{}, p.blk), h("td",{}, p.tov), h("td",{}, p.pf), h("td",{}, p.fd),
+      h("td",{class:p.pm>0?"pos":(p.pm<0?"neg":"")}, (p.pm>0?"+":"")+p.pm),
+      h("td",{class:"b"+(p.pir===top.pir?" top":"")}, p.pir));
     if(!p.st) bench=true;
     tb.appendChild(r);
   });
   tb.appendChild(h("tr",{class:"lg-avg"},
     h("td",{}), h("td",{class:"l"},"Team"), h("td",{}), h("td",{}, S.pts),
+    h("td",{}, sh(S.fgm,S.fga)),
     h("td",{}, sh(S.p2m,S.p2a)), h("td",{}, sh(S.p3m,S.p3a)), h("td",{}, sh(S.ftm,S.fta)),
     h("td",{}, S.or), h("td",{}, S.dr), h("td",{}, S.reb), h("td",{}, S.ast), h("td",{}, S.stl),
-    h("td",{}, S.blk), h("td",{}, S.tov), h("td",{}, S.pf), h("td",{}), h("td",{})));
+    h("td",{}, S.blk), h("td",{}, S.tov), h("td",{}, S.pf), h("td",{}, S.fd), h("td",{}), h("td",{}, S.pir)));
   return h("div",{class:"lgg-boxw"}, h("div",{class:"lgg-sub"}, name), h("div",{class:"lgg-scroll"}, tb));
 }
 function _lgGameShots(name, S){
@@ -14625,7 +14767,9 @@ function _lgGameOpen(g){
   const old=document.querySelector(".lgg-back"); if(old) old.remove();
   const body=h("div",{class:"lgg-body"});
   const close=()=>{ back.remove(); document.removeEventListener("keydown", onKey); };
-  const onKey=e=>{ if(e.key==="Escape") close(); };
+  /* Esc closes what is on top: a player's card first, then the game */
+  const onKey=e=>{ if(e.key!=="Escape") return;
+    const pl=back.querySelector(".lgg-plback"); if(pl) pl.remove(); else close(); };
   const hw=g.hs>g.as, aw=g.as>g.hs;
   const qs=(g.quarters||[]);
   const qt=h("table",{class:"lgg-qt"});
@@ -14671,14 +14815,28 @@ function _lgGameOpen(g){
     /* who carried each side, before any table has to be read */
     const lead=(S)=>{ const t=k=>S.pl.slice().sort((a,b)=>b[k]-a[k])[0];
       const one=(k,l)=>{ const p=t(k); return (p&&p[k])? h("span",{}, h("i",{},l), h("b",{}, p[k]), " "+p.name) : null; };
-      return h("div",{class:"lgg-ldr"}, one("pts","PTS"), one("reb","REB"), one("ast","AST"), one("eff","EFF")); };
+      return h("div",{class:"lgg-ldr"}, one("pts","PTS"), one("reb","REB"), one("ast","AST"), one("pir","PIR")); };
     if(M.flow.ev.length) body.appendChild(sec("Who was in front", _lgGameLead(g, M), "the margin, minute by minute"));
-    if(M.H.has && M.A.has) body.appendChild(sec("Team comparison",
-      h("div",{}, h("div",{class:"lgg-cmp-top"}, h("b",{class:"h"}, g.home||""), h("b",{class:"a"}, g.away||"")), _lgGameCompare(g, M)),
-      "the stronger number of each pair is the bold one"));
+    if(M.H.has && M.A.has){
+      /* the plain numbers first; the advanced ones are one press away, not in the way */
+      const names=()=>h("div",{class:"lgg-cmp-top"}, h("b",{class:"h"}, g.home||""), h("b",{class:"a"}, g.away||""));
+      const advBox=h("div",{class:"lgg-adv", style:"display:none"}, names(), _lgGameCompare(g, M, true));
+      const btn=h("button",{class:"btn sm lgg-advbtn", onclick:()=>{
+        const on=advBox.style.display==="none";
+        advBox.style.display=on?"":"none"; btn.textContent=on?"Hide advanced stats":"Advanced stats"; btn.classList.toggle("on", on); }},"Advanced stats");
+      body.appendChild(sec("Team comparison",
+        h("div",{}, names(), _lgGameCompare(g, M), h("div",{class:"lgg-advrow"}, btn), advBox),
+        "the stronger number of each pair is the bold one"));
+      body.appendChild(sec("Four factors", _lgGameFour(g, M), "each side in attack and in defence"));
+    }
+    const pick=(S,O,tlc)=>p=>{
+      const shut=()=>{ const x=panel.querySelector(".lgg-plback"); if(x) x.remove(); };
+      shut(); panel.appendChild(_lgGamePlayer(g, M, S, O, p, tlc, shut));
+    };
     if(M.H.pl.length || M.A.pl.length) body.appendChild(sec("Players",
-      h("div",{}, lead(M.H), _lgGameBox(g.home||"", M.H), lead(M.A), _lgGameBox(g.away||"", M.A)),
-      "starters first; the line separates the bench"));
+      h("div",{}, lead(M.H), _lgGameBox(g.home||"", M.H, pick(M.H,M.A,g.homeTlc||g.home)),
+                  lead(M.A), _lgGameBox(g.away||"", M.A, pick(M.A,M.H,g.awayTlc||g.away))),
+      "starters first; the line separates the bench · click a player for his game"));
     if(M.H.shots.length || M.A.shots.length) body.appendChild(sec("Shot chart",
       h("div",{class:"lgg-shots"}, _lgGameShots(g.home||"", M.H), _lgGameShots(g.away||"", M.A)),
       "dot made · cross missed"));
@@ -23528,6 +23686,30 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 .lgg-ldr b{color:var(--ink,#141821);font-family:'Oswald',sans-serif;font-size:14px}
 .lgg-scroll{overflow-x:auto}
 .lgg-box tr{cursor:default}
+.lgg-box tr.pick{cursor:pointer}
+.lgg-box tr.pick:hover td{background:rgba(201,162,39,.12)}
+.lgg-four tr{cursor:default}
+.lgg-four td.b{font-weight:800;color:var(--ink,#141821)}
+.lgg-advrow{display:flex;justify-content:center;margin-top:12px}
+.lgg-advbtn.on{background:var(--accent-soft,#f6efe0);border-color:var(--accent,#c6a15b)}
+.lgg-adv{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line-strong,#d2d7df)}
+.lgg-kps.six{grid-template-columns:repeat(6,1fr)}
+.lgg-plback{position:fixed;inset:0;z-index:9100;background:rgba(10,13,18,.55);display:flex;justify-content:center;align-items:flex-start;overflow:auto;padding:48px 16px}
+.lgg-pl{--lgh:#c6a15b;--lga:#4a86d8;position:relative;width:min(900px,100%);background:var(--panel,#fff);color:var(--ink,#141821);border:1px solid var(--line,#e4e7ec);border-radius:16px;padding:18px 22px 22px;box-shadow:0 24px 60px rgba(0,0,0,.4)}
+.lgg-pl-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding-right:40px}
+.lgg-pl-h .n{font-family:'Oswald',sans-serif;font-size:22px;color:var(--accent-strong,#b0873c)}
+.lgg-pl-h b{font-family:'Oswald',sans-serif;font-size:24px;font-weight:600}
+.lgg-pl-h i{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.lgg-pl-g{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:6px}
+.lgg-pl-li{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid var(--line,#eef0f3);font-size:12.5px}
+.lgg-pl-li span{color:var(--ink-soft,#5b6472)}
+.lgg-pl-li b{font-family:'IBM Plex Mono',monospace;font-weight:600;white-space:pre-wrap;text-align:right}
+.lgg-pl-q{display:flex;gap:10px;align-items:flex-end;height:84px;padding-top:4px}
+.lgg-pl-q div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px}
+.lgg-pl-q b{font-family:'IBM Plex Mono',monospace;font-size:12px}
+.lgg-pl-q i{display:block;width:100%;max-width:46px;min-height:2px;background:var(--lgh);border-radius:3px 3px 0 0}
+.lgg-pl-q span{font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--ink-faint,#8a93a2)}
+@media (max-width:760px){ .lgg-pl-g{grid-template-columns:1fr} .lgg-kps.six{grid-template-columns:repeat(2,1fr)} }
 .lgg-box td{white-space:nowrap}
 .lgg-box td.b{font-weight:800;color:var(--ink,#141821)}
 .lgg-box td.top{font-weight:800;color:var(--accent-strong,#b0873c)}
