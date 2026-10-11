@@ -12480,7 +12480,14 @@ let _planSel=null;
 function planEnsure(sec){
   const p=sec.plan=sec.plan||{};
   if(!Array.isArray(p.pool)||!p.pool.length){ p.pool=GP_DEFAULT_PLAYERS.map(nm=>({id:uid(), name:nm})); }
-  p.pool.forEach(pl=>{ pl.name=(pl.name||"").toUpperCase(); });
+  /* A PLAN THAT IS NOT QUITE THE SHAPE EXPECTED MUST STILL OPEN. One squad entry saved as
+     a bare name, or an empty slot in a list, threw here and took the whole game plan with
+     it - the page showed nothing where the rotation should be. Whatever is in the list is
+     brought to the shape the rest of this code reads: a bare name becomes a player, an
+     empty slot is dropped. */
+  p.pool=p.pool.map(pl=> (typeof pl==="string") ? {id:uid(), name:pl}
+      : (pl && typeof pl==="object") ? pl : null).filter(Boolean);
+  p.pool.forEach(pl=>{ if(!pl.id) pl.id=uid(); pl.name=String(pl.name||"").toUpperCase(); });
   p.grid=p.grid||{};
   GP_HALF.forEach(q=>{ let g=p.grid[q]; if(!Array.isArray(g)) g=GP_ROWS.map(()=>Array(GP_COLS).fill(null));
     for(let r=0;r<GP_ROWS.length;r++){ g[r]=Array.isArray(g[r])?g[r]:Array(GP_COLS).fill(null); for(let c=0;c<GP_COLS;c++){ if(g[r][c]===undefined) g[r][c]=null; } g[r]=g[r].slice(0,GP_COLS); }
@@ -12498,6 +12505,9 @@ function planEnsure(sec){
     p.gen[q]={ off:String(g.off||""), def:String(g.def||"") }; });
   p.pairs1=Array.isArray(p.pairs1)?p.pairs1:(Array.isArray(p.pairs)?p.pairs:[{us:"",them:""}]);
   p.pairs2=Array.isArray(p.pairs2)?p.pairs2:[{us:"",them:""}];
+  /* same for the matchups: an empty slot is not a pair */
+  const fixPairs=a=>a.filter(x=>x && typeof x==="object");
+  p.pairs1=fixPairs(p.pairs1); p.pairs2=fixPairs(p.pairs2);
   return p;
 }
 function _gpById(plan,id){ return plan.pool.find(x=>x.id===id)||null; }
@@ -12870,7 +12880,10 @@ function renderPlanSection(sec, canEd, save, allSecs){
     wrap.appendChild(body);
     let tid=""; try{ tid=_preClub()||""; }catch(e){}
     const edits={};
-    (allSecs||[]).forEach(s2=>((s2&&s2.items)||[]).forEach(it=>{ if(it&&it.pbEdit) Object.assign(edits, it.pbEdit); }));
+    (Array.isArray(allSecs)?allSecs:[]).forEach(s2=>{
+      const its=(s2 && Array.isArray(s2.items)) ? s2.items : [];
+      its.forEach(it=>{ if(it && it.pbEdit && typeof it.pbEdit==="object") Object.assign(edits, it.pbEdit); });
+    });
     const nameOf=l=>edits[l]||l;
     const stored=()=>{ try{ return tid? _clubKeyLabels(leagueState(), tid) : []; }catch(e){ return []; } };
     const BAND=["Open court","Half court","SLOB","BLOB"];
@@ -12948,7 +12961,9 @@ function renderPlanSection(sec, canEd, save, allSecs){
     left.appendChild(minutesBlock());
     const mid=h("div",{class:"gp2-mid"});
     GP_HALF.forEach(q=>{
-      const card=quarterCard(q);
+      /* the board is the document: whatever goes wrong building the box beside it, or
+         the key sets under it, the rotation is still drawn */
+      let card=null; try{ card=quarterCard(q); }catch(e){ try{ console.warn("game plan box", q, e); }catch(_){} }
       mid.appendChild(h("div",{class:"gp3-qrow"+(card?"":" solo")}, quarterBoard(q), card));
     });
     /* both boxes are set the same size: one quarter in smaller type than the other reads
@@ -12956,7 +12971,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
     if(mid.querySelector(".gp3-qc.dense")) mid.querySelectorAll(".gp3-qc").forEach(c=>c.classList.add("dense"));
     sheet.classList.add("gp3-sheet");
     sheet.appendChild(left); sheet.appendChild(mid);
-    sheet.appendChild(keySetsBlock());
+    try{ sheet.appendChild(keySetsBlock()); }catch(e){ try{ console.warn("game plan key sets", e); }catch(_){} }
     box.appendChild(sheet);
 
     const foot=h("div",{class:"gp2-foot"},
