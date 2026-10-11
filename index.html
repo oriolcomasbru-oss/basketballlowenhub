@@ -14495,7 +14495,9 @@ function _lgGameModel(g, j){
   /* where the shots came from, on the same half court the season charts use */
   const shots=c=>(feed.shots||[]).filter(s=>s.team===c && (Number(s.x)||Number(s.y))).map(s=>{
     const p=_lgShotXY([0,0,0,s.x,s.y], { x0:LG_SHOT_X0, scale:1500/280 });
-    return { x:p.x, y:p.y, made:!!s.made, three:!!s.three, zone:_lgZoneOf(p.x,p.y,!!s.three), pid:String(s.player) }; });
+    return { x:p.x, y:p.y, made:!!s.made, three:!!s.three, zone:_lgZoneOf(p.x,p.y,!!s.three), pid:String(s.player),
+             /* the row the season chart's own drawing code reads */
+             row:[String(s.player), s.made?1:0, s.three?1:0, Number(s.x), Number(s.y)] }; });
   H.shots=shots(hc); A.shots=shots(ac);
   [H,A].forEach(s=>{ s.paint=s.shots.filter(x=>x.made && !x.three && (x.zone==="rim"||x.zone==="paint")).length*2; });
 
@@ -14828,16 +14830,34 @@ function _lgGameBox(name, S, onPick){
   return h("div",{class:"lgg-boxw"}, h("div",{class:"lgg-sub"}, name), h("div",{class:"lgg-scroll"}, tb));
 }
 function _lgGameShots(name, S){
-  const svg=sv("svg",{viewBox:"0 0 1500 1400", class:"lgg-court"});
-  svg.appendChild(_lgCourt(null));
-  S.shots.forEach(s=>{
-    if(s.made) svg.appendChild(sv("circle",{cx:s.x.toFixed(0), cy:s.y.toFixed(0), r:20, class:"sc-dot made"}));
-    else svg.appendChild(sv("path",{class:"sc-dot miss",
-      d:"M"+(s.x-15)+" "+(s.y-15)+" L"+(s.x+15)+" "+(s.y+15)+" M"+(s.x+15)+" "+(s.y-15)+" L"+(s.x-15)+" "+(s.y+15)}));
-  });
+  /* The same floor as the season shot chart, drawn by the same code: the ten zones a
+     coach talks in, each coloured by points per attempt and carrying its percentage and
+     its makes of attempts, on the same crop. The first version here was a floor of its
+     own with bare dots, which read as a different chart about the same thing. The shots
+     themselves stay on top, small, because in one game each of them is a play somebody
+     remembers. */
+  const fit={ x0:LG_SHOT_X0, scale:1500/280 };
+  const rows=S.shots.map(s=>s.row);
+  const zz=_lgZoneAgg(rows, fit);
+  const gg=sv("g",{});
+  gg.appendChild(_lgCourt(_lgZoneShapes(zz)));
+  const dots=sv("g",{class:"lgg-dots"});
+  S.shots.forEach(s=>dots.appendChild(sv("circle",{cx:s.x.toFixed(1), cy:s.y.toFixed(1), r:s.made?11:10,
+    class:"sc-dot "+(s.made?"made":"miss")})));
+  gg.appendChild(dots);
+  gg.appendChild(_lgZoneLabels(zz));
+  const svg=sv("svg",{viewBox:"0 236 1500 1164", width:"100%", class:"sc-svg", preserveAspectRatio:"xMidYMid meet"}, gg);
   const z=k=>{ const l=S.shots.filter(x=>k.indexOf(x.zone)>=0), m=l.filter(x=>x.made).length;
     return l.length? (m+"/"+l.length+" · "+Math.round(100*m/l.length)+"%") : "–"; };
-  return h("div",{class:"lgg-shot"}, h("div",{class:"lgg-sub"}, name), svg,
+  /* Some scorers' tables mark where a shot was taken with care and some tap one side of
+     the floor all night. When nearly every outside shot of a side sits on the same half,
+     that is the table, not the team, and the chart says so instead of passing it on. */
+  const out=S.shots.filter(s=>s.zone!=="rim" && s.zone!=="paint");
+  const left=out.filter(s=>s.x<750).length;
+  const lop=(out.length>=12 && (left>=0.9*out.length || left<=0.1*out.length));
+  return h("div",{class:"lgg-shot"}, h("div",{class:"lgg-sub"}, name), h("div",{class:"sc-wrap"}, svg),
+    lop? h("div",{class:"lgg-note"},"Almost every outside shot is marked on the "+(left>out.length/2?"left":"right")+
+      " side: that is how the scorer's table entered this game, not where the shots were taken. The distance and the zone type (rim, paint, mid range, three) can be trusted; the side cannot.") : null,
     h("div",{class:"lgg-zones"},
       h("span",{}, h("i",{},"Rim"), z(["rim"])), h("span",{}, h("i",{},"Paint"), z(["paint"])),
       h("span",{}, h("i",{},"Mid range"), z(["midL","midC","midR"])),
@@ -14921,7 +14941,7 @@ function _lgGameOpen(g){
       "starters first; the line separates the bench · click a player for his game"));
     if(M.H.shots.length || M.A.shots.length) body.appendChild(sec("Shot chart",
       h("div",{class:"lgg-shots"}, _lgGameShots(g.home||"", M.H), _lgGameShots(g.away||"", M.A)),
-      "dot made · cross missed"));
+      "zones coloured by points per attempt, red above 1.00 and blue below · filled dot made, ring missed"));
     if(M.acts.length){
       const pbpBox=h("div",{style:"display:none"});
       const pb=h("button",{class:"btn sm lgg-advbtn", onclick:()=>{
