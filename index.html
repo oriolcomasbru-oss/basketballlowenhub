@@ -3393,6 +3393,57 @@ function addDays(iso,n){ const d=new Date(iso+"T00:00:00"); d.setDate(d.getDate(
 function shiftMonth(ym,n){ let [y,m]=ym.split("-").map(Number); m+=n; while(m<1){m+=12;y--;} while(m>12){m-=12;y++;} return y+"-"+String(m).padStart(2,"0"); }
 function weekDays(mon){ return DAYK.map((k,i)=>{ const iso=addDays(mon,i); return {k, iso, label:new Date(iso+"T00:00:00").toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"})}; }); }
 
+/* THE PAGE STAYS WHERE THE HAND IS.
+   Almost everything here redraws by emptying a block and building it again: a filter
+   pressed, a cell edited, a row deleted, a report saved. For the instant the block is
+   empty the page is short, the browser has nowhere to keep the scroll and puts it at the
+   top - and the next thing the staff sees is the head of the page instead of the thing
+   they were working on. Each redraw was written on its own, so no single fix reaches them
+   all; this one sits underneath them.
+   Whenever something inside the page is pressed or typed in, where the page was is
+   remembered. If, right after, the page jumps up without anybody scrolling it - because
+   it collapsed, because what was pressed was redrawn, or because it was sent to the top -
+   it is put back as soon as it is tall enough again, and again if a late answer from the
+   server redraws it once more. Going somewhere else is not a redraw: a change of screen,
+   opening a game or going back cancels it, and so does the wheel or a finger. */
+(function(){
+  let job=null, raf=0;
+  const SCROLLERS=".lgg-plback, .lgg-back, #workspace";
+  const sig=()=>{ try{ const u=state.ui||{}, a=u.os||{}, b=u.gp||{}, c=u.ts||{};
+    return [u.view,a.mode,a.gameId,b.mode,b.gameId,c.mode,c.gameId].join("|"); }catch(e){ return ""; } };
+  const step=()=>{
+    raf=0;
+    if(!job) return;
+    const ws=job.ws, now=performance.now();
+    if(now>job.until || !ws.isConnected || sig()!==job.sig){ job=null; return; }
+    const max=ws.scrollHeight-ws.clientHeight;
+    if(ws.scrollTop<job.top-60){
+      /* it moved up and nobody moved it: the page could not hold the place, the thing
+         pressed is gone, or it was thrown to the top */
+      if(max<job.top-4 || !job.target.isConnected || ws.scrollTop<=2) job.hit=true;
+      if(job.hit && max>0){ ws.scrollTop=Math.min(job.top, max); }
+    }
+    raf=requestAnimationFrame(step);
+  };
+  const arm=e=>{
+    const t=e.target;
+    if(!t || !t.closest) return;
+    const ws=t.closest(SCROLLERS);
+    if(!ws) return;
+    /* a second event of the same gesture arrives after the jump has already happened;
+       it must not overwrite the place being held with the top of the page */
+    if(job && job.ws===ws && ws.scrollTop<job.top-60 && performance.now()<job.until){ job.until=performance.now()+4000; return; }
+    if(ws.scrollTop<40){ job=null; return; }
+    job={ ws:ws, top:ws.scrollTop, sig:sig(), until:performance.now()+4000, target:t, hit:false };
+    if(!raf) raf=requestAnimationFrame(step);
+  };
+  const stop=()=>{ job=null; };
+  ["click","input","change","keyup","drop"].forEach(k=>document.addEventListener(k, arm, true));
+  ["wheel","touchmove"].forEach(k=>document.addEventListener(k, stop, {capture:true, passive:true}));
+  document.addEventListener("keydown", e=>{ if(/^(PageUp|PageDown|Home|End|ArrowUp|ArrowDown| )$/.test(e.key) && !(e.target&&e.target.closest&&e.target.closest("input,textarea,select,[contenteditable]"))) stop(); }, true);
+  /* dragging the scrollbar itself is the user scrolling too */
+  document.addEventListener("pointerdown", e=>{ const t=e.target; if(t && t.matches && t.matches(SCROLLERS)) stop(); }, true);
+})();
 let viewHist=[], viewIdx=-1;
 function applyView(v){
   /* The calendar is not a place of its own any more: it is what Planning opens on. Old
