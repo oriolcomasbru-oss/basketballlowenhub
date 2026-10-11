@@ -14346,7 +14346,8 @@ function _lgMdRows(games, selId){
     const mine=selId && (String(g.homeId||g.home)===String(selId) || String(g.awayId||g.away)===String(selId));
     /* the home crest sits on the right of its name and the away crest on the left, so the
        two badges meet in the middle around the score and the fixture reads as a pairing */
-    list.appendChild(h("div",{class:"lg-md-row"+((_lgOurs(g.home)||_lgOurs(g.away))?" ours":"")+(mine?" sel":"")},
+    list.appendChild(h("div",{class:"lg-md-row"+((_lgOurs(g.home)||_lgOurs(g.away))?" ours":"")+(mine?" sel":"")+(done?" open":""),
+        title:done?"Open the game":null, onclick:done?(()=>_lgGameOpen(g)):null},
       h("span",{class:"lg-md-date"}, (g.date? g.date.slice(8,10)+"/"+g.date.slice(5,7) : "")+(g.time?(" "+g.time):"")),
       h("span",{class:"lg-md-t r"+(done&&g.hs>g.as?" win":"")},
         h("span",{class:"lg-md-nm"}, g.home||""), _lgCrest(L, g.homeId||g.home, "mdc")),
@@ -14355,6 +14356,343 @@ function _lgMdRows(games, selId){
         _lgCrest(L, g.awayId||g.away, "mdc"), h("span",{class:"lg-md-nm"}, g.away||""))));
   });
   return list;
+}
+/* ONE GAME, OPENED OVER THE LEAGUE PAGE.
+   A result was a line - two crests and a score - and the only way to know how the game
+   went was to leave for the league's own site. Everything a staff asks of a finished
+   game is already in the feed this app reads for the season tables: the play by play
+   with its clock, the two team lines, every player's line and where each shot was taken
+   from. So a finished game opens here, over the page it was clicked on, and closes back
+   onto it.
+   Read top to bottom it answers, in this order: what was the score and how did it build
+   quarter by quarter; who was in front and when; why - the four factors and the plain
+   team numbers side by side; who did it; and from where on the floor. */
+const _lgGameMemo={};
+function _lgGameElapsed(q, time){
+  q=String(q||"q1");
+  const qi=(q.charAt(0)==="o")? 4+Math.max(0,(parseInt(q.slice(2),10)||1)-1) : Math.max(0,(parseInt(q.slice(1),10)||1)-1);
+  const len=qi<4?600:300, base=qi<4? qi*600 : 2400+(qi-4)*300;
+  return { qi:qi, t: base+Math.max(0, Math.min(len, len-(Number(time)||0))) };
+}
+function _lgGameClock(t){
+  const qi=t<2400? Math.min(3,Math.floor(t/600)) : 4+Math.floor((t-2400)/300);
+  const len=qi<4?600:300, base=qi<4? qi*600 : 2400+(qi-4)*300;
+  /* the last second of a period belongs to that period, not to the start of the next */
+  const into=t-base, left=Math.max(0,len-into);
+  return (qi<4? "Q"+(qi+1) : "OT"+(qi-3))+" "+Math.floor(left/60)+":"+String(Math.round(left%60)).padStart(2,"0");
+}
+/* Everything the popup shows, worked out once from the feed. H is the home side. */
+function _lgGameModel(g, j){
+  const feed=j.feed||{}, sheet=j.game||{};
+  const tr=(feed.teams||[]);
+  /* which letter is the home club: by the club's own id, never by assuming A is home */
+  let hc="A";
+  tr.forEach(t=>{ if(String(t.id)===String(g.homeId)) hc=t.teamcode; });
+  const ac=(hc==="A")?"B":"A";
+  const line=c=>tr.filter(t=>t.teamcode===c)[0]||null;
+  const names={};
+  [sheet.homeTeam, sheet.guestTeam].forEach(t=>{ ((t&&t.roster)||[]).forEach(p=>{
+    names[String(p.id)]=(String(p.firstName||"").trim()+" "+String(p.lastName||"").trim()).trim(); }); });
+  const starters={};
+  (feed.starters||[]).filter(s=>s.quarter==="q1").forEach(s=>{
+    [1,2,3,4,5].forEach(i=>{ starters[String(s["player_id"+i])]=1; }); });
+  const players=c=>(feed.players||[]).filter(p=>p.teamcode===c && (Number(p.SP)||0)>0).map(p=>({
+      id:String(p.player_id), num:String(p.NUM||""), name:names[String(p.player_id)]||("#"+p.NUM),
+      st:!!starters[String(p.player_id)], sec:Number(p.SP)||0, pts:Number(p.PTS)||0,
+      p2m:+p.P2M||0, p2a:+p.P2A||0, p3m:+p.P3M||0, p3a:+p.P3A||0, ftm:+p.FTM||0, fta:+p.FTA||0,
+      or:+p.OREB||0, dr:+p.DREB||0, reb:+p.REB||0, ast:+p.AST||0, stl:+p.STL||0, blk:+p.BL||0,
+      tov:+p.TOV||0, pf:+p.FOUL||0, pm:+p.PM||0, eff:+p.EFF||0 }))
+    .sort((a,b)=>(b.st-a.st)||(b.sec-a.sec));
+  const side=(c, pts, opp)=>{
+    const t=line(c)||{}, pl=players(c), o=line(opp)||{};
+    const fgm=(+t.P2M||0)+(+t.P3M||0), fga=(+t.P2A||0)+(+t.P3A||0);
+    const s={ pts:pts, pl:pl, has:!!line(c),
+      p2m:+t.P2M||0, p2a:+t.P2A||0, p3m:+t.P3M||0, p3a:+t.P3A||0, ftm:+t.FTM||0, fta:+t.FTA||0,
+      fgm:fgm, fga:fga, or:+t.OREB||0, dr:+t.DREB||0, stl:+t.STL||0, blk:+t.BL||0, tov:+t.TOV||0, pf:+t.FOUL||0,
+      ast:pl.reduce((a,p)=>a+p.ast,0), bench:pl.filter(p=>!p.st).reduce((a,p)=>a+p.pts,0) };
+    s.reb=s.or+s.dr;
+    s.poss=fga-s.or+s.tov+0.44*s.fta;
+    s.efg=fga? 100*(fgm+0.5*s.p3m)/fga : null;
+    s.tovp=s.poss? 100*s.tov/s.poss : null;
+    s.orbp=(s.or+(+o.DREB||0))? 100*s.or/(s.or+(+o.DREB||0)) : null;
+    s.ftr=fga? 100*s.fta/fga : null;
+    s.ortg=s.poss? 100*pts/s.poss : null;
+    return s;
+  };
+  const H=side(hc, g.hs, ac), A=side(ac, g.as, hc);
+
+  /* the score as it was built: one step per made shot, in the order of the game clock */
+  const acts=(feed.actions||[]).map((a,i)=>{ const e=_lgGameElapsed(a.quarter, a.time); return { a:a, t:e.t, qi:e.qi, i:i }; })
+    .sort((x,y)=>(x.t-y.t)||(x.i-y.i));
+  const ev=[]; let hs=0, as=0;
+  acts.forEach(x=>{ const a=x.a;
+    if(a.result!=="+") return;
+    const v=(a.action==="P3")?3:(a.action==="P2")?2:(a.action==="FT")?1:0;
+    if(!v) return;
+    if(a.teamcode===hc) hs+=v; else as+=v;
+    ev.push({ t:x.t, h:hs, a:as, home:a.teamcode===hc, v:v });
+  });
+  const nq=Math.max(4, (g.quarters||[]).length, acts.length? acts[acts.length-1].qi+1 : 4);
+  const total=2400+(nq-4)*300;
+  const flow={ ev:ev, total:total, nq:nq, ok:(hs===g.hs && as===g.as), hs:hs, as:as,
+               changes:0, ties:0, maxH:0, maxA:0, atH:0, atA:0, secH:0, secA:0, secT:0, runs:[] };
+  let last=0, lt=0, ld=0, run=null;
+  ev.forEach(e=>{
+    const d=e.h-e.a;
+    if(ld>0) flow.secH+=e.t-lt; else if(ld<0) flow.secA+=e.t-lt; else flow.secT+=e.t-lt;
+    if(d===0 && ld!==0) flow.ties++;
+    if(d!==0){ const s=d>0?1:-1; if(last && s!==last) flow.changes++; last=s; }
+    if(d>flow.maxH){ flow.maxH=d; flow.atH=e.t; }
+    if(-d>flow.maxA){ flow.maxA=-d; flow.atA=e.t; }
+    if(run && run.home===e.home){ run.pts+=e.v; run.t1=e.t; }
+    else { if(run) flow.runs.push(run); run={ home:e.home, pts:e.v, t0:e.t, t1:e.t }; }
+    lt=e.t; ld=d;
+  });
+  if(run) flow.runs.push(run);
+  if(ld>0) flow.secH+=total-lt; else if(ld<0) flow.secA+=total-lt; else flow.secT+=total-lt;
+  flow.runs=flow.runs.filter(r=>r.pts>=7).sort((a,b)=>b.pts-a.pts).slice(0,5);
+
+  /* where the shots came from, on the same half court the season charts use */
+  const shots=c=>(feed.shots||[]).filter(s=>s.team===c && (Number(s.x)||Number(s.y))).map(s=>{
+    const p=_lgShotXY([0,0,0,s.x,s.y], { x0:LG_SHOT_X0, scale:1500/280 });
+    return { x:p.x, y:p.y, made:!!s.made, three:!!s.three, zone:_lgZoneOf(p.x,p.y,!!s.three) }; });
+  H.shots=shots(hc); A.shots=shots(ac);
+  [H,A].forEach(s=>{ s.paint=s.shots.filter(x=>x.made && !x.three && (x.zone==="rim"||x.zone==="paint")).length*2; });
+  return { H:H, A:A, flow:flow, sheet:sheet };
+}
+function _lgGameLead(g, M){
+  const F=M.flow, W=1000, Ht=250, L=34, R=10, T=12, B=24;
+  const mx=Math.max(5, Math.ceil(Math.max(F.maxH, F.maxA)/5)*5);
+  const X=t=>L+(W-L-R)*t/F.total, Y=d=>T+(Ht-T-B)*(mx-d)/(2*mx), y0=Y(0);
+  const svg=sv("svg",{viewBox:"0 0 "+W+" "+Ht, class:"lgg-lead", preserveAspectRatio:"none"});
+  /* the margin as steps: it only ever moves when somebody scores */
+  let d="M"+X(0)+" "+y0, pd=0;
+  F.ev.forEach(e=>{ const nd=e.h-e.a; d+=" L"+X(e.t).toFixed(1)+" "+Y(pd).toFixed(1)+" L"+X(e.t).toFixed(1)+" "+Y(nd).toFixed(1); pd=nd; });
+  d+=" L"+X(F.total)+" "+Y(pd).toFixed(1);
+  const area=d+" L"+X(F.total)+" "+y0+" Z";
+  const id="lgg"+Math.random().toString(36).slice(2,8);
+  svg.appendChild(sv("defs",{},
+    sv("clipPath",{id:id+"u"}, sv("rect",{x:0,y:0,width:W,height:y0})),
+    sv("clipPath",{id:id+"d"}, sv("rect",{x:0,y:y0,width:W,height:Ht-y0}))));
+  for(let v=-mx; v<=mx; v+=(mx>20?10:5)){
+    svg.appendChild(sv("line",{x1:L,x2:W-R,y1:Y(v),y2:Y(v),class:"lgg-grid"+(v===0?" zero":"")}));
+    svg.appendChild(sv("text",{x:L-6,y:Y(v)+3.5,class:"lgg-ax","text-anchor":"end"}, v===0?"0":("+"+Math.abs(v))));
+  }
+  for(let q=0;q<F.nq;q++){
+    const t0=q<4? q*600 : 2400+(q-4)*300, t1=q<4? t0+600 : t0+300;
+    if(q) svg.appendChild(sv("line",{x1:X(t0),x2:X(t0),y1:T,y2:Ht-B,class:"lgg-q"}));
+    svg.appendChild(sv("text",{x:(X(t0)+X(t1))/2,y:Ht-7,class:"lgg-ax","text-anchor":"middle"}, q<4?("Q"+(q+1)):("OT"+(q-3))));
+  }
+  svg.appendChild(sv("path",{d:area, class:"lgg-ah", "clip-path":"url(#"+id+"u)"}));
+  svg.appendChild(sv("path",{d:area, class:"lgg-aa", "clip-path":"url(#"+id+"d)"}));
+  svg.appendChild(sv("path",{d:d, class:"lgg-ln"}));
+  const cur=sv("line",{x1:0,x2:0,y1:T,y2:Ht-B,class:"lgg-cur",style:"display:none"});
+  svg.appendChild(cur);
+  const read=h("div",{class:"lgg-read"}, "Move over the chart to read the score at any moment.");
+  svg.addEventListener("mousemove", e=>{
+    const r=svg.getBoundingClientRect();
+    const px=(e.clientX-r.left)/r.width*W;
+    const t=Math.max(0, Math.min(F.total, (px-L)/(W-L-R)*F.total));
+    let sc={h:0,a:0}; for(const x of F.ev){ if(x.t<=t) sc=x; else break; }
+    cur.setAttribute("x1",X(t)); cur.setAttribute("x2",X(t)); cur.style.display="";
+    const df=sc.h-sc.a;
+    read.textContent=_lgGameClock(Math.min(t,F.total-0.01))+"  ·  "+g.homeTlc+" "+sc.h+" – "+sc.a+" "+g.awayTlc+
+      "  ·  "+(df===0? "tied" : ((df>0?g.homeTlc:g.awayTlc)+" by "+Math.abs(df)));
+  });
+  svg.addEventListener("mouseleave", ()=>{ cur.style.display="none"; });
+  const mm=s=>Math.floor(s/60)+":"+String(Math.round(s%60)).padStart(2,"0");
+  const kp=(l,v,s)=>h("div",{class:"lgg-kp"}, h("span",{},l), h("b",{},v), s?h("i",{},s):null);
+  const best=home=>{ const r=F.runs.filter(x=>x.home===home)[0]; return r? (r.pts+"–0") : "—"; };
+  const bestAt=home=>{ const r=F.runs.filter(x=>x.home===home)[0]; return r? _lgGameClock(r.t0).split(" ")[0] : ""; };
+  const wrap=h("div",{},
+    h("div",{class:"lgg-legend"},
+      h("span",{class:"k h"}, g.homeTlc+" ahead (above the line)"),
+      h("span",{class:"k a"}, g.awayTlc+" ahead (below)")),
+    svg, read,
+    h("div",{class:"lgg-kps"},
+      kp("Lead changes", F.changes), kp("Ties", F.ties),
+      kp(g.homeTlc+" biggest lead", F.maxH? "+"+F.maxH : "—", F.maxH? _lgGameClock(F.atH) : ""),
+      kp(g.awayTlc+" biggest lead", F.maxA? "+"+F.maxA : "—", F.maxA? _lgGameClock(F.atA) : ""),
+      kp(g.homeTlc+" in front", mm(F.secH), Math.round(100*F.secH/F.total)+"%"),
+      kp(g.awayTlc+" in front", mm(F.secA), Math.round(100*F.secA/F.total)+"%"),
+      kp(g.homeTlc+" best run", best(true), bestAt(true)),
+      kp(g.awayTlc+" best run", best(false), bestAt(false))));
+  if(F.runs.length){
+    wrap.appendChild(h("div",{class:"lgg-runs"}, h("span",{class:"lgg-runs-t"},"Runs of 7 or more"),
+      F.runs.slice().sort((a,b)=>a.t0-b.t0).map(r=>h("span",{class:"lgg-run "+(r.home?"h":"a")},
+        (r.home?g.homeTlc:g.awayTlc)+" "+r.pts+"–0", h("i",{}, (()=>{ const a=_lgGameClock(r.t0), b=_lgGameClock(r.t1);
+          /* a run that crosses a break names both periods */
+          return a+" → "+(a.split(" ")[0]===b.split(" ")[0]? b.split(" ")[1] : b); })()))));
+  }
+  if(!F.ok) wrap.appendChild(h("div",{class:"lgg-note"},"The play by play adds up to "+F.hs+"–"+F.as+
+    ", not the official "+g.hs+"–"+g.as+": the feed is missing a basket somewhere, so the line is close but not exact."));
+  return wrap;
+}
+function _lgGameCompare(g, M){
+  const H=M.H, A=M.A;
+  const f1=v=>v==null?"—":v.toFixed(1), i0=v=>v==null?"—":String(Math.round(v));
+  const sh=(m,a)=>m+"/"+a+(a?"  "+Math.round(100*m/a)+"%":"");
+  const box=h("div",{class:"lgg-cmp"});
+  const head=t=>box.appendChild(h("div",{class:"lgg-cmp-h"}, t));
+  /* hi: the bigger number is the better one; lo: the smaller one is */
+  const row=(lbl, hv, av, txt, better, hint)=>{
+    const a=Number(hv)||0, b=Number(av)||0, tot=a+b;
+    const hw=tot? 100*a/tot : 50;
+    const win= (a===b||!better)? 0 : ((better==="hi")===(a>b)? 1 : -1);
+    box.appendChild(h("div",{class:"lgg-cr", title:hint||null},
+      h("b",{class:"v l"+(win>0?" w":"")}, txt? txt[0] : i0(hv)),
+      h("div",{class:"mid"}, h("span",{class:"lb"}, lbl),
+        h("div",{class:"bar"}, h("i",{class:"h"+(win>0?" w":""), style:"width:"+hw.toFixed(1)+"%"}),
+                               h("i",{class:"a"+(win<0?" w":""), style:"width:"+(100-hw).toFixed(1)+"%"}))),
+      h("b",{class:"v r"+(win<0?" w":"")}, txt? txt[1] : i0(av))));
+  };
+  head("Four factors");
+  row("Possessions", H.poss, A.poss, null, null, "FGA − OREB + TOV + 0.44 × FTA");
+  row("Points per 100 poss.", H.ortg, A.ortg, [f1(H.ortg), f1(A.ortg)], "hi");
+  row("eFG%", H.efg, A.efg, [f1(H.efg), f1(A.efg)], "hi", "a three counts one and a half times");
+  row("Turnover %", H.tovp, A.tovp, [f1(H.tovp), f1(A.tovp)], "lo", "turnovers per 100 possessions");
+  row("Off. rebound %", H.orbp, A.orbp, [f1(H.orbp), f1(A.orbp)], "hi", "of our own misses that could be rebounded");
+  row("FT rate", H.ftr, A.ftr, [f1(H.ftr), f1(A.ftr)], "hi", "free throws attempted per 100 field goal attempts");
+  head("Shooting");
+  row("2 points", H.p2a?H.p2m/H.p2a:0, A.p2a?A.p2m/A.p2a:0, [sh(H.p2m,H.p2a), sh(A.p2m,A.p2a)], "hi");
+  row("3 points", H.p3a?H.p3m/H.p3a:0, A.p3a?A.p3m/A.p3a:0, [sh(H.p3m,H.p3a), sh(A.p3m,A.p3a)], "hi");
+  row("Free throws", H.fta?H.ftm/H.fta:0, A.fta?A.ftm/A.fta:0, [sh(H.ftm,H.fta), sh(A.ftm,A.fta)], "hi");
+  row("Threes, share of shots", H.fga?100*H.p3a/H.fga:0, A.fga?100*A.p3a/A.fga:0,
+      [H.fga?Math.round(100*H.p3a/H.fga)+"%":"—", A.fga?Math.round(100*A.p3a/A.fga)+"%":"—"], null);
+  if(H.shots.length && A.shots.length) row("Points in the paint", H.paint, A.paint, null, "hi", "made twos from the rim and the lane, by where the shot was taken");
+  head("The rest");
+  row("Rebounds", H.reb, A.reb, null, "hi");
+  row("Offensive rebounds", H.or, A.or, null, "hi");
+  row("Assists", H.ast, A.ast, null, "hi");
+  row("Assists per made basket", H.fgm?H.ast/H.fgm:0, A.fgm?A.ast/A.fgm:0,
+      [H.fgm?Math.round(100*H.ast/H.fgm)+"%":"—", A.fgm?Math.round(100*A.ast/A.fgm)+"%":"—"], "hi");
+  row("Turnovers", H.tov, A.tov, null, "lo");
+  row("Steals", H.stl, A.stl, null, "hi");
+  row("Blocks", H.blk, A.blk, null, "hi");
+  row("Fouls", H.pf, A.pf, null, "lo");
+  row("Bench points", H.bench, A.bench, null, "hi", "everybody who did not start the game");
+  return box;
+}
+function _lgGameBox(name, S){
+  const mm=s=>Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
+  const sh=(m,a)=>a? (m+"/"+a) : "–";
+  const cols=["#","Player","MIN","PTS","2P","3P","FT","OR","DR","REB","AST","STL","BLK","TO","PF","+/−","EFF"];
+  const tb=h("table",{class:"lg-tbl lgg-box"});
+  tb.appendChild(h("tr",{}, cols.map((c,i)=>h("th",{class:i===1?"l":""}, c))));
+  const mx=k=>Math.max.apply(null, S.pl.map(p=>p[k]).concat([0]));
+  const top={pts:mx("pts"), reb:mx("reb"), ast:mx("ast")};
+  let bench=false;
+  S.pl.forEach(p=>{
+    const r=h("tr",{class:(!p.st && !bench)?"first-bench":""},
+      h("td",{class:"lg-pos"}, p.num), h("td",{class:"l lg-team"}, p.name),
+      h("td",{}, mm(p.sec)),
+      h("td",{class:"b"+(p.pts&&p.pts===top.pts?" top":"")}, p.pts),
+      h("td",{}, sh(p.p2m,p.p2a)), h("td",{}, sh(p.p3m,p.p3a)), h("td",{}, sh(p.ftm,p.fta)),
+      h("td",{}, p.or), h("td",{}, p.dr),
+      h("td",{class:(p.reb&&p.reb===top.reb)?"top":""}, p.reb),
+      h("td",{class:(p.ast&&p.ast===top.ast)?"top":""}, p.ast),
+      h("td",{}, p.stl), h("td",{}, p.blk), h("td",{}, p.tov), h("td",{}, p.pf),
+      h("td",{class:p.pm>0?"pos":(p.pm<0?"neg":"")}, (p.pm>0?"+":"")+p.pm), h("td",{}, p.eff));
+    if(!p.st) bench=true;
+    tb.appendChild(r);
+  });
+  tb.appendChild(h("tr",{class:"lg-avg"},
+    h("td",{}), h("td",{class:"l"},"Team"), h("td",{}), h("td",{}, S.pts),
+    h("td",{}, sh(S.p2m,S.p2a)), h("td",{}, sh(S.p3m,S.p3a)), h("td",{}, sh(S.ftm,S.fta)),
+    h("td",{}, S.or), h("td",{}, S.dr), h("td",{}, S.reb), h("td",{}, S.ast), h("td",{}, S.stl),
+    h("td",{}, S.blk), h("td",{}, S.tov), h("td",{}, S.pf), h("td",{}), h("td",{})));
+  return h("div",{class:"lgg-boxw"}, h("div",{class:"lgg-sub"}, name), h("div",{class:"lgg-scroll"}, tb));
+}
+function _lgGameShots(name, S){
+  const svg=sv("svg",{viewBox:"0 0 1500 1400", class:"lgg-court"});
+  svg.appendChild(_lgCourt(null));
+  S.shots.forEach(s=>{
+    if(s.made) svg.appendChild(sv("circle",{cx:s.x.toFixed(0), cy:s.y.toFixed(0), r:20, class:"sc-dot made"}));
+    else svg.appendChild(sv("path",{class:"sc-dot miss",
+      d:"M"+(s.x-15)+" "+(s.y-15)+" L"+(s.x+15)+" "+(s.y+15)+" M"+(s.x+15)+" "+(s.y-15)+" L"+(s.x-15)+" "+(s.y+15)}));
+  });
+  const z=k=>{ const l=S.shots.filter(x=>k.indexOf(x.zone)>=0), m=l.filter(x=>x.made).length;
+    return l.length? (m+"/"+l.length+" · "+Math.round(100*m/l.length)+"%") : "–"; };
+  return h("div",{class:"lgg-shot"}, h("div",{class:"lgg-sub"}, name), svg,
+    h("div",{class:"lgg-zones"},
+      h("span",{}, h("i",{},"Rim"), z(["rim"])), h("span",{}, h("i",{},"Paint"), z(["paint"])),
+      h("span",{}, h("i",{},"Mid range"), z(["midL","midC","midR"])),
+      h("span",{}, h("i",{},"Corner 3"), z(["c3L","c3R"])),
+      h("span",{}, h("i",{},"Above the break 3"), z(["w3L","w3R","top3"]))));
+}
+function _lgGameOpen(g){
+  const L=leagueState();
+  const old=document.querySelector(".lgg-back"); if(old) old.remove();
+  const body=h("div",{class:"lgg-body"});
+  const close=()=>{ back.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey=e=>{ if(e.key==="Escape") close(); };
+  const hw=g.hs>g.as, aw=g.as>g.hs;
+  const qs=(g.quarters||[]);
+  const qt=h("table",{class:"lgg-qt"});
+  qt.appendChild(h("tr",{}, h("th",{}), qs.map((q,i)=>h("th",{}, i<4?("Q"+(i+1)):("OT"+(i-3)))), h("th",{class:"f"},"Final")));
+  [[g.homeTlc||g.home,0,g.hs,hw],[g.awayTlc||g.away,1,g.as,aw]].forEach(r=>{
+    qt.appendChild(h("tr",{class:r[3]?"w":""}, h("td",{class:"n"}, r[0]),
+      qs.map(q=>h("td",{class:(q[r[1]]>q[1-r[1]])?"up":""}, q[r[1]])), h("td",{class:"f"}, r[2])));
+  });
+  /* the running score at each break, which is what the quarter table hides */
+  if(qs.length>1){ let a=0,b=0;
+    qt.appendChild(h("tr",{class:"run"}, h("td",{class:"n"},"Score"),
+      qs.map(q=>{ a+=q[0]; b+=q[1]; return h("td",{}, a+"–"+b); }), h("td",{class:"f"}))); }
+  const when=(g.date? g.date.slice(8,10)+"/"+g.date.slice(5,7)+"/"+g.date.slice(0,4) : "")+(g.time?(" · "+g.time):"");
+  const meta=[g.phase==="cup"? (g.roundName||"Pokal") : ("easyCredit BBL · Matchday "+(g.day||g.round||"")), when, g.venue,
+    g.attendance? (Number(g.attendance).toLocaleString("en")+" spectators") : ""].filter(Boolean).join("  ·  ");
+  const panel=h("div",{class:"lgg", onclick:e=>e.stopPropagation()},
+    h("button",{class:"lgg-x", title:"Close (Esc)", onclick:close},"×"),
+    h("div",{class:"lgg-meta"}, meta),
+    h("div",{class:"lgg-top"},
+      h("div",{class:"lgg-team r"+(hw?" w":"")}, h("span",{}, g.home||""), _lgCrest(L, g.homeId||g.home, "lgg-crest")),
+      h("div",{class:"lgg-score"}, h("b",{class:hw?"w":""}, g.hs), h("i",{},":"), h("b",{class:aw?"w":""}, g.as),
+        qs.length>4? h("span",{}, "after "+(qs.length-4>1?(qs.length-4)+" overtimes":"overtime")) : null),
+      h("div",{class:"lgg-team"+(aw?" w":"")}, _lgCrest(L, g.awayId||g.away, "lgg-crest"), h("span",{}, g.away||""))),
+    qs.length? h("div",{class:"lgg-qtw"}, qt) : null,
+    body);
+  const back=h("div",{class:"lgg-back", onclick:close}, panel);
+  document.body.appendChild(back);
+  document.addEventListener("keydown", onKey);
+  body.appendChild(h("div",{class:"lg-empty"},"Reading the game sheet…"));
+  const ask=_lgGameMemo[g.id] || (_lgGameMemo[g.id]=
+    fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(g.id)).then(r=>r.json()));
+  ask.then(j=>{
+    if(!back.parentNode) return;
+    body.innerHTML="";
+    if(!j || !j.feed || !(j.feed.actions||[]).length){
+      delete _lgGameMemo[g.id];
+      body.appendChild(h("div",{class:"lg-empty"}, "The league has not published the sheet of this game"+
+        ((j&&j.errors&&j.errors.length)? " ("+j.errors[0]+")" : "")+"."));
+      return;
+    }
+    const M=_lgGameModel(g, j);
+    const sec=(t, kid, sub)=>h("div",{class:"lgg-sec"}, h("div",{class:"lgg-h"}, h("b",{},t), sub?h("span",{},sub):null), kid);
+    /* who carried each side, before any table has to be read */
+    const lead=(S)=>{ const t=k=>S.pl.slice().sort((a,b)=>b[k]-a[k])[0];
+      const one=(k,l)=>{ const p=t(k); return (p&&p[k])? h("span",{}, h("i",{},l), h("b",{}, p[k]), " "+p.name) : null; };
+      return h("div",{class:"lgg-ldr"}, one("pts","PTS"), one("reb","REB"), one("ast","AST"), one("eff","EFF")); };
+    if(M.flow.ev.length) body.appendChild(sec("Who was in front", _lgGameLead(g, M), "the margin, minute by minute"));
+    if(M.H.has && M.A.has) body.appendChild(sec("Team comparison",
+      h("div",{}, h("div",{class:"lgg-cmp-top"}, h("b",{class:"h"}, g.home||""), h("b",{class:"a"}, g.away||"")), _lgGameCompare(g, M)),
+      "the stronger number of each pair is the bold one"));
+    if(M.H.pl.length || M.A.pl.length) body.appendChild(sec("Players",
+      h("div",{}, lead(M.H), _lgGameBox(g.home||"", M.H), lead(M.A), _lgGameBox(g.away||"", M.A)),
+      "starters first; the line separates the bench"));
+    if(M.H.shots.length || M.A.shots.length) body.appendChild(sec("Shot chart",
+      h("div",{class:"lgg-shots"}, _lgGameShots(g.home||"", M.H), _lgGameShots(g.away||"", M.A)),
+      "dot made · cross missed"));
+    const s=M.sheet||{};
+    const links=h("div",{class:"lgg-links"},
+      s.boxScorePDFUrl? h("a",{href:s.boxScorePDFUrl, target:"_blank", rel:"noopener"},"Official box score (PDF)") : null,
+      s.playByPlayPDFUrl? h("a",{href:s.playByPlayPDFUrl, target:"_blank", rel:"noopener"},"Official play by play (PDF)") : null);
+    if(links.childNodes.length) body.appendChild(links);
+  }).catch(e=>{
+    delete _lgGameMemo[g.id];
+    if(!back.parentNode) return;
+    body.innerHTML="";
+    body.appendChild(h("div",{class:"lg-empty"},"The game could not be read: "+((e&&e.message)||e)));
+  });
 }
 function _lgMdCol(title, games, tag, grp, selId){
   const col=h("div",{class:"lg-mdc"});
@@ -23117,6 +23455,95 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 .lg-md-t.r{text-align:right}
 .lg-md-t.win{font-weight:800}
 .lg-md-sc{font-family:'Oswald',sans-serif;font-weight:700;text-align:center;font-size:13px}
+/* a finished game opens over the page */
+.lg-md-row.open{cursor:pointer}
+.lg-md-row.open:hover{background:rgba(201,162,39,.16);border-radius:6px}
+.lgg-back{position:fixed;inset:0;z-index:9000;background:rgba(10,13,18,.62);display:flex;justify-content:center;align-items:flex-start;overflow:auto;padding:28px 16px}
+.lgg{--lgh:#c6a15b;--lga:#4a86d8;position:relative;width:min(1080px,100%);background:var(--panel,#fff);color:var(--ink,#141821);border:1px solid var(--line,#e4e7ec);border-radius:16px;padding:18px 22px 22px;box-shadow:0 24px 60px rgba(0,0,0,.35)}
+.lgg-x{position:absolute;top:10px;right:12px;width:32px;height:32px;border-radius:50%;border:1px solid var(--line,#e4e7ec);background:transparent;color:var(--ink-soft,#5b6472);font-size:20px;line-height:1;cursor:pointer}
+.lgg-x:hover{background:var(--line,#e4e7ec);color:var(--ink,#141821)}
+.lgg-meta{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);text-align:center;padding:0 40px}
+.lgg-top{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:18px;margin:12px 0 10px}
+.lgg-team{display:flex;align-items:center;gap:12px;font-family:'Oswald',sans-serif;font-size:19px;font-weight:500;color:var(--ink-soft,#5b6472);min-width:0}
+.lgg-team.r{justify-content:flex-end;text-align:right}
+.lgg-team.w{color:var(--ink,#141821);font-weight:700}
+.lgg-team .lgg-crest,.lgg-team img{width:52px;height:52px;object-fit:contain;flex:none}
+.lgg-score{display:flex;align-items:baseline;gap:8px;font-family:'Oswald',sans-serif;position:relative}
+.lgg-score b{font-size:46px;font-weight:600;color:var(--ink-faint,#8a93a2);line-height:1}
+.lgg-score b.w{color:var(--ink,#141821)}
+.lgg-score i{font-style:normal;font-size:30px;color:var(--ink-faint,#8a93a2)}
+.lgg-score span{position:absolute;left:0;right:0;bottom:-15px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);white-space:nowrap}
+.lgg-qtw{display:flex;justify-content:center;margin:20px 0 4px}
+.lgg-qt{border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:13px}
+.lgg-qt th{font-size:9.5px;letter-spacing:.08em;color:var(--ink-faint,#8a93a2);font-weight:500;padding:2px 14px}
+.lgg-qt td{padding:4px 14px;text-align:center;border-top:1px solid var(--line,#e4e7ec);color:var(--ink-soft,#5b6472)}
+.lgg-qt td.n{text-align:left;font-family:'Inter',system-ui,sans-serif;font-weight:600;color:var(--ink,#141821)}
+.lgg-qt td.up{color:var(--ink,#141821);font-weight:700}
+.lgg-qt td.f,.lgg-qt th.f{border-left:1px solid var(--line-strong,#d2d7df)}
+.lgg-qt tr.w td.f{font-weight:800;color:var(--ink,#141821)}
+.lgg-qt tr.run td{font-size:11px;color:var(--ink-faint,#8a93a2)}
+.lgg-qt tr.run td.n{font-weight:500;color:var(--ink-faint,#8a93a2)}
+.lgg-sec{margin-top:22px}
+.lgg-h{display:flex;align-items:baseline;gap:10px;border-bottom:1px solid var(--line,#e4e7ec);padding-bottom:5px;margin-bottom:10px}
+.lgg-h b{font-family:'Oswald',sans-serif;font-size:14px;letter-spacing:.06em;text-transform:uppercase}
+.lgg-h span{font-size:11.5px;color:var(--ink-faint,#8a93a2)}
+.lgg-sub{font-family:'Oswald',sans-serif;font-size:13px;font-weight:600;margin:10px 0 4px}
+.lgg-lead{width:100%;height:250px;display:block}
+.lgg-grid{stroke:var(--line,#e4e7ec);stroke-width:1;vector-effect:non-scaling-stroke}
+.lgg-grid.zero{stroke:var(--ink-faint,#8a93a2)}
+.lgg-q{stroke:var(--line-strong,#d2d7df);stroke-width:1;stroke-dasharray:3 3;vector-effect:non-scaling-stroke}
+.lgg-ax{font-family:'IBM Plex Mono',monospace;font-size:10px;fill:var(--ink-faint,#8a93a2)}
+.lgg-ah{fill:var(--lgh);opacity:.42}.lgg-aa{fill:var(--lga);opacity:.42}
+.lgg-ln{fill:none;stroke:var(--ink,#141821);stroke-width:1.5;vector-effect:non-scaling-stroke;stroke-linejoin:round}
+.lgg-cur{stroke:var(--ink,#141821);stroke-width:1;vector-effect:non-scaling-stroke;opacity:.55}
+.lgg-read{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--ink-soft,#5b6472);text-align:center;min-height:18px;margin-top:2px}
+.lgg-legend{display:flex;gap:16px;justify-content:flex-end;font-size:11px;color:var(--ink-soft,#5b6472);margin-bottom:2px}
+.lgg-legend .k::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.lgg-legend .k.h::before{background:var(--lgh)}.lgg-legend .k.a::before{background:var(--lga)}
+.lgg-kps{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.lgg-kp{border:1px solid var(--line,#e4e7ec);border-radius:10px;padding:7px 10px;display:flex;flex-direction:column;gap:1px}
+.lgg-kp span{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.lgg-kp b{font-family:'Oswald',sans-serif;font-size:20px;font-weight:600;line-height:1.15}
+.lgg-kp i{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft,#5b6472)}
+.lgg-runs{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px}
+.lgg-runs-t{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);margin-right:4px}
+.lgg-run{font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;border:1px solid var(--line,#e4e7ec)}
+.lgg-run.h{box-shadow:inset 3px 0 0 var(--lgh)}.lgg-run.a{box-shadow:inset 3px 0 0 var(--lga)}
+.lgg-run i{font-style:normal;font-weight:400;color:var(--ink-faint,#8a93a2);margin-left:7px}
+.lgg-note{font-size:11.5px;color:var(--ink-faint,#8a93a2);margin-top:8px}
+.lgg-cmp-top{display:flex;justify-content:space-between;font-family:'Oswald',sans-serif;font-size:13px;margin-bottom:2px}
+.lgg-cmp-top .h{box-shadow:inset 0 -3px 0 var(--lgh)}.lgg-cmp-top .a{box-shadow:inset 0 -3px 0 var(--lga)}
+.lgg-cmp{display:grid;grid-template-columns:1fr 1fr;column-gap:34px}
+.lgg-cmp-h{grid-column:1/-1;font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);margin:10px 0 2px}
+.lgg-cr{display:grid;grid-template-columns:92px 1fr 92px;align-items:center;gap:10px;padding:4px 0}
+.lgg-cr .v{font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:500;color:var(--ink-soft,#5b6472);white-space:pre}
+.lgg-cr .v.l{text-align:right}.lgg-cr .v.w{color:var(--ink,#141821);font-weight:800}
+.lgg-cr .lb{display:block;text-align:center;font-size:11.5px;color:var(--ink-soft,#5b6472);margin-bottom:3px}
+.lgg-cr .bar{display:flex;height:6px;border-radius:3px;overflow:hidden;gap:2px}
+.lgg-cr .bar i{display:block;height:100%;opacity:.3}
+.lgg-cr .bar i.h{background:var(--lgh)}.lgg-cr .bar i.a{background:var(--lga)}
+.lgg-cr .bar i.w{opacity:1}
+.lgg-ldr{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--ink-soft,#5b6472);margin-top:12px}
+.lgg-ldr i{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.07em;color:var(--ink-faint,#8a93a2);margin-right:5px}
+.lgg-ldr b{color:var(--ink,#141821);font-family:'Oswald',sans-serif;font-size:14px}
+.lgg-scroll{overflow-x:auto}
+.lgg-box tr{cursor:default}
+.lgg-box td{white-space:nowrap}
+.lgg-box td.b{font-weight:800;color:var(--ink,#141821)}
+.lgg-box td.top{font-weight:800;color:var(--accent-strong,#b0873c)}
+.lgg-box tr.first-bench td{border-top:2px solid var(--line-strong,#d2d7df)}
+.lgg-shots{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.lgg-court{width:100%;height:auto;display:block;border-radius:8px}
+.lgg-zones{display:flex;flex-wrap:wrap;gap:4px 14px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;margin-top:6px}
+.lgg-zones i{font-style:normal;color:var(--ink-faint,#8a93a2);margin-right:5px}
+.lgg-links{display:flex;gap:18px;justify-content:center;margin-top:20px;font-size:12px}
+.lgg-links a{color:var(--accent-strong,#b0873c)}
+@media (max-width:760px){
+  .lgg{padding:14px 12px 16px}
+  .lgg-team span{display:none}
+  .lgg-cmp,.lgg-shots{grid-template-columns:1fr}
+  .lgg-kps{grid-template-columns:repeat(2,1fr)}
+}
 .lg-euro{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:10px 26px;align-items:start}
 .lg-euro-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#6b4fb8;margin-bottom:4px}
 body.dark .lg-euro-h{color:#9b85e8}
