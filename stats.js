@@ -440,10 +440,20 @@
      own, because that is the narrower thing - what the balance itself conceded - and the
      two questions are not the same question. */
   function buildTransPractice(rows) {
-    var mk = function () { return { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, tn: 0, tpts: 0 }; };
-    var o = { tag: mk(), back: mk() };
+    var mk = function () { return { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, tn: 0, tpts: 0, mtu: 0 }; };
+    var o = { tag: mk(), back: mk(), mtuOdd: 0, orebLoose: 0 };
     rows.forEach(function (r) {
       if (r.def) return;
+      /* MISSED TAG UP is the one thing about TAG the staff writes down by hand: the long
+         shot went up and somebody did not go. It was never read - the table worked the
+         situation out of the rows and left the mark itself on the floor, so a day with
+         five of them showed none. It belongs to the long shot, M3 or ML2, and nowhere
+         else; one written on any other row is counted apart so it can be said out loud
+         instead of being quietly added in. */
+      var mt = count(r.tags, "MISSED TAG UP");
+      if (mt) {
+        if (has(r.tags, "M3") || has(r.tags, "ML2")) o.tag.mtu += mt; else o.mtuOdd += mt;
+      }
       if (LONG_END.some(function (x) { return has(r.tags, x); })) o.tag.of++;
       else if (!has(r.tags, "Offensive foul") && CLOSE_END.some(function (x) { return has(r.tags, x); })) o.back.of++;
       var ml = count(r.tags, "M3") + count(r.tags, "ML2"), mp = count(r.tags, "M2");
@@ -452,6 +462,9 @@
       if (ore) {
         if (ml && !mp) o.tag.oreb += Math.min(ore, ml);
         else if (mp && !ml) o.back.oreb += Math.min(ore, mp);
+        /* a rebound on a row that carries no missed shot cannot be put under the long
+           shot or under the rim, and is not guessed at: it is counted, and said */
+        else if (!ml && !mp) o.orebLoose += ore;
       }
     });
     for (var i = 1; i < rows.length; i++) {
@@ -542,7 +555,9 @@
      A possession gets a phase only when one of these shows up in its category or
      its tags; a file with none of them stays unphased and the 70% measure keeps
      reporting a floor for it, exactly as before. */
-  var FB_MARKS = ["FASTBREAK", "FAST BREAK", "FB", "TRANSITION", "TRANSITION ATTACK",
+  /* FASTBERAK is how the category is spelt in the tagging window itself, so that is the
+     word every practice file carries - and the list only knew the dictionary spelling. */
+  var FB_MARKS = ["FASTBREAK", "FASTBERAK", "FAST BREAK", "FB", "TRANSITION", "TRANSITION ATTACK",
                   "RIM RUNNER", "TRAILER", "EARLY OFFENSE", "SECONDARY", "SECONDARY BREAK"];
   function fbMark(s) {
     s = String(s || "").trim().toUpperCase();
@@ -1030,12 +1045,13 @@
        marks; when they are not, the block says so rather than drawing an empty
        table, and what is left of the question — the rebounding on our own
        misses — is the smaller table under it. */
-    var TDF = ["n", "pts", "of", "miss", "oreb", "tn", "tpts"];
+    var TDF = ["n", "pts", "of", "miss", "oreb", "tn", "tpts", "mtu"];
     var tdZero = function () { var z = {}; TDF.forEach(function (f) { z[f] = 0; }); return z; };
-    var TD = { tag: tdZero(), back: tdZero() }, defClips = 0;
+    var TD = { tag: tdZero(), back: tdZero() }, defClips = 0, mtuOdd = 0, orebLoose = 0;
     sets.forEach(function (s) {
       defClips += s.defN || 0;
       var t = s.trans; if (!t) return;
+      mtuOdd += t.mtuOdd || 0; orebLoose += t.orebLoose || 0;
       ["tag", "back"].forEach(function (k) {
         TDF.forEach(function (f) { TD[k][f] += t[k][f] || 0; });
       });
@@ -1056,6 +1072,8 @@
         var ppp = o.n ? o.pts / o.n : null;
         return { cells: [lbl, o.of, o.miss, o.oreb,
           { v: pct(o.oreb, o.miss), cls: "sx-cell" + (o.miss < SMALL ? " sx-small" : "") },
+          /* the mark belongs to the long shot, so the rim row has none to show */
+          o === TD.back ? "—" : o.mtu,
           { v: o.n, cls: "sx-vol " + volStep(share) },
           o.pts,
           /* points conceded: the one direction that turns round - see pppStepD */
@@ -1067,7 +1085,7 @@
       TDF.forEach(function (f) { tdAll[f] = TD.tag[f] + TD.back[f]; });
       var tdTot = tdRowP("TAG + BACK", tdAll, "");
       tdTot.cls = "sx-totrow";
-      sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%",
+      sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%", "Missed tag up",
         "Possessions", "Pts conceded", "DER", "In transition", "Trans. pts", "We finished on"], [
         tdRowP("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2"),
         tdRowP("BACK \u00b7 after a shot at the rim or a turnover", TD.back, "C2 \u00b7 M2 \u00b7 Turnover"),
@@ -1075,6 +1093,11 @@
       ]));
       sTD.appendChild(el("div", "sx-sub", sets.length + (sets.length === 1 ? " session" : " sessions") +
         (defClips ? " \u00b7 " + defClips + (defClips === 1 ? " defensive clip" : " defensive clips") : "") + "."));
+      /* said, not hidden: what was tagged but could not be placed in the table above */
+      if (orebLoose) sTD.appendChild(el("div", "sx-sub", orebLoose + (orebLoose === 1 ? " offensive rebound is" : " offensive rebounds are") +
+        " tagged on a row with no missed shot written on it (M2, M3 or ML2), so " + (orebLoose === 1 ? "it is" : "they are") +
+        " not under TAG or BACK above. " + (TD.tag.oreb + TD.back.oreb + orebLoose) + " tagged in all."));
+      if (mtuOdd) sTD.appendChild(el("div", "sx-sub", mtuOdd + " MISSED TAG UP on a row that is not an M3 or an ML2 — a tagging slip, not counted above."));
       sTD.appendChild(leagueOrbLine());
       root.appendChild(sTD);
     } else {
