@@ -1228,13 +1228,40 @@
     });
   }
 
+  /* A NAME TYPED WITH ONE SLIP IS STILL THAT CLUB. The call sheet for Ludwigsburg was
+     saved as "G10 SEASON LUDWISGBURG CALLS" - two letters the wrong way round - and the
+     exact test read it as some other team's file, so the report said there were no calls
+     while the sheet sat in the folder. One slip is let through: two neighbouring letters
+     swapped, or one letter wrong, missing or extra. Only for a word of six letters or
+     more, where one slip cannot turn one club into another. */
+  function oneSlip(a, b) {
+    var la = a.length, lb = b.length, i = 0, j, k;
+    if (Math.abs(la - lb) > 1) return false;
+    while (i < la && i < lb && a.charAt(i) === b.charAt(i)) i++;
+    if (i === la && i === lb) return true;
+    if (la === lb) {
+      if (a.slice(i + 1) === b.slice(i + 1)) return true;                 /* one wrong */
+      return a.charAt(i) === b.charAt(i + 1) && a.charAt(i + 1) === b.charAt(i)
+        && a.slice(i + 2) === b.slice(i + 2);                             /* two swapped */
+    }
+    j = la > lb ? a : b; k = la > lb ? b : a;                             /* one extra */
+    return j.slice(i + 1) === k.slice(i);
+  }
+  function nearIn(tok, want) {
+    if (tok.length < 6) return false;
+    for (var n = tok.length - 1; n <= tok.length + 1; n++)
+      for (var s = 0; s + n <= want.length; s++)
+        if (oneSlip(tok, want.substr(s, n))) return true;
+    return false;
+  }
+
   /* -> {match:bool, rival:string} */
   function classify(name, opponent) {
     var toks = nameTokens(name), want = slug(opponent), i = 0;
     if (!want) return { match: false, rival: "" };
     while (i < toks.length) {
       var k = slug(toks[i]);
-      if (k.length >= 3 && want.indexOf(k) >= 0) i++;
+      if (k.length >= 3 && (want.indexOf(k) >= 0 || nearIn(k, want))) i++;
       else break;
     }
     if (!i) return { match: false, rival: "" };
