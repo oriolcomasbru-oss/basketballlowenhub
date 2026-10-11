@@ -4681,8 +4681,42 @@ const GAMEK=g=>String(g.date||"")+"|"+_lgNorm(g.opponent||"");
    written against a fixture (a result, the id its reports hang off) is carried over when
    the same fixture is still there under a different date. */
 let _gamesLoaded=0;         /* 0 untried · 1 reading · 2 done */
+/* A FIXTURE WHOSE OPPONENT WAS NOT KNOWN WHEN THE CALENDAR WAS WRITTEN.
+   A cup round is entered as "TBD (Round 2)" before the draw, and it stays that way until
+   somebody remembers to go back to the document - while the scouting folder already has
+   the real club's files in it and the report says none of them match "TBD". The league
+   knows who we play that day, so a placeholder is filled in from the league's own list:
+   our game on that date, or a day either side of it. A row the league has nothing for is
+   left exactly as the document has it. */
+function _gamePlaceholder(n){ return /\bTBD\b|\bTBA\b|to be (decided|determined|announced)|^\?+$/i.test(String(n||"")); }
+async function fillPlaceholderFixtures(list){
+  if(!list.some(g=>_gamePlaceholder(g.opponent))) return list;
+  let all=[];
+  try{
+    const L=leagueState();
+    all=(L.games||[]).concat(L.cup||[]);
+    if(!all.length){
+      const j=await fetch("/.netlify/functions/bbl?res=all").then(r=>r.json());
+      all=((j&&j.games)||[]).concat((j&&j.cup)||[]);
+    }
+  }catch(e){ return list; }
+  const day=d=>Math.round(new Date(d+"T12:00:00Z").getTime()/86400000);
+  return list.map(g=>{
+    if(!_gamePlaceholder(g.opponent)) return g;
+    const cup=/cup|pokal/i.test(g.competition||"");
+    const near=all.filter(x=>x.date && (_lgOurs(x.home)||_lgOurs(x.away)) && Math.abs(day(x.date)-day(g.date))<=1
+      && (cup? x.phase==="cup" : x.phase!=="cup"))
+      .sort((a,b)=>Math.abs(day(a.date)-day(g.date))-Math.abs(day(b.date)-day(g.date)))[0];
+    if(!near) return g;
+    const home=_lgOurs(near.home), other=home? near.away : near.home;
+    if(!other || _gamePlaceholder(other)) return g;
+    const opp=_gTidy(other), ven=home?"Home":"Away";
+    return Object.assign({}, g, { id:"g_"+near.date+"_"+opp.toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,14),
+      date:near.date, opponent:opp, venue:ven, home:home, was:g.opponent });
+  });
+}
 async function loadGames(){
-  const sheet=await sheetFixtures();
+  const sheet=await fillPlaceholderFixtures(await sheetFixtures());
   if(!sheet.length) throw new Error("DB_Games came back empty");
   const comps={}; sheet.forEach(g=>{ comps[String(g.competition||"").toUpperCase()]=1; });
   const have=(state.games||[]).slice();
