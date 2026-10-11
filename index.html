@@ -14522,7 +14522,7 @@ function _lgGameLead(g, M){
       F.runs.slice().sort((a,b)=>a.t0-b.t0).map(r=>h("span",{class:"lgg-run "+(r.home?"h":"a")},
         (r.home?g.homeTlc:g.awayTlc)+" "+r.pts+"–0", h("i",{}, (()=>{ const a=_lgGameClock(r.t0), b=_lgGameClock(r.t1);
           /* a run that crosses a break names both periods */
-          return a+" → "+(a.split(" ")[0]===b.split(" ")[0]? b.split(" ")[1] : b); })()))));
+          return a+" → "+(a.split(" ")[0]===b.split(" ")[0]? b.split(" ")[1] : b); })())))));
   }
   if(!F.ok) wrap.appendChild(h("div",{class:"lgg-note"},"The play by play adds up to "+F.hs+"–"+F.as+
     ", not the official "+g.hs+"–"+g.as+": the feed is missing a basket somewhere, so the line is close but not exact."));
