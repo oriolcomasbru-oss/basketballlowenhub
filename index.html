@@ -14836,17 +14836,41 @@ function _lgGameShots(name, S){
      own with bare dots, which read as a different chart about the same thing. The shots
      themselves stay on top, small, because in one game each of them is a play somebody
      remembers. */
+  /* Corrected: the chart the staff works with is the MESH - hexagons sized by how often
+     and coloured by how well against the league, the zone percentages over them, the face
+     of the man who owns each zone, and beside it one small court for each man who shot.
+     That is what is drawn here, by the same functions, for the shots of this one game. */
+  const L=leagueState();
   const fit={ x0:LG_SHOT_X0, scale:1500/280 };
   const rows=S.shots.map(s=>s.row);
+  const lgRef=(L.pbp&&L.pbp.league)||null, gridN=(L.pbp&&L.pbp.grid)||20;
+  const d={ players:(S.pl||[]).map(p=>({ id:p.id, num:p.num, name:p.name, last:String(p.name||"").split(" ").slice(-1)[0] })) };
   const zz=_lgZoneAgg(rows, fit);
   const gg=sv("g",{});
-  gg.appendChild(_lgCourt(_lgZoneShapes(zz)));
-  const dots=sv("g",{class:"lgg-dots"});
-  S.shots.forEach(s=>dots.appendChild(sv("circle",{cx:s.x.toFixed(1), cy:s.y.toFixed(1), r:s.made?11:10,
-    class:"sc-dot "+(s.made?"made":"miss")})));
-  gg.appendChild(dots);
+  const hm=_lgHexMap(rows, fit, lgRef, gridN);
+  gg.appendChild(_lgCourt(hm? _lgHexG(hm, fit) : null));
   gg.appendChild(_lgZoneLabels(zz));
+  if(S.pl && S.pl.length) gg.appendChild(_lgZoneFaces(L, d, _lgZoneOwners(L, d, rows, fit)));
   const svg=sv("svg",{viewBox:"0 236 1500 1164", width:"100%", class:"sc-svg", preserveAspectRatio:"xMidYMid meet"}, gg);
+  /* every man with enough shots to draw, by what he scored off them */
+  let minis=null;
+  if(S.pl && S.pl.length){
+    const by={}; rows.forEach(r=>{ (by[r[0]]=by[r[0]]||[]).push(r); });
+    const men=Object.keys(by).map(id=>{ const sh=by[id]; let m=0,m3=0;
+      sh.forEach(x=>{ if(x[1]===1){ m++; if(x[2]===1) m3++; } });
+      return { id:id, sh:sh, n:sh.length, pts:2*(m-m3)+3*m3, efg:100*(m+0.5*m3)/sh.length }; })
+      .filter(p=>p.n>=3).sort((a,b)=>(b.pts-a.pts)||(b.n-a.n)).slice(0,8);
+    if(men.length>=2){
+      const nmz=_lgNames(d);
+      minis=h("div",{class:"presc-g"});
+      men.forEach((p,i)=>{ const who=nmz[p.id]||{};
+        minis.appendChild(h("div",{class:"presc-c"},
+          h("div",{class:"presc-ch"}, h("span",{class:"presc-rk"}, String(i+1)),
+            h("b",{}, _lgWho(who) || ("#"+(who.n||"?"))),
+            h("span",{class:"presc-n"}, p.pts+" pts · "+p.n+" · "+p.efg.toFixed(0)+"%")),
+          _lgMiniChart(p.sh, fit, lgRef, gridN))); });
+    }
+  }
   const z=k=>{ const l=S.shots.filter(x=>k.indexOf(x.zone)>=0), m=l.filter(x=>x.made).length;
     return l.length? (m+"/"+l.length+" · "+Math.round(100*m/l.length)+"%") : "–"; };
   /* Some scorers' tables mark where a shot was taken with care and some tap one side of
@@ -14855,7 +14879,9 @@ function _lgGameShots(name, S){
   const out=S.shots.filter(s=>s.zone!=="rim" && s.zone!=="paint");
   const left=out.filter(s=>s.x<750).length;
   const lop=(out.length>=12 && (left>=0.9*out.length || left<=0.1*out.length));
-  return h("div",{class:"lgg-shot"}, h("div",{class:"lgg-sub"}, name), h("div",{class:"sc-wrap"}, svg),
+  const wrap=h("div",{class:"sc-wrap"}, svg);
+  return h("div",{class:"lgg-shot"}, h("div",{class:"lgg-sub"}, name),
+    minis? h("div",{class:"presc"}, h("div",{class:"presc-l"}, wrap), minis) : wrap,
     lop? h("div",{class:"lgg-note"},"Almost every outside shot is marked on the "+(left>out.length/2?"left":"right")+
       " side: that is how the scorer's table entered this game, not where the shots were taken. The distance and the zone type (rim, paint, mid range, three) can be trusted; the side cannot.") : null,
     h("div",{class:"lgg-zones"},
@@ -14939,9 +14965,23 @@ function _lgGameOpen(g){
       h("div",{}, lead(M.H), _lgGameBox(g.home||"", M.H, pick(M.H,M.A,g.homeTlc||g.home)),
                   lead(M.A), _lgGameBox(g.away||"", M.A, pick(M.A,M.H,g.awayTlc||g.away))),
       "starters first; the line separates the bench · click a player for his game"));
-    if(M.H.shots.length || M.A.shots.length) body.appendChild(sec("Shot chart",
-      h("div",{class:"lgg-shots"}, _lgGameShots(g.home||"", M.H), _lgGameShots(g.away||"", M.A)),
-      "zones coloured by points per attempt, red above 1.00 and blue below · filled dot made, ring missed"));
+    if(M.H.shots.length || M.A.shots.length){
+      /* the league's own shooting from each spot is what the hexagons are coloured against;
+         it is read once for the whole league page, so it is asked for here if nobody has */
+      try{ if(!L.pbp && !_lgPbpBusy && !_lgPbpTried && !L.demo) syncPbp(false); }catch(e){}
+      const lgOn=!!(L.pbp&&L.pbp.league);
+      const key=h("div",{class:"sc-sum"},
+        h("span",{class:"sc-kl"},"Efficiency"), h("span",{class:"sc-kz mn2"},"below"), h("span",{class:"sc-kz mn1"},""),
+        h("span",{class:"sc-kz m0"},""), h("span",{class:"sc-kz mp1"},""),
+        h("span",{class:"sc-kz mp2"}, lgOn? "above league average" : "above the team's own average"),
+        h("span",{class:"sc-kl"},"Frequency"),
+        h("span",{class:"sc-kf"}, sv("svg",{viewBox:"0 0 74 18", width:"74", height:"18"},
+          sv("circle",{cx:"6",cy:"9",r:"3",class:"sc-kfd"}), sv("circle",{cx:"20",cy:"9",r:"5",class:"sc-kfd"}),
+          sv("circle",{cx:"38",cy:"9",r:"7",class:"sc-kfd"}), sv("circle",{cx:"60",cy:"9",r:"9",class:"sc-kfd"}))));
+      body.appendChild(sec("Shot chart",
+        h("div",{class:"lgg-shots one"}, _lgGameShots(g.home||"", M.H), _lgGameShots(g.away||"", M.A), key),
+        "the mesh: size is how often, colour is how well · the face is who owns the zone"));
+    }
     if(M.acts.length){
       const pbpBox=h("div",{style:"display:none"});
       const pb=h("button",{class:"btn sm lgg-advbtn", onclick:()=>{
@@ -23837,7 +23877,10 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 .lgg-box td.top{font-weight:800;color:var(--accent-strong,#b0873c)}
 .lgg-box tr.first-bench td{border-top:2px solid var(--line-strong,#d2d7df)}
 .lgg-shots{display:grid;grid-template-columns:1fr 1fr;gap:22px}
-.lgg-court{width:100%;height:auto;display:block;border-radius:8px}
+.lgg-shots.one{grid-template-columns:1fr;gap:14px}
+.lgg-shot .presc{margin-top:4px;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}
+.lgg-shot .presc-g{grid-template-columns:repeat(3,minmax(0,1fr))}
+.lgg{width:min(1240px,100%)}
 .lgg-zones{display:flex;flex-wrap:wrap;gap:4px 14px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;margin-top:6px}
 .lgg-zones i{font-style:normal;color:var(--ink-faint,#8a93a2);margin-right:5px}
 .lgg-links{display:flex;gap:18px;justify-content:center;margin-top:20px;font-size:12px}
