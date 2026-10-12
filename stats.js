@@ -439,9 +439,22 @@
      up. The ones that carry "Transition Attack Poss" are counted a second time on their
      own, because that is the narrower thing - what the balance itself conceded - and the
      two questions are not the same question. */
+  /* A player as the practice tagging writes him: a first name, with or without his shirt
+     number - "Ferdinand 6", "GIAN", "Andre". Returned without the number and in one
+     spelling, so GIAN and Gian 4 are one man. Anything that is a mark and not a man -
+     a shot, a turnover, a rebound, a paint touch - is not a name. */
+  var NOT_A_MAN = { turnover: 1, oreb: 1, unknown: 1, fastbreak: 1, fastberak: 1 };
+  function tagMan(tok) {
+    tok = String(tok || "").trim();
+    var m = /^([A-Za-zÀ-ÿ'][A-Za-zÀ-ÿ']+)(?: \d{1,2})?$/.exec(tok);
+    if (!m) return "";
+    var w = m[1].toLowerCase();
+    if (NOT_A_MAN[w] || PT_TYPES.indexOf(tok) >= 0) return "";
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  }
   function buildTransPractice(rows) {
     var mk = function () { return { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, tn: 0, tpts: 0, mtu: 0 }; };
-    var o = { tag: mk(), back: mk(), mtuOdd: 0, orebLoose: 0 };
+    var o = { tag: mk(), back: mk(), mtuOdd: 0, orebLoose: 0, mtuBy: {} };
     rows.forEach(function (r) {
       if (r.def) return;
       /* MISSED TAG UP is the one thing about TAG the staff writes down by hand: the long
@@ -453,6 +466,13 @@
       var mt = count(r.tags, "MISSED TAG UP");
       if (mt) {
         if (has(r.tags, "M3") || has(r.tags, "ML2")) o.tag.mtu += mt; else o.mtuOdd += mt;
+        /* WHO DID NOT GO. The tagger's rule, as he wrote it: the name comes right after
+           the mark, and when nothing comes after it, it is the name right before. */
+        r.tags.forEach(function (tok, i) {
+          if (tok !== "MISSED TAG UP") return;
+          var who = tagMan(r.tags[i + 1]) || tagMan(r.tags[i - 1]) || "?";
+          o.mtuBy[who] = (o.mtuBy[who] || 0) + 1;
+        });
       }
       if (LONG_END.some(function (x) { return has(r.tags, x); })) o.tag.of++;
       else if (!has(r.tags, "Offensive foul") && CLOSE_END.some(function (x) { return has(r.tags, x); })) o.back.of++;
@@ -1047,11 +1067,12 @@
        misses — is the smaller table under it. */
     var TDF = ["n", "pts", "of", "miss", "oreb", "tn", "tpts", "mtu"];
     var tdZero = function () { var z = {}; TDF.forEach(function (f) { z[f] = 0; }); return z; };
-    var TD = { tag: tdZero(), back: tdZero() }, defClips = 0, mtuOdd = 0, orebLoose = 0;
+    var TD = { tag: tdZero(), back: tdZero() }, defClips = 0, mtuOdd = 0, orebLoose = 0, mtuBy = {};
     sets.forEach(function (s) {
       defClips += s.defN || 0;
       var t = s.trans; if (!t) return;
       mtuOdd += t.mtuOdd || 0; orebLoose += t.orebLoose || 0;
+      Object.keys(t.mtuBy || {}).forEach(function (k) { mtuBy[k] = (mtuBy[k] || 0) + t.mtuBy[k]; });
       ["tag", "back"].forEach(function (k) {
         TDF.forEach(function (f) { TD[k][f] += t[k][f] || 0; });
       });
@@ -1093,6 +1114,14 @@
       ]));
       sTD.appendChild(el("div", "sx-sub", sets.length + (sets.length === 1 ? " session" : " sessions") +
         (defClips ? " \u00b7 " + defClips + (defClips === 1 ? " defensive clip" : " defensive clips") : "") + "."));
+      /* who the missed tag ups belong to, most first */
+      var mtuWho = Object.keys(mtuBy).sort(function (a, b) { return (mtuBy[b] - mtuBy[a]) || a.localeCompare(b); });
+      if (mtuWho.length) {
+        var line = el("div", "sx-sub sx-mtu");
+        line.appendChild(el("b", "", "Missed tag up — "));
+        line.appendChild(document.createTextNode(mtuWho.map(function (k) { return k + " " + mtuBy[k]; }).join(" · ")));
+        sTD.appendChild(line);
+      }
       /* said, not hidden: what was tagged but could not be placed in the table above */
       if (orebLoose) sTD.appendChild(el("div", "sx-sub", orebLoose + (orebLoose === 1 ? " offensive rebound is" : " offensive rebounds are") +
         " tagged on a row with no missed shot written on it (M2, M3 or ML2), so " + (orebLoose === 1 ? "it is" : "they are") +
