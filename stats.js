@@ -2801,13 +2801,39 @@
     var G = fixtureList();
     if (!G.length) return [];
     var n = slugWord(name), tail = slugWord((String(name).match(/[A-Za-z]{4,}/g) || []).slice(-1)[0] || "");
-    return G.filter(function (g) {
+    var exact = G.filter(function (g) {
       var op = slugWord(g.opponent);
       if (op.length < 4) return false;
       /* the file says ROSTOCK and the fixture says "Rostock Seawolves" — either way round */
       return n.indexOf(op) >= 0 || op.indexOf(n.replace(/^g\d+/, "").slice(0, 12)) >= 0 ||
              (tail.length >= 4 && op.indexOf(tail) >= 0);
     });
+    if (exact.length) return exact;
+    /* THE SAME SLIP THAT HID THE FILE FROM ITS OWN REPORT HID IT FROM THE CALENDAR.
+       "G10 BBL LUDWISGBURG.csv" carries no date, so the only thing that can say which
+       night it is is the fixture against that club - and with two letters swapped it
+       matched no club, got no date, and a file with no date is left out of every trend.
+       A word of six letters or more that is one slip away from a word of the opponent's
+       name is that opponent. */
+    var toks = String(name || "").replace(/\.csv$/i, "").split(/[^A-Za-zÀ-ÿ]+/)
+      .map(slugWord).filter(function (t) { return t.length >= 6; });
+    if (!toks.length) return [];
+    return G.filter(function (g) {
+      return String(g.opponent || "").split(/\s+/).map(slugWord).some(function (w) {
+        return w.length >= 6 && toks.some(function (t) { return oneSlip(t, w); });
+      });
+    });
+  }
+  /* two neighbouring letters swapped, or one letter wrong, missing or extra */
+  function oneSlip(a, b) {
+    var la = a.length, lb = b.length, i = 0;
+    if (Math.abs(la - lb) > 1) return false;
+    while (i < la && i < lb && a.charAt(i) === b.charAt(i)) i++;
+    if (i === la && i === lb) return true;
+    if (la === lb) return a.slice(i + 1) === b.slice(i + 1) ||
+      (a.charAt(i) === b.charAt(i + 1) && a.charAt(i + 1) === b.charAt(i) && a.slice(i + 2) === b.slice(i + 2));
+    var lg = la > lb ? a : b, sh = la > lb ? b : a;
+    return lg.slice(i + 1) === sh.slice(i);
   }
   var FIX_NEAR_DAYS = 5;   /* a name's date and its fixture should not be a week apart */
   function daysApart(a, b) {

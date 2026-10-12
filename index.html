@@ -5065,6 +5065,17 @@ function _docNorm(s2){ return String(s2||"").toLowerCase()
    club's registered name says nothing about which game a file is for. */
 const DOC_STOP={basketball:1,bbl:1,bc:1,sc:1,ec:1,bg:1,bv:1,ev:1,team:1,club:1,baskets:1,
   basket:1,gmbh:1,ev1:1,the:1,and:1,und:1,game:1,plan:1,pregame:1,postgame:1,scouting:1};
+/* two neighbouring letters swapped, or one letter wrong, missing or extra */
+function _oneSlip(a,b){
+  const la=a.length, lb=b.length; let i=0;
+  if(Math.abs(la-lb)>1) return false;
+  while(i<la && i<lb && a.charAt(i)===b.charAt(i)) i++;
+  if(i===la && i===lb) return true;
+  if(la===lb) return a.slice(i+1)===b.slice(i+1) ||
+    (a.charAt(i)===b.charAt(i+1) && a.charAt(i+1)===b.charAt(i) && a.slice(i+2)===b.slice(i+2));
+  const lg=la>lb?a:b, sh=la>lb?b:a;
+  return lg.slice(i+1)===sh.slice(i);
+}
 function _docOpponent(name, opponents){
   const q=" "+_docNorm(name)+" ";
   const whole=w=>q.indexOf(" "+w+" ")>=0;
@@ -5079,7 +5090,10 @@ function _docOpponent(name, opponents){
     if(!words.length) return;
     let hit=false, score=0;
     if(q.indexOf(" "+k+" ")>=0){ hit=true; score=100+k.length; }
-    else words.forEach(w=>{ if(whole(w)||starts(w)){ hit=true; score+=w.length; } });
+    else words.forEach(w=>{ if(whole(w)||starts(w)){ hit=true; score+=w.length; }
+      /* a name typed with one slip - LUDWISGBURG - is still that club, at a lower score
+         than a name spelt right so it can never beat one */
+      else if(w.length>=6 && q.trim().split(" ").some(t=>t.length>=6 && _oneSlip(t,w))){ hit=true; score+=w.length-1; } });
     /* the club that puts the most of its own name in the file wins, so "Berlin" does not
        take a file that says "ALBA BERLIN" when Alba Berlin is also on the schedule */
     if(hit && score>bestScore){ bestScore=score; best=op; }
