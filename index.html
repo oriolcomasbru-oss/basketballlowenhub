@@ -15559,8 +15559,9 @@ function _anMark(node){
     e.classList.add("an-e");
     _anHold([e], (x,k)=>{
       x.style.animationDelay=(Math.min(k||0,6)*90)+"ms";
-      /* no count-up here: the figures of a report - a gauge, a rate, a rating - are what
-         the staff decides on, and they are shown as they are from the first frame */
+      /* the headline figures of the block count up - drawn over the real figure, which
+         is never changed (see _anCount) */
+      _anCount(x, ".td-kpi b, .sx-gbig, .tr-rank-v, .ldr-v", 1300);
       setTimeout(()=>{ try{ x.classList.remove("an-e"); x.style.animationDelay=""; }catch(_){ } }, 2600);
     });
   });
@@ -15597,57 +15598,62 @@ function _anWatchEnter(box){
 }
 try{ if(document.readyState==="loading") document.addEventListener("DOMContentLoaded", _anStart); else _anStart(); }catch(e){}
 function _anReveal(){}
-/* A figure that arrives counts up to itself. Only for text that is a plain number - "98",
-   "+18", "85%", "113.8" - so a name or a score with a dash in it is left alone. It ends on
-   the exact text it started from, and does nothing at all for anybody who asked their
-   device for less motion. */
-/* every figure that was set counting, and what it really says: checked once the count
-   should be over, and put right if anything left it on something else */
-const _anTruth=[]; let _anTruthT=0;
-function _anTruthCheck(){
+/* A FIGURE THAT ARRIVES COUNTS UP TO ITSELF - AND IS NEVER ANYTHING BUT ITSELF.
+   The first version of this wrote the counting digits into the figure and put the real
+   text back at the end. Started twice on one figure it read its own half-way value as the
+   truth, and a 60% measure ended as 6%. Whatever guard is put round that, the design is
+   wrong: for a second and a half the page holds a number that is not the number.
+
+   So the figure is not touched at all now. Its text stays exactly what it is. While it
+   counts, the real text is made transparent and the counting digits are drawn on top of
+   it from an attribute, by the stylesheet; when the count ends the overlay is taken off
+   and the real text is simply seen again. There is no moment at which the page says
+   anything false, nothing to restore, and nothing a second start could misread - the
+   worst a failure can do is leave a figure showing itself without the animation.
+   Only a plain number counts - "98", "+18", "85%", "113.8" - and nothing does for a
+   device that asked for less motion or a page that is not being shown. */
+const _anCounting=[]; let _anCountT=0;
+function _anCountSweep(){
+  /* belt and braces: an overlay that outlived its count is taken off */
   const now=Date.now();
-  for(let i=_anTruth.length-1;i>=0;i--){ const r=_anTruth[i];
+  for(let i=_anCounting.length-1;i>=0;i--){ const r=_anCounting[i];
     if(now<r.at) continue;
-    _anTruth.splice(i,1);
-    try{ if(r.el.isConnected && r.el.__anFull===r.full && r.el.textContent!==r.full){ r.el.textContent=r.full; } r.el.__anBusy=false; }catch(e){}
+    _anCounting.splice(i,1);
+    try{ r.off(); }catch(e){}
   }
-  if(!_anTruth.length && _anTruthT){ clearInterval(_anTruthT); _anTruthT=0; }
+  if(!_anCounting.length && _anCountT){ clearInterval(_anCountT); _anCountT=0; }
 }
 function _anCount(root, sel, ms){
   try{ if(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) return; }catch(e){ return; }
   if(!root) return;
+  if(document.visibilityState && document.visibilityState!=="visible") return;
   root.querySelectorAll(sel).forEach(el=>{
-    /* ONE COUNT AT A TIME, AND THE TRUE FIGURE IS REMEMBERED ONCE.
-       A block inside a block - a gauge in a section in a report - was started twice, a
-       moment apart. The second start read the figure off the page while the first was
-       still counting, took "6%" for the truth, and ended on it: a 60% measure shown as
-       6%. A figure that is already counting is now left alone, so what it ends on is
-       always what it was before anything touched it; the true text is also kept on the
-       element and checked again after the count is over. */
-    if(el.__anBusy) return;
-    const full=el.textContent, m=/^([+−-]?)(\d+(?:\.\d+)?)(%?)$/.exec(String(full).trim());
+    if(el.__anBusy || el.children.length) return;
+    const m=/^([+−-]?)(\d+(?:\.\d+)?)(%?)$/.exec(String(el.textContent).trim());
     if(!m) return;
     const to=parseFloat(m[2]), dec=(m[2].split(".")[1]||"").length;
+    let cs=null; try{ cs=getComputedStyle(el); }catch(e){ return; }
+    const ta=cs.textAlign;
     let t0=0, done=false;
-    el.__anBusy=true; el.__anFull=full;
-    _anTruth.push({ el:el, full:full, at:Date.now()+ms+600 });
-    if(!_anTruthT) _anTruthT=setInterval(_anTruthCheck, 500);
-    const finish=()=>{ if(done) return; done=true; el.textContent=full; el.__anBusy=false; };
+    const off=()=>{ if(done) return; done=true; el.__anBusy=false;
+      el.classList.remove("an-cnt"); el.removeAttribute("data-an");
+      el.style.removeProperty("--an-ink"); el.style.removeProperty("--an-j"); };
     const step=now=>{
       if(done) return;
       if(!t0) t0=now;
       const k=Math.min(1,(now-t0)/ms), e=1-Math.pow(1-k,3);
-      if(k<1 && el.isConnected){ el.textContent=m[1]+(to*e).toFixed(dec)+m[3]; requestAnimationFrame(step); }
-      else finish();
+      if(k<1 && el.isConnected){ el.setAttribute("data-an", m[1]+(to*e).toFixed(dec)+m[3]); requestAnimationFrame(step); }
+      else off();
     };
-    /* THE REAL FIGURE IS NEVER LEFT TO AN ANIMATION. A page in a background tab is not
-       given frames at all, and a count that waits for one would sit on 0 - a wrong number
-       on a box score. So the count only starts when the page is actually being shown,
-       and a timer puts the true text back whatever the frames did. */
-    if(document.visibilityState && document.visibilityState!=="visible"){ finish(); return; }
-    el.textContent=m[1]+(0).toFixed(dec)+m[3];
+    el.__anBusy=true;
+    el.style.setProperty("--an-ink", cs.color);
+    el.style.setProperty("--an-j", (ta==="right"||ta==="end")? "flex-end" : (ta==="center"? "center" : "flex-start"));
+    el.setAttribute("data-an", m[1]+(0).toFixed(dec)+m[3]);
+    el.classList.add("an-cnt");
     requestAnimationFrame(step);
-    setTimeout(finish, ms+150);
+    setTimeout(off, ms+200);
+    _anCounting.push({ at:Date.now()+ms+800, off:off });
+    if(!_anCountT) _anCountT=setInterval(_anCountSweep, 600);
   });
 }
 /* OUR OWN GAME, AT THE TOP OF ITS POST GAME.
@@ -16120,7 +16126,7 @@ function _lgGamePanel(g, close){
     qs.length? h("div",{class:"lgg-qtw"}, qt) : null,
     body);
   body.appendChild(h("div",{class:"lg-empty"},"Reading the game sheet…"));
-  _anCount(panel, ".lgg-score b", 1400);
+  _anCount(panel, ".lgg-score b, .lgg-qt td.f", 1400);
   const ask=_lgGameMemo[g.id] || (_lgGameMemo[g.id]=
     fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(g.id)).then(r=>r.json()));
   ask.then(j=>{
@@ -16232,15 +16238,13 @@ function _lgGamePanel(g, close){
       s.boxScorePDFUrl? h("a",{href:s.boxScorePDFUrl, target:"_blank", rel:"noopener"},"Official box score (PDF)") : null,
       s.playByPlayPDFUrl? h("a",{href:s.playByPlayPDFUrl, target:"_blank", rel:"noopener"},"Official play by play (PDF)") : null);
     if(links.childNodes.length) body.appendChild(links);
-    if(drawn) _anCount(body, ".lgg-key b, .lgg-kp b", 450);
+    if(drawn) _anCount(body, ".lgg-key b, .lgg-kp b, .lgg-cr .v, .lgg-box tr.lg-avg td", 450);
     else {
       /* each block waits for the eye: a section, a row of the comparison, a team's box
          score and a team's floor are let go one by one as they come onto the screen */
       _anHold(body.querySelectorAll(":scope > .lgg-sec"), e=>_anCount(e, ".lgg-key b, .lgg-kp b", 1300));
-      /* only headline figures count up; a figure in a table or a comparison is never
-         touched, so nothing that is read as a number is ever mid-way to itself */
-      _anHold(body.querySelectorAll(".lgg-cr"));
-      _anHold(body.querySelectorAll(".lgg-boxw"));
+      _anHold(body.querySelectorAll(".lgg-cr"), e=>_anCount(e, ".v", 1100));
+      _anHold(body.querySelectorAll(".lgg-boxw"), e=>_anCount(e, "tr.lg-avg td", 1100));
       _anHold(body.querySelectorAll(".lgg-shot, .lgg-four, .lgg-ldr"));
     }
     drawn=true;
@@ -25481,6 +25485,12 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
      everything inside it with it */
   .an-hold,.an-hold *{animation-play-state:paused!important}
   .an-soft{animation:anFade calc(var(--mk)*.55s) ease-out both}
+  /* A figure counting up: its own text is still there, only not painted, and the
+     counting digits are drawn over it from data-an. Nothing in the page is changed. */
+  .an-cnt{position:relative;color:transparent!important;-webkit-text-fill-color:transparent!important}
+  .an-cnt::after{content:attr(data-an);position:absolute;inset:0;padding:inherit;display:flex;align-items:center;
+    justify-content:var(--an-j,flex-start);white-space:nowrap;font:inherit;letter-spacing:inherit;
+    color:var(--an-ink,currentColor);-webkit-text-fill-color:var(--an-ink,currentColor);pointer-events:none}
   /* a block put back where it was has already arrived */
   .an-done,.an-done *{animation:none!important}
   .an-wait{opacity:0;animation:none!important}
@@ -25489,7 +25499,7 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
   body.app-edit .view-enter,body.app-edit .view-enter *,body.app-edit .rep-enter,body.app-edit .rep-enter *,
   body.app-edit .lgg-body *{animation:none!important}
 }
-@media print{ .lgg,.lgg *,.prf,.prf *,.view-enter,.view-enter *,.rep-enter,.rep-enter *,.an-e,.an-e *,.an-r,.an-r *,.an-hold,.an-hold *,.cover,.cover *{animation:none!important} .an-wait{opacity:1!important} }
+@media print{ .lgg,.lgg *,.prf,.prf *,.view-enter,.view-enter *,.rep-enter,.rep-enter *,.an-e,.an-e *,.an-r,.an-r *,.an-hold,.an-hold *,.cover,.cover *{animation:none!important} .an-wait{opacity:1!important} .an-cnt{color:inherit!important;-webkit-text-fill-color:currentColor!important} .an-cnt::after{content:none!important} }
 body.app-edit .an-wait{opacity:1!important}
 .prf-in{--lgh:#c6a15b;--lga:#4a86d8;border:1px solid var(--line,#e4e7ec);border-radius:14px;padding:12px 16px 14px;margin:0 0 16px;background:var(--panel,#fff)}
 .prf-strip{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
