@@ -2336,8 +2336,12 @@
           if (s.hollow) { m.setAttribute("class", "tl-mk hollow"); m.style.fill = "var(--tl-surface)"; m.style.stroke = s.color; }
           /* a thin day: half the size and pale. Under a line of sessions added together,
              every day steps back a little, since the line is now what is being read */
-          if (q[4]) { m.setAttribute("transform", (m.getAttribute("transform") || "") + " translate(" + q[0] + " " + q[1] + ") scale(0.6) translate(" + (-q[0]) + " " + (-q[1]) + ")"); m.style.opacity = "0.3"; }
-          else if (rl) m.style.opacity = "0.6";
+          /* Under a line of sessions added together the days step right back: a day too
+             thin to read is not drawn at all - pale dots pinned to the top and the bottom
+             of the plot were the mess - a training is a small quiet dot, and a game keeps
+             its diamond, because a game is the one day worth finding on the line. */
+          if (q[4]) return;
+          if (rl && kind !== "game") { m.setAttribute("r", 2.6); m.style.opacity = "0.38"; }
           svg.appendChild(m);
         });
         /* direct label at the end of the line — the relief the palette asks for */
@@ -3146,7 +3150,7 @@
       { name: "BACK — DER after a shot at the rim or a turnover", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2,
         n: function (s) { return s.backN; }, roll: function (s) { return [s.backP, s.backN]; } }
     ], { axisFmt: f2, height: 200, minN: 4, rollWindow: 5 }));
-    sec.appendChild(el("div", "sx-sub", "The line is the last five sessions added together, points over possessions. The dots are each day; a day with fewer than four possessions is small and pale and joins nothing."));
+    sec.appendChild(el("div", "sx-sub", "The line is the last five sessions added together, points over possessions. Small dots are trainings and diamonds are games; a day with fewer than four possessions is left out."));
     var sum = function (list, f) { return list.reduce(function (a, p) { return a + p.s[f]; }, 0); };
     var tot = function (label, list) {
       var tN = sum(list, "tagN"), tP = sum(list, "tagP"), bN = sum(list, "backN"), bP = sum(list, "backP");
@@ -3719,21 +3723,100 @@
       bits.push({ kind: "warn", text: "They hurt us most " + worse,
         note: "TAG " + f2(tb.tag) + " · BACK " + f2(tb.back) + " per possession" });
     }
-    if (sets4 && sets4.length) {
-      var byPpp = sets4.slice().sort(function (a, b) { return (b.pts / b.n) - (a.pts / a.n); });
-      bits.push({ kind: "good", text: "Best set: " + byPpp[0].k,
-        note: f2(byPpp[0].pts / byPpp[0].n) + " per possession · " + byPpp[0].n + " runs" });
-      var low = byPpp[byPpp.length - 1];
-      bits.push({ kind: "warn", text: "Worst set: " + low.k,
-        note: f2(low.pts / low.n) + " per possession · " + low.n + " runs" });
-    }
     (proj || []).forEach(function (r) {
       if (!r.firm) return;
       bits.push({ kind: r.good ? "up" : "down",
         text: r.name + " heading for " + r.fmt(r.end),
         note: "in five games, on this trend" });
     });
+
+    /* WHERE IT IS HEADING. The marks above say where each thing stands; these say which
+       way it is moving. Each measure's last few sessions are set against everything
+       before them, and the three that have moved the most are named, in the colour of
+       whether that movement is the one we want. Rates over possessions are added up
+       before they are divided, never averaged day by day. */
+    var heading = [];
+    var mean2 = function (a) { return a.length ? a.reduce(function (x, y) { return x + y; }, 0) / a.length : NaN; };
+    var trendBy = function (name, list, get, fmt, hiGood) {
+      var v = list.map(function (p) { return get(p.s); }).filter(isFinite);
+      if (v.length < 6) return;
+      var k = Math.min(4, Math.floor(v.length / 2));
+      var a = mean2(v.slice(-k)), b = mean2(v.slice(0, v.length - k));
+      if (!isFinite(a) || !isFinite(b) || !b) return;
+      heading.push({ name: name, a: a, b: b, rel: (a - b) / Math.abs(b), fmt: fmt, good: (a > b) === hiGood, k: k });
+    };
+    var trendPool = function (name, list, num, den, hiGood) {
+      var ok = list.filter(function (p) { return (p.s[den] || 0) > 0; });
+      if (ok.length < 6) return;
+      var k = Math.min(5, Math.floor(ok.length / 2));
+      var sum = function (l, f) { return l.reduce(function (x, p) { return x + (p.s[f] || 0); }, 0); };
+      var la = ok.slice(-k), lb = ok.slice(0, ok.length - k);
+      var a = sum(la, num) / Math.max(1, sum(la, den)), b = sum(lb, num) / Math.max(1, sum(lb, den));
+      if (!isFinite(a) || !isFinite(b) || !b) return;
+      heading.push({ name: name, a: a, b: b, rel: (a - b) / Math.abs(b), fmt: f2, good: (a > b) === hiGood, k: k });
+    };
+    trendBy("Paint touches", pts, function (s) { return measured(s, "pt"); }, pct0f, true);
+    trendBy("Ball reversals", pts, function (s) { return measured(s, "br"); }, pct0f, true);
+    trendBy("Points per possession", pts, function (s) { return s.poss ? s.ppp : NaN; }, f2, true);
+    if (tb && tb.pts) {
+      trendPool("TAG defense", tb.pts, "tagP", "tagN", false);
+      trendPool("BACK defense", tb.pts, "backP", "backN", false);
+      trendBy("DER, whole game", tb.pts, function (s) { return s.der; }, f2, false);
+    }
+    heading = heading.filter(function (x) { return Math.abs(x.rel) >= 0.04; })
+      .sort(function (x, y) { return Math.abs(y.rel) - Math.abs(x.rel); }).slice(0, 3);
+
     trHighlights(hl, bits);
+
+    if (heading.length) {
+      var hsec = el("div", "tr-top");
+      hsec.appendChild(el("div", "sx-h", "Where it is heading"));
+      var hbox = el("div", "tr-chips");
+      heading.forEach(function (x) {
+        hbox.appendChild(trChip(x.good ? "up" : "down",
+          x.name + (x.a > x.b ? " rising" : " falling") + " — " + x.fmt(x.a),
+          "last " + x.k + " sessions · " + x.fmt(x.b) + " before · " + (x.rel > 0 ? "+" : "") + Math.round(100 * x.rel) + "%"));
+      });
+      hsec.appendChild(hbox);
+      hl.appendChild(hsec);
+    }
+
+    /* THE FIVE BEST AND THE FIVE WORST SETS, AS A RANKING. One best and one worst said
+       nothing about the second, and the worst was usually a set run twice. A set needs
+       a handful of runs to be ranked at all. */
+    if (sets4 && sets4.length) {
+      var minRuns = 4;
+      var ranked = sets4.filter(function (x) { return x.n >= minRuns; })
+        .map(function (x) { return { k: x.k, n: x.n, ppp: x.pts / x.n }; })
+        .sort(function (a, b) { return (b.ppp - a.ppp) || (b.n - a.n); });
+      if (ranked.length >= 2) {
+        var nTop = Math.min(5, Math.floor(ranked.length / 2) || 1);
+        var rsec = el("div", "tr-top");
+        rsec.appendChild(el("div", "sx-h", "Sets — best " + nTop + " and worst " + nTop));
+        var two = el("div", "tr-rank2");
+        var col = function (title, list, cls) {
+          var c = el("div", "tr-rank " + cls);
+          c.appendChild(el("div", "tr-rank-h", title));
+          var top = Math.max.apply(null, ranked.map(function (x) { return x.ppp; })) || 1;
+          list.forEach(function (x, i) {
+            var r = el("div", "tr-rank-r");
+            r.appendChild(el("span", "tr-rank-n", String(i + 1)));
+            r.appendChild(el("span", "tr-rank-k", x.k));
+            var bar = el("span", "tr-rank-bar"); var fill = el("i"); fill.style.width = Math.round(100 * x.ppp / top) + "%"; bar.appendChild(fill);
+            r.appendChild(bar);
+            r.appendChild(el("b", "tr-rank-v", f2(x.ppp)));
+            r.appendChild(el("span", "tr-rank-c", x.n + " runs"));
+            c.appendChild(r);
+          });
+          return c;
+        };
+        two.appendChild(col("Best — points per possession", ranked.slice(0, nTop), "good"));
+        two.appendChild(col("Worst", ranked.slice(-nTop).reverse(), "bad"));
+        rsec.appendChild(two);
+        rsec.appendChild(el("div", "sx-sub", "Sets run at least " + minRuns + " times. The bar is each set against the best one."));
+        hl.appendChild(rsec);
+      }
+    }
 
     /* ---------------------------------------------------------------- the dashboard */
     var dash = el("div", "td-grid");
@@ -3785,7 +3868,7 @@
         tKpi.push({ l: "DER last", v: f2(derLast), cls: derLast <= derAvg ? "good" : "bad" });
         tKpi.push({ l: "DER season", v: f2(derAvg) });
       }
-      dash.appendChild(tdCard("Transition defense · DER", "the line is the last five sessions together; a pale dot is a day with under four possessions — lower is better",
+      dash.appendChild(tdCard("Transition defense · DER", "the line is the last five sessions together · small dots trainings, diamonds games · days under four possessions left out — lower is better",
         tKpi,
         timelineChart("", "", tb.pts, [
           { name: "TAG", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2,

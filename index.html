@@ -3409,8 +3409,11 @@ function weekDays(mon){ return DAYK.map((k,i)=>{ const iso=addDays(mon,i); retur
 (function(){
   let job=null, raf=0;
   const SCROLLERS=".lgg-plback, .lgg-back, #workspace";
-  const sig=()=>{ try{ const u=state.ui||{}, a=u.os||{}, b=u.gp||{}, c=u.ts||{};
-    return [u.view,a.mode,a.gameId,b.mode,b.gameId,c.mode,c.gameId].join("|"); }catch(e){ return ""; } };
+  /* everything that says WHICH page this is. A day of training opened from another day
+     is a different page with the same screen and the same mode, and holding the scroll
+     across that put the new day in the middle of itself. */
+  const sig=()=>{ try{ const u=state.ui||{};
+    return JSON.stringify([u.view,u.os,u.gp,u.ts,u.calView,u.planTab,u.sessionDate,u.sessionIdx,(state.plan||{}).monthCursor,(state.plan||{}).weekCursor]); }catch(e){ return ""; } };
   const step=()=>{
     raf=0;
     if(!job) return;
@@ -3457,6 +3460,8 @@ function applyView(v){
   try{ const ws0=document.getElementById("workspace"); if(ws0) ws0.scrollTop=0;
        document.body.classList.remove("chrome-hidden","reveal-top"); }catch(e){}
   state.ui.view=v; persist();
+  /* the league list is kept fresh from wherever the app is being used */
+  try{ _lgMaybeSync(leagueState()); }catch(e){}
   if(v!=="oppscout"){ state.ui.os={mode:"overview"}; }
   if(v!=="teamscout"){ state.ui.ts={mode:"overview"}; }
   if(v!=="gameplan"){ state.ui.gp={mode:"overview"}; }
@@ -5745,6 +5750,35 @@ function applyPerms(){
   phxHideSub(); applyView(state.ui.view); syncPrintBtn();
   /* the league feed starts loading with the app, whatever view opened */
   try{ _lgWarm(); }catch(e){}
+  try{ _introMaybe(); }catch(e){}
+}
+/* THE FIRST TIME SOMEBODY COMES IN. An account with several sections used to land on
+   whichever one the app had last been left on - by somebody else, on a shared machine,
+   more often than not. The first time an account opens the app it gets the crest and the
+   sections it can go to, and is asked to pick one; after that it comes back to wherever
+   it was last. An account with one section has nothing to pick and goes straight to it:
+   a player to the pre game, somebody with the league only to the league. */
+function _introMaybe(){
+  const old=document.getElementById("introView"); if(old) old.remove();
+  if(!currentUser) return;
+  const key="lowen.intro."+String(currentUser);
+  let seen=false; try{ seen=!!localStorage.getItem(key); }catch(e){ seen=true; }
+  const tabs=Array.prototype.slice.call(document.querySelectorAll(".tb-tab[data-view]")).filter(b=>b.style.display!=="none" && canView(b.dataset.view));
+  if(seen || tabs.length<2) return;
+  const ws=document.getElementById("workspace"); if(!ws) return;
+  const done=()=>{ try{ localStorage.setItem(key,"1"); }catch(e){} const x=document.getElementById("introView"); if(x) x.remove(); document.removeEventListener("click", onTab, true); };
+  const onTab=e=>{ if(e.target && e.target.closest && e.target.closest(".tb-tab[data-view]")) done(); };
+  const tiles=h("div",{class:"intro-tiles"}, tabs.map(b=>h("button",{class:"intro-tile", onclick:()=>{ done(); b.click(); }}, (b.textContent||"").trim())));
+  const box=h("div",{id:"introView", class:"intro"},
+    h("div",{class:"intro-in"},
+      (typeof CLUB_LOGO==="string" && CLUB_LOGO)? h("img",{class:"intro-logo", src:CLUB_LOGO, alt:""}) : null,
+      h("div",{class:"intro-t"}, "Coaches Hub"),
+      h("div",{class:"intro-s"}, "Welcome, "+String(currentUser)+". Pick where to start — here or in the menu above. Next time you will come back to where you left off."),
+      tiles));
+  /* over the page, under the menu: the menu is what it is asking to be used */
+  try{ box.style.top=Math.max(0, Math.round(ws.getBoundingClientRect().top))+"px"; }catch(e){}
+  document.body.appendChild(box);
+  document.addEventListener("click", onTab, true);
 }
 let gateOk={playerdev:false, playerdb:false, rooster:false, prob:false};
 /* Who may go PAST the notice. An admin always can; anyone else needs the
@@ -6537,6 +6571,9 @@ function gameCard(gameId, from){
   g=g||{};
   const kind = (from==="oppscout"||from==="gameplan") ? "pregame" : "postgame";
   const key = (g.date||"")+"|"+scoutSlug(g.opponent||"");
+  /* a different report opens at its top, never where the last page happened to be */
+  try{ const ws0=document.getElementById("workspace"), id0=String(gameId)+"|"+from;
+    if(ws0 && gameCard._last!==id0){ gameCard._last=id0; ws0.scrollTop=0; } }catch(e){}
   /* a report arrives; the class comes off again so that saving or editing does not replay it */
   const wrap=h("div",{class:"rep-enter"});
   setTimeout(()=>{ try{ wrap.classList.remove("rep-enter"); }catch(e){} }, 1500);
@@ -14069,6 +14106,24 @@ function _lgWarm(){
   });
   soon(4600, ()=>{ try{ _lgSyncCalendar(); }catch(e){} });
 }
+/* A GAME THAT HAS BEEN PLAYED ARRIVES BY ITSELF.
+   The league list was refreshed when it was ten minutes old, but only by the league page;
+   and what each club's game sheets say - the box scores, the shots, the rotations, the
+   combinations - was read once and then kept for as long as it was there, so the game
+   played on Sunday was missing from all of it until somebody pressed Sync. Now the list is
+   refreshed from wherever the app is opened, and when it shows a club with more finished
+   games than its sheets were read for, that club is read again, fresh, one at a time. */
+const _lgFreshTried={};
+function _lgFreshenPlayers(L){
+  const done={};
+  (L.games||[]).forEach(g=>{ if(_lgDone(g) && g.phase==="main"){ done[g.homeId]=(done[g.homeId]||0)+1; done[g.awayId]=(done[g.awayId]||0)+1; } });
+  const todo=Object.keys(L.players||{}).filter(tid=>{ const d=L.players[tid];
+    return d && (d.players||[]).length && (done[tid]||0)>(d.games||0) && !_lgPlBusy[tid] && _lgFreshTried[tid]!==done[tid]; });
+  todo.forEach((tid,i)=>{ _lgFreshTried[tid]=done[tid];
+    setTimeout(()=>{ try{ _lgPlTried[tid]=false; syncPlayers(tid, true); }catch(e){} }, 800+i*2500); });
+  /* what was read for a club before a game is not what is true after it */
+  if(todo.length){ try{ Object.keys(_lgFormMemo).forEach(k=>delete _lgFormMemo[k]); _lgAllMemo=null; }catch(e){} }
+}
 function _lgMaybeSync(L){
   if(_lgSyncing || L.demo) return false;
   const t = L.updated? Date.parse(L.updated) : 0;
@@ -14093,7 +14148,8 @@ async function syncLeague(force){
       L.team=(ours||L.teams[0]||{}).id||"";
     }
     L.month=""; L.md=""; L.euWeek=""; persist();
-    toast(L.demo? "League loaded with demo data (no API key yet)" : "League updated");
+    try{ _lgFreshenPlayers(L); }catch(e){}
+    if(force) toast(L.demo? "League loaded with demo data (no API key yet)" : "League updated");
   }catch(e){
     toast("League sync failed — "+((e&&e.message)||e));
   }finally{
@@ -14302,7 +14358,9 @@ function _lgStdTable(L){
     const z=_lgZone(r.pos, nTeams);
     const cut=(r.pos===LG_FORMAT.playoff||r.pos===LG_FORMAT.playin||r.pos===nTeams-LG_FORMAT.down)?" cut":"";
     const tr=h("tr",{class:(_lgOurs(r.team)?"ours ":"")+(id===sel?"sel ":"")+(z?"z-"+z:"")+cut,
-      onclick:()=>{ _lgSetClub(L, (id===sel)?"":id); persist(); _lgRerender(); }},
+      onclick:()=>{ const was=(id===sel); _lgSetClub(L, was?"":id); persist(); _lgRerender();
+        /* picking a club makes the page about it, and opens how it has been doing */
+        if(!was){ try{ _lgTeamOpen(id); }catch(e){} } }},
       h("td",{class:"lg-pos"}, String(r.pos||"")),
       h("td",{class:"l lg-team"}, _lgCrest(L, id), h("span",{}, r.team||"")),
       h("td",{}, r.gp!=null?String(r.gp):"—"),
@@ -15341,10 +15399,10 @@ function _anHold(els, onSeen){
    memory is cleared when the screen or the report changes. */
 const AN_BLOCKS=".sx-sec, .td-card, .tr-sec, .lg-panel, .year-month, .day-card, .pdb-card, .pb-card, .rs-block, .rs-banner, "+
   ".scout-panel, .pos-col, .squad-col, .us-col, .month-grid, .wk-grid, .ps-wrap, .gp2-q, .gp3-box, .gp3-keys, .presc, .sxp, .lg-diag, "+
-  ".tier-surface, .pc-col, .pb-col, .lg-mdc, .cycle-row, .lg-emb";
+  ".tier-surface, .pc-col, .pb-col, .lg-mdc, .cycle-row, .lg-emb, .lg-month, .lg-cal, .ldr, .avl, .tr-top";
 const AN_UNITS="tr, .gp2-tbl, .tl-host, .rt-svg, .rt-wrap, .sc-wrap, .lg-grph, .lg-pc, .cmp-row, .td-kpis, .card, .rs-card, .pc-card, .pb-entry, "+
   ".pbx-row, .lg-md-row, .ym-row, .month-cell, .dc-sess-box, .dc-blk, .dc-loadbar, .ps-item, .ps-play, .presc-c, .sxp-c, .ss-item, "+
-  ".tr-chip, .sx-gauge, .td-pr, .lg-key-i, .pc-stat, .pc-role, .need-chip, .pyr-m";
+  ".tr-chip, .sx-gauge, .td-pr, .lg-key-i, .pc-stat, .pc-role, .need-chip, .pyr-m, .lg-cal-cell, .lg-g, .ldr-c, .ldr-r, .tr-rank-r, .avl-r";
 let _anSeenKeys=new Set(), _anMo=null;
 function _anNewContext(){ _anSeenKeys=new Set(); }
 function _anKeyOf(e){
@@ -15445,6 +15503,15 @@ function _anCount(root, sel, ms){
    up somewhere else first. The report knows the opponent and the day; the league's list
    of games gives the game that was played against them that day. */
 let _lgAllMemo=null, _lgInlineKeep=null;
+/* the league list, asked for once and shared; an answer that failed is not kept */
+function _lgAll(){
+  if(!_lgAllMemo){
+    const p=fetch("/.netlify/functions/bbl?res=all").then(r=>r.json());
+    _lgAllMemo=p;
+    p.catch(()=>{ if(_lgAllMemo===p) _lgAllMemo=null; });
+  }
+  return _lgAllMemo;
+}
 function _lgGameInline(sg){
   const box=h("div",{class:"lgg-inl"});
   if(!sg || !sg.date) return box;
@@ -15477,8 +15544,7 @@ function _lgGameInline(sg){
     return !!g; };
   const have=(L.games||[]).concat(L.cup||[]);
   if(have.length && put(have)) return box;
-  _lgAllMemo=_lgAllMemo || fetch("/.netlify/functions/bbl?res=all").then(r=>r.json());
-  _lgAllMemo.then(j=>{ put(((j&&j.games)||[]).concat((j&&j.cup)||[])); }).catch(()=>{ _lgAllMemo=null; });
+  _lgAll().then(j=>{ put(((j&&j.games)||[]).concat((j&&j.cup)||[])); }).catch(()=>{ _lgAllMemo=null; });
   return box;
 }
 /* HOW THEY ARRIVE. The first thing in a pre game, before any section the staff wrote.
@@ -15488,6 +15554,147 @@ function _lgGameInline(sg){
    have been winning games with, the one thing they have been giving away, how much of it
    is the three, and who is carrying them. Six cards and the five results, each of which
    opens that game. It says nothing that is not in those five box scores. */
+/* A CLUB'S LAST FIVE GAMES, READ ONCE AND USED IN THREE PLACES: the pre game section
+   about the opponent, the window a club opens from the standings, and the availability
+   table under the rotations. Each game is read the way the game window reads it, from the
+   play by play, and kept; what differs between the three is only what is drawn. */
+const _lgFormMemo={};
+function _lgFormRows(tid, beforeDate, N){
+  const key=String(tid)+"|"+String(beforeDate||"")+"|"+(N||5);
+  if(_lgFormMemo[key]) return _lgFormMemo[key];
+  const p=(async ()=>{
+    const all=await _lgAll();
+    const seen={};
+    const games=((all&&all.games)||[]).concat((all&&all.cup)||[])
+      .filter(x=>{ if(seen[x.id]) return false; seen[x.id]=1;
+        return _lgDone(x) && (String(x.homeId)===String(tid)||String(x.awayId)===String(tid)) && (!beforeDate || x.date<beforeDate); })
+      .sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,N||5);
+    const team=((all&&all.teams)||[]).filter(t=>String(t.id)===String(tid))[0]||null;
+    if(games.length<2) return { rows:[], games:games, team:team };
+    const feeds=await Promise.all(games.map(x=>(_lgGameMemo[x.id]||(_lgGameMemo[x.id]=
+      fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(x.id)).then(r=>r.json()))).catch(()=>null)));
+    const rows=[];
+    games.forEach((x,i)=>{ const j=feeds[i];
+      if(!j || !j.feed || !(j.feed.actions||[]).length) return;
+      const M=_lgGameModel(x, j), home=String(x.homeId)===String(tid);
+      const S=home?M.H:M.A, O=home?M.A:M.H;
+      if(!S.has || !O.has) return;
+      /* everybody on the sheet, played or not: who did NOT play is half of what is asked */
+      const sheet=((home? (j.game||{}).homeTeam : (j.game||{}).guestTeam)||{}).roster||[];
+      rows.push({ g:x, home:home, S:S, O:O, win:S.pts>O.pts, sheet:sheet,
+        q:(x.quarters||[]).slice(0,4).map(q=>home? q[0]-q[1] : q[1]-q[0]) }); });
+    return { rows:rows, games:games, team:team };
+  })();
+  _lgFormMemo[key]=p;
+  p.catch(()=>{ delete _lgFormMemo[key]; });
+  return p;
+}
+/* WHO HAS BEEN THERE AND WHO HAS NOT. Rows are newest first. A man counts as part of the
+   rotation when he has played at least two of these games for twelve minutes or more on
+   average; that is who "important" means below. Missing the newest game or games after
+   playing the ones before is OUT - a doubt for the next one. Playing the newest after
+   missing the one before is BACK. Minutes that moved by six or more between the newest
+   two games and the ones before are UP or DOWN. Nothing here knows why a man did not
+   play; it only knows that he did not. */
+function _lgAvail(rows){
+  const men={}, n=rows.length;
+  rows.forEach((r,gi)=>{
+    r.S.pl.forEach(p=>{ const e=men[p.id]||(men[p.id]={ id:p.id, name:p.name, num:p.num, sec:[], pir:0, pts:0 });
+      e.sec[gi]=p.sec; e.pir+=p.pir; e.pts+=p.pts; });
+    (r.sheet||[]).forEach(p=>{ const id=String(p.id); if(men[id]) return;
+      men[id]={ id:id, num:String(p.NUM||""), name:(String(p.firstName||"").trim()+" "+String(p.lastName||"").trim()).trim(), sec:[], pir:0, pts:0 }; });
+  });
+  const list=Object.keys(men).map(k=>{ const e=men[k];
+    const played=[]; for(let i=0;i<n;i++) played[i]=(e.sec[i]||0)>0;
+    const gp=played.filter(Boolean).length;
+    let tot=0; for(let i=0;i<n;i++) tot+=(e.sec[i]||0);
+    e.gp=gp; e.played=played; e.avgMin=gp? tot/gp/60 : 0; e.apir=gp? e.pir/gp : 0; e.apts=gp? e.pts/gp : 0;
+    let missed=0; while(missed<n && !played[missed]) missed++;
+    e.missed=missed;
+    e.core=(gp>=2 && e.avgMin>=12);
+    const m=l=>{ const v=l.filter(x=>x>0); return v.length? v.reduce((a,x)=>a+x,0)/v.length/60 : null; };
+    const older=[]; for(let i=2;i<n;i++) older.push(e.sec[i]||0);
+    const recent=m([e.sec[0]||0, e.sec[1]||0]), before=m(older);
+    e.dMin=(recent!=null && before!=null)? recent-before : 0;
+    e.status = (gp===0)? "none"
+      : (missed>=1)? "out"
+      : (played[0] && n>1 && !played[1] && gp>=2)? "back"
+      : (played[0] && gp===1 && n>2)? "new"
+      : (e.dMin>=6)? "up" : (e.dMin<=-6)? "down" : "ok";
+    return e; });
+  list.sort((a,b)=>(b.avgMin*b.gp)-(a.avgMin*a.gp));
+  return { n:n, list:list,
+    out:list.filter(e=>e.status==="out" && e.core), outMinor:list.filter(e=>e.status==="out" && !e.core),
+    back:list.filter(e=>e.status==="back" && e.avgMin>=8), fresh:list.filter(e=>e.status==="new" && e.avgMin>=8),
+    up:list.filter(e=>e.status==="up" && e.gp>=3), down:list.filter(e=>e.status==="down" && e.gp>=3) };
+}
+function _lgLastName(n){ const w=String(n||"").trim().split(/\s+/);
+  return (w.length>1 && /^(jr|sr|ii|iii|iv)\.?$/i.test(w[w.length-1]))? w.slice(-2).join(" ") : (w[w.length-1]||""); }
+/* the strip of results and the cards, from the rows */
+function _lgFormParts(rows, name){
+  const n=rows.length, avg=f=>rows.reduce((a,r)=>a+(f(r)||0),0)/n;
+  const f1=v=>(v==null||!isFinite(v))?"—":v.toFixed(1);
+  const wins=rows.filter(r=>r.win).length;
+  const cards=[];
+  const add=(tone,big,lbl,sub)=>cards.push(h("div",{class:"lgg-key "+tone}, h("b",{},big), h("span",{},lbl), h("i",{},sub)));
+  const sg1=v=>(v>0?"+":"")+v.toFixed(1);
+  const qa=[0,1,2,3].map(i=>rows.reduce((a,r)=>a+(r.q[i]||0),0)/n);
+  const qb=qa.indexOf(Math.max.apply(null,qa)), qw=qa.indexOf(Math.min.apply(null,qa));
+  add("n", wins+"–"+(n-wins), "last "+n+" games", f1(avg(r=>r.S.pts))+" scored · "+f1(avg(r=>r.O.pts))+" allowed"+
+    ((rows[0].q.length===4)? " · best Q"+(qb+1)+" ("+sg1(qa[qb])+"), worst Q"+(qw+1)+" ("+sg1(qa[qw])+")" : ""));
+  const ortg=avg(r=>r.S.ortg), drtg=avg(r=>r.O.ortg);
+  add(ortg-drtg>=0?"t":"o", f1(ortg)+" / "+f1(drtg), "points per 100 poss. · scored / allowed",
+    "net "+sg1(ortg-drtg)+" · pace "+f1(avg(r=>r.S.pace))+" possessions");
+  const ff=[
+    { k:"Shooting", d:avg(r=>r.S.efg-r.O.efg), per:4, t:"eFG% "+f1(avg(r=>r.S.efg))+" · opponents "+f1(avg(r=>r.O.efg)) },
+    { k:"Taking care of the ball", d:avg(r=>r.O.tovp-r.S.tovp), per:3, t:"turnover % "+f1(avg(r=>r.S.tovp))+" · opponents "+f1(avg(r=>r.O.tovp)) },
+    { k:"Offensive glass", d:avg(r=>r.S.orbp-r.O.orbp), per:6, t:"off. rebound % "+f1(avg(r=>r.S.orbp))+" · opponents "+f1(avg(r=>r.O.orbp)) },
+    { k:"Getting to the line", d:avg(r=>r.S.ftr-r.O.ftr), per:9, t:"FT rate "+f1(avg(r=>r.S.ftr))+" · opponents "+f1(avg(r=>r.O.ftr)) }
+  ].map(x=>Object.assign(x,{ w:x.d/x.per })).sort((a,b)=>b.w-a.w);
+  const best=ff[0], worst=ff[ff.length-1];
+  if(best.w>0.25) add("t", best.k, "where they have been better", best.t);
+  if(worst.w<-0.25) add("o", worst.k, "where they have been worse", worst.t);
+  const m3=rows.reduce((a,r)=>a+r.S.p3m,0), a3=rows.reduce((a,r)=>a+r.S.p3a,0), fga=rows.reduce((a,r)=>a+r.S.fga,0);
+  const p3=l=>{ const m=l.reduce((a,r)=>a+r.S.p3m,0), a=l.reduce((a,r)=>a+r.S.p3a,0); return a? Math.round(100*m/a)+"%" : "—"; };
+  const W=rows.filter(r=>r.win), Lo=rows.filter(r=>!r.win);
+  add("n", (a3? Math.round(100*m3/a3) : 0)+"%", "from three · "+f1(a3/n)+" a game",
+    Math.round(100*a3/Math.max(1,fga))+"% of their shots"+((W.length&&Lo.length)? " · "+p3(W)+" in wins, "+p3(Lo)+" in losses" : ""));
+  const A=_lgAvail(rows);
+  const top=A.list.filter(e=>e.gp>=Math.ceil(n/2)).slice().sort((a,b)=>b.apir-a.apir).slice(0,3);
+  if(top.length) add("n", top[0].name, "PIR "+f1(top[0].apir)+" · "+f1(top[0].apts)+" pts a game",
+    top.slice(1).map(e=>_lgLastName(e.name)+" "+f1(e.apir)+" PIR, "+f1(e.apts)+" pts").join(" · ")||"—");
+  /* the doubt: a man of the rotation who was not there last time out */
+  if(A.out.length) add("o", A.out.length===1? _lgLastName(A.out[0].name) : (A.out.length+" doubts"),
+    "of the rotation, did not play last time",
+    A.out.map(e=>_lgLastName(e.name)+" ("+f1(e.avgMin)+" min, missed "+e.missed+")").join(" · "));
+  else if(A.back.length) add("t", _lgLastName(A.back[0].name), "back last time out",
+    A.back.map(e=>_lgLastName(e.name)+" ("+f1(e.avgMin)+" min)").join(" · "));
+  const strip=h("div",{class:"prf-strip"});
+  rows.forEach(r=>{ const x=r.g, opp=r.home? x.away : x.home;
+    strip.appendChild(h("button",{class:"prf-g "+(r.win?"w":"l"), title:"Open the game", onclick:()=>_lgGameOpen(x)},
+      h("b",{}, r.win?"W":"L"), h("span",{}, (r.home?"vs ":"@ ")+_gTidy(opp)), h("i",{}, r.S.pts+"–"+r.O.pts),
+      h("em",{}, x.date? x.date.slice(8,10)+"/"+x.date.slice(5,7) : ""))); });
+  return { strip:strip, cards:cards, avail:A, n:n };
+}
+/* the availability table: every man on the sheets of these games, who played which */
+function _lgAvailTable(rows, A){
+  const f1=v=>(v==null||!isFinite(v))?"—":v.toFixed(1);
+  const tb=h("table",{class:"lg-tbl avl-t"});
+  tb.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Player"), h("th",{},"GP"), h("th",{},"MIN"), h("th",{},"PIR"),
+    rows.map(r=>h("th",{title:(r.home?"vs ":"@ ")+(r.home? r.g.away : r.g.home)}, r.g.date? r.g.date.slice(8,10)+"/"+r.g.date.slice(5,7) : "")),
+    h("th",{class:"l"},"Status")));
+  const LBL={ back:"Back", "new":"First game of the five", up:"Minutes up", down:"Minutes down", ok:"", none:"Has not played" };
+  A.list.forEach(e=>{
+    const txt=(e.status==="out"? (e.core? "DOUBT · missed the last "+(e.missed>1? e.missed+" games" : "game") : "Missed the last "+(e.missed>1? e.missed : "game"))
+      : (e.status==="up"||e.status==="down")? LBL[e.status]+" ("+(e.dMin>0?"+":"")+f1(e.dMin)+")" : LBL[e.status]);
+    tb.appendChild(h("tr",{class:"avl-r st-"+e.status+(e.core?" core":"")},
+      h("td",{class:"lg-pos"}, e.num), h("td",{class:"l lg-team"}, e.name), h("td",{}, e.gp+"/"+A.n),
+      h("td",{}, e.gp? f1(e.avgMin) : "—"), h("td",{}, e.gp? f1(e.apir) : "—"),
+      e.played.map((p,i)=>h("td",{class:"avl-g "+(p?"y":"n")}, p? String(Math.round((e.sec[i]||0)/60)) : "·")),
+      h("td",{class:"l avl-s"}, txt)));
+  });
+  return h("div",{class:"lg-scroll"}, tb);
+}
 let _prfKeep=null;
 function _preRecentForm(sg){
   /* kept for the game it was built for, like the post game block: a report that is drawn
@@ -15497,91 +15704,212 @@ function _preRecentForm(sg){
   const box=h("div",{class:"prf"});
   _prfKeep={ k:kk, el:box };
   if(!sg || !sg.opponent || _gamePlaceholder(sg.opponent)) return box;
-  const N=5;
-  const run=async ()=>{
-    _lgAllMemo=_lgAllMemo || fetch("/.netlify/functions/bbl?res=all").then(r=>r.json());
-    const all=await _lgAllMemo;
+  const none=t=>{ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"}, t)); };
+  (async ()=>{
+    const all=await _lgAll();
     const L=leagueState();
     /* the list just asked for first: the league page's saved copy may be short or old */
     const tid=_lgTeamIdByName({ teams:(all&&all.teams)||[], alias:L.alias }, sg.opponent) || _lgTeamIdByName(L, sg.opponent);
-    const none=t=>{ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"}, t)); };
     if(!tid){ none("This opponent is not in the league feed, so there is no play by play to read."); return; }
-    const seen={};
-    const games=((all&&all.games)||[]).concat((all&&all.cup)||[])
-      .filter(x=>{ if(seen[x.id]) return false; seen[x.id]=1;
-        return _lgDone(x) && (String(x.homeId)===String(tid)||String(x.awayId)===String(tid)) && (!sg.date || x.date<sg.date); })
-      .sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,N);
-    if(games.length<2){ none("Fewer than two finished games in the league feed yet."); return; }
-    box.appendChild(h("div",{class:"ld"},"Reading their last "+games.length+" games…"));
-    const feeds=await Promise.all(games.map(x=>(_lgGameMemo[x.id]||(_lgGameMemo[x.id]=
-      fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(x.id)).then(r=>r.json()))).catch(()=>null)));
-    const rows=[];
-    games.forEach((x,i)=>{ const j=feeds[i];
-      if(!j || !j.feed || !(j.feed.actions||[]).length) return;
-      const M=_lgGameModel(x, j), home=String(x.homeId)===String(tid);
-      const S=home?M.H:M.A, O=home?M.A:M.H;
-      if(!S.has || !O.has) return;
-      rows.push({ g:x, home:home, S:S, O:O, win:S.pts>O.pts,
-        q:(x.quarters||[]).slice(0,4).map(q=>home? q[0]-q[1] : q[1]-q[0]) }); });
+    box.appendChild(h("div",{class:"ld"},"Reading their last games…", h("span",{class:"ld-bar"})));
+    const F=await _lgFormRows(tid, sg.date, 5);
     box.innerHTML="";
-    if(rows.length<2){ none("The league has not published the sheets of their last games."); return; }
-    const n=rows.length, avg=f=>rows.reduce((a,r)=>a+(f(r)||0),0)/n;
-    const f1=v=>(v==null||!isFinite(v))?"—":v.toFixed(1);
-    const wins=rows.filter(r=>r.win).length;
-    const name=_gTidy(sg.opponent);
-    const cards=[];
-    const add=(tone,big,lbl,sub)=>cards.push(h("div",{class:"lgg-key "+tone}, h("b",{},big), h("span",{},lbl), h("i",{},sub)));
-    /* 1 - the record, and the quarter they win and the one they lose */
-    const qa=[0,1,2,3].map(i=>rows.reduce((a,r)=>a+(r.q[i]||0),0)/n);
-    const qb=qa.indexOf(Math.max.apply(null,qa)), qw=qa.indexOf(Math.min.apply(null,qa));
-    const sg1=v=>(v>0?"+":"")+v.toFixed(1);
-    add("n", wins+"–"+(n-wins), "last "+n+" games", f1(avg(r=>r.S.pts))+" scored · "+f1(avg(r=>r.O.pts))+" allowed"+
-      ((rows[0].q.length===4)? " · best Q"+(qb+1)+" ("+sg1(qa[qb])+"), worst Q"+(qw+1)+" ("+sg1(qa[qw])+")" : ""));
-    /* 2 - how good at each end */
-    const ortg=avg(r=>r.S.ortg), drtg=avg(r=>r.O.ortg);
-    add(ortg-drtg>=0?"t":"o", f1(ortg)+" / "+f1(drtg), "points per 100 poss. · scored / allowed",
-      "net "+sg1(ortg-drtg)+" · pace "+f1(avg(r=>r.S.pace))+" possessions");
-    /* 3 and 4 - what they win games with, and what they give away */
-    const ff=[
-      { k:"Shooting", d:avg(r=>r.S.efg-r.O.efg), per:4, t:"eFG% "+f1(avg(r=>r.S.efg))+" · opponents "+f1(avg(r=>r.O.efg)) },
-      { k:"Taking care of the ball", d:avg(r=>r.O.tovp-r.S.tovp), per:3, t:"turnover % "+f1(avg(r=>r.S.tovp))+" · opponents "+f1(avg(r=>r.O.tovp)) },
-      { k:"Offensive glass", d:avg(r=>r.S.orbp-r.O.orbp), per:6, t:"off. rebound % "+f1(avg(r=>r.S.orbp))+" · opponents "+f1(avg(r=>r.O.orbp)) },
-      { k:"Getting to the line", d:avg(r=>r.S.ftr-r.O.ftr), per:9, t:"FT rate "+f1(avg(r=>r.S.ftr))+" · opponents "+f1(avg(r=>r.O.ftr)) }
-    ].map(x=>Object.assign(x,{ w:x.d/x.per })).sort((a,b)=>b.w-a.w);
-    const best=ff[0], worst=ff[ff.length-1];
-    if(best.w>0.25) add("t", best.k, "where they have been better", best.t);
-    if(worst.w<-0.25) add("o", worst.k, "where they have been worse", worst.t);
-    /* 5 - the three */
-    const m3=rows.reduce((a,r)=>a+r.S.p3m,0), a3=rows.reduce((a,r)=>a+r.S.p3a,0), fga=rows.reduce((a,r)=>a+r.S.fga,0);
-    const p3=(l)=>{ const m=l.reduce((a,r)=>a+r.S.p3m,0), a=l.reduce((a,r)=>a+r.S.p3a,0); return a? Math.round(100*m/a)+"%" : "—"; };
-    const W=rows.filter(r=>r.win), Lo=rows.filter(r=>!r.win);
-    add("n", (a3? Math.round(100*m3/a3) : 0)+"%", "from three · "+f1(a3/n)+" a game",
-      Math.round(100*a3/Math.max(1,fga))+"% of their shots"+((W.length&&Lo.length)? " · "+p3(W)+" in wins, "+p3(Lo)+" in losses" : ""));
-    /* 6 - who is carrying them */
-    const men={};
-    rows.forEach(r=>r.S.pl.forEach(p=>{ const e=men[p.id]||(men[p.id]={ name:p.name, num:p.num, gp:0, pir:0, pts:0 }); e.gp++; e.pir+=p.pir; e.pts+=p.pts; }));
-    const top=Object.keys(men).map(k=>men[k]).filter(e=>e.gp>=Math.ceil(n/2))
-      .map(e=>Object.assign(e,{ apir:e.pir/e.gp, apts:e.pts/e.gp })).sort((a,b)=>b.apir-a.apir).slice(0,3);
-    if(top.length) add("n", top[0].name, "PIR "+f1(top[0].apir)+" · "+f1(top[0].apts)+" pts a game",
-      top.slice(1).map(e=>{ const w=e.name.trim().split(/\s+/);
-        /* "Edigin Jr" is a surname in two words, not a man called Jr */
-        const ln=(w.length>1 && /^(jr|sr|ii|iii|iv)\.?$/i.test(w[w.length-1]))? w.slice(-2).join(" ") : w[w.length-1];
-        return ln+" "+f1(e.apir)+" PIR, "+f1(e.apts)+" pts"; }).join(" · ")||"—");
-    /* the five results, newest first; each opens its game */
-    const strip=h("div",{class:"prf-strip"});
-    rows.forEach(r=>{ const x=r.g, opp=r.home? x.away : x.home;
-      strip.appendChild(h("button",{class:"prf-g "+(r.win?"w":"l"), title:"Open the game", onclick:()=>_lgGameOpen(x)},
-        h("b",{}, r.win?"W":"L"),
-        h("span",{}, (r.home?"vs ":"@ ")+_gTidy(opp)),
-        h("i",{}, r.S.pts+"–"+r.O.pts),
-        h("em",{}, x.date? x.date.slice(8,10)+"/"+x.date.slice(5,7) : ""))); });
+    if(F.rows.length<2){ none(F.games.length<2? "Fewer than two finished games in the league feed yet." : "The league has not published the sheets of their last games."); return; }
+    const name=_gTidy(sg.opponent), P=_lgFormParts(F.rows, name);
     box.appendChild(h("div",{class:"prf-in"},
       h("div",{class:"lgg-h"}, h("b",{}, "How "+name+" arrive"),
-        h("span",{}, "their last "+n+" games · red is what to respect, green is what to attack")),
-      strip, h("div",{class:"lgg-keys"}, cards)));
+        h("span",{}, "their last "+P.n+" games, from the play by play · red is what to respect, green is what to attack")),
+      P.strip, h("div",{class:"lgg-keys"}, P.cards)));
     _anCount(box, ".lgg-key b", 1300);
-  };
-  run().catch(()=>{ box.innerHTML=""; });
+  })().catch(()=>{ box.innerHTML=""; });
+  return box;
+}
+/* A CLUB, OPENED FROM THE STANDINGS. The same five games as a quick dashboard: the cards,
+   what changed between the last two games and the ones before, and who has and has not
+   been there. Opening it also makes that club the one the whole league page is about. */
+function _lgTeamOpen(tid){
+  const L=leagueState();
+  const old=document.querySelector(".lgg-back"); if(old) old.remove();
+  const t=(L.teams||[]).filter(x=>String(x.id)===String(tid))[0]||{};
+  const body=h("div",{class:"lgg-body first"}, h("div",{class:"ld"},"Reading their last five games…", h("span",{class:"ld-bar"})));
+  const close=()=>{ back.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey=e=>{ if(e.key==="Escape") close(); };
+  const panel=h("div",{class:"lgg", onclick:e=>e.stopPropagation()},
+    h("button",{class:"lgg-x", title:"Close (Esc)", onclick:close},"×"),
+    h("div",{class:"lgg-meta"}, "last five games · from the play by play"),
+    h("div",{class:"lgg-top one"}, h("div",{class:"lgg-team w"}, _lgCrest(L, tid, "lgg-crest"), h("span",{}, t.name||""))),
+    body);
+  const back=h("div",{class:"lgg-back", onclick:close}, panel);
+  document.body.appendChild(back);
+  document.addEventListener("keydown", onKey);
+  _lgFormRows(tid, null, 5).then(F=>{
+    body.innerHTML="";
+    if(F.rows.length<2){ body.appendChild(h("div",{class:"lg-empty"},"Fewer than two finished games with a published sheet.")); return; }
+    const P=_lgFormParts(F.rows, t.name||""), A=P.avail, rows=F.rows;
+    const f1=v=>(v==null||!isFinite(v))?"—":v.toFixed(1);
+    const sec=(tt, kid, sub)=>h("div",{class:"lgg-sec"}, h("div",{class:"lgg-h"}, h("b",{},tt), sub?h("span",{},sub):null), kid);
+    body.appendChild(sec("The five games", h("div",{}, P.strip, h("div",{class:"lgg-keys"}, P.cards)), "each result opens its game"));
+    /* the trend: the newest two against the ones before them */
+    if(rows.length>=4){
+      const a=rows.slice(0,2), b=rows.slice(2);
+      const m=(l,f)=>l.reduce((x,r)=>x+(f(r)||0),0)/l.length;
+      const items=[
+        ["Offense, pts per 100", r=>r.S.ortg, true], ["Defense, pts per 100 allowed", r=>r.O.ortg, false],
+        ["eFG%", r=>r.S.efg, true], ["Opponents’ eFG%", r=>r.O.efg, false],
+        ["Turnover %", r=>r.S.tovp, false], ["Off. rebound %", r=>r.S.orbp, true],
+        ["Three point rate", r=>r.S.p3r, null], ["Pace", r=>r.S.pace, null]
+      ].map(x=>{ const va=m(a,x[1]), vb=m(b,x[1]); return { k:x[0], a:va, b:vb, d:va-vb, hi:x[2] }; })
+       .filter(x=>isFinite(x.d)).sort((x,y)=>Math.abs(y.d/(y.b||1))-Math.abs(x.d/(x.b||1))).slice(0,4);
+      body.appendChild(sec("The trend", h("div",{class:"lgg-kps"}, items.map(x=>{
+        const good=(x.hi==null)? null : ((x.d>0)===x.hi);
+        return h("div",{class:"lgg-kp"+(good===true?" up":good===false?" dn":"")}, h("span",{}, x.k),
+          h("b",{}, f1(x.a)), h("i",{}, (x.d>0?"▲ +":"▼ ")+f1(x.d)+" on the games before ("+f1(x.b)+")")); })),
+        "the last two games against the ones before"));
+    }
+    /* who is and is not there */
+    const chip=(e,cls,t2)=>h("span",{class:"avl-chip "+cls}, h("b",{}, "#"+e.num+" "+_lgLastName(e.name)), " "+t2);
+    const lines=h("div",{class:"avl-chips"},
+      A.out.map(e=>chip(e,"out","doubt · missed the last "+(e.missed>1? e.missed : "game")+" · "+f1(e.avgMin)+" min")),
+      A.back.map(e=>chip(e,"back","back · "+f1(e.avgMin)+" min")),
+      A.fresh.map(e=>chip(e,"new","first game of the five")),
+      A.up.map(e=>chip(e,"up","minutes up "+(e.dMin>0?"+":"")+f1(e.dMin))),
+      A.down.map(e=>chip(e,"down","minutes down "+f1(e.dMin))));
+    body.appendChild(sec("Who has been there", h("div",{}, lines.childNodes.length? lines : h("div",{class:"lgg-note"},"The same rotation in all five games: nobody out, nobody back."),
+      _lgAvailTable(rows, A)), "minutes in each game, newest first · a dot is a game he did not play"));
+    _anCount(body, ".lgg-key b, .lgg-kp b", 1200);
+  }).catch(e=>{ body.innerHTML=""; body.appendChild(h("div",{class:"lg-empty"},"Could not be read: "+((e&&e.message)||e))); });
+}
+/* under the rotations: the same availability, for the club the page is about */
+function _lgAvailPanel(L){
+  const tid=_lgPanelClub(L);
+  const box=_lgPanel("Availability — the last five games", null,
+    "Read from the play by play of the last five games. A man of the rotation (two games or more, twelve minutes a game) who did not play last time is marked as a doubt. Nothing here knows why he did not play.");
+  box.classList.add("avl");
+  if(!tid){ box.appendChild(h("div",{class:"lg-empty"},"Pick a club.")); return box; }
+  const slot=h("div",{}, h("div",{class:"ld"},"Reading the last five games…", h("span",{class:"ld-bar"})));
+  box.appendChild(slot);
+  _lgFormRows(tid, null, 5).then(F=>{
+    slot.innerHTML="";
+    if(F.rows.length<2){ slot.appendChild(h("div",{class:"lg-empty"},"Fewer than two finished games with a published sheet.")); return; }
+    const A=_lgAvail(F.rows), f1=v=>v.toFixed(1);
+    const dz=h("div",{class:"avl-doubt"+(A.out.length?"":" none")},
+      h("b",{}, A.out.length? "Doubts" : "No doubts"),
+      A.out.length? A.out.map(e=>h("span",{class:"avl-chip out"}, h("b",{}, "#"+e.num+" "+e.name), " missed the last "+(e.missed>1? e.missed+" games" : "game")+" · "+f1(e.avgMin)+" min · PIR "+f1(e.apir)))
+        : h("span",{}, "everybody in the rotation played last time out"),
+      A.back.map(e=>h("span",{class:"avl-chip back"}, h("b",{}, "#"+e.num+" "+e.name), " back last time")));
+    slot.appendChild(dz);
+    slot.appendChild(_lgAvailTable(F.rows, A));
+  }).catch(()=>{ slot.innerHTML=""; slot.appendChild(h("div",{class:"lg-empty"},"Could not be read.")); });
+  return box;
+}
+/* THE BEST IN THE LEAGUE, AND WHERE A CLUB'S OWN MEN STAND AMONG THEM.
+   A first proposal. Twelve small boards, each one thing a staff asks about a player:
+   six of them the plain box score per game, six of them what the box score hides - how
+   efficiently he scores, how much of his team's offence runs through him, what he does
+   per minute rather than per game. Each board is the top five, the league average of
+   that measure, and - when a club is picked - that club's best man in it with his place
+   in the league, whether or not he made the five.
+
+   The noise is taken out before anything is ranked. A man has to have played four in ten
+   of his club's games and ten minutes a game to be on any board, and a percentage needs
+   enough attempts behind it to be a percentage: five shooting chances a game for the
+   scoring ones, two and a half threes a game for the three. The league average is taken
+   over the same men, so it is the average of the players who actually play. */
+const LG_LEAD=[
+  { k:"pts",  t:"Points",            u:"per game", d:1, get:(t,m)=>t.pts/t.gp },
+  { k:"pir",  t:"PIR",               u:"per game", d:1, get:(t,m)=>m.pir/t.gp },
+  { k:"reb",  t:"Rebounds",          u:"per game", d:1, get:(t,m)=>(t.reb||((t.oreb||0)+(t.dreb||0)))/t.gp },
+  { k:"ast",  t:"Assists",           u:"per game", d:1, get:(t,m)=>t.ast/t.gp },
+  { k:"stl",  t:"Steals",            u:"per game", d:1, get:(t,m)=>t.stl/t.gp },
+  { k:"blk",  t:"Blocks",            u:"per game", d:1, get:(t,m)=>t.blk/t.gp },
+  { k:"ts",   t:"True shooting",     u:"%", d:1, adv:true, need:(t,m)=>m.tsa/t.gp>=5, get:(t,m)=>m.tsa? 100*t.pts/(2*m.tsa) : null,
+    tip:"Points per shooting chance, threes and free throws counted for what they are worth. At least five chances a game." },
+  { k:"usg",  t:"Usage",             u:"%", d:1, adv:true, get:(t,m)=>m.usg,
+    tip:"The share of his team's possessions he ends - a shot, a trip to the line or a turnover - while he is on the floor." },
+  { k:"p36",  t:"Points per 36 min", u:"", d:1, adv:true, get:(t,m)=>t.sec? t.pts*2160/t.sec : null,
+    tip:"What he scores per minute, not per game: it finds the scorer who plays eighteen minutes." },
+  { k:"tp",   t:"Three point",       u:"%", d:1, adv:true, need:(t,m)=>t.p3a/t.gp>=2.5, get:(t,m)=>t.p3a? 100*t.p3m/t.p3a : null,
+    tip:"At least two and a half attempts a game." },
+  { k:"ato",  t:"Assists per turnover", u:"", d:2, adv:true, need:(t,m)=>t.ast/t.gp>=2, get:(t,m)=>t.tov? t.ast/t.tov : null,
+    tip:"For men with at least two assists a game." },
+  { k:"pm",   t:"Plus / minus",      u:"per game", d:1, adv:true, sign:true, get:(t,m)=>t.pm/t.gp,
+    tip:"The score while he is on the floor, per game." }
+];
+let _lgLeadBusy=false;
+function _lgLeadLoad(L){
+  if(_lgLeadBusy || L.demo) return;
+  const todo=(L.teams||[]).map(t=>t.id).filter(id=>!((L.players||{})[id]) && !_lgPlBusy[id] && !_lgPlTried[id]);
+  if(!todo.length) return;
+  _lgLeadBusy=true;
+  /* one club at a time: eighteen at once is what the league's own limiter is there to stop */
+  Promise.resolve(syncPlayers(todo[0], false)).catch(()=>{}).then(()=>{
+    setTimeout(()=>{ _lgLeadBusy=false; try{ _lgLeadLoad(leagueState()); }catch(e){} }, 500); });
+}
+function _lgLeadPool(L){
+  const pool=[]; let clubs=0;
+  (L.teams||[]).forEach(tm=>{
+    const d=(L.players||{})[tm.id];
+    if(!d || !(d.players||[]).length) return;
+    clubs++;
+    const tot=(d.team_tot&&d.team_tot.all)||null;
+    const tg=d.games||Math.max.apply(null, d.players.map(p=>(p.all&&p.all.gp)||0).concat([0]));
+    d.players.forEach(p=>{
+      const t=p.all; if(!t || !t.gp) return;
+      const fgm=(t.p2m||0)+(t.p3m||0), fga=(t.p2a||0)+(t.p3a||0);
+      const m={ fga:fga, fgm:fgm, tsa:fga+0.44*(t.fta||0), min:t.sec/60/t.gp };
+      m.pir=t.pts+(t.reb||((t.oreb||0)+(t.dreb||0)))+t.ast+t.stl+t.blk+(t.fd||0)-(fga-fgm)-((t.fta||0)-(t.ftm||0))-t.tov-(t.bla||0)-t.pf;
+      /* usage needs the club's own totals; without them it is left out rather than guessed */
+      m.usg=null;
+      if(tot && tot.sec && t.sec){ const tu=(tot.fga||0)+0.44*(tot.fta||0)+(tot.tov||0);
+        if(tu) m.usg=100*(m.tsa+t.tov)*(tot.sec/5)/(t.sec*tu); }
+      if(t.gp<Math.max(2, Math.ceil(0.4*tg)) || m.min<10) return;      /* the noise */
+      pool.push({ id:p.id, tid:tm.id, tlc:tm.tlc||tm.short||"", name:p.name||("#"+p.num), num:p.num, t:t, m:m, rec:p });
+    });
+  });
+  return { pool:pool, clubs:clubs, of:(L.teams||[]).length };
+}
+function _lgLeaders(L){
+  const box=_lgPanel("League leaders", null,
+    "The top five of the league in twelve measures, the league average of each, and the best man of the club picked. A player needs four in ten of his club's games and ten minutes a game to count, and a percentage needs enough attempts. The average is over the same players.");
+  box.classList.add("ldr");
+  const P=_lgLeadPool(L);
+  _lgLeadLoad(L);
+  if(P.clubs<P.of) box.appendChild(h("div",{class:"lg-sumline"},
+    "Read "+P.clubs+" of "+P.of+" clubs so far — the rest are being read, one at a time, and the boards fill in as they land."));
+  if(P.pool.length<10){ box.appendChild(h("div",{class:"ld"},"Reading the clubs…", h("span",{class:"ld-bar"}))); return box; }
+  const sel=_lgNoClub(L)? "" : _lgTeamId(L);
+  const selT=(L.teams||[]).filter(t=>t.id===sel)[0]||null;
+  const grid=h("div",{class:"ldr-g"});
+  LG_LEAD.forEach(c=>{
+    const rows=P.pool.filter(x=>!c.need || c.need(x.t,x.m)).map(x=>({ x:x, v:c.get(x.t,x.m) }))
+      .filter(r=>r.v!=null && isFinite(r.v)).sort((a,b)=>b.v-a.v);
+    if(rows.length<5) return;
+    const avg=rows.reduce((a,r)=>a+r.v,0)/rows.length;
+    const top=rows[0].v, lo=Math.min(0, rows[rows.length-1].v);
+    const fmt=v=>(c.sign&&v>0?"+":"")+v.toFixed(c.d)+(c.u==="%"?"%":"");
+    const card=h("div",{class:"ldr-c"+(c.adv?" adv":""), title:c.tip||null},
+      h("div",{class:"ldr-h"}, h("b",{}, c.t), h("span",{}, c.u&&c.u!=="%"? c.u : (c.adv?"advanced":"")),
+        h("i",{title:"League average over the players who qualify"}, "avg "+fmt(avg))));
+    const line=(r, rank, mine)=>h("div",{class:"ldr-r"+(mine?" mine":"")+(rank===1?" first":"")},
+      h("span",{class:"ldr-n"}, String(rank)),
+      _lgFace(L, {n:r.x.num, photo:r.x.rec.photo, pid:r.x.rec.pid, id:r.x.id}),
+      h("span",{class:"ldr-k"}, r.x.name, h("em",{}, r.x.tlc)),
+      h("span",{class:"ldr-bar"}, h("i",{style:"width:"+Math.max(4,Math.round(100*(r.v-lo)/Math.max(1e-9,top-lo)))+"%"}),
+        h("u",{style:"left:"+Math.max(0,Math.min(100,Math.round(100*(avg-lo)/Math.max(1e-9,top-lo))))+"%"})),
+      h("b",{class:"ldr-v"}, fmt(r.v)));
+    rows.slice(0,5).forEach((r,i)=>card.appendChild(line(r, i+1, r.x.tid===sel)));
+    /* the club picked: its best man here, with his place, when he is not already above */
+    if(sel){
+      const i=rows.findIndex(r=>r.x.tid===sel);
+      if(i>=5) card.appendChild(h("div",{class:"ldr-own"}, line(rows[i], i+1, true)));
+      else if(i<0) card.appendChild(h("div",{class:"ldr-own none"}, (selT&&(selT.tlc||selT.short)||"This club")+": nobody qualifies"));
+    }
+    grid.appendChild(card);
+  });
+  box.appendChild(grid);
+  box.appendChild(h("div",{class:"lg-sumline"},
+    (sel? "Gold is "+((selT&&selT.name)||"the club picked")+". " : "Pick a club in the standings to mark its men. ")+
+    "The tick on each bar is the league average · "+P.pool.length+" players qualify."));
   return box;
 }
 function _lgGamePanel(g, close){
@@ -19309,9 +19637,11 @@ function renderLeague(){
   root.appendChild(h("div",{class:"lg-grid"}, _lgStandings(L), _lgCalendar(L)));
   root.appendChild(h("div",{style:"margin-top:14px"}, _lgEuro(L)));
   root.appendChild(h("div",{style:"margin-top:14px"}, _lgFour(L)));
+  root.appendChild(h("div",{style:"margin-top:14px"}, _lgLeaders(L)));
   root.appendChild(h("div",{style:"margin-top:14px"}, _lgRoster(L)));
   root.appendChild(h("div",{style:"margin-top:14px"}, _lgShots(L)));
   root.appendChild(h("div",{style:"margin-top:14px"}, _lgRot(L)));
+  root.appendChild(h("div",{style:"margin-top:14px"}, _lgAvailPanel(L)));
   root.appendChild(h("div",{style:"margin-top:14px"}, _lgUnits(L)));
   root.appendChild(h("div",{style:"margin-top:14px"}, _lgClock(L)));
   root.appendChild(h("div",{style:"margin-top:14px"},
@@ -24587,6 +24917,85 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 .lgg-advbtn.on{background:var(--accent-soft,#f6efe0);border-color:var(--accent,#c6a15b)}
 .lgg-adv{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line-strong,#d2d7df)}
 .lgg-kps.six{grid-template-columns:repeat(6,1fr)}
+.lgg-top.one{grid-template-columns:1fr;justify-items:center}
+.lgg-kp.up{box-shadow:inset 3px 0 0 #2f9e86}.lgg-kp.dn{box-shadow:inset 3px 0 0 #d8524e}
+/* who has and has not been there */
+.avl-chips,.avl-doubt{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin:0 0 10px}
+.avl-doubt{padding:9px 12px;border-radius:10px;border:1px solid #e7b8b5;background:rgba(216,82,78,.07)}
+.avl-doubt.none{border-color:var(--line,#e4e7ec);background:transparent;color:var(--ink-soft,#5b6472);font-size:12.5px}
+.avl-doubt>b{font-family:'Oswald',sans-serif;font-size:13px;letter-spacing:.06em;text-transform:uppercase;margin-right:6px}
+.avl-chip{font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid var(--line,#e4e7ec);color:var(--ink-soft,#5b6472)}
+.avl-chip b{color:var(--ink,#141821)}
+.avl-chip.out{border-color:#e2a5a2;background:rgba(216,82,78,.10)}
+.avl-chip.back{border-color:#9ed3c6;background:rgba(47,158,134,.10)}
+.avl-chip.new{border-color:#d9c39a;background:rgba(214,184,119,.14)}
+.avl-t tr{cursor:default}
+.avl-t td.avl-g{font-size:11.5px;width:38px}
+.avl-t td.avl-g.y{background:rgba(47,158,134,.13)}
+.avl-t td.avl-g.n{color:#d8524e;font-weight:800;background:rgba(216,82,78,.07)}
+.avl-t tr.st-none td{color:var(--ink-faint,#8a93a2)}
+.avl-t tr.st-out.core td.avl-s{color:#b83a34;font-weight:800}
+.avl-t tr.st-back td.avl-s{color:#1f7d68;font-weight:700}
+.avl-t td.avl-s{font-family:'Inter',system-ui,sans-serif;font-size:11.5px;white-space:nowrap}
+/* the league's best, twelve small boards */
+.ldr-g{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.ldr-c{border:1px solid var(--line,#e4e7ec);border-radius:12px;padding:9px 11px 10px;min-width:0}
+.ldr-c.adv{background:linear-gradient(180deg,rgba(74,134,216,.05),transparent 46%)}
+.ldr-h{display:flex;align-items:baseline;gap:7px;margin-bottom:6px}
+.ldr-h b{font-family:'Oswald',sans-serif;font-size:14px;letter-spacing:.03em}
+.ldr-h span{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.ldr-h i{margin-left:auto;font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft,#5b6472);white-space:nowrap}
+.ldr-r{display:grid;grid-template-columns:14px 22px minmax(0,1fr) 46px auto;align-items:center;gap:6px;padding:2.5px 4px;border-radius:6px;font-size:12px}
+.ldr-r .lg-bdg,.ldr-r img{width:22px;height:22px}
+.ldr-n{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-faint,#8a93a2);text-align:right}
+.ldr-k{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.ldr-k em{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--ink-faint,#8a93a2);margin-left:5px;font-weight:400}
+.ldr-bar{position:relative;height:6px;border-radius:3px;background:var(--line,#e4e7ec)}
+.ldr-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:#8a93a2}
+.ldr-bar u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink,#141821);opacity:.55}
+.ldr-r.first .ldr-bar i{background:var(--ink,#141821)}
+.ldr-v{font-family:'IBM Plex Mono',monospace;font-size:12px;text-align:right;min-width:42px}
+.ldr-r.mine{background:#ecd08a;color:#1a1408}
+.ldr-r.mine .ldr-k em,.ldr-r.mine .ldr-n{color:#5d4a17}
+.ldr-r.mine .ldr-bar i{background:#8a6a1c}
+body.dark .ldr-r.mine{background:#d8b877;color:#14110a}
+.ldr-own{margin-top:5px;padding-top:5px;border-top:1px dashed var(--line-strong,#d2d7df)}
+.ldr-own.none{font-size:11px;color:var(--ink-faint,#8a93a2)}
+@media (max-width:1100px){ .ldr-g{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media (max-width:640px){ .ldr-g{grid-template-columns:1fr} }
+/* the ranking of sets in Trends */
+.tr-rank2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.tr-rank-h{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);margin-bottom:4px}
+.tr-rank-r{display:grid;grid-template-columns:16px minmax(0,1fr) 90px 40px 54px;align-items:center;gap:8px;padding:4px 6px;border-bottom:1px solid var(--line,#eef0f3);font-size:12.5px}
+.tr-rank-n{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-faint,#8a93a2)}
+.tr-rank-k{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tr-rank-bar{height:7px;border-radius:4px;background:var(--line,#e4e7ec);overflow:hidden}
+.tr-rank-bar i{display:block;height:100%;border-radius:4px}
+.tr-rank.good .tr-rank-bar i{background:#2f9e86}.tr-rank.bad .tr-rank-bar i{background:#d8524e}
+.tr-rank-v{font-family:'IBM Plex Mono',monospace;text-align:right}
+.tr-rank-c{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-faint,#8a93a2);text-align:right}
+@media (max-width:760px){ .tr-rank2{grid-template-columns:1fr} }
+/* the first time somebody comes in */
+.intro{position:fixed;left:0;right:0;bottom:0;top:0;z-index:40;display:flex;align-items:center;justify-content:center;background:var(--bg,#f4f5f7);padding:24px}
+.intro-in{display:flex;flex-direction:column;align-items:center;gap:12px;max-width:760px;text-align:center}
+.intro-logo{width:150px;height:150px;object-fit:contain}
+.intro-t{font-family:'Oswald',sans-serif;font-size:34px;font-weight:600;letter-spacing:.12em;text-transform:uppercase}
+.intro-s{font-size:14px;color:var(--ink-soft,#5b6472);max-width:520px}
+.intro-tiles{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:10px}
+.intro-tile{border:1px solid var(--line-strong,#d2d7df);background:var(--panel,#fff);color:var(--ink,#141821);border-radius:12px;padding:12px 20px;font-family:'Oswald',sans-serif;font-size:15px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease}
+.intro-tile:hover{transform:translateY(-3px);border-color:var(--accent,#c6a15b);box-shadow:0 8px 20px rgba(16,24,40,.10)}
+@media (prefers-reduced-motion: no-preference){
+  .intro-logo{animation:cvLogo 1.6s cubic-bezier(.2,.9,.2,1) .1s both}
+  .intro-t{animation:cvTitle 1.4s cubic-bezier(.2,.8,.2,1) .6s both}
+  .intro-s{animation:anUp .9s cubic-bezier(.2,.8,.2,1) 1.1s both}
+  .intro-tile{animation:cvTile .8s cubic-bezier(.2,.9,.2,1) both}
+  .intro-tile:nth-child(1){animation-delay:1.35s}.intro-tile:nth-child(2){animation-delay:1.45s}.intro-tile:nth-child(3){animation-delay:1.55s}
+  .intro-tile:nth-child(4){animation-delay:1.65s}.intro-tile:nth-child(5){animation-delay:1.75s}.intro-tile:nth-child(6){animation-delay:1.85s}
+  .intro-tile:nth-child(n+7){animation-delay:1.95s}
+  .ldr-r.an-r .ldr-bar i,.tr-rank-r.an-r .tr-rank-bar i{transform-origin:left center;animation:anGrowX 1s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--ad,0ms) + 120ms)}
+  .ldr-r.an-r,.tr-rank-r.an-r,.avl-r.an-r,.lg-g.an-r{animation-name:anLeft}
+  .lg-cal-cell.an-r{animation-name:anFade;animation-duration:.7s}
+}
 .lgg-pbp-top{display:flex;justify-content:space-between;align-items:center;margin:12px 0 6px;font-family:'Oswald',sans-serif;font-size:13px}
 .lgg-pbp-top label{font-family:'Inter',system-ui,sans-serif;font-size:11.5px;color:var(--ink-soft,#5b6472);cursor:pointer}
 .lgg-pbp-top .h{box-shadow:inset 0 -3px 0 var(--lgh)}.lgg-pbp-top .a{box-shadow:inset 0 -3px 0 var(--lga)}
