@@ -6682,6 +6682,7 @@ async function loadScout(body, g, key, kind, from){
   renderScout(body, g, key, kind, from, rep);
 }
 /* how much somebody has actually written in a report: nothing at all is 0 */
+const _olderShut={};
 function _repWeight(rep){
   if(!rep) return 0;
   const d=rep.data||{};
@@ -6719,9 +6720,13 @@ function renderScout(body, g, key, kind, from, rep){
   if(editBtn) editBtn.onclick=()=>{ setEditMode(!EDIT_MODE); renderScout(body,g,key,kind,from,rep); };
   const saveBtn = mayEdit ? h("button",{class:"btn primary"},"Save") : null;
   if(saveBtn) saveBtn.onclick=async ()=>{ if(!SB_TOKEN){toast("Sign in first");return;} try{ const r=await sbrpc("save_report",{p_token:SB_TOKEN,p_key:key,p_kind:kind,p_opponent:g.opponent,p_date:g.date,p_data:rep.data,p_html:rep.html||""}); if(r&&r.ok) repStatSet(key, rep); toast(r&&r.ok?"Saved ✓":((r&&r.error)||"Error")); }catch(e){ toast("Error: "+e.message); } };
-  if(g && g.__older && mayEdit){
+  if(g && g.__older && editable && !_olderShut[key]){
     /* both reports exist: say so and let the staff choose, rather than choosing for them */
     const older=g.__older;
+    /* closed for this visit only: it is kept in the page, not in the report, so it is
+       there again the next time the app is opened in edit mode */
+    const shut=h("button",{class:"btn", title:"Close this notice"},"✕ Close");
+    shut.onclick=()=>{ _olderShut[key]=true; const n=shut.closest(".rs-loadfail"); if(n) n.remove(); };
     const back=h("button",{class:"btn primary"},"Restore it");
     back.onclick=async ()=>{
       if(!confirm("Replace what is on this page with the report written as “"+(g.was||"TBD")+"”?\n\nThe earlier report stays saved either way.")) return;
@@ -6735,7 +6740,7 @@ function renderScout(body, g, key, kind, from, rep){
     body.appendChild(h("div",{class:"rs-loadfail"},
       h("div",{class:"rs-loadfail-t"},"An earlier report for this game is saved as “"+(g.was||"TBD")+"”"),
       h("div",{class:"rs-loadfail-n"},"It was written before the opponent was known ("+_repWeight(older)+" characters there, "+_repWeight(rep)+" on this page). Nothing has been deleted."),
-      back));
+      h("div",{style:"display:flex;gap:8px;justify-content:center;flex-wrap:wrap"}, back, shut)));
   }
   const HEAD=body.__head||null;
   if(HEAD){
