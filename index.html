@@ -7192,7 +7192,7 @@ function _ensureRepTB(){
   const btn=(label,title,fn,cls)=>{ const b=h("button",{class:"rep-tb-btn"+(cls?(" "+cls):""),type:"button",title:title},label); b.addEventListener("mousedown",e=>{ e.preventDefault(); fn(); }); return b; };
   bar.appendChild(btn("B","Bold",()=>_repExec("bold"),"tb-b"));
   bar.appendChild(btn("I","Italic",()=>_repExec("italic"),"tb-i"));
-  bar.appendChild(btn("• List","Bulleted list",()=>_repExec("insertUnorderedList")));
+  bar.appendChild(btn("• List","Bulleted list",()=>{ if(_repTBTarget) _rtToggleList(_repTBTarget); }));
   bar.appendChild(btn("Level →","One level in (Tab)",()=>{ if(_repTBTarget){ _repTBTarget.focus(); _rtIndent(_repTBTarget); } }));
   bar.appendChild(btn("← Level","One level out (Shift+Tab)",()=>{ if(_repTBTarget){ _repTBTarget.focus(); _rtOutdent(_repTBTarget); } }));
   /* the four size buttons are gone: the report has one body size now, so they
@@ -7383,6 +7383,14 @@ function _rtFlatten(root){
     for(let i=all.length-1;i>=0;i--){ if(_RT_BLOCK[all[i].tagName]){ el=all[i]; break; } }
     if(!el) break;
     const f=document.createDocumentFragment();
+    /* A BLOCK STARTS A LINE AS WELL AS ENDING ONE. Text typed straight into the box and
+       then a line made with Enter is "first<div>second</div>": only the break after the
+       block was written, so the two lines closed up into "firstsecond" the next time the
+       box was read. Plain text before a block gets its break too. */
+    const pv=el.previousSibling;
+    if(pv && pv.nodeName!=="BR" && !(pv.nodeType===3 && !pv.nodeValue.trim())
+       && !(pv.nodeType===1 && (_RT_BLOCK[pv.tagName] || pv.tagName==="UL" || pv.tagName==="OL"))
+       && el.parentNode && el.parentNode.nodeName!=="LI") f.appendChild(document.createElement("br"));
     while(el.firstChild) f.appendChild(el.firstChild);
     if(el.nextSibling) f.appendChild(document.createElement("br"));
     el.replaceWith(f);
@@ -7435,10 +7443,81 @@ function _rtMergeUp(val, e){
   val.dispatchEvent(new Event("input",{bubbles:true}));
   return true;
 }
-/* Bullet levels. execCommand("indent") hangs a <ul> straight off another <ul>,
-   which is not valid, and "outdent" leaves a span full of inherited styles
-   behind. The nodes are moved here instead, so the markup stays clean and a
-   coloured line keeps its colour through the move. */
+/* LISTS, DONE HERE AND NOT BY THE BROWSER.
+   The bullet button, Tab and Shift+Tab were three different things: the button was the
+   browser's own command, which in a box whose lines are separated by line breaks turns a
+   selection of five lines into ONE bullet with five lines in it; and the two level keys
+   moved only the item the selection started in, whatever was selected. The browser's own
+   handling of Enter and Backspace inside nested lists also leaves a list hanging straight
+   off another list, which draws as two or three levels piled into one.
+   All of it is done on the nodes now, the way a word processor does it:
+     - the button works on every selected line: plain lines each become their own bullet,
+       and when everything selected is already a bullet the bullets come off;
+     - Tab and Shift+Tab move every selected item, and an item nested under a selected
+       one moves with it;
+     - after every change, and whenever the browser leaves the markup broken, the lists
+       are put right: a list never hangs off a list, two lists side by side are one, an
+       empty list is gone.
+   The selection is held by two markers placed in the text before anything moves and
+   taken out afterwards, so it survives nodes being moved from one parent to another. */
+const _rtIsList=n=>!!n && n.nodeType===1 && (n.tagName==="UL" || n.tagName==="OL");
+function _rtMark(val){
+  const sel=window.getSelection();
+  if(!sel || !sel.rangeCount) return null;
+  const r=sel.getRangeAt(0);
+  if(!val.contains(r.startContainer) || !val.contains(r.endContainer)) return null;
+  const mk=id=>{ const s=document.createElement("span"); s.setAttribute("data-rtm", id); return s; };
+  const s=mk("s"), e=mk("e");
+  const re=r.cloneRange(); re.collapse(false); re.insertNode(e);
+  const rs=r.cloneRange(); rs.collapse(true); rs.insertNode(s);
+  return { s:s, e:e };
+}
+function _rtUnmark(val, m){
+  if(!m) return;
+  try{
+    const r=document.createRange();
+    if(m.s.isConnected && m.e.isConnected){ r.setStartAfter(m.s); r.setEndBefore(m.e); }
+    else r.selectNodeContents(val), r.collapse(false);
+    const sel=window.getSelection();
+    m.s.remove(); m.e.remove();
+    /* the markers cut the text they were put in; it is joined again, and the range follows */
+    try{ val.normalize(); }catch(__){}
+    sel.removeAllRanges(); sel.addRange(r);
+  }catch(_){ try{ m.s.remove(); m.e.remove(); }catch(__){} }
+  val.querySelectorAll("[data-rtm]").forEach(x=>x.remove());
+}
+/* what is wrong with a list, put right; says whether anything was */
+function _rtFixLists(val){
+  let ch=false;
+  for(let g=0;g<300;g++){
+    const bad=val.querySelector("ul > ul, ul > ol, ol > ul, ol > ol");
+    if(!bad) break;
+    let host=bad.previousElementSibling;
+    if(!host || host.tagName!=="LI"){ host=document.createElement("li"); bad.parentNode.insertBefore(host, bad); }
+    host.appendChild(bad); ch=true;
+  }
+  [...val.querySelectorAll("li")].forEach(li=>{
+    const p=li.parentNode;
+    if(p && !_rtIsList(p)){
+      const f=document.createDocumentFragment();
+      while(li.firstChild) f.appendChild(li.firstChild);
+      f.appendChild(document.createElement("br"));
+      li.replaceWith(f); ch=true;
+    }
+  });
+  [...val.querySelectorAll("ul,ol")].forEach(l=>{
+    if(!val.contains(l)) return;
+    if(!l.children.length && !String(l.textContent||"").trim() && !l.querySelector("[data-rtm]")){ l.remove(); ch=true; return; }
+    for(let g=0;g<50;g++){
+      let n=l.nextSibling;
+      while(n && n.nodeType===3 && !n.nodeValue.trim()) n=n.nextSibling;
+      if(!(n && n.nodeType===1 && n.tagName===l.tagName)) break;
+      while(n.firstChild) l.appendChild(n.firstChild);
+      n.remove(); ch=true;
+    }
+  });
+  return ch;
+}
 function _rtListItem(val){
   const sel=window.getSelection();
   if(!sel || !sel.rangeCount) return null;
@@ -7447,45 +7526,159 @@ function _rtListItem(val){
   while(el && el!==val && el.tagName!=="LI") el=el.parentNode;
   return (el && el.tagName==="LI" && val.contains(el)) ? el : null;
 }
-function _rtKeepCaret(fn){
-  const sel=window.getSelection();
-  const r=(sel && sel.rangeCount) ? sel.getRangeAt(0) : null;
-  const c=r?r.startContainer:null, o=r?r.startOffset:0;
-  fn();
-  if(c){ try{ const nr=document.createRange(); nr.setStart(c,o); nr.collapse(true);
-    sel.removeAllRanges(); sel.addRange(nr); }catch(_){} }
+/* the items the selection is in: every one whose own line it covers part of, and not the
+   ones nested under another that is selected - those move with it */
+function _rtSelItems(val, m){
+  const closest=n=>{ let el=n; while(el && el!==val && el.tagName!=="LI") el=el.parentNode; return (el && el!==val && el.tagName==="LI")? el : null; };
+  const first=closest(m.s);
+  let out=[];
+  if(m.s.nextSibling===m.e){ if(first) out=[first]; }
+  else {
+    const r=document.createRange(); r.setStartAfter(m.s); r.setEndBefore(m.e);
+    out=[...val.querySelectorAll("li")].filter(li=>{
+      const o=document.createRange(); o.selectNodeContents(li);
+      const sub=[...li.children].filter(_rtIsList)[0]; if(sub) o.setEndBefore(sub);
+      try{
+        if(o.collapsed) return r.compareBoundaryPoints(Range.START_TO_END, o)>=0 && r.compareBoundaryPoints(Range.END_TO_START, o)<=0;
+        return r.compareBoundaryPoints(Range.START_TO_END, o)>0 && r.compareBoundaryPoints(Range.END_TO_START, o)<0;
+      }catch(_){ return false; }
+    });
+    if(!out.length && first) out=[first];
+  }
+  /* every selected item is marked, so a move that leaves one where it is can still reach
+     the selected items under it */
+  val.querySelectorAll("li").forEach(x=>{ delete x.__rtSel; });
+  out.forEach(li=>{ li.__rtSel=1; });
+  return out.filter(li=>{ let p=li.parentNode; while(p && p!==val){ if(p.tagName==="LI" && out.indexOf(p)>=0) return false; p=p.parentNode; } return true; });
 }
 function _rtSubList(host, tag){
   let sub=host.lastElementChild;
-  if(!sub || (sub.tagName!=="UL" && sub.tagName!=="OL")){
-    sub=document.createElement(tag==="OL"?"OL":"UL"); host.appendChild(sub);
-  }
+  if(!_rtIsList(sub)){ sub=document.createElement(tag==="OL"?"OL":"UL"); host.appendChild(sub); }
   return sub;
 }
-/* one level in: the item becomes a child of the item above it */
-function _rtIndent(val){
-  const li=_rtListItem(val); if(!li) return false;
-  const prev=li.previousElementSibling;
-  if(!prev || prev.tagName!=="LI") return false;      /* nothing to nest under */
-  _rtKeepCaret(()=>{ _rtSubList(prev, li.parentNode.tagName).appendChild(li); });
-  val.dispatchEvent(new Event("input",{bubbles:true}));
+function _rtListOp(val, fn){
+  const m=_rtMark(val); if(!m) return false;
+  let did=false;
+  try{ const items=_rtSelItems(val, m); if(items.length) did=!!fn(items); if(_rtFixLists(val)) did=true; }catch(_){}
+  _rtUnmark(val, m);
+  if(did) val.dispatchEvent(new Event("input",{bubbles:true}));
+  return did;
+}
+/* one item out one level: it moves next to the item it was nested under, and whatever
+   followed it stays underneath it rather than being orphaned */
+function _rtOutOne(li){
+  const list=li.parentNode;
+  if(!_rtIsList(list)) return false;
+  const host=list.parentNode;
+  if(!host || host.tagName!=="LI") return false;       /* already at the top level */
+  const rest=[]; let n=li.nextElementSibling;
+  while(n){ rest.push(n); n=n.nextElementSibling; }
+  if(rest.length){ const sub=_rtSubList(li, list.tagName); rest.forEach(x=>sub.appendChild(x)); }
+  host.parentNode.insertBefore(li, host.nextSibling);
+  if(!list.children.length) list.remove();
   return true;
 }
-/* one level out: the item moves next to the item it was nested under, and
-   whatever followed it stays underneath it rather than being orphaned */
+/* one level in: each selected item becomes a child of the item above it */
+function _rtIndent(val){
+  return _rtListOp(val, items=>{ let did=false;
+    /* a run of selected items goes, together, under the item above the run; a run with
+       nothing above it stays where it is, whole - moving only some of it would put the
+       selected lines on two different levels */
+    const ok=items.map(li=>{ let p=li.previousElementSibling;
+      while(p && items.indexOf(p)>=0) p=p.previousElementSibling;
+      return !!(p && p.tagName==="LI"); });
+    items.forEach((li,i)=>{ if(!ok[i]) return;
+      const prev=li.previousElementSibling;
+      if(!prev || prev.tagName!=="LI") return;
+      _rtSubList(prev, li.parentNode.tagName).appendChild(li); did=true; });
+    return did; });
+}
 function _rtOutdent(val){
-  const li=_rtListItem(val); if(!li) return false;
-  const list=li.parentNode;
-  if(!list || (list.tagName!=="UL" && list.tagName!=="OL")) return false;
-  const host=list.parentNode;
-  if(!host || host.tagName!=="LI") return false;      /* already at the top level */
-  _rtKeepCaret(()=>{
-    const rest=[]; let n=li.nextElementSibling;
-    while(n){ rest.push(n); n=n.nextElementSibling; }
-    if(rest.length){ const sub=_rtSubList(li, list.tagName); rest.forEach(x=>sub.appendChild(x)); }
-    host.parentNode.insertBefore(li, host.nextSibling);
-    if(!list.children.length) list.remove();
-  });
+  return _rtListOp(val, items=>{ let did=false;
+    /* an item that is already at the top stays, and the selected items under it move */
+    const moved=[];
+    const all=items.slice();
+    items.forEach(li=>li.querySelectorAll("li").forEach(x=>{ if(x.__rtSel) all.push(x); }));
+    /* who was under whom before anything moved: an item that moves takes what was
+       under it along, and nothing else */
+    const anc=all.map(li=>{ const a=[]; let p=li.parentNode; while(p && p!==val){ if(p.tagName==="LI") a.push(p); p=p.parentNode; } return a; });
+    all.forEach((li,i)=>{
+      if(anc[i].some(p=>moved.indexOf(p)>=0)) return;
+      if(_rtOutOne(li)){ moved.push(li); did=true; } });
+    val.querySelectorAll("li").forEach(x=>{ delete x.__rtSel; });
+    return did; });
+}
+/* THE BULLET BUTTON. Every selected line becomes a bullet; if every selected line already
+   is one, the bullets come off and the lines are plain text again. */
+function _rtToggleList(val){
+  val.focus();
+  const m=_rtMark(val); if(!m) return false;
+  try{
+    /* the box as lines: blocks the browser made while typing become line breaks */
+    try{ _rtFlatten(val); }catch(_){}
+    _rtFixLists(val);
+    const top=n=>{ let el=n; while(el && el.parentNode!==val) el=el.parentNode; return el; };
+    const segs=[]; let cur=[];
+    [...val.childNodes].forEach(n=>{
+      if(n.nodeName==="BR"){ segs.push({ nodes:cur, br:n }); cur=[]; }
+      else if(_rtIsList(n)){ if(cur.length){ segs.push({ nodes:cur }); cur=[]; } segs.push({ list:n }); }
+      else cur.push(n);
+    });
+    if(cur.length) segs.push({ nodes:cur });
+    const at=mk=>{ const t=top(mk); for(let i=0;i<segs.length;i++){ if(segs[i].list===t || (segs[i].nodes && segs[i].nodes.indexOf(t)>=0)) return i; } return -1; };
+    let i0=at(m.s), i1=at(m.e);
+    if(i0<0 && i1<0){ /* an empty box: one empty bullet */
+      const ul=document.createElement("ul"), li=document.createElement("li");
+      li.appendChild(m.s); li.appendChild(m.e); ul.appendChild(li); val.appendChild(ul);
+    } else {
+      if(i0<0) i0=i1; if(i1<0) i1=i0;
+      const picked=segs.slice(i0, i1+1);
+      const blank=sg=>!sg.nodes.some(n=>(n.nodeType===1 && !n.hasAttribute("data-rtm")) || (n.nodeType===3 && n.nodeValue.trim()));
+      const lines=picked.filter(sg=>!sg.list && (picked.length===1 || !blank(sg)));
+      if(lines.length){
+        /* plain lines among what is selected: each becomes its own bullet */
+        lines.forEach(sg=>{
+          const ul=document.createElement("ul"), li=document.createElement("li");
+          const ref=sg.nodes[0] || sg.br || null;
+          val.insertBefore(ul, ref);
+          sg.nodes.forEach(n=>li.appendChild(n));
+          if(!li.childNodes.length || blank({ nodes:[...li.childNodes] })) li.appendChild(document.createElement("br"));
+          ul.appendChild(li);
+          if(sg.br) sg.br.remove();
+        });
+      } else {
+        /* everything selected is already a bullet: they come off */
+        const items=_rtSelItems(val, m);
+        const edges=[];
+        items.forEach(li=>{
+          for(let g=0;g<20 && li.parentNode && li.parentNode.parentNode!==val; g++){ if(!_rtOutOne(li)) break; }
+          const list=li.parentNode;
+          if(!_rtIsList(list) || list.parentNode!==val) return;
+          const after=document.createElement(list.tagName);
+          let n=li.nextElementSibling;
+          while(n){ const k=n.nextElementSibling; after.appendChild(n); n=k; }
+          const ref=list.nextSibling, own=[], subs=[];
+          [...li.childNodes].forEach(c=>{ if(_rtIsList(c)) subs.push(c); else if(c.nodeName!=="BR") own.push(c); });
+          if(!own.length) own.push(document.createTextNode(""));
+          own.forEach(c=>val.insertBefore(c, ref));
+          subs.forEach(c=>val.insertBefore(c, ref));
+          if(after.children.length) val.insertBefore(after, ref);
+          li.remove();
+          if(!list.children.length) list.remove();
+          edges.push([own[0], own[own.length-1]]);
+        });
+        /* a line that is no longer a bullet needs a break from the plain text round it */
+        edges.forEach(ed=>{
+          const p=ed[0].previousSibling, nx=ed[1].nextSibling;
+          if(p && p.nodeName!=="BR" && !_rtIsList(p)) val.insertBefore(document.createElement("br"), ed[0]);
+          if(nx && nx.nodeName!=="BR" && !_rtIsList(nx)) val.insertBefore(document.createElement("br"), nx);
+          else if(!nx) val.appendChild(document.createElement("br"));
+        });
+      }
+      _rtFixLists(val);
+    }
+  }catch(_){}
+  _rtUnmark(val, m);
   val.dispatchEvent(new Event("input",{bubbles:true}));
   return true;
 }
@@ -7515,6 +7708,7 @@ function _rtNorm(html){
     [...d.querySelectorAll("["+a+"]")].forEach(el=>el.removeAttribute(a));
   });
   _rtFlatten(d);
+  try{ _rtFixLists(d); }catch(_){}
   [...d.querySelectorAll("span")].forEach(sp=>{
     if(!sp.attributes.length){ const fr=document.createDocumentFragment();
       while(sp.firstChild) fr.appendChild(sp.firstChild); sp.replaceWith(fr); }
@@ -7522,6 +7716,15 @@ function _rtNorm(html){
   return d.innerHTML;
 }
 function wireRichBox(val){
+  /* whatever the browser did to a list while typing - Enter on an empty bullet, Backspace
+     at the start of one - is put right as soon as it happens */
+  val.addEventListener("input",()=>{
+    if(!val.querySelector("ul > ul, ul > ol, ol > ul, ol > ol, ul:empty, ol:empty")) return;
+    const m=_rtMark(val);
+    let ch=false; try{ ch=_rtFixLists(val); }catch(_){}
+    if(m) _rtUnmark(val, m);
+    if(ch) val.dispatchEvent(new Event("input",{bubbles:true}));
+  });
   val.addEventListener("contextmenu",e=>{ e.preventDefault(); e.stopPropagation(); showRepToolbar(val, e); });
   val.addEventListener("beforeinput",e=>{
     if(e.inputType!=="deleteContentBackward") return;
