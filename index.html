@@ -3510,6 +3510,8 @@ function applyView(v){
          screen - a filter, a sort, a saved cell - would send them all in again. */
       clearTimeout(applyView._t);
       applyView._t=setTimeout(()=>{ try{ roEl.classList.remove("view-enter"); }catch(e){} }, 1500);
+      /* the blocks further down the screen wait until they are scrolled to */
+      try{ _anReveal(roEl, ".year-month, .lg-panel, .day-card, .sx-sec, .td-card, .pdb-card, .pb-card"); }catch(e){}
     }
   }catch(e){}
   syncPrintBtn();
@@ -15226,6 +15228,76 @@ function _lgGameOpen(g){
   document.body.appendChild(back);
   document.addEventListener("keydown", onKey);
 }
+/* NOTHING ARRIVES BEHIND YOUR BACK.
+   Every animation used to start the moment its block was drawn, so anything below the
+   first screen had finished arriving long before anybody scrolled down to it - the box
+   score, the shot chart and the lower half of a comparison were simply there. A block
+   is now held at the start of its arrival until it is actually on screen, and let go
+   then; its figures start counting at the same moment.
+   _anHold is for blocks whose arrival is written in the stylesheet: they are paused, and
+   so are the animations of everything inside them. _anReveal is for the blocks of a
+   screen: the ones already in view arrive with the screen, the ones below wait hidden
+   and come up as they are reached, a few at a time one after another.
+   A browser that cannot watch for this, a device asking for less motion, and a report
+   being edited get none of it - everything is simply there. */
+function _anOff(){
+  try{ if(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) return true;
+    if(document.body.classList.contains("app-edit")) return true; }catch(e){ return true; }
+  return false;
+}
+/* What is waiting, and the one sweep that lets it go. It is measured by hand rather than
+   left to the browser's own observer: that one does not report at all while the page is
+   not being painted, and a block that is never reported would stay invisible - content
+   hidden for the sake of an effect, which is the one thing this must never do. The sweep
+   runs on every scroll, on resize, when the page comes back to the front, and on a slow
+   timer for as long as anything is waiting; a block that is on screen is released on the
+   next one. */
+const _anQ=[];
+let _anT=0, _anTick=0;
+function _anSweep(){
+  _anT=0;
+  const vh=window.innerHeight||800;
+  let k=0;
+  for(let i=_anQ.length-1;i>=0;i--){
+    const q=_anQ[i], e=q.el;
+    if(!e.isConnected){ _anQ.splice(i,1); continue; }
+    const r=e.getBoundingClientRect();
+    if(!(r.width||r.height)) continue;                      /* not laid out: a folded block */
+    if(r.top<vh*0.92 && r.bottom>0){ _anQ.splice(i,1); q.go(k++); }
+  }
+  if(!_anQ.length && _anTick){ clearInterval(_anTick); _anTick=0; }
+}
+function _anKick(){ if(!_anT) _anT=setTimeout(_anSweep, 40); }
+function _anAdd(el, go){
+  _anQ.push({ el:el, go:go });
+  if(!_anTick) _anTick=setInterval(_anSweep, 700);
+  _anKick();
+}
+try{
+  document.addEventListener("scroll", _anKick, { capture:true, passive:true });
+  window.addEventListener("resize", _anKick);
+  document.addEventListener("visibilitychange", _anKick);
+  document.addEventListener("click", ()=>setTimeout(_anKick, 60), true);
+}catch(e){}
+function _anHold(els, onSeen){
+  els=Array.prototype.slice.call(els||[]);
+  if(_anOff()){ els.forEach(e=>{ try{ onSeen&&onSeen(e); }catch(_){ } }); return; }
+  els.forEach(e=>{ e.classList.add("an-hold");
+    _anAdd(e, ()=>{ e.classList.remove("an-hold"); try{ onSeen&&onSeen(e); }catch(_){ } }); });
+}
+function _anReveal(root, sel){
+  if(!root || _anOff()) return;
+  const vh=window.innerHeight||800;
+  Array.prototype.slice.call(root.querySelectorAll(sel)).forEach(e=>{
+    const r=e.getBoundingClientRect();
+    if(!(r.height>0 && r.top>vh*0.92)) return;             /* already in view: it arrives with the screen */
+    e.classList.add("an-wait");
+    _anAdd(e, k=>{
+      e.style.animationDelay=(k*90)+"ms";
+      e.classList.remove("an-wait"); e.classList.add("an-in");
+      setTimeout(()=>{ try{ e.classList.remove("an-in"); e.style.animationDelay=""; }catch(_){ } }, 1700); });
+  });
+}
 /* A figure that arrives counts up to itself. Only for text that is a plain number - "98",
    "+18", "85%", "113.8" - so a name or a score with a dash in it is left alone. It ends on
    the exact text it started from, and does nothing at all for anybody who asked their
@@ -15508,7 +15580,15 @@ function _lgGamePanel(g, close){
       s.boxScorePDFUrl? h("a",{href:s.boxScorePDFUrl, target:"_blank", rel:"noopener"},"Official box score (PDF)") : null,
       s.playByPlayPDFUrl? h("a",{href:s.playByPlayPDFUrl, target:"_blank", rel:"noopener"},"Official play by play (PDF)") : null);
     if(links.childNodes.length) body.appendChild(links);
-    _anCount(body, ".lgg-key b, .lgg-kp b, .lgg-cr .v, .lgg-box tr.lg-avg td", drawn?450:1300);
+    if(drawn) _anCount(body, ".lgg-key b, .lgg-kp b, .lgg-cr .v, .lgg-box tr.lg-avg td", 450);
+    else {
+      /* each block waits for the eye: a section, a row of the comparison, a team's box
+         score and a team's floor are let go one by one as they come onto the screen */
+      _anHold(body.querySelectorAll(":scope > .lgg-sec"), e=>_anCount(e, ".lgg-key b, .lgg-kp b", 1300));
+      _anHold(body.querySelectorAll(".lgg-cr"), e=>_anCount(e, ".v", 1100));
+      _anHold(body.querySelectorAll(".lgg-boxw"), e=>_anCount(e, "tr.lg-avg td", 1100));
+      _anHold(body.querySelectorAll(".lgg-shot, .lgg-four, .lgg-ldr"));
+    }
     drawn=true;
     };
     draw();
@@ -24536,11 +24616,17 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
   .ym-row.clk{transition:transform .2s var(--me),background-color .2s ease}
   .ym-row.clk:hover{transform:translateX(3px)}
   .year-month,.day-card,.pdb-card{transition:transform .25s var(--me),box-shadow .25s ease,border-color .25s ease}
+  /* held until it is on screen: paused at the first frame of its own arrival, and
+     everything inside it with it */
+  .an-hold,.an-hold *{animation-play-state:paused!important}
+  .an-wait{opacity:0;animation:none!important}
+  .an-in{animation:anUp calc(var(--mk)*.6s) var(--me) both}
   /* nothing arrives under somebody who is writing */
   body.app-edit .view-enter,body.app-edit .view-enter *,body.app-edit .rep-enter,body.app-edit .rep-enter *,
   body.app-edit .lgg-body *{animation:none!important}
 }
-@media print{ .lgg,.lgg *,.prf,.prf *,.view-enter,.view-enter *,.rep-enter,.rep-enter *{animation:none!important} }
+@media print{ .lgg,.lgg *,.prf,.prf *,.view-enter,.view-enter *,.rep-enter,.rep-enter *{animation:none!important} .an-wait{opacity:1!important} }
+body.app-edit .an-wait{opacity:1!important}
 .prf-in{--lgh:#c6a15b;--lga:#4a86d8;border:1px solid var(--line,#e4e7ec);border-radius:14px;padding:12px 16px 14px;margin:0 0 16px;background:var(--panel,#fff)}
 .prf-strip{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
 .prf-g{display:flex;align-items:center;gap:8px;border:1px solid var(--line,#e4e7ec);border-radius:999px;padding:4px 12px 4px 5px;background:transparent;color:var(--ink,#141821);cursor:pointer;font-size:12.5px}
