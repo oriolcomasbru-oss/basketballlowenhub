@@ -13448,7 +13448,24 @@ function renderTrends(){
     h("div",{class:"scout-placeholder", "data-sx":"trends"},
       "Trends across every training and game.")));
   /* and the league's own numbers, game by game, under the tagging's */
-  root.appendChild(_lgFourTrend());
+  /* THE PAGE ARRIVES TOGETHER. This block is built from what the app already holds, so it
+     was on the page at once, while the dashboard above it was still reading forty files
+     from the Drive - the foot of the page first, and then the head landing on top of it.
+     It is kept out of sight until the dashboard is in (a chart, or the dashboard's own
+     word that there is nothing or that it failed), with a limit so that a Drive that
+     never answers does not hide it for ever. */
+  const panel=root.lastChild;
+  const lgBlock=_lgFourTrend();
+  lgBlock.style.display="none";
+  root.appendChild(lgBlock);
+  let shown=false, mo=null;
+  const show=()=>{ if(shown) return; shown=true; try{ if(mo) mo.disconnect(); }catch(e){} lgBlock.style.display=""; };
+  const ready=()=>!!panel.querySelector(".td-grid, .td-card, .tl-svg, .sx-empty, .sx-err");
+  if(ready()) show();
+  else {
+    try{ mo=new MutationObserver(()=>{ if(ready()) show(); }); mo.observe(panel, { childList:true, subtree:true }); }catch(e){ show(); }
+    setTimeout(show, 25000);
+  }
 }
 
 /* THE FOUR FACTORS AND THE SHOOTING, GAME BY GAME, FROM THE LEAGUE.
