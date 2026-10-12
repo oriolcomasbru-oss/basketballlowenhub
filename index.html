@@ -6558,7 +6558,12 @@ function gameCard(gameId, from){
      nothing ever corrected them until somebody went back to the list. */
   const again=()=>{ if(from==="gameplan") renderGamePlan(); else if(from==="oppscout") renderOppScout(); else renderTeamScout(); };
   const slotUi=()=>(from==="gameplan")? state.ui.gp : (from==="oppscout")? state.ui.os : state.ui.ts;
-  const before=JSON.stringify(state.games.find(x=>x.id===gameId)||null);
+  /* what would make this a different report: the day, the opponent, where it is played,
+     and the name it had before. Anything else the calendar rewrites on a fixture - where
+     the row came from, the order of its fields - is not a reason to load the page twice,
+     which is what comparing the whole row did on every visit. */
+  const fxSig=x=>x? [x.id,x.date,x.opponent,x.venue,String(!!x.home),x.competition,x.wasKey||""].join("|") : "";
+  const before=fxSig(state.games.find(x=>x.id===gameId));
   loadGamesOnce(()=>{
     const ui=slotUi();
     if(!ui || ui.mode!=="game" || ui.gameId!==gameId) return;
@@ -6566,7 +6571,7 @@ function gameCard(gameId, from){
     try{ if(EDIT_MODE) return; }catch(e){}
     /* drawn again only when this fixture actually changed, so an open report is not
        rebuilt under somebody's hands for nothing */
-    if(JSON.stringify(state.games.find(x=>x.id===gameId)||null)!==before) again();
+    if(fxSig(state.games.find(x=>x.id===gameId))!==before) again();
   });
   let g=state.games.find(x=>x.id===gameId);
   if(!g){
@@ -9651,10 +9656,25 @@ function _preRefresh(){
   const a=document.activeElement;
   if(a && live.el.contains(a) &&
      (a.isContentEditable || a.tagName==="INPUT" || a.tagName==="TEXTAREA" || a.tagName==="SELECT")) return;
+  /* ONE REDRAW FOR A BURST OF ANSWERS. The club list, the roster, the game sheets and the
+     tagging each land on their own and each asked for the report to be drawn again, so
+     opening a pre game drew it three or four times in its first seconds - the page seen
+     loading, and loading again. The first answer draws at once; the ones that follow
+     within a second and a half are gathered into a single redraw at the end of it. And
+     the page keeps its place across a redraw. */
+  const now=Date.now();
+  if(now-_preRefAt<1500){
+    if(!_preRefT) _preRefT=setTimeout(()=>{ _preRefT=0; _preRefresh(); }, 1500-(now-_preRefAt)+30);
+    return;
+  }
+  _preRefAt=now;
   _preRefreshing=true;
+  const ws=document.getElementById("workspace"), y=ws? ws.scrollTop : 0;
   try{ live.redraw(); }catch(e){}
   finally{ _preRefreshing=false; }
+  try{ if(ws && y && Math.abs(ws.scrollTop-y)>4) ws.scrollTop=y; }catch(e){}
 }
+let _preRefAt=0, _preRefT=0;
 let _preLeagueAsked=false;
 function _preNeedLeague(L){
   /* no club list, nobody fetching one: fetch it */
@@ -15744,18 +15764,33 @@ function _lgFormRows(tid, beforeDate, N){
       .sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,N||5);
     const team=((all&&all.teams)||[]).filter(t=>String(t.id)===String(tid))[0]||null;
     if(games.length<2) return { rows:[], games:games, team:team };
-    const feeds=await Promise.all(games.map(x=>(_lgGameMemo[x.id]||(_lgGameMemo[x.id]=
-      fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(x.id)).then(r=>r.json()))).catch(()=>null)));
     const rows=[];
-    games.forEach((x,i)=>{ const j=feeds[i];
+    const take=(x,j)=>{
       if(!j || !j.feed || !(j.feed.actions||[]).length) return;
       const M=_lgGameModel(x, j), home=String(x.homeId)===String(tid);
       const S=home?M.H:M.A, O=home?M.A:M.H;
       if(!S.has || !O.has) return;
       /* everybody on the sheet, played or not: who did NOT play is half of what is asked */
       const sheet=((home? (j.game||{}).homeTeam : (j.game||{}).guestTeam)||{}).roster||[];
+      /* the shots of a game are not needed here and are the heaviest thing in it */
+      S.shots=[]; O.shots=[];
       rows.push({ g:x, home:home, S:S, O:O, win:S.pts>O.pts, sheet:sheet,
-        q:(x.quarters||[]).slice(0,4).map(q=>home? q[0]-q[1] : q[1]-q[0]) }); });
+        q:(x.quarters||[]).slice(0,4).map(q=>home? q[0]-q[1] : q[1]-q[0]) }); };
+    if(games.length<=5){
+      const feeds=await Promise.all(games.map(x=>(_lgGameMemo[x.id]||(_lgGameMemo[x.id]=
+        fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(x.id)).then(r=>r.json()))).catch(()=>null)));
+      games.forEach((x,i)=>take(x, feeds[i]));
+    } else {
+      /* A WHOLE SEASON IS READ THREE GAMES AT A TIME AND NOT KEPT. Thirty sheets held at
+         once is the kind of weight that killed the tab; each is read, reduced to its two
+         team lines and its players, and let go before the next three are asked for. */
+      for(let i=0;i<games.length;i+=3){
+        const part=games.slice(i,i+3);
+        const got=await Promise.all(part.map(x=>fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(x.id)).then(r=>r.json()).catch(()=>null)));
+        part.forEach((x,k)=>take(x, got[k]));
+      }
+      rows.sort((a,b)=>String(b.g.date).localeCompare(String(a.g.date)));
+    }
     return { rows:rows, games:games, team:team };
   })();
   _lgFormMemo[key]=p;
@@ -15832,8 +15867,11 @@ function _lgFormParts(rows, name){
   const W=rows.filter(r=>r.win), Lo=rows.filter(r=>!r.win);
   add("n", (a3? Math.round(100*m3/a3) : 0)+"%", "from three · "+f1(a3/n)+" a game",
     Math.round(100*a3/Math.max(1,fga))+"% of their shots"+((W.length&&Lo.length)? " · "+p3(W)+" in wins, "+p3(Lo)+" in losses" : ""));
-  const A=_lgAvail(rows);
-  const top=A.list.filter(e=>e.gp>=Math.ceil(n/2)).slice().sort((a,b)=>b.apir-a.apir).slice(0,3);
+  /* who is missing is a question about NOW, so it is always read off the newest five,
+     however many games the rest of the block covers; who carries them is read off all */
+  const A=_lgAvail(rows.slice(0,5));
+  const Aall=(rows.length>5)? _lgAvail(rows) : A;
+  const top=Aall.list.filter(e=>e.gp>=Math.ceil(n/2)).slice().sort((a,b)=>b.apir-a.apir).slice(0,3);
   if(top.length) add("n", top[0].name, "PIR "+f1(top[0].apir)+" · "+f1(top[0].apts)+" pts a game",
     top.slice(1).map(e=>_lgLastName(e.name)+" "+f1(e.apir)+" PIR, "+f1(e.apts)+" pts").join(" · ")||"—");
   /* the doubt: a man of the rotation who was not there last time out */
@@ -15925,19 +15963,36 @@ function _lgTeamOpen(tid){
   const onKey=e=>{ if(e.key==="Escape") close(); };
   const panel=h("div",{class:"lgg", onclick:e=>e.stopPropagation()},
     h("button",{class:"lgg-x", title:"Close (Esc)", onclick:close},"×"),
-    h("div",{class:"lgg-meta"}, "last five games · from the play by play"),
+    h("div",{class:"lgg-meta"}, "team analysis · from the play by play"),
     h("div",{class:"lgg-top one"}, h("div",{class:"lgg-team w"}, _lgCrest(L, tid, "lgg-crest"), h("span",{}, t.name||""))),
     body);
   const back=h("div",{class:"lgg-back", onclick:close}, panel);
   document.body.appendChild(back);
   document.addEventListener("keydown", onKey);
-  _lgFormRows(tid, null, 5).then(F=>{
+  /* HOW FAR BACK. The last five is the default - recent enough to be how they are playing,
+     long enough not to be one night. Three is the last fortnight; the season is the whole
+     of it, read three sheets at a time. Who is missing is always the newest five. */
+  let want=5;
+  const seg=h("div",{class:"lg-seg lgg-range"});
+  const paintSeg=()=>{ seg.innerHTML="";
+    [[3,"Last 3"],[5,"Last 5"],[99,"Season"]].forEach(o=>seg.appendChild(h("button",{class:"lg-seg-b"+(want===o[0]?" act":""),
+      onclick:()=>{ if(want===o[0]) return; want=o[0]; load(); }}, o[1]))); };
+  panel.insertBefore(h("div",{class:"lgg-rangew"}, seg), body);
+  const load=()=>{
+  const N=want;
+  paintSeg();
+  body.className="lgg-body first";
+  body.innerHTML="";
+  body.appendChild(h("div",{class:"ld"}, N>5? "Reading the season, three games at a time…" : "Reading their last "+N+" games…", h("span",{class:"ld-bar"})));
+  _lgFormRows(tid, null, N).then(F=>{
+    if(want!==N || !back.parentNode) return;
     body.innerHTML="";
     if(F.rows.length<2){ body.appendChild(h("div",{class:"lg-empty"},"Fewer than two finished games with a published sheet.")); return; }
     const P=_lgFormParts(F.rows, t.name||""), A=P.avail, rows=F.rows;
     const f1=v=>(v==null||!isFinite(v))?"—":v.toFixed(1);
     const sec=(tt, kid, sub)=>h("div",{class:"lgg-sec"}, h("div",{class:"lgg-h"}, h("b",{},tt), sub?h("span",{},sub):null), kid);
-    body.appendChild(sec("The five games", h("div",{}, P.strip, h("div",{class:"lgg-keys"}, P.cards)), "each result opens its game"));
+    body.appendChild(sec(N>5? "The season · "+rows.length+" games" : "The last "+rows.length+" games",
+      h("div",{}, P.strip, h("div",{class:"lgg-keys"}, P.cards)), "each result opens its game"));
     /* the trend: the newest two against the ones before them */
     if(rows.length>=4){
       const a=rows.slice(0,2), b=rows.slice(2);
@@ -15964,9 +16019,11 @@ function _lgTeamOpen(tid){
       A.up.map(e=>chip(e,"up","minutes up "+(e.dMin>0?"+":"")+f1(e.dMin))),
       A.down.map(e=>chip(e,"down","minutes down "+f1(e.dMin))));
     body.appendChild(sec("Who has been there", h("div",{}, lines.childNodes.length? lines : h("div",{class:"lgg-note"},"The same rotation in all five games: nobody out, nobody back."),
-      _lgAvailTable(rows, A)), "minutes in each game, newest first · a dot is a game he did not play"));
+      _lgAvailTable(rows, A)), "the newest five games, oldest on the left · minutes played, × for a game missed"));
     _anCount(body, ".lgg-key b, .lgg-kp b", 1200);
-  }).catch(e=>{ body.innerHTML=""; body.appendChild(h("div",{class:"lg-empty"},"Could not be read: "+((e&&e.message)||e))); });
+  }).catch(e=>{ if(want!==N) return; body.innerHTML=""; body.appendChild(h("div",{class:"lg-empty"},"Could not be read: "+((e&&e.message)||e))); });
+  };
+  load();
 }
 /* Inside the rotations, wherever they are shown - the league page and the pre game: who
    of the rotation was missing last time out, and the table it is read from. A rotation
@@ -18370,8 +18427,7 @@ function _lgRotCore(L){
         h("span",{class:"rr-legn"},"1 \u2192 "+games.length)));
       return w;
     };
-    if(_lgEmbedding) box.appendChild(_lgFold(L, "rot", "the game-by-game raster", raster));
-    else box.appendChild(raster());
+    box.appendChild(_lgFold(L, "rot", "the game-by-game raster", raster));
     _lgSetHelp(box, "G1 is the oldest of the "+games.length+" games shown, G"+games.length+" the most recent. "
       +"The bars are the real intervals between substitutions; the AVG lane under them is how often he is on "
       +"the floor at that point of the game. On the right: his average minutes, his lowest and highest, and "
@@ -18981,7 +19037,7 @@ function _lgClock(L){
     /* It was folded away inside a report, which is why the panel looked like it had no
        players in it: the one thing it is for - who takes the ball when the clock is gone -
        was behind a click nobody knew was there. */
-    box.appendChild(h("div",{class:"lg-scroll"}, t1));
+    box.appendChild(_lgFold(L, "clk1", "the late clock table", ()=>h("div",{class:"lg-scroll"}, t1)));
     if(tail.length){
       box.appendChild(_lgFold(L, "clktail", "the other "+tail.length+" player"+(tail.length===1?"":"s"), ()=>{
         const t2=h("table",{class:"lg-tbl lg-clk"});
@@ -19070,9 +19126,8 @@ function _lgClock(L){
     const tr=h("tr",{class:"lg-avg"}, h("td",{class:"l lg-team"},"Team"));
     cells(tr, c.tq2, null, "q"); cells(tr, c.tcl, null, "g");
     t2.appendChild(tr);
-    if(_lgEmbedding) box.appendChild(_lgFold(L, "clk2", "the last-two-minutes table", ()=>{
+    box.appendChild(_lgFold(L, "clk2", "the last-two-minutes table", ()=>{
       const w=h("div",{}); w.appendChild(h("div",{class:"lg-scroll"}, t2)); w.appendChild(_lgColourKey(false)); return w; }));
-    else { box.appendChild(h("div",{class:"lg-scroll"}, t2)); box.appendChild(_lgColourKey(false)); }
     _lgSetHelp(box, "The second block counts only the last two minutes of a fourth quarter or overtime "
       +"played within six points. Anything ranked on a percentage needs at least "+LG_LATE_MIN+" attempts "
       +"behind it. "+(d.games||0)+" games.");
@@ -19350,7 +19405,7 @@ function _lgUnits(L){
         h("td",{class:(r.offNet>0?"pos":(r.offNet<0?"neg":""))}, LG_PPPS(r.offNet)),
         h("td",{class:(r.diff>0?"pos":(r.diff<0?"neg":""))}, LG_PPPS(r.diff))));
     });
-    box.appendChild(h("div",{class:"lg-scroll"}, tbl));
+    box.appendChild(_lgFold(L, "unitsOn", "the on/off table", ()=>h("div",{class:"lg-scroll"}, tbl)));
     _lgSetHelp(box, "ON is what the club did per possession with this player on the floor, OFF what it did "
       +"without him, and Difference is one minus the other. Dimmed rows have under "+LG_UNIT_MIN
       +" possessions on one side.");
@@ -19443,8 +19498,8 @@ function _lgUnits(L){
       h("td",{}, LG_PPP(u.der)),
       h("td",{class:(u.net>0?"pos":(u.net<0?"neg":""))}, LG_PPPS(u.net))));
   });
-  if(_lgEmbedding) box.appendChild(_lgFold(L, "units", "the full table", ()=>h("div",{class:"lg-scroll"}, tbl)));
-  else box.appendChild(h("div",{class:"lg-scroll"}, tbl));
+  /* the table is one click away, everywhere: the cards above it are what is read first */
+  box.appendChild(_lgFold(L, "units", "the full table", ()=>h("div",{class:"lg-scroll"}, tbl)));
   _lgSetHelp(box, "Points per possession over "+gp+" games. Only combinations over "+LG_UNIT_MIN
     +" possessions are eligible for the reading at the top, and they are ordered on a value pulled towards the "
     +"club's average in proportion to how little has been seen of them \u2014 the figure shown is the real one, "
@@ -25194,6 +25249,7 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 .lgg-adv{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line-strong,#d2d7df)}
 .lgg-kps.six{grid-template-columns:repeat(6,1fr)}
 .lgg-top.one{grid-template-columns:1fr;justify-items:center}
+.lgg-rangew{display:flex;justify-content:center;margin:2px 0 6px}
 .lgg-kp.up{box-shadow:inset 3px 0 0 #2f9e86}.lgg-kp.dn{box-shadow:inset 3px 0 0 #d8524e}
 /* who has and has not been there */
 .avl-chips,.avl-doubt{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin:0 0 10px}
