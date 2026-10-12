@@ -15247,13 +15247,14 @@ function _lgGameCompare(g, M, adv){
   row("Fast points", H.fast, A.fast, null, "hi", "scored within seven seconds of a defensive rebound or a turnover");
   return box;
 }
-/* THE LAST TWO MINUTES. How the game was closed is its own question, and a box score of
-   forty minutes cannot answer it: the closing two minutes of the fourth quarter, and of
-   every overtime, read on their own from the play by play - the score going in and the
-   score of the stretch, each side as a team in attack (which is the other side's
-   defence), and every man who was on the floor for any of it. Two minutes is a handful
-   of possessions, so the figures are shown as counts first and rates second; a rate off
-   four possessions is said, not hidden, but it is not a tendency. */
+/* THE LAST TWO MINUTES, TOLD AS WHAT HAPPENED.
+   Two minutes is ten possessions. A box score of ten possessions is a table of noughts
+   and ones that has to be decoded; what a staff wants is the story - where the game
+   stood, what each side did with each trip, and where it stood after. So the stretch is
+   drawn as that: the score going in and coming out, four comparisons that say why, and
+   then every trip down the floor in order - who shot, what came of it, and the score
+   after each basket - with the home side on the left and the visitors on the right.
+   The tables of the first version are still there, folded away, for whoever wants them. */
 function _lgGameClutch(g, j, flow){
   const feed=j.feed||{};
   let nq=4; (feed.actions||[]).forEach(a=>{ nq=Math.max(nq, _lgGameElapsed(a.quarter,0).qi+1); });
@@ -15261,6 +15262,7 @@ function _lgGameClutch(g, j, flow){
   const f2=v=>(v==null||!isFinite(v))?"—":v.toFixed(2);
   const sh=(m,a)=>a? (m+"/"+a) : "–";
   const mm=s=>Math.floor(s/60)+":"+String(Math.round(s%60)).padStart(2,"0");
+  const ht=g.homeTlc||g.home, at=g.awayTlc||g.away;
   for(let q=3;q<nq;q++){
     const sel={}; sel[q]=1;
     const M=_lgGameModel(g, j, sel, 120);
@@ -15269,36 +15271,97 @@ function _lgGameClutch(g, j, flow){
     if(!(H.fga+A.fga+H.fta+A.fta+H.tov+A.tov)) continue;
     const len=q<4?600:300, base=q<4? q*600 : 2400+(q-4)*300, t0=base+len-120;
     let in0={h:0,a:0}; (flow.ev||[]).forEach(e=>{ if(e.t<t0) in0=e; });
-    const lbl=(q<4? "Q4" : "OT"+(q-3));
-    const d0=in0.h-in0.a, d1=(in0.h+H.pts)-(in0.a+A.pts);
-    wrap.appendChild(h("div",{class:"lgg-cl-h"},
-      h("b",{}, lbl+" · last 2:00"),
-      h("span",{class:"sc"}, (g.homeTlc||g.home)+" "+H.pts+" – "+A.pts+" "+(g.awayTlc||g.away)),
-      h("span",{}, "went in "+in0.h+"–"+in0.a+(d0===0? " (tied)" : " ("+(d0>0?(g.homeTlc||g.home):(g.awayTlc||g.away))+" +"+Math.abs(d0)+")")+
-        " · came out "+(in0.h+H.pts)+"–"+(in0.a+A.pts)+(d1===0? " (tied)" : " ("+(d1>0?(g.homeTlc||g.home):(g.awayTlc||g.away))+" +"+Math.abs(d1)+")"))));
-    /* as a team: one side's attack is the other side's defence */
-    const tt=h("table",{class:"lg-tbl lgg-four"});
-    tt.appendChild(h("tr",{}, ["Attack","PTS","Poss","PPP","FG","2P","3P","FT","OR","AST","TO","Fouls drawn","Defended by"].map((c,i)=>h("th",{class:i===0||i===12?"l":""}, c))));
-    [[g.home,H,A,g.away],[g.away,A,H,g.home]].forEach(r=>{ const S=r[1], O=r[2];
-      tt.appendChild(h("tr",{}, h("td",{class:"l lg-team"}, r[0]||""), h("td",{class:"b"}, S.pts), h("td",{}, S.poss.toFixed(1)),
-        h("td",{class:(S.poss&&O.poss&&(S.pts/S.poss)>(O.pts/O.poss))?"b":""}, S.poss? f2(S.pts/S.poss) : "—"),
-        h("td",{}, sh(S.fgm,S.fga)), h("td",{}, sh(S.p2m,S.p2a)), h("td",{}, sh(S.p3m,S.p3a)), h("td",{}, sh(S.ftm,S.fta)),
-        h("td",{}, S.or), h("td",{}, S.ast), h("td",{}, S.tov), h("td",{}, S.fd), h("td",{class:"l"}, _lgShort(r[3]||""))));
+    const lbl=(q<4? "4th quarter" : "Overtime"+(nq>5? " "+(q-3) : ""));
+    const outH=in0.h+H.pts, outA=in0.a+A.pts;
+    const lead=(a,b)=>a===b? "tied" : ((a>b?ht:at)+" +"+Math.abs(a-b));
+    const tone=(a,b)=>a===b? "" : (a>b? " h" : " a");
+    const blk=h("div",{class:"lgg-cl"});
+    /* ---- where it stood, what the stretch was, where it ended ---- */
+    blk.appendChild(h("div",{class:"lgg-cl-top"},
+      h("div",{class:"lgg-cl-t"}, h("b",{}, lbl), h("span",{}, "last 2:00")),
+      h("div",{class:"lgg-cl-flow"},
+        h("div",{class:"st"+tone(in0.h,in0.a)}, h("i",{},"went in"), h("b",{}, in0.h+"–"+in0.a), h("span",{}, lead(in0.h,in0.a))),
+        h("div",{class:"arrow"}, "→"),
+        h("div",{class:"st run"+tone(H.pts,A.pts)}, h("i",{},"the two minutes"), h("b",{}, H.pts+"–"+A.pts), h("span",{}, H.pts===A.pts? "even" : (H.pts>A.pts?ht:at)+" won them")),
+        h("div",{class:"arrow"}, "→"),
+        h("div",{class:"st"+tone(outH,outA)}, h("i",{},"came out"), h("b",{}, outH+"–"+outA), h("span",{}, lead(outH,outA))))));
+    /* ---- why: four things, side by side ---- */
+    const cmp=h("div",{class:"lgg-cmp lgg-cl-cmp"});
+    const row=(lbl2, hv, av, ht2, at2, better)=>{
+      const a=Number(hv)||0, b=Number(av)||0, tot=a+b, hw=tot? 100*a/tot : 50;
+      const win=(a===b||!better)? 0 : ((better==="hi")===(a>b)? 1 : -1);
+      cmp.appendChild(h("div",{class:"lgg-cr"},
+        h("b",{class:"v l"+(win>0?" w":"")}, ht2),
+        h("div",{class:"mid"}, h("span",{class:"lb"}, lbl2),
+          h("div",{class:"bar"}, h("i",{class:"h"+(win>0?" w":""), style:"width:"+hw.toFixed(1)+"%"}), h("i",{class:"a"+(win<0?" w":""), style:"width:"+(100-hw).toFixed(1)+"%"}))),
+        h("b",{class:"v r"+(win<0?" w":"")}, at2)));
+    };
+    row("Points per possession", H.poss?H.pts/H.poss:0, A.poss?A.pts/A.poss:0, H.poss? f2(H.pts/H.poss) : "—", A.poss? f2(A.pts/A.poss) : "—", "hi");
+    row("Field goals", H.fga?H.fgm/H.fga:0, A.fga?A.fgm/A.fga:0, sh(H.fgm,H.fga), sh(A.fgm,A.fga), "hi");
+    row("Free throws made", H.ftm, A.ftm, sh(H.ftm,H.fta), sh(A.ftm,A.fta), "hi");
+    row("Turnovers", H.tov, A.tov, String(H.tov), String(A.tov), "lo");
+    blk.appendChild(h("div",{class:"lgg-cmp-top"}, h("b",{class:"h"}, g.home||""), h("b",{class:"a"}, g.away||"")));
+    blk.appendChild(cmp);
+    /* ---- every trip, in order ---- */
+    const last=n=>_lgLastName(M.names[String(n)]||"");
+    const SHOT={ LU:"layup", DU:"dunk", JS:"jumper", TI:"tip in", AO:"alley oop" };
+    const TOV={ BP:"bad pass", LB:"lost ball", TR:"travelling", VI:"violation", OB:"out of bounds", "24":"24 seconds", "8":"8 seconds", "5":"5 seconds", "3":"3 seconds" };
+    const line=h("div",{class:"lgg-cl-line"});
+    let hs=in0.h, as=in0.a, ft=null;
+    const flush=()=>{ if(!ft) return;
+      const home=ft.home;
+      line.appendChild(h("div",{class:"lgg-ev "+(home?"h":"a")+(ft.m? " good":" miss")},
+        h("span",{class:"t"}, ft.clock),
+        h("span",{class:"l"}, home? h("span",{class:"chip "+(ft.m?"ok":"no")}, "FT "+ft.m+"/"+ft.n, h("em",{}, ft.who)) : null),
+        h("b",{}, ft.m? (ft.hs+"–"+ft.as) : ""),
+        h("span",{class:"r"}, home? null : h("span",{class:"chip "+(ft.m?"ok":"no")}, "FT "+ft.m+"/"+ft.n, h("em",{}, ft.who)))));
+      ft=null; };
+    M.acts.forEach(x=>{ const a=x.a, k=a.action, home=(a.teamcode===M.hc);
+      const t=Number(a.time)||0, clock=Math.floor(t/60)+":"+String(t%60).padStart(2,"0");
+      if(k==="FT"){
+        const who=last(a.player_id1), made=(a.result==="+");
+        if(made){ if(home) hs++; else as++; }
+        if(ft && ft.home===home && ft.who===who && ft.t===t){ ft.n++; if(made) ft.m++; ft.hs=hs; ft.as=as; }
+        else { flush(); ft={ home:home, who:who, t:t, clock:clock, n:1, m:made?1:0, hs:hs, as:as }; }
+        return;
+      }
+      let chip=null, sc="";
+      if(k==="P2"||k==="P3"){
+        const made=(a.result==="+"), v=(k==="P3")?3:2;
+        if(made){ if(home) hs+=v; else as+=v; sc=hs+"–"+as; }
+        chip=h("span",{class:"chip "+(made?"ok":"no")}, (made? "+"+v : (a.result==="BL"? "blocked "+v : "miss "+v)),
+          h("em",{}, last(a.player_id1)+" · "+(SHOT[a.info3]||"shot")+((made && last(a.player_id2))? " · assist "+last(a.player_id2) : "")));
+      }
+      else if(k==="TO"||k==="TTO") chip=h("span",{class:"chip to"}, "turnover", h("em",{}, (k==="TTO"? "team" : last(a.player_id1))+(TOV[a.info1]? " · "+TOV[a.info1] : "")));
+      else if((k==="REB"||k==="TREB") && a.info1==="O") chip=h("span",{class:"chip or"}, "off. rebound", h("em",{}, k==="TREB"? "team" : last(a.player_id1)));
+      else if(k==="TIMEO") chip=h("span",{class:"chip tm"}, "timeout");
+      else return;
+      flush();
+      line.appendChild(h("div",{class:"lgg-ev "+(home?"h":"a")+(sc?" good":"")},
+        h("span",{class:"t"}, clock), h("span",{class:"l"}, home? chip : null), h("b",{}, sc), h("span",{class:"r"}, home? null : chip)));
     });
-    wrap.appendChild(h("div",{class:"lgg-scroll"}, tt));
-    /* and every man who was out there */
+    flush();
+    blk.appendChild(h("div",{class:"lgg-cl-lh"}, h("span",{class:"h"}, ht), h("span",{}, "every trip down the floor, in order · the score after each basket"), h("span",{class:"a"}, at)));
+    blk.appendChild(line);
+    /* ---- the tables, for whoever wants them ---- */
     const men=(name,S)=>{
       const tb=h("table",{class:"lg-tbl lgg-box"});
-      tb.appendChild(h("tr",{}, ["#","Player","MIN","PTS","FG","3P","FT","REB","AST","STL","TO","PF","FD","+/−"].map((c,i)=>h("th",{class:i===1?"l":""}, c))));
+      tb.appendChild(h("tr",{}, ["#","Player","MIN","PTS","FG","3P","FT","REB","AST","TO","PF","+/−"].map((c,i)=>h("th",{class:i===1?"l":""}, c))));
       S.pl.filter(p=>p.sec>0 || p.pts || p.fga || p.fta || p.tov || p.pf).sort((a,b)=>b.sec-a.sec).forEach(p=>{
         tb.appendChild(h("tr",{}, h("td",{class:"lg-pos"}, p.num), h("td",{class:"l lg-team"}, p.name), h("td",{}, mm(p.sec)),
           h("td",{class:"b"}, p.pts), h("td",{}, sh(p.fgm,p.fga)), h("td",{}, sh(p.p3m,p.p3a)), h("td",{}, sh(p.ftm,p.fta)),
-          h("td",{}, p.reb), h("td",{}, p.ast), h("td",{}, p.stl), h("td",{}, p.tov), h("td",{}, p.pf), h("td",{}, p.fd),
+          h("td",{}, p.reb), h("td",{}, p.ast), h("td",{}, p.tov), h("td",{}, p.pf),
           h("td",{class:p.pm>0?"pos":(p.pm<0?"neg":"")}, (p.pm>0?"+":"")+p.pm)));
       });
       return h("div",{}, h("div",{class:"lgg-sub"}, name), h("div",{class:"lgg-scroll"}, tb));
     };
-    wrap.appendChild(h("div",{class:"lgg-cl-2"}, men(g.home||"", H), men(g.away||"", A)));
+    const det=h("div",{class:"lgg-cl-2", style:"display:none"}, men(g.home||"", H), men(g.away||"", A));
+    const btn=h("button",{class:"btn sm lgg-advbtn", onclick:()=>{ const on=det.style.display==="none";
+      det.style.display=on?"":"none"; btn.textContent=on?"Hide the player lines":"Player lines of these two minutes"; btn.classList.toggle("on", on); }},
+      "Player lines of these two minutes");
+    blk.appendChild(h("div",{class:"lgg-advrow"}, btn));
+    blk.appendChild(det);
+    wrap.appendChild(blk);
   }
   return wrap.childNodes.length? wrap : null;
 }
@@ -25108,6 +25171,38 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 .lgg-cl-h b{font-family:'Oswald',sans-serif;font-size:14px;letter-spacing:.05em;text-transform:uppercase}
 .lgg-cl-h .sc{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:13px}
 .lgg-cl-h span{font-size:12px;color:var(--ink-soft,#5b6472)}
+.lgg-cl{border:1px solid var(--line,#e4e7ec);border-radius:14px;padding:14px 16px 12px;margin-bottom:14px}
+.lgg-cl:last-child{margin-bottom:0}
+.lgg-cl-top{display:flex;flex-wrap:wrap;align-items:center;gap:14px 28px;margin-bottom:12px}
+.lgg-cl-t b{display:block;font-family:'Oswald',sans-serif;font-size:17px;letter-spacing:.05em;text-transform:uppercase;line-height:1.1}
+.lgg-cl-t span{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.lgg-cl-flow{display:flex;align-items:stretch;gap:10px;flex:1;min-width:0}
+.lgg-cl-flow .st{flex:1;border:1px solid var(--line,#e4e7ec);border-radius:12px;padding:8px 14px;display:flex;flex-direction:column;align-items:center;gap:1px;min-width:0}
+.lgg-cl-flow .st i{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.lgg-cl-flow .st b{font-family:'Oswald',sans-serif;font-size:30px;font-weight:600;line-height:1.1}
+.lgg-cl-flow .st span{font-size:12px;font-weight:600;color:var(--ink-soft,#5b6472)}
+.lgg-cl-flow .st.h{box-shadow:inset 0 -4px 0 var(--lgh)}.lgg-cl-flow .st.a{box-shadow:inset 0 -4px 0 var(--lga)}
+.lgg-cl-flow .st.run{background:var(--bg,#f4f5f7)}
+.lgg-cl-flow .arrow{display:flex;align-items:center;font-size:22px;color:var(--ink-faint,#8a93a2)}
+.lgg-cl-cmp{margin-bottom:12px}
+.lgg-cl-lh{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:baseline;font-size:11px;color:var(--ink-faint,#8a93a2);margin:6px 0 4px}
+.lgg-cl-lh .h,.lgg-cl-lh .a{font-family:'Oswald',sans-serif;font-size:13px;color:var(--ink,#141821)}
+.lgg-cl-lh .h{text-align:right;box-shadow:inset 0 -3px 0 var(--lgh);justify-self:end}.lgg-cl-lh .a{box-shadow:inset 0 -3px 0 var(--lga);justify-self:start}
+.lgg-cl-line{border-top:1px solid var(--line,#e4e7ec)}
+.lgg-ev{display:grid;grid-template-columns:1fr 46px 70px 46px 1fr;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--line,#eef0f3)}
+.lgg-ev .t{grid-column:2;grid-row:1;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-faint,#8a93a2);text-align:center}
+.lgg-ev .l{grid-column:1;grid-row:1;display:flex;justify-content:flex-end}
+.lgg-ev>b{grid-column:3;grid-row:1;font-family:'Oswald',sans-serif;font-size:17px;text-align:center}
+.lgg-ev .r{grid-column:5;grid-row:1;display:flex;justify-content:flex-start}
+.lgg-ev.good{background:linear-gradient(90deg,transparent,rgba(47,158,134,.06),transparent)}
+.lgg-ev .chip{display:inline-flex;align-items:baseline;gap:7px;border-radius:999px;padding:3px 11px;font-family:'Oswald',sans-serif;font-size:13.5px;font-weight:600;border:1px solid var(--line,#e4e7ec);white-space:nowrap}
+.lgg-ev .chip em{font-style:normal;font-family:'Inter',system-ui,sans-serif;font-size:11.5px;font-weight:500;color:var(--ink-soft,#5b6472)}
+.lgg-ev .chip.ok{background:#2f9e86;border-color:#2f9e86;color:#fff}.lgg-ev .chip.ok em{color:rgba(255,255,255,.9)}
+.lgg-ev .chip.no{color:var(--ink-soft,#5b6472);border-style:dashed}
+.lgg-ev .chip.to{background:rgba(216,82,78,.12);border-color:#e2a5a2;color:#b83a34}
+.lgg-ev .chip.or{background:rgba(214,184,119,.18);border-color:#d9c39a}
+.lgg-ev .chip.tm{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.07em;text-transform:uppercase;font-weight:500;color:var(--ink-faint,#8a93a2)}
+@media (max-width:760px){ .lgg-cl-flow{flex-wrap:wrap} .lgg-cl-flow .arrow{display:none} .lgg-ev{grid-template-columns:1fr 40px 54px 0 1fr} .lgg-ev .chip em{display:none} }
 .lgg-cl-2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
 @media (max-width:900px){ .lgg-cl-2{grid-template-columns:1fr} }
 /* the five best and the five worst sets, marked in the systems table */
