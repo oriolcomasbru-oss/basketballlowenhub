@@ -15559,7 +15559,8 @@ function _anMark(node){
     e.classList.add("an-e");
     _anHold([e], (x,k)=>{
       x.style.animationDelay=(Math.min(k||0,6)*90)+"ms";
-      _anCount(x, ".td-kpi b, .sx-gbig", 1300);
+      /* no count-up here: the figures of a report - a gauge, a rate, a rating - are what
+         the staff decides on, and they are shown as they are from the first frame */
       setTimeout(()=>{ try{ x.classList.remove("an-e"); x.style.animationDelay=""; }catch(_){ } }, 2600);
     });
   });
@@ -15600,15 +15601,38 @@ function _anReveal(){}
    "+18", "85%", "113.8" - so a name or a score with a dash in it is left alone. It ends on
    the exact text it started from, and does nothing at all for anybody who asked their
    device for less motion. */
+/* every figure that was set counting, and what it really says: checked once the count
+   should be over, and put right if anything left it on something else */
+const _anTruth=[]; let _anTruthT=0;
+function _anTruthCheck(){
+  const now=Date.now();
+  for(let i=_anTruth.length-1;i>=0;i--){ const r=_anTruth[i];
+    if(now<r.at) continue;
+    _anTruth.splice(i,1);
+    try{ if(r.el.isConnected && r.el.__anFull===r.full && r.el.textContent!==r.full){ r.el.textContent=r.full; } r.el.__anBusy=false; }catch(e){}
+  }
+  if(!_anTruth.length && _anTruthT){ clearInterval(_anTruthT); _anTruthT=0; }
+}
 function _anCount(root, sel, ms){
   try{ if(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) return; }catch(e){ return; }
   if(!root) return;
   root.querySelectorAll(sel).forEach(el=>{
+    /* ONE COUNT AT A TIME, AND THE TRUE FIGURE IS REMEMBERED ONCE.
+       A block inside a block - a gauge in a section in a report - was started twice, a
+       moment apart. The second start read the figure off the page while the first was
+       still counting, took "6%" for the truth, and ended on it: a 60% measure shown as
+       6%. A figure that is already counting is now left alone, so what it ends on is
+       always what it was before anything touched it; the true text is also kept on the
+       element and checked again after the count is over. */
+    if(el.__anBusy) return;
     const full=el.textContent, m=/^([+−-]?)(\d+(?:\.\d+)?)(%?)$/.exec(String(full).trim());
     if(!m) return;
     const to=parseFloat(m[2]), dec=(m[2].split(".")[1]||"").length;
     let t0=0, done=false;
-    const finish=()=>{ if(done) return; done=true; el.textContent=full; };
+    el.__anBusy=true; el.__anFull=full;
+    _anTruth.push({ el:el, full:full, at:Date.now()+ms+600 });
+    if(!_anTruthT) _anTruthT=setInterval(_anTruthCheck, 500);
+    const finish=()=>{ if(done) return; done=true; el.textContent=full; el.__anBusy=false; };
     const step=now=>{
       if(done) return;
       if(!t0) t0=now;
@@ -15620,7 +15644,7 @@ function _anCount(root, sel, ms){
        given frames at all, and a count that waits for one would sit on 0 - a wrong number
        on a box score. So the count only starts when the page is actually being shown,
        and a timer puts the true text back whatever the frames did. */
-    if(document.visibilityState && document.visibilityState!=="visible") return;
+    if(document.visibilityState && document.visibilityState!=="visible"){ finish(); return; }
     el.textContent=m[1]+(0).toFixed(dec)+m[3];
     requestAnimationFrame(step);
     setTimeout(finish, ms+150);
@@ -16096,7 +16120,7 @@ function _lgGamePanel(g, close){
     qs.length? h("div",{class:"lgg-qtw"}, qt) : null,
     body);
   body.appendChild(h("div",{class:"lg-empty"},"Reading the game sheet…"));
-  _anCount(panel, ".lgg-score b, .lgg-qt td.f", 1400);
+  _anCount(panel, ".lgg-score b", 1400);
   const ask=_lgGameMemo[g.id] || (_lgGameMemo[g.id]=
     fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(g.id)).then(r=>r.json()));
   ask.then(j=>{
@@ -16208,13 +16232,15 @@ function _lgGamePanel(g, close){
       s.boxScorePDFUrl? h("a",{href:s.boxScorePDFUrl, target:"_blank", rel:"noopener"},"Official box score (PDF)") : null,
       s.playByPlayPDFUrl? h("a",{href:s.playByPlayPDFUrl, target:"_blank", rel:"noopener"},"Official play by play (PDF)") : null);
     if(links.childNodes.length) body.appendChild(links);
-    if(drawn) _anCount(body, ".lgg-key b, .lgg-kp b, .lgg-cr .v, .lgg-box tr.lg-avg td", 450);
+    if(drawn) _anCount(body, ".lgg-key b, .lgg-kp b", 450);
     else {
       /* each block waits for the eye: a section, a row of the comparison, a team's box
          score and a team's floor are let go one by one as they come onto the screen */
       _anHold(body.querySelectorAll(":scope > .lgg-sec"), e=>_anCount(e, ".lgg-key b, .lgg-kp b", 1300));
-      _anHold(body.querySelectorAll(".lgg-cr"), e=>_anCount(e, ".v", 1100));
-      _anHold(body.querySelectorAll(".lgg-boxw"), e=>_anCount(e, "tr.lg-avg td", 1100));
+      /* only headline figures count up; a figure in a table or a comparison is never
+         touched, so nothing that is read as a number is ever mid-way to itself */
+      _anHold(body.querySelectorAll(".lgg-cr"));
+      _anHold(body.querySelectorAll(".lgg-boxw"));
       _anHold(body.querySelectorAll(".lgg-shot, .lgg-four, .lgg-ldr"));
     }
     drawn=true;
