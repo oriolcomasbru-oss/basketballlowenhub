@@ -15292,6 +15292,11 @@ function _lgGameClutch(g, j, flow){
     const len=q<4?600:300, base=q<4? q*600 : 2400+(q-4)*300, t0=base+len-120;
     let in0={h:0,a:0}; (flow.ev||[]).forEach(e=>{ if(e.t<t0) in0=e; });
     const outH=in0.h+H.pts, outA=in0.a+A.pts;
+    /* ONLY WHEN THERE WAS A GAME TO CLOSE. Two minutes that started more than ten points
+       apart decided nothing, and their "key factors" are garbage time read as drama. The
+       stretch is shown when it began within ten, and also when it ended within five -
+       a comeback that fell short is exactly the kind of close worth reading. */
+    if(Math.abs(in0.h-in0.a)>10 && Math.abs(outH-outA)>=5) continue;
     const lead=(a,b)=>a===b? "tied" : ((a>b?ht:at)+" +"+Math.abs(a-b));
     const F=[];
     const add=(w, home, txt)=>{ if(w>0) F.push({ w:w, home:home, txt:txt }); };
@@ -15336,6 +15341,43 @@ function _lgGameClutch(g, j, flow){
         : h("span",{class:"kf"}, "Nothing separated the two sides in these two minutes."))));
   }
   return wrap.childNodes.length? wrap : null;
+}
+/* WHO WAS NOT THERE THAT NIGHT. A box score lists who played; a result is often explained
+   by who did not. For each side: the men with real minutes this season who did not play -
+   either on the sheet and unused, or not on it at all - and, in small print, the rest of
+   the bench that stayed on it. The season totals say who has real minutes (two games or
+   more at twelve minutes); our own medical sheet adds the reason for our own players. */
+function _lgGameAvail(g, j, M){
+  const box=h("div",{class:"lgg-cl-2 lgg-ga"});
+  const side=(tid, team, S, name)=>{
+    const col=h("div",{}, h("div",{class:"lgg-sub"}, name), h("div",{class:"ld"},"Reading…", h("span",{class:"ld-bar"})));
+    _lgAvailX(tid).then(X=>{
+      while(col.childNodes.length>1) col.removeChild(col.lastChild);
+      const played={}; (S.pl||[]).forEach(p=>{ if(p.sec>0) played[String(p.id)]=1; });
+      const sheet={}; ((team&&team.roster)||[]).forEach(p=>{ sheet[String(p.id)]={ num:String(p.NUM||""), name:(String(p.firstName||"").trim()+" "+String(p.lastName||"").trim()).trim() }; });
+      const key=[], bench=[];
+      const f1=v=>v.toFixed(1);
+      Object.keys(sheet).forEach(id=>{ if(played[id]) return;
+        const s=X.season[id], p=sheet[id];
+        let med=null; try{ med=X.ours? X.med[fkey(p.name)] : null; }catch(e){}
+        if((s && s.gp>=2 && s.min>=12) || med) key.push({ p:p, s:s, med:med, on:true }); else bench.push(p); });
+      Object.keys(X.season).forEach(id=>{ if(sheet[id]) return; const s=X.season[id];
+        if(s.gp>=2 && s.min>=12){ let med=null; try{ med=X.ours? X.med[fkey(s.name)] : null; }catch(e){}
+          key.push({ p:{ num:String(s.num||""), name:s.name||"" }, s:s, med:med, on:false }); } });
+      key.sort((a,b)=>((b.s&&b.s.min)||0)-((a.s&&a.s.min)||0));
+      col.appendChild(key.length? h("div",{class:"avl-chips"}, key.map(k=>h("span",{class:"avl-chip out"},
+          h("b",{}, "#"+k.p.num+" "+k.p.name), " "+(k.on? "on the sheet, did not play" : "not on the sheet")+
+          (k.s? " · "+f1(k.s.min)+" min, PIR "+f1(k.s.pir)+" this season" : "")+
+          (k.med? " · out since "+k.med.since.slice(8,10)+"/"+k.med.since.slice(5,7)+" (medical)" : ""))))
+        : h("div",{class:"avl-doubt none"}, h("b",{},"Full strength"), h("span",{}, Object.keys(X.season).length? "nobody with real minutes this season was missing" : "no season totals read for this club yet")));
+      if(bench.length) col.appendChild(h("div",{class:"avl-never"}, h("b",{},"On the sheet, did not play: "), bench.map(p=>"#"+p.num+" "+_lgLastName(p.name)).join(" · ")));
+    }).catch(()=>{ while(col.childNodes.length>1) col.removeChild(col.lastChild); col.appendChild(h("div",{class:"lg-empty"},"Could not be read.")); });
+    return col;
+  };
+  const sh=j.game||{};
+  box.appendChild(side(g.homeId, sh.homeTeam, M.H, g.home||""));
+  box.appendChild(side(g.awayId, sh.guestTeam, M.A, g.away||""));
+  return box;
 }
 function _lgGameBox(name, S, onPick){
   const mm=s=>Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
@@ -15797,14 +15839,67 @@ function _lgFormRows(tid, beforeDate, N){
   p.catch(()=>{ delete _lgFormMemo[key]; });
   return p;
 }
+/* WHAT THE LAST FIVE GAMES CANNOT SAY.
+   Five games show who has been missing lately. They cannot show the man who has been
+   missing all along: a starter injured in September is not "out of the last five", he is
+   simply not in them, and a table built from those five lists him with the youth players
+   who never get on - or not at all. Two other sources know about him.
+     The season. The totals already read for the league leaders say who has real minutes
+     this year. A man with those minutes and none of the last five is a long-term absence.
+     Our own medical sheet. For our own club the staff records who is out, day by day. A
+     man marked out there is out whether or not he has played a minute this season - which
+     is the only way somebody injured since before the first game can be seen at all.
+   For another club's player who has not played a single minute this season there is no
+   source that says he is any good, so he is listed as "no minutes this season" and left
+   for the staff to recognise. */
+async function _lgAvailX(tid){
+  const L=leagueState(), X={ season:{}, med:{}, ours:false };
+  try{ X.ours=String(_lgOurTeamId(L))===String(tid); }catch(e){}
+  /* the season totals: the club's own panel if it is open, the slim line if not, and
+     one request for the slim line if there is neither */
+  let d=null;
+  try{
+    const full=(L.players||{})[tid];
+    if(full && (full.players||[]).length) d={ players:full.players };
+    else if((L.lead||{})[tid]) d=L.lead[tid];
+    else {
+      const j=await fetch("/.netlify/functions/bbl?res=players&id="+encodeURIComponent(tid)+
+        "&season="+encodeURIComponent(L.season||"")+"&v="+LG_DATA_VER).then(r=>r.ok? r.json() : null).catch(()=>null);
+      if(j && (j.players||[]).length){ L.lead=L.lead||{}; L.lead[tid]=_lgLeadSlim(tid, j, 0); d=L.lead[tid]; }
+    }
+  }catch(e){}
+  ((d&&d.players)||[]).forEach(p=>{ const t=p.all; if(!t || !t.gp) return;
+    const fgm=(t.p2m||0)+(t.p3m||0), fga=(t.p2a||0)+(t.p3a||0);
+    const pir=t.pts+(t.reb||((t.oreb||0)+(t.dreb||0)))+t.ast+t.stl+t.blk+(t.fd||0)-(fga-fgm)-((t.fta||0)-(t.ftm||0))-t.tov-(t.bla||0)-t.pf;
+    X.season[String(p.id)]={ gp:t.gp, min:t.sec/60/t.gp, pir:pir/t.gp, pts:t.pts/t.gp, name:p.name, num:p.num }; });
+  /* our own medical sheet: who is marked out on the newest day it has, and since when */
+  if(X.ours){ try{
+    const av=(state.plan&&state.plan.avail)||{};
+    const days=Object.keys(av).sort();
+    const today=todayISO();
+    const upto=days.filter(x=>x<=today);
+    const lastDay=upto[upto.length-1];
+    if(lastDay){
+      Object.keys(av[lastDay]||{}).forEach(k=>{
+        if(av[lastDay][k]!=="out") return;
+        let since=lastDay;
+        for(let i=upto.length-2;i>=0;i--){ const c=(av[upto[i]]||{})[k]; if(c==="out") since=upto[i]; else if(c!==undefined) break; }
+        X.med[k]={ since:since, days:Math.round((Date.parse(today)-Date.parse(since))/86400000) };
+      });
+    }
+  }catch(e){} }
+  return X;
+}
 /* WHO HAS BEEN THERE AND WHO HAS NOT. Rows are newest first. A man counts as part of the
    rotation when he has played at least two of these games for twelve minutes or more on
-   average; that is who "important" means below. Missing the newest game or games after
-   playing the ones before is OUT - a doubt for the next one. Playing the newest after
-   missing the one before is BACK. Minutes that moved by six or more between the newest
-   two games and the ones before are UP or DOWN. Nothing here knows why a man did not
-   play; it only knows that he did not. */
-function _lgAvail(rows){
+   average. Missing the newest game or games after playing the ones before is OUT - a
+   doubt for the next one. Playing the newest after missing the one before is BACK.
+   Minutes that moved by six or more between the newest two games and the ones before are
+   UP or DOWN. LONG is the long-term absence the five games cannot see for themselves
+   (see _lgAvailX). Nothing here knows why a man did not play, except our own medical
+   sheet for our own players. */
+function _lgAvail(rows, X){
+  X=X||{ season:{}, med:{}, ours:false };
   const men={}, n=rows.length;
   rows.forEach((r,gi)=>{
     r.S.pl.forEach(p=>{ const e=men[p.id]||(men[p.id]={ id:p.id, name:p.name, num:p.num, sec:[], pir:0, pts:0 });
@@ -15812,6 +15907,10 @@ function _lgAvail(rows){
     (r.sheet||[]).forEach(p=>{ const id=String(p.id); if(men[id]) return;
       men[id]={ id:id, num:String(p.NUM||""), name:(String(p.firstName||"").trim()+" "+String(p.lastName||"").trim()).trim(), sec:[], pir:0, pts:0 }; });
   });
+  /* a man with a season behind him who is on none of these five sheets */
+  Object.keys(X.season||{}).forEach(id=>{ const s=X.season[id];
+    if(!men[id] && s.gp>=2 && s.min>=12) men[id]={ id:id, num:String(s.num||""), name:s.name||"", sec:[], pir:0, pts:0, offSheet:true }; });
+  const medOf=name=>{ try{ return X.ours? (X.med[fkey(name)]||null) : null; }catch(e){ return null; } };
   const list=Object.keys(men).map(k=>{ const e=men[k];
     const played=[]; for(let i=0;i<n;i++) played[i]=(e.sec[i]||0)>0;
     const gp=played.filter(Boolean).length;
@@ -15820,18 +15919,30 @@ function _lgAvail(rows){
     let missed=0; while(missed<n && !played[missed]) missed++;
     e.missed=missed;
     e.core=(gp>=2 && e.avgMin>=12);
+    e.sea=(X.season||{})[String(e.id)]||null;
+    e.med=medOf(e.name);
     const m=l=>{ const v=l.filter(x=>x>0); return v.length? v.reduce((a,x)=>a+x,0)/v.length/60 : null; };
     const older=[]; for(let i=2;i<n;i++) older.push(e.sec[i]||0);
     const recent=m([e.sec[0]||0, e.sec[1]||0]), before=m(older);
     e.dMin=(recent!=null && before!=null)? recent-before : 0;
-    e.status = (gp===0)? "none"
+    /* long term: none of the five, and either a real season behind him or our own
+       medical sheet saying so */
+    const seasoned=!!(e.sea && e.sea.gp>=2 && e.sea.min>=12);
+    e.long=(gp===0 && (seasoned || !!e.med)) || (!!e.med && missed>=3);
+    e.why = e.med? ("out since "+e.med.since.slice(8,10)+"/"+e.med.since.slice(5,7)+" on the medical sheet")
+      : (e.long && e.sea)? (e.sea.gp+" game"+(e.sea.gp===1?"":"s")+" this season at "+e.sea.min.toFixed(1)+" min, none of the last "+n) : "";
+    e.status = e.long? "long"
+      : (gp===0)? "none"
       : (missed>=1)? "out"
       : (played[0] && n>1 && !played[1] && gp>=2)? "back"
       : (played[0] && gp===1 && n>2)? "new"
       : (e.dMin>=6)? "up" : (e.dMin<=-6)? "down" : "ok";
+    /* a man our medical sheet has out is a doubt even if he is not a rotation regular */
+    if(e.status==="out" && e.med) e.core=true;
     return e; });
   list.sort((a,b)=>(b.avgMin*b.gp)-(a.avgMin*a.gp));
   return { n:n, list:list,
+    long:list.filter(e=>e.status==="long"),
     out:list.filter(e=>e.status==="out" && e.core), outMinor:list.filter(e=>e.status==="out" && !e.core),
     back:list.filter(e=>e.status==="back" && e.avgMin>=8), fresh:list.filter(e=>e.status==="new" && e.avgMin>=8),
     up:list.filter(e=>e.status==="up" && e.gp>=3), down:list.filter(e=>e.status==="down" && e.gp>=3) };
@@ -15839,7 +15950,7 @@ function _lgAvail(rows){
 function _lgLastName(n){ const w=String(n||"").trim().split(/\s+/);
   return (w.length>1 && /^(jr|sr|ii|iii|iv)\.?$/i.test(w[w.length-1]))? w.slice(-2).join(" ") : (w[w.length-1]||""); }
 /* the strip of results and the cards, from the rows */
-function _lgFormParts(rows, name){
+function _lgFormParts(rows, name, X){
   const n=rows.length, avg=f=>rows.reduce((a,r)=>a+(f(r)||0),0)/n;
   const f1=v=>(v==null||!isFinite(v))?"—":v.toFixed(1);
   const wins=rows.filter(r=>r.win).length;
@@ -15869,15 +15980,19 @@ function _lgFormParts(rows, name){
     Math.round(100*a3/Math.max(1,fga))+"% of their shots"+((W.length&&Lo.length)? " · "+p3(W)+" in wins, "+p3(Lo)+" in losses" : ""));
   /* who is missing is a question about NOW, so it is always read off the newest five,
      however many games the rest of the block covers; who carries them is read off all */
-  const A=_lgAvail(rows.slice(0,5));
-  const Aall=(rows.length>5)? _lgAvail(rows) : A;
+  const A=_lgAvail(rows.slice(0,5), X);
+  const Aall=(rows.length>5)? _lgAvail(rows, X) : A;
   const top=Aall.list.filter(e=>e.gp>=Math.ceil(n/2)).slice().sort((a,b)=>b.apir-a.apir).slice(0,3);
   if(top.length) add("n", top[0].name, "PIR "+f1(top[0].apir)+" · "+f1(top[0].apts)+" pts a game",
     top.slice(1).map(e=>_lgLastName(e.name)+" "+f1(e.apir)+" PIR, "+f1(e.apts)+" pts").join(" · ")||"—");
   /* the doubt: a man of the rotation who was not there last time out */
-  if(A.out.length) add("o", A.out.length===1? _lgLastName(A.out[0].name) : (A.out.length+" doubts"),
-    "of the rotation, did not play last time",
-    A.out.map(e=>_lgLastName(e.name)+" ("+f1(e.avgMin)+" min, missed "+e.missed+")").join(" · "));
+  if(A.out.length || A.long.length){
+    const who=A.out.concat(A.long);
+    add("o", who.length===1? _lgLastName(who[0].name) : (who.length+" absences"),
+      A.out.length? "of the rotation, did not play last time" : "out long term",
+      A.out.map(e=>_lgLastName(e.name)+" ("+f1(e.avgMin)+" min, missed "+e.missed+")")
+        .concat(A.long.map(e=>_lgLastName(e.name)+" (long term"+(e.sea? ", "+f1(e.sea.min)+" min this season" : "")+")")).join(" · "));
+  }
   else if(A.back.length) add("t", _lgLastName(A.back[0].name), "back last time out",
     A.back.map(e=>_lgLastName(e.name)+" ("+f1(e.avgMin)+" min)").join(" · "));
   const strip=h("div",{class:"prf-strip"});
@@ -15911,13 +16026,22 @@ function _lgAvailTable(rows, A){
       h("td",{}, e.gp+"/"+n), h("td",{}, f1(e.avgMin)), h("td",{}, f1(e.apir)),
       h("td",{class:"l avl-s"}, txt));
   };
-  const played=A.list.filter(e=>e.gp>0), core=played.filter(e=>e.core), rest=played.filter(e=>!e.core);
+  const played=A.list.filter(e=>e.gp>0 && e.status!=="long"), core=played.filter(e=>e.core), rest=played.filter(e=>!e.core);
   core.forEach(e=>tb.appendChild(line(e)));
+  /* the long-term absences get rows of their own, under the rotation they belong to */
+  if(A.long.length){
+    tb.appendChild(h("tr",{class:"avl-sep long"}, h("td",{colspan:String(6+n)}, "Out long term")));
+    A.long.forEach(e=>tb.appendChild(h("tr",{class:"avl-r st-long core"},
+      h("td",{class:"lg-pos"}, e.num), h("td",{class:"l lg-team"}, e.name),
+      order.map(i=>h("td",{class:"avl-g n"}, e.played[i]? h("span",{style:"--m:"+Math.min(1,Math.round((e.sec[i]||0)/60)/36).toFixed(2)}, String(Math.round((e.sec[i]||0)/60))) : h("span",{class:"x"},"×"))),
+      h("td",{}, e.gp+"/"+n), h("td",{}, e.sea? f1(e.sea.min) : "—"), h("td",{}, e.sea? f1(e.sea.pir) : "—"),
+      h("td",{class:"l avl-s"}, e.why||"long-term absence"))));
+  }
   if(rest.length){
     tb.appendChild(h("tr",{class:"avl-sep"}, h("td",{colspan:String(6+n)}, "Outside the rotation")));
     rest.forEach(e=>tb.appendChild(line(e)));
   }
-  const never=A.list.filter(e=>e.gp===0);
+  const never=A.list.filter(e=>e.gp===0 && e.status!=="long");
   return h("div",{}, h("div",{class:"lg-scroll"}, tb),
     never.length? h("div",{class:"avl-never"}, h("b",{},"On the sheet, not a minute in the five: "),
       never.map(e=>"#"+e.num+" "+_lgLastName(e.name)).join(" · ")) : null);
@@ -15942,7 +16066,8 @@ function _preRecentForm(sg){
     const F=await _lgFormRows(tid, sg.date, 5);
     box.innerHTML="";
     if(F.rows.length<2){ none(F.games.length<2? "Fewer than two finished games in the league feed yet." : "The league has not published the sheets of their last games."); return; }
-    const name=_gTidy(sg.opponent), P=_lgFormParts(F.rows, name);
+    const X=await _lgAvailX(tid);
+    const name=_gTidy(sg.opponent), P=_lgFormParts(F.rows, name, X);
     box.appendChild(h("div",{class:"prf-in"},
       h("div",{class:"lgg-h"}, h("b",{}, "How "+name+" arrive"),
         h("span",{}, "their last "+P.n+" games, from the play by play · red is what to respect, green is what to attack")),
@@ -15984,11 +16109,12 @@ function _lgTeamOpen(tid){
   body.className="lgg-body first";
   body.innerHTML="";
   body.appendChild(h("div",{class:"ld"}, N>5? "Reading the season, three games at a time…" : "Reading their last "+N+" games…", h("span",{class:"ld-bar"})));
-  _lgFormRows(tid, null, N).then(F=>{
+  Promise.all([_lgFormRows(tid, null, N), _lgAvailX(tid)]).then(both=>{
+    const F=both[0], X=both[1];
     if(want!==N || !back.parentNode) return;
     body.innerHTML="";
     if(F.rows.length<2){ body.appendChild(h("div",{class:"lg-empty"},"Fewer than two finished games with a published sheet.")); return; }
-    const P=_lgFormParts(F.rows, t.name||""), A=P.avail, rows=F.rows;
+    const P=_lgFormParts(F.rows, t.name||"", X), A=P.avail, rows=F.rows;
     const f1=v=>(v==null||!isFinite(v))?"—":v.toFixed(1);
     const sec=(tt, kid, sub)=>h("div",{class:"lgg-sec"}, h("div",{class:"lgg-h"}, h("b",{},tt), sub?h("span",{},sub):null), kid);
     body.appendChild(sec(N>5? "The season · "+rows.length+" games" : "The last "+rows.length+" games",
@@ -16014,6 +16140,7 @@ function _lgTeamOpen(tid){
     const chip=(e,cls,t2)=>h("span",{class:"avl-chip "+cls}, h("b",{}, "#"+e.num+" "+_lgLastName(e.name)), " "+t2);
     const lines=h("div",{class:"avl-chips"},
       A.out.map(e=>chip(e,"out","doubt · missed the last "+(e.missed>1? e.missed : "game")+" · "+f1(e.avgMin)+" min")),
+      A.long.map(e=>chip(e,"long","out long term"+(e.why? " · "+e.why : ""))),
       A.back.map(e=>chip(e,"back","back · "+f1(e.avgMin)+" min")),
       A.fresh.map(e=>chip(e,"new","first game of the five")),
       A.up.map(e=>chip(e,"up","minutes up "+(e.dMin>0?"+":"")+f1(e.dMin))),
@@ -16035,15 +16162,18 @@ function _lgAvailBlock(tid){
   box.appendChild(h("div",{class:"avl-h"}, h("b",{},"Availability"), h("span",{},"the last five games, oldest on the left · minutes played, × for a game missed")));
   const slot=h("div",{}, h("div",{class:"ld"},"Reading the last five games…", h("span",{class:"ld-bar"})));
   box.appendChild(slot);
-  _lgFormRows(tid, null, 5).then(F=>{
+  Promise.all([_lgFormRows(tid, null, 5), _lgAvailX(tid)]).then(both=>{
+    const F=both[0], X=both[1];
     slot.innerHTML="";
     if(F.rows.length<2){ slot.appendChild(h("div",{class:"lg-empty"},"Fewer than two finished games with a published sheet.")); return; }
-    const A=_lgAvail(F.rows), f1=v=>v.toFixed(1);
+    const A=_lgAvail(F.rows, X), f1=v=>v.toFixed(1);
     slot.appendChild(h("div",{class:"avl-doubt"+(A.out.length?"":" none")},
       h("b",{}, A.out.length? (A.out.length===1? "Doubt" : "Doubts") : "No doubts"),
       A.out.length? A.out.map(e=>h("span",{class:"avl-chip out"}, h("b",{}, "#"+e.num+" "+e.name), " missed the last "+(e.missed>1? e.missed+" games" : "game")+" · "+f1(e.avgMin)+" min · PIR "+f1(e.apir)))
         : h("span",{}, "everybody in the rotation played last time out"),
       A.back.map(e=>h("span",{class:"avl-chip back"}, h("b",{}, "#"+e.num+" "+e.name), " back last time"))));
+    if(A.long.length) slot.appendChild(h("div",{class:"avl-doubt long"}, h("b",{},"Out long term"),
+      A.long.map(e=>h("span",{class:"avl-chip long"}, h("b",{}, "#"+e.num+" "+e.name), e.why? " "+e.why : ""))));
     slot.appendChild(_lgAvailTable(F.rows, A));
   }).catch(()=>{ slot.innerHTML=""; slot.appendChild(h("div",{class:"lg-empty"},"Could not be read.")); });
   return box;
@@ -16337,6 +16467,9 @@ function _lgGamePanel(g, close){
       h("div",{}, lead(M.H), _lgGameBox(g.home||"", M.H, pick(M.H,M.A,g.homeTlc||g.home)),
                   lead(M.A), _lgGameBox(g.away||"", M.A, pick(M.A,M.H,g.awayTlc||g.away))),
       "starters first; the line separates the bench · click a player for his game"));
+    /* who was missing that night - a fact of the game, not of a period */
+    if(!picked.length && j.game && (j.game.homeTeam||j.game.guestTeam)){
+      try{ body.appendChild(sec("Availability", _lgGameAvail(g, j, M), "who of each side did not play")); }catch(e){} }
     /* how it was closed - only when the whole game is being read */
     if(!picked.length){ try{ const cl=_lgGameClutch(g, j, M.flow);
       if(cl) body.appendChild(sec("The last two minutes", cl, "the close of the fourth quarter, and of each overtime, on its own")); }catch(e){} }
@@ -25261,6 +25394,11 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 .avl-chip.out{border-color:#e2a5a2;background:rgba(216,82,78,.10)}
 .avl-chip.back{border-color:#9ed3c6;background:rgba(47,158,134,.10)}
 .avl-chip.new{border-color:#d9c39a;background:rgba(214,184,119,.14)}
+.avl-chip.long{border-color:#c9a3d6;background:rgba(140,82,170,.10)}
+.avl-doubt.long{border-color:#c9a3d6;background:rgba(140,82,170,.06)}
+.avl-t tr.avl-sep.long td{color:#7d4a99}
+.avl-t tr.st-long td.avl-s{color:#7d4a99;font-weight:700}
+.lgg-ga .avl-chips{margin-bottom:4px}
 .avl-t tr{cursor:default}
 /* compact, and in the same hand as the other league tables */
 .avl{margin-top:16px;padding-top:12px;border-top:1px solid var(--line,#e4e7ec)}
