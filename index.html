@@ -15219,6 +15219,36 @@ function _lgGameOpen(g){
   document.body.appendChild(back);
   document.addEventListener("keydown", onKey);
 }
+/* A figure that arrives counts up to itself. Only for text that is a plain number - "98",
+   "+18", "85%", "113.8" - so a name or a score with a dash in it is left alone. It ends on
+   the exact text it started from, and does nothing at all for anybody who asked their
+   device for less motion. */
+function _anCount(root, sel, ms){
+  try{ if(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) return; }catch(e){ return; }
+  if(!root) return;
+  root.querySelectorAll(sel).forEach(el=>{
+    const full=el.textContent, m=/^([+−-]?)(\d+(?:\.\d+)?)(%?)$/.exec(String(full).trim());
+    if(!m) return;
+    const to=parseFloat(m[2]), dec=(m[2].split(".")[1]||"").length;
+    let t0=0, done=false;
+    const finish=()=>{ if(done) return; done=true; el.textContent=full; };
+    const step=now=>{
+      if(done) return;
+      if(!t0) t0=now;
+      const k=Math.min(1,(now-t0)/ms), e=1-Math.pow(1-k,3);
+      if(k<1 && el.isConnected){ el.textContent=m[1]+(to*e).toFixed(dec)+m[3]; requestAnimationFrame(step); }
+      else finish();
+    };
+    /* THE REAL FIGURE IS NEVER LEFT TO AN ANIMATION. A page in a background tab is not
+       given frames at all, and a count that waits for one would sit on 0 - a wrong number
+       on a box score. So the count only starts when the page is actually being shown,
+       and a timer puts the true text back whatever the frames did. */
+    if(document.visibilityState && document.visibilityState!=="visible") return;
+    el.textContent=m[1]+(0).toFixed(dec)+m[3];
+    requestAnimationFrame(step);
+    setTimeout(finish, ms+150);
+  });
+}
 /* OUR OWN GAME, AT THE TOP OF ITS POST GAME.
    The same reading of a game the league page opens in a window, drawn in the page: the
    post game report used to start at the staff's own notes and the tagging, and what the
@@ -15339,6 +15369,7 @@ function _preRecentForm(sg){
       h("div",{class:"lgg-h"}, h("b",{}, "How "+name+" arrive"),
         h("span",{}, "their last "+n+" games · red is what to respect, green is what to attack")),
       strip, h("div",{class:"lgg-keys"}, cards)));
+    _anCount(box, ".lgg-key b", 650);
   };
   run().catch(()=>{ box.innerHTML=""; });
   return box;
@@ -15372,6 +15403,7 @@ function _lgGamePanel(g, close){
     qs.length? h("div",{class:"lgg-qtw"}, qt) : null,
     body);
   body.appendChild(h("div",{class:"lg-empty"},"Reading the game sheet…"));
+  _anCount(panel, ".lgg-score b", 700);
   const ask=_lgGameMemo[g.id] || (_lgGameMemo[g.id]=
     fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(g.id)).then(r=>r.json()));
   ask.then(j=>{
@@ -15389,8 +15421,11 @@ function _lgGamePanel(g, close){
     let nqAll=Math.max(4, qs.length);
     (j.feed.actions||[]).forEach(a=>{ nqAll=Math.max(nqAll, _lgGameElapsed(a.quarter,0).qi+1); });
     const qn=i=>i<4?("Q"+(i+1)):("OT"+(i-3));
+    let drawn=false;
     const draw=()=>{
     body.innerHTML="";
+    /* it arrives once; after that a change of periods only blinks */
+    body.className="lgg-body "+(drawn?"re":"first");
     const picked=Object.keys(sel).map(Number).sort((a,b)=>a-b);
     if(picked.length===nqAll){ picked.forEach(k=>delete sel[k]); picked.length=0; }
     const M=_lgGameModel(g, j, sel);
@@ -15466,6 +15501,8 @@ function _lgGamePanel(g, close){
       s.boxScorePDFUrl? h("a",{href:s.boxScorePDFUrl, target:"_blank", rel:"noopener"},"Official box score (PDF)") : null,
       s.playByPlayPDFUrl? h("a",{href:s.playByPlayPDFUrl, target:"_blank", rel:"noopener"},"Official play by play (PDF)") : null);
     if(links.childNodes.length) body.appendChild(links);
+    _anCount(body, ".lgg-key b, .lgg-kp b", drawn?280:650);
+    drawn=true;
     };
     draw();
   }).catch(e=>{
@@ -24364,6 +24401,48 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
 .lgg-flt-l{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
 .lgg-flt-s{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600}
 .lgg-selq{fill:var(--ink,#141821);opacity:.07}
+/* MOTION, PART ONE: THE GAME WINDOW AND THE WAY THE OPPONENT ARRIVES.
+   The rules it is written to, so the next part is written to the same ones:
+     - it explains a change, it does not decorate: a window opening, a figure arriving
+     - quick: 150-250 ms for what happens all the time, 350 at most for a window
+     - the first time a thing is drawn it arrives; when a filter redraws it, it only
+       blinks, because the staff is working and not watching
+     - no bounce on data
+     - none of it exists for somebody who asked their device for less motion, or on paper */
+@keyframes anFade{from{opacity:0}to{opacity:1}}
+@keyframes anUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes anRise{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes anWipe{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes anGrowX{from{transform:scaleX(0)}to{transform:none}}
+@keyframes anGrowY{from{transform:scaleY(0)}to{transform:none}}
+@media (prefers-reduced-motion: no-preference){
+  .lgg-back,.lgg-plback{animation:anFade .18s ease-out both}
+  .lgg-back>.lgg,.lgg-plback>.lgg-pl{animation:anRise .32s cubic-bezier(.2,.8,.2,1) both}
+  .lgg-body.first>*{animation:anUp .36s cubic-bezier(.2,.8,.2,1) both}
+  .lgg-body.first>*:nth-child(2){animation-delay:.05s}
+  .lgg-body.first>*:nth-child(3){animation-delay:.10s}
+  .lgg-body.first>*:nth-child(4){animation-delay:.15s}
+  .lgg-body.first>*:nth-child(5){animation-delay:.20s}
+  .lgg-body.first>*:nth-child(n+6){animation-delay:.25s}
+  .lgg-body.re>.lgg-sec{animation:anFade .16s ease-out both}
+  .lgg-body.first .lgg-key,.prf .lgg-key,.prf-g{animation:anUp .34s cubic-bezier(.2,.8,.2,1) both}
+  .lgg-key:nth-child(1),.prf-g:nth-child(1){animation-delay:.08s}
+  .lgg-key:nth-child(2),.prf-g:nth-child(2){animation-delay:.13s}
+  .lgg-key:nth-child(3),.prf-g:nth-child(3){animation-delay:.18s}
+  .lgg-key:nth-child(4),.prf-g:nth-child(4){animation-delay:.23s}
+  .lgg-key:nth-child(5),.prf-g:nth-child(5){animation-delay:.28s}
+  .lgg-key:nth-child(6){animation-delay:.33s}
+  /* the line of the score is drawn the way the game went: left to right */
+  .lgg-body.first .lgg-lead{animation:anWipe .9s cubic-bezier(.3,.6,.2,1) .2s both}
+  /* the two bars of a comparison grow out from their own side */
+  .lgg-cr .bar i{animation:anGrowX .55s cubic-bezier(.2,.8,.2,1) .1s both}
+  .lgg-cr .bar i.h{transform-origin:left center}.lgg-cr .bar i.a{transform-origin:right center}
+  .lgg-body.re .lgg-cr .bar i{animation-duration:.25s;animation-delay:0s}
+  .lgg-pl-q i{transform-origin:center bottom;animation:anGrowY .45s cubic-bezier(.2,.8,.2,1) .12s both}
+  .lgg-body.first .lgg-shot .sc-svg{animation:anFade .5s ease-out .1s both}
+  .prf-in{animation:anUp .36s cubic-bezier(.2,.8,.2,1) both}
+}
+@media print{ .lgg,.lgg *,.prf,.prf *{animation:none!important} }
 .prf-in{--lgh:#c6a15b;--lga:#4a86d8;border:1px solid var(--line,#e4e7ec);border-radius:14px;padding:12px 16px 14px;margin:0 0 16px;background:var(--panel,#fff)}
 .prf-strip{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
 .prf-g{display:flex;align-items:center;gap:8px;border:1px solid var(--line,#e4e7ec);border-radius:999px;padding:4px 12px 4px 5px;background:transparent;color:var(--ink,#141821);cursor:pointer;font-size:12.5px}
