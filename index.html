@@ -8335,6 +8335,20 @@ function repSaveState(cls, txt){ _repSave={cls:cls, txt:txt}; _repSaveApply(); }
 function _repSaveApply(){ document.querySelectorAll(".rep-savestate").forEach(el=>{
   el.className="rep-savestate "+_repSave.cls; el.textContent=_repSave.txt; }); }
 let _repRetry=null, _repRetryT=null;
+/* the open, editable report's own way back and forward, for the keyboard */
+let _repHistLive=null;
+document.addEventListener("keydown", e=>{
+  if(!(e.ctrlKey||e.metaKey)) return;
+  const k=String(e.key||"").toLowerCase();
+  if(k!=="z" && k!=="y") return;
+  const Hh=_repHistLive;
+  if(!Hh || !Hh.el || !document.body.contains(Hh.el) || !Hh.el.offsetParent) return;
+  /* inside a field the keys belong to the field: they take back the letters just typed */
+  const ae=document.activeElement;
+  if(ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable)) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  if(k==="y" || e.shiftKey) Hh.redo(); else Hh.undo();
+}, true);
 function repSaveBadge(){ const el=h("span",{class:"rep-savestate "+_repSave.cls, title:"Click to save now", onclick:()=>{ if(_repRetry) _repRetry(); }}, _repSave.txt); return el; }
 
 /* Drawing a report asks the feeds for what it is missing, and some of those readers
@@ -9387,10 +9401,20 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
      before it, so undo walks back through real edits rather than keystrokes. */
   /* a report that cannot be serialised must still be readable: the history is a
      convenience, and losing it is not a reason to show the staff a blank page */
-  const snap=()=>{ try{ return JSON.stringify(rep.data[bag]); }catch(e){ return "[]"; } };
+  /* THE HISTORY IS OVER THE WHOLE REPORT. It used to record the written sections only, and
+     nothing read it: the cards, the roles and the game plan were outside it, and the Undo
+     and Redo on the page belonged to the old scouting sheet, which is not what is being
+     edited here. So a statistic bar removed from a card by mistake could not be brought
+     back. Every save now records the whole report as it was before it, and Undo and Redo
+     - the two buttons beside the save state, and Ctrl+Z / Ctrl+Shift+Z - walk through
+     those. Only the last steps are kept, and never more than a few megabytes of them. */
+  const snap=()=>{ try{ return JSON.stringify(rep.data); }catch(e){ return ""; } };
   const hist = rep._hist || (rep._hist = {});
-  const H = hist[bag] || (hist[bag] = { undo:[], redo:[], last:snap(), base:snap() });
-  const putBack=(json)=>{ rep.data[bag]=JSON.parse(json); H.last=json; };
+  const H = hist.all || (hist.all = { undo:[], redo:[], last:snap() });
+  const histTrim=()=>{ let n=H.undo.reduce((a,x)=>a+x.length,0);
+    while(H.undo.length>1 && (H.undo.length>30 || n>8e6)) n-=H.undo.shift().length; };
+  let histBtns=null;
+  const histPaint=()=>{ if(!histBtns) return; histBtns[0].disabled=!H.undo.length; histBtns[1].disabled=!H.redo.length; };
 
   let saveT=null;
   /* Autosave is the only way a report is written now, so it has to be visible.
@@ -9412,13 +9436,31 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
                   clearTimeout(_repRetryT); _repRetryT=setTimeout(()=>{ if(_repRetry) _repRetry(); }, 8000);
                   throw e; }); };
   _repRetry=()=>{ clearTimeout(_repRetryT); pushNow().catch(()=>{}); };
-  const record=()=>{ const cur=snap(); if(cur===H.last) return;
-    H.undo.push(H.last); if(H.undo.length>60) H.undo.shift(); H.redo.length=0; H.last=cur; };
+  const record=()=>{ const cur=snap(); if(!cur || cur===H.last) return;
+    H.undo.push(H.last); histTrim(); H.redo.length=0; H.last=cur; histPaint(); };
   const save=()=>{ if(!canEd) return;               /* read-only: nothing is written */
     if(!SB_TOKEN){ repSaveState("err","Not saved — session expired, log in again"); return; }
     record(); repSaveState("pend","Unsaved changes…");
     clearTimeout(saveT); saveT=setTimeout(()=>{ pushNow().catch(()=>{}); }, 900); };
   const reRender=()=>{ const old=body.querySelector(".rs-sections.rs-"+kind); if(old) old.remove(); renderReportSections(body,rep,key,g,canEd,kind,opts); };
+  /* one step back or forward: what is on the page is recorded first if it has not been,
+     the report becomes what it was, that is saved, and the page is drawn from it */
+  const histStep=(from, to)=>{
+    if(!canEd) return;
+    record();
+    if(!from.length) return;
+    const json=from.pop();
+    let was=null; try{ was=JSON.parse(json); }catch(e){ was=null; }
+    if(!was){ histPaint(); return; }
+    to.push(H.last); rep.data=was; H.last=json;
+    repSaveState("pend","Unsaved changes…");
+    clearTimeout(saveT); saveT=setTimeout(()=>{ pushNow().catch(()=>{}); }, 600);
+    reRender();
+    /* drawing a report tidies it (a missing list becomes an empty one): that is not an
+       edit, and counted as one it would throw the way forward away */
+    H.last=snap();
+  };
+  if(canEd) _repHistLive={ el:body, undo:()=>histStep(H.undo, H.redo), redo:()=>histStep(H.redo, H.undo) };
   /* the open pre-game report, so a feed that arrives late can draw it again */
   if(kind==="pregame" && !ONLY) _preLive={ el:body, redraw:reRender };
   /* the migration runs for everyone, so a player opening the report sees the
@@ -9429,7 +9471,10 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
   if(canEd){
     /* The toolbar is gone. Editing writes itself; the only thing worth a
        permanent slot is whether that write actually landed. */
-    wrap.appendChild(h("div",{class:"rep-tools"}, repSaveBadge()));
+    histBtns=[ h("button",{class:"rep-tb", type:"button", title:"Undo (Ctrl+Z)", onclick:()=>histStep(H.undo, H.redo)},"↶ Undo"),
+               h("button",{class:"rep-tb", type:"button", title:"Redo (Ctrl+Shift+Z)", onclick:()=>histStep(H.redo, H.undo)},"↷ Redo") ];
+    histPaint();
+    wrap.appendChild(h("div",{class:"rep-tools"}, repSaveBadge(), histBtns[0], histBtns[1]));
   }
   let dragFrom=-1;
   const moveSec=(from,to)=>{ if(from<0||to<0||from===to||to>=secs.length||from>=secs.length) return; const [it]=secs.splice(from,1); secs.splice(to,0,it); save(); reRender(); };
@@ -10086,6 +10131,26 @@ function _preCardsDraft(L, tid){
   });
   return { built: todayISO(), pos: out };
 }
+/* the league's statistics for one card, worked out the way the draft works them out */
+function _preCardStatsAgain(c){
+  try{
+    const L=_preLgForCards||leagueState(), tid=_preTidForCards;
+    if(!tid) return null;
+    const rows=_preRosterRows(L, tid).filter(p=>p && (p.name || p.num));
+    const norm=s=>_lgNorm(String(s||""));
+    const p=rows.filter(x=>c.pid && String(x.pid||x.id||"")===String(c.pid))[0]
+      || rows.filter(x=>norm(x.name||((x.first||"")+" "+(x.last||"")))===norm(c.name))[0]
+      || rows.filter(x=>c.num && String(x.num||"")===String(c.num))[0];
+    if(!p) return null;
+    const withLine=rows.filter(x=>_preLine(x)), base=withLine.length? withLine : rows;
+    const per=(x,k)=>{ const a=_preLine(x); return (a&&a.gp)? (a[k]||0)/a.gp : 0; };
+    const ctx={ teamFga: base.reduce((t,x)=>{ const a=_preLine(x); return t+((a&&a.p2a)||0)+((a&&a.p3a)||0); },0),
+      rank:(x,k)=>base.filter(y=>per(y,k)>per(x,k)).length+1 };
+    /* the card's own position decides which numbers are asked for, as it is on the board now */
+    const d=_preCardOf(Object.assign({}, p, c.pos? { pos:c.pos } : {}), ctx);
+    return (d && d.stats)||null;
+  }catch(e){ return null; }
+}
 function _preCardsStore(rep){
   rep.data=rep.data||{};
   return rep.data.cards || null;
@@ -10563,6 +10628,23 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
     (C.pos[pos]||[]).splice(i+1,0,copy); redraw();
   });
   on(".add-block-btn", ()=>{ c.blocks=c.blocks||[]; c.blocks.push("New note"); redraw(); });
+  /* THE STAT BAR COULD BE REMOVED AND NEVER PUT BACK. The cross on it empties the card's
+     statistics, and the only way to get the league's numbers again was to rebuild every
+     card from the feed, which replaces everything typed on all of them. A card with no
+     statistics now offers its own back: the league's line for that one man, written into
+     that one card, and nothing else on it touched. */
+  if(!(c.stats||[]).length){
+    const ab=q(".add-block-btn");
+    if(ab && ab.parentNode){
+      const sb2=h("button",{class:"add-block-btn pc-lgstats", type:"button",
+        title:"Write this player's statistics again from the league feed. Nothing else on the card is changed.",
+        onclick:e=>{ e.preventDefault(); e.stopPropagation();
+          const st=_preCardStatsAgain(c);
+          if(st && st.length){ c.stats=st; redraw(); }
+          else toast("The league has no numbers for this player yet."); }},"+ Stats from the league");
+      ab.parentNode.insertBefore(sb2, ab.nextSibling);
+    }
+  }
   /* and one more statistic, empty, for whatever the video says that the feed cannot */
   const bar=q(".stat-bar");
   if(bar){
@@ -28774,7 +28856,7 @@ function _deadFetch(url){
   }
   function phxApplyPerm(){
     ['btnUndo','btnRedo','btnReset','btnImport','btnRestoreBackup','btnExport']
-      .forEach(function(id){ var b=document.getElementById(id); if(b) b.style.display = phxCanEdit ? '' : 'none'; });
+      .forEach(function(id){ var b=document.getElementById(id); if(b) b.style.display = 'none'; });
     /* the sheet's own Edit button is replaced by the one in the report toolbar */
     var e=document.getElementById('btnEdit'); if(e) e.style.display='none';
   }
