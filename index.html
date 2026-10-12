@@ -13630,11 +13630,12 @@ function renderPlanSection(sec, canEd, save, allSecs){
       }
       body.innerHTML="";
       const groups={}, order=[];
-      const put=(g,sub,rank,name,call)=>{ const k=g+"\u0000"+sub;
+      const put=(g,sub,rank,name,call,r0)=>{ const k=g+"\u0000"+sub;
         if(!groups[k]){ groups[k]={g:g,sub:sub,rank:rank,items:[]}; order.push(k); }
-        groups[k].items.push({name:name, call:call}); };
+        groups[k].items.push({name:name, call:call, n:(r0&&r0.n)||0, ppp:(r0&&r0.n)? r0.ppp : null}); };
       marked.forEach(r=>{ const bi=BAND.indexOf(r.band);
-        put(r.band||"Other", (r.band==="SLOB"||r.band==="BLOB")? "" : (r.kind||""), bi<0? 8 : bi, nameOf(r.label), r.call||""); });
+        put(r.band||"Other", (r.band==="SLOB"||r.band==="BLOB")? "" : (r.kind||""), bi<0? 8 : bi, nameOf(r.label), r.call||"", r); });
+      const maxN=Math.max.apply(null, marked.map(r=>r.n||0).concat([1]));
       /* a starred set the tagging no longer lists is still a key set: it is shown, and it
          says why it has no family and no call */
       extra.forEach(l=>put(FAIL? "Key sets" : "Not in the tagging", "", 9, nameOf(l), ""));
@@ -13644,12 +13645,19 @@ function renderPlanSection(sec, canEd, save, allSecs){
       order.sort((a,b)=>groups[a].rank-groups[b].rank || sr(groups[a].sub)-sr(groups[b].sub)
         || groups[a].sub.localeCompare(groups[b].sub));
       order.forEach(k=>{ const G=groups[k];
-        G.items.sort((a,b)=>String(a.name).localeCompare(String(b.name), undefined, {numeric:true}));
+        /* the sets they run most come first */
+        G.items.sort((a,b)=>(b.n-a.n) || String(a.name).localeCompare(String(b.name), undefined, {numeric:true}));
         const box=h("div",{class:"gp3-kg"},
           h("div",{class:"gp3-kgh"}, h("b",{}, G.g), G.sub? h("span",{}, G.sub) : null));
         G.items.forEach(it=>box.appendChild(h("div",{class:"gp3-kr"},
           h("span",{class:"gp3-kn"}, it.name),
-          it.call? h("span",{class:"gp3-kc"}, it.call) : h("span",{class:"gp3-kc none"},"—"))));
+          it.call? h("span",{class:"gp3-kc"}, it.call) : h("span",{class:"gp3-kc none"},"—"),
+          /* how often they run it, as a bar against their most-run key set, and what it
+             returns: red is a set that scores on us, green one that does not */
+          it.n? h("span",{class:"gp3-kv", title:it.n+" run"+(it.n===1?"":"s")+" in the tagging"},
+            h("i",{style:"width:"+Math.max(6,Math.round(100*it.n/maxN))+"%"}), h("b",{}, String(it.n))) : h("span",{class:"gp3-kv none"}),
+          it.ppp!=null? h("span",{class:"gp3-ke "+(it.ppp>=1.1? "hi" : it.ppp<=0.85? "lo" : "mid"), title:it.ppp.toFixed(2)+" points per possession"}, it.ppp.toFixed(2))
+            : h("span",{class:"gp3-ke none"},""))));
         body.appendChild(box);
       });
       if(FAIL) body.appendChild(h("div",{class:"gp3-ksn"}, FAIL));
@@ -13714,7 +13722,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
       if(anyPair(plan.pairs1)) left.appendChild(pairsBlock("Defensive pairs", plan.pairs1));
       if(anyPair(plan.pairs2)) left.appendChild(pairsBlock("Off the bench", plan.pairs2));
       left.appendChild(minutesBlock());
-    } else { try{ left.appendChild(oppFiveBlock()); }catch(e){} }
+    } else { try{ left.appendChild(oppFiveBlock()); }catch(e){} left.appendChild(minutesBlock()); }
     const mid=h("div",{class:"gp2-mid"});
     /* ON THE SCREEN THE BOARDS AND THE BOXES ARE TWO COLUMNS OF THEIR OWN. They used to be
        two rows, each a board with its box beside it, so a box with a lot of text in it
@@ -13740,8 +13748,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
     /* the key sets go under the minutes on the screen, where the eye already is for the
        matchups; on paper they keep their own place on the sheet */
     try{ const ks=keySetsBlock(); if(_gpForPrint) sheet.appendChild(ks);
-      else { left.appendChild(ks); sheet.classList.add("ks-rail");
-        const colb=mid.querySelector(".gp3-colb"); (colb||left).appendChild(minutesBlock()); } }
+      else { const colb=mid.querySelector(".gp3-colb"); (colb||left).appendChild(ks); sheet.classList.add("ks-rail"); } }
     catch(e){ try{ console.warn("game plan key sets", e); }catch(_){} }
     box.appendChild(sheet);
 
@@ -13755,16 +13762,52 @@ function renderPlanSection(sec, canEd, save, allSecs){
       /* the sheet that is printed is always built for paper, whoever presses the button:
          the screen's arrangement is not the one the A4 sizes were set for */
       let ro=null;
-      _gpForPrint=true;
       try{ ro=renderPlanSection(sec, false, ()=>{}, allSecs).querySelector(".gp2-sheet"); }catch(e){ ro=null; }
-      finally{ _gpForPrint=false; }
-      if(ro) gpPrintSheet(ro, true); else gpPrintSheet(sheet);
+      gpPrintFit(ro||sheet.cloneNode(true));
     });
     foot.appendChild(pr);
     box.appendChild(foot);
   }
   build();
   return box;
+}
+/* WHAT IS PRINTED IS WHAT IS ON THE SCREEN, ON ONE A4.
+   The printed sheet used to be a second arrangement of the same plan, with its own sizes,
+   and every change to the screen had to be made twice or the paper drifted away from it.
+   Now the sheet that is printed is the screen's own - their roster and our minutes on the
+   left, the two boards with their boxes, their playbook under them - laid out at a fixed
+   width and then scaled, as one piece, to fit a landscape A4. It cannot run to a second
+   page: if there is more on it, everything gets a little smaller. */
+let _gpFitStyle=null;
+function gpPrintFit(sheetEl){
+  const area=$("#print-area"); if(!area || !sheetEl) return;
+  area.innerHTML="";
+  sheetEl.querySelectorAll("button, input").forEach(b=>b.remove());
+  const page=h("div",{class:"gp-fit gp-wrap gp2"}, sheetEl);
+  area.appendChild(page);
+  document.body.classList.add("gpfit-measure");
+  const W=1400, PW=1060, PH=728;      /* the sheet's own width; the printable A4, in CSS px */
+  const fit=()=>{ page.style.zoom="1";
+    const hgt=Math.max(1, page.scrollHeight);
+    page.style.zoom=String(Math.min(PW/W, PH/hgt).toFixed(4)); };
+  const done=()=>{ document.body.classList.remove("printing","printing-gpfit","gpfit-measure"); area.innerHTML="";
+    if(_gpFitStyle){ _gpFitStyle.remove(); _gpFitStyle=null; }
+    window.removeEventListener("afterprint",done); };
+  window.addEventListener("afterprint",done);
+  /* their roster and their playbook are read into the sheet a moment after it is built:
+     it is measured once nothing in it still says it is being read, or after four seconds */
+  let tries=0;
+  const go=()=>{
+    if(tries++<13 && /Reading /.test(page.textContent||"")){ setTimeout(go, 300); return; }
+    fit();
+    _gpFitStyle=document.createElement("style");
+    _gpFitStyle.textContent="@page{size:A4 landscape;margin:7mm}";
+    document.body.appendChild(_gpFitStyle);
+    document.body.classList.remove("gpfit-measure");
+    document.body.classList.add("printing","printing-gpfit");
+    setTimeout(()=>{ try{ window.print(); }catch(e){ done(); } }, 80);
+  };
+  setTimeout(go, 600);
 }
 /* the sheet prints on its own: the app is hidden, a read-only copy goes to #print-area */
 function gpPrintSheet(sheetEl, own){
@@ -28283,10 +28326,29 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
   color:#7a5c12;background:rgba(198,161,91,.35);border-radius:3px;padding:1px 4px}
 .gp-opp .gp-ros-p .l2{padding-left:0;margin-top:1px}
 .gp-opp .gp-ros-p .l2 b{display:block;margin:0}
-/* our minutes, under the two boards */
-.gp3-colb > .gp3-minw{margin-top:16px;max-width:640px}
-/* their playbook, in the rail under their roster */
-.gp2-rail > .gp3-ks{margin-top:14px}
+/* our minutes, in the rail under their roster */
+.gp2-rail > .gp-opp + .gp3-minw{margin-top:12px}
+/* their playbook under the two boards, in columns: name, call, how often, what it returns */
+.gp3-colb > .gp3-ks .gp3-ksb{column-width:300px;column-gap:22px}
+.gp3-kr{align-items:center}
+.gp3-kv{flex:0 0 58px;display:flex;align-items:center;gap:4px;min-width:0}
+.gp3-kv i{display:block;height:7px;border-radius:3px;background:#4a86d8;flex:0 0 auto;max-width:36px}
+.gp3-kv b{font:700 10px 'IBM Plex Mono',monospace;color:var(--ink,#141821)}
+.gp3-kv.none{visibility:hidden}
+.gp3-ke{flex:0 0 36px;text-align:center;font:800 10.5px 'IBM Plex Mono',monospace;border-radius:4px;padding:1px 0;color:var(--ink,#141821);background:var(--panel-2,#eef0f3)}
+.gp3-ke.hi{background:#d8524e;color:#fff}.gp3-ke.lo{background:#2f9e86;color:#fff}
+.gp3-ke.none{visibility:hidden}
+.gp3-kc{max-width:30%}
+/* THE SHEET AS IT IS PRINTED: the screen's own arrangement at a fixed width, scaled as one
+   piece to a landscape A4 (see gpPrintFit) */
+.gp-fit{width:1400px;background:#fff;color:#141821;padding:0;transform-origin:0 0}
+.gp-fit .gp2-foot,.gp-fit .gp-poolbar,.gp-fit .gp-sheetnote{display:none}
+body.gpfit-measure #print-area{display:block;position:fixed;left:-99999px;top:0;width:1400px}
+@media print{
+  body.printing-gpfit #print-area{display:block;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body.printing-gpfit #print-area *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body.printing-gpfit .gp-fit{break-inside:avoid;page-break-inside:avoid}
+}
 /* the face in the cell where a man comes in */
 .lg-bdg.face.gpf.gpc{width:17px;height:17px;margin-right:2px;vertical-align:middle}
 .gp2-st.wf{white-space:nowrap}
