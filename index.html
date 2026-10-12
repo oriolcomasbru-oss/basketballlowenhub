@@ -14123,6 +14123,8 @@ function _lgWarm(){
   const L=leagueState();
   if(L.demo) return;
   const soon=(ms,fn)=>setTimeout(()=>{ try{ fn(); }catch(e){} }, ms);
+  /* before anything else is read: let go of what an earlier visit left in the saved state */
+  try{ _lgLeadTrim(L); }catch(e){}
   soon(250, ()=>_lgMaybeSync(L));
   soon(1400, ()=>{ if(!_lgFourBusy && !(L.four||[]).length) syncFour(false); });
   soon(2600, ()=>{ if(!_lgPbpBusy && !_lgPbpTried && !L.pbp) syncPbp(false); });
@@ -15719,9 +15721,20 @@ function _lgGameInline(sg){
    table under the rotations. Each game is read the way the game window reads it, from the
    play by play, and kept; what differs between the three is only what is drawn. */
 const _lgFormMemo={};
+/* A game sheet is a few hundred kilobytes once it is read, and every club opened from
+   the standings reads five. Kept for ever they add up to the same thing that killed the
+   tab; so only the last few are kept, and an older one is simply read again if it is
+   asked for. */
+function _lgMemoCap(memo, max, keep){
+  const ks=Object.keys(memo);
+  if(ks.length<=max) return;
+  ks.slice(0, ks.length-max).forEach(k=>{ if(!keep || !keep[k]) delete memo[k]; });
+}
 function _lgFormRows(tid, beforeDate, N){
   const key=String(tid)+"|"+String(beforeDate||"")+"|"+(N||5);
   if(_lgFormMemo[key]) return _lgFormMemo[key];
+  _lgMemoCap(_lgFormMemo, 3);
+  _lgMemoCap(_lgGameMemo, 12);
   const p=(async ()=>{
     const all=await _lgAll();
     const seen={};
@@ -16016,23 +16029,97 @@ const LG_LEAD=[
   { k:"pm",   t:"Plus / minus",      u:"per game", d:1, adv:true, sign:true, get:(t,m)=>t.pm/t.gp,
     tip:"The score while he is on the floor, per game." }
 ];
+/* THE LEADERS KEEP ONLY WHAT THEY RANK ON.
+   The first version read every club the way a club's own panel reads it - the box
+   scores, and with them every shot, every rotation and every five-man unit of the
+   season - and kept all eighteen. That is the whole league's play by play held in the
+   page at once, and the browser ran out of memory and killed the tab.
+   A board needs one line of totals per player and four numbers per club. So each club is
+   asked for, the totals are taken, and everything else is let go at once: what is kept
+   for the whole league is smaller than what one club's panel holds for itself. One club
+   at a time, and a club is asked again only when it has played since. */
 let _lgLeadBusy=false;
+const _lgLeadTried={};
+function _lgLeadSlim(tid, j, done){
+  const tot=(j.team_tot&&j.team_tot.all)||null;
+  return { games:j.games||0, done:done||0, at:Date.now(),
+    tot: tot? { sec:tot.sec||0, fga:tot.fga||0, fta:tot.fta||0, tov:tot.tov||0 } : null,
+    players:(j.players||[]).filter(p=>p && p.all && p.all.gp).map(p=>{ const t=p.all;
+      return { id:p.id, pid:p.pid, num:p.num, name:p.name,
+        photo:Array.isArray(p.photo)? p.photo.slice(0,1) : (p.photo||null),
+        all:{ gp:t.gp, sec:t.sec, pts:t.pts, p2m:t.p2m, p2a:t.p2a, p3m:t.p3m, p3a:t.p3a, ftm:t.ftm, fta:t.fta,
+              oreb:t.oreb, dreb:t.dreb, reb:t.reb, ast:t.ast, stl:t.stl, blk:t.blk, tov:t.tov, pf:t.pf,
+              pm:t.pm, fd:t.fd, bla:t.bla } }; }) };
+}
+/* The full reading of a club is heavy and is kept only for the clubs actually being
+   worked on: the one picked, ours, and the three read most recently (an opponent's pre
+   game needs its own). Any other that is still held - the first version of the leaders
+   left all eighteen in the saved state - is turned into its slim line and let go. */
+function _lgLeadTrim(L, done){
+  const ids=Object.keys(L.players||{});
+  if(ids.length<=4) return;
+  L.lead=L.lead||{};
+  if(!done){ done={}; (L.games||[]).forEach(g=>{ if(_lgDone(g) && g.phase==="main"){ done[g.homeId]=(done[g.homeId]||0)+1; done[g.awayId]=(done[g.awayId]||0)+1; } }); }
+  const keep={};
+  try{ keep[String(_lgTeamId(L))]=1; }catch(e){}
+  try{ keep[String(_lgOurTeamId(L))]=1; }catch(e){}
+  try{ if(L.rsTeam) keep[String(L.rsTeam)]=1; }catch(e){}
+  ids.slice().sort((a,b)=>String((L.players[b]||{}).updated||"").localeCompare(String((L.players[a]||{}).updated||""))).slice(0,3).forEach(k=>{ keep[String(k)]=1; });
+  let n=0;
+  ids.forEach(k=>{
+    if(keep[String(k)] || _lgPlBusy[k]) return;
+    const d=L.players[k];
+    try{ if(d && (d.players||[]).length && !(L.lead[k] && (L.lead[k].done||0)>=(done[k]||0)))
+      L.lead[k]=_lgLeadSlim(k, d, Math.min(done[k]||0, d.games||0)); }catch(e){}
+    delete L.players[k];
+    try{ delete _lgPlTried[k]; delete _lgPlPend[k]; }catch(e){}
+    n++;
+  });
+  if(n) try{ persist(); }catch(e){}
+}
 function _lgLeadLoad(L){
-  if(_lgLeadBusy || L.demo) return;
-  const todo=(L.teams||[]).map(t=>t.id).filter(id=>!((L.players||{})[id]) && !_lgPlBusy[id] && !_lgPlTried[id]);
+  if(L.demo) return;
+  L.lead=L.lead||{};
+  const done={};
+  (L.games||[]).forEach(g=>{ if(_lgDone(g) && g.phase==="main"){ done[g.homeId]=(done[g.homeId]||0)+1; done[g.awayId]=(done[g.awayId]||0)+1; } });
+  try{ _lgLeadTrim(L, done); }catch(e){}
+  if(_lgLeadBusy) return;
+  const todo=(L.teams||[]).map(t=>t.id).filter(id=>{
+    const have=L.lead[id];
+    const stale=!have || (done[id]||0)>(have.done||0);
+    return stale && _lgLeadTried[id]!==(done[id]||0);
+  });
   if(!todo.length) return;
-  _lgLeadBusy=true;
-  /* one club at a time: eighteen at once is what the league's own limiter is there to stop */
-  Promise.resolve(syncPlayers(todo[0], false)).catch(()=>{}).then(()=>{
-    setTimeout(()=>{ _lgLeadBusy=false; try{ _lgLeadLoad(leagueState()); }catch(e){} }, 500); });
+  const tid=todo[0];
+  _lgLeadBusy=true; _lgLeadTried[tid]=(done[tid]||0);
+  const ask=round=>fetch("/.netlify/functions/bbl?res=players&id="+encodeURIComponent(tid)+
+      "&season="+encodeURIComponent(L.season||"")+"&v="+LG_DATA_VER)
+    .then(r=>{ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+    .then(j=>{
+      /* a read that ran out of time comes back with part of the season; the sheets it
+         did read are kept by the server, so asking once or twice more finishes it */
+      if(j && j.partial && round<3) return new Promise(res=>setTimeout(res, 1500)).then(()=>ask(round+1));
+      if(j && (j.players||[]).length){ L.lead[tid]=_lgLeadSlim(tid, j, done[tid]||0); try{ persist(); }catch(e){} }
+    });
+  ask(0).catch(()=>{}).then(()=>{
+    setTimeout(()=>{ _lgLeadBusy=false;
+      try{ const L2=leagueState(); _lgLeadLoad(L2);
+        /* the boards fill in as the clubs land, but only while they are on screen */
+        const v=document.getElementById("viewLeague");
+        if(v && v.style.display!=="none"){ const old=v.querySelector(".ldr"); if(old){ const y=document.getElementById("workspace"); const top=y? y.scrollTop : 0;
+          old.parentNode.replaceChild(_lgLeaders(L2), old); if(y) y.scrollTop=top; } }
+      }catch(e){} }, 700); });
 }
 function _lgLeadPool(L){
   const pool=[]; let clubs=0;
   (L.teams||[]).forEach(tm=>{
-    const d=(L.players||{})[tm.id];
+    /* a club whose own panel is open has fresher and fuller numbers than the slim copy */
+    const full=(L.players||{})[tm.id];
+    const d=(full && (full.players||[]).length)? { players:full.players, games:full.games, tot:(full.team_tot&&full.team_tot.all)||null }
+      : (L.lead||{})[tm.id];
     if(!d || !(d.players||[]).length) return;
     clubs++;
-    const tot=(d.team_tot&&d.team_tot.all)||null;
+    const tot=d.tot||null;
     const tg=d.games||Math.max.apply(null, d.players.map(p=>(p.all&&p.all.gp)||0).concat([0]));
     d.players.forEach(p=>{
       const t=p.all; if(!t || !t.gp) return;
@@ -25481,9 +25568,16 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
   .ym-row.clk{transition:transform .2s var(--me),background-color .2s ease}
   .ym-row.clk:hover{transform:translateX(3px)}
   .year-month,.day-card,.pdb-card{transition:transform .25s var(--me),box-shadow .25s ease,border-color .25s ease}
-  /* held until it is on screen: paused at the first frame of its own arrival, and
-     everything inside it with it */
-  .an-hold,.an-hold *{animation-play-state:paused!important}
+  /* HELD UNTIL IT IS ON SCREEN - BY BEING INVISIBLE, NOT BY BEING PAUSED.
+     Holding a block used to mean pausing its arrival on the first frame. A paused
+     animation is still an animation: the browser keeps a separate painted layer for every
+     element that has one, and a page of tables had several hundred rows each holding a
+     layer of its own for as long as they waited. That is what ran the tab out of memory.
+     A held block now has no animation at all, and nothing inside it has one either; it is
+     simply not painted. Its arrival starts when the hold comes off, runs its half second
+     and lets its layer go. */
+  .an-hold{opacity:0!important;animation:none!important}
+  .an-hold *{animation:none!important}
   .an-soft{animation:anFade calc(var(--mk)*.55s) ease-out both}
   /* A figure counting up: its own text is still there, only not painted, and the
      counting digits are drawn over it from data-an. Nothing in the page is changed. */
@@ -25500,7 +25594,8 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
   body.app-edit .lgg-body *{animation:none!important}
 }
 @media print{ .lgg,.lgg *,.prf,.prf *,.view-enter,.view-enter *,.rep-enter,.rep-enter *,.an-e,.an-e *,.an-r,.an-r *,.an-hold,.an-hold *,.cover,.cover *{animation:none!important} .an-wait{opacity:1!important} .an-cnt{color:inherit!important;-webkit-text-fill-color:currentColor!important} .an-cnt::after{content:none!important} }
-body.app-edit .an-wait{opacity:1!important}
+body.app-edit .an-wait,body.app-edit .an-hold{opacity:1!important}
+@media print{ .an-hold{opacity:1!important} }
 .prf-in{--lgh:#c6a15b;--lga:#4a86d8;border:1px solid var(--line,#e4e7ec);border-radius:14px;padding:12px 16px 14px;margin:0 0 16px;background:var(--panel,#fff)}
 .prf-strip{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
 .prf-g{display:flex;align-items:center;gap:8px;border:1px solid var(--line,#e4e7ec);border-radius:999px;padding:4px 12px 4px 5px;background:transparent;color:var(--ink,#141821);cursor:pointer;font-size:12.5px}
