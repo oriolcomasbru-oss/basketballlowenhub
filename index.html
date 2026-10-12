@@ -15308,7 +15308,19 @@ function _anHold(els, onSeen){
    is marked to arrive - held until it is on screen, a few at a time one after another,
    its chart drawn and its figures counted. Then the watch ends: from there on a filter,
    a sort or a saved cell redraws its block without sending it in again. */
-const AN_BLOCKS=".sx-sec, .td-card, .tr-sec, .lg-panel, .year-month, .day-card, .pdb-card, .pb-card, .rs-block, .rs-banner";
+const AN_BLOCKS=".sx-sec, .td-card, .tr-sec, .lg-panel, .year-month, .day-card, .pdb-card, .pb-card, .rs-block, .rs-banner, "+
+  ".scout-panel, .pos-col, .squad-col, .us-col, .month-grid, .wk-grid, .ps-wrap, .gp2-q, .gp3-box, .gp3-keys, .presc, .sxp, .lg-diag, .plan-head, .tier-surface";
+/* A tab inside a screen is a small change of screen: what it brings in arrives too. A
+   filter is not - All / Home / Away redraws the same thing - so only the controls that
+   take the page somewhere else start a watch. */
+try{
+  document.addEventListener("click", e=>{
+    const t=e.target && e.target.closest && e.target.closest(".subtab, .scope-tab, .sess-tab, .ssv-stab, .lg-tabbtn, .ym-head");
+    if(!t) return;
+    const ws=document.getElementById("workspace");
+    if(ws) setTimeout(()=>{ try{ _anWatchEnter(ws); }catch(_){ } }, 0);
+  }, true);
+}catch(e){}
 function _anWatchEnter(box){
   if(!box) return;
   try{ if(box.__anMo){ box.__anMo.disconnect(); clearTimeout(box.__anT1); clearTimeout(box.__anT2); } }catch(e){}
@@ -24689,6 +24701,58 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
   .an-e .ym-row:nth-of-type(5){animation-delay:calc(var(--mk)*.36s)}
   /* a game plan grid and a rotation table are read whole: they do not come in by rows */
   .an-e .gp2-tbl tr,.an-e .gp-wrap table tr,.an-e .lgg-box tr,.an-e .lgg-qt tr{animation:none}
+  /* --------------------------------------------- the rest of the app (part four)
+     Inside a block that is arriving, the things a coach reads one by one come one by
+     one: the cards of a position, the rows of a playbook, the days of a month, the
+     results of a matchday. Eight at most are spaced out; the rest come with the eighth,
+     so a long list is never a long wait. */
+  .an-e .card,.an-e .rs-card,.an-e .pbx-row,.an-e .ss-item,.an-e .sxp-c,.an-e .lg-md-row,.an-e .ps-item,.an-e .ps-play,
+  .an-e .pp-chip,.an-e .dc-sess-box,.an-e .need-chip,.an-e .presc-c,.an-e .lg-key-i,.an-e .m-sess{
+    animation-name:anUp;animation-duration:calc(var(--mk)*.5s);animation-timing-function:var(--me);animation-fill-mode:both;animation-delay:calc(var(--mk)*.66s)}
+  .an-e .card:nth-child(1),.an-e .rs-card:nth-child(1),.an-e .pbx-row:nth-child(1),.an-e .ss-item:nth-child(1),.an-e .sxp-c:nth-child(1),.an-e .lg-md-row:nth-child(1),.an-e .ps-item:nth-child(1),.an-e .presc-c:nth-child(1){animation-delay:calc(var(--mk)*.14s)}
+  .an-e .card:nth-child(2),.an-e .rs-card:nth-child(2),.an-e .pbx-row:nth-child(2),.an-e .ss-item:nth-child(2),.an-e .sxp-c:nth-child(2),.an-e .lg-md-row:nth-child(2),.an-e .ps-item:nth-child(2),.an-e .presc-c:nth-child(2){animation-delay:calc(var(--mk)*.21s)}
+  .an-e .card:nth-child(3),.an-e .rs-card:nth-child(3),.an-e .pbx-row:nth-child(3),.an-e .ss-item:nth-child(3),.an-e .sxp-c:nth-child(3),.an-e .lg-md-row:nth-child(3),.an-e .ps-item:nth-child(3),.an-e .presc-c:nth-child(3){animation-delay:calc(var(--mk)*.28s)}
+  .an-e .card:nth-child(4),.an-e .rs-card:nth-child(4),.an-e .pbx-row:nth-child(4),.an-e .ss-item:nth-child(4),.an-e .sxp-c:nth-child(4),.an-e .lg-md-row:nth-child(4),.an-e .ps-item:nth-child(4),.an-e .presc-c:nth-child(4){animation-delay:calc(var(--mk)*.35s)}
+  .an-e .card:nth-child(5),.an-e .rs-card:nth-child(5),.an-e .pbx-row:nth-child(5),.an-e .ss-item:nth-child(5),.an-e .sxp-c:nth-child(5),.an-e .lg-md-row:nth-child(5),.an-e .ps-item:nth-child(5),.an-e .presc-c:nth-child(5){animation-delay:calc(var(--mk)*.42s)}
+  .an-e .card:nth-child(6),.an-e .rs-card:nth-child(6),.an-e .pbx-row:nth-child(6),.an-e .ss-item:nth-child(6),.an-e .sxp-c:nth-child(6),.an-e .lg-md-row:nth-child(6),.an-e .ps-item:nth-child(6),.an-e .presc-c:nth-child(6){animation-delay:calc(var(--mk)*.49s)}
+  .an-e .card:nth-child(7),.an-e .rs-card:nth-child(7),.an-e .pbx-row:nth-child(7),.an-e .ss-item:nth-child(7),.an-e .sxp-c:nth-child(7),.an-e .lg-md-row:nth-child(7),.an-e .ps-item:nth-child(7),.an-e .presc-c:nth-child(7){animation-delay:calc(var(--mk)*.56s)}
+  /* the days of a month come up as one sheet, a row of the week at a time */
+  .an-e .month-cell,.an-e .wk-day{animation-name:anFade;animation-duration:calc(var(--mk)*.55s);animation-timing-function:ease-out;animation-fill-mode:both;animation-delay:calc(var(--mk)*.55s)}
+  .an-e .month-cell:nth-child(-n+28),.an-e .wk-day:nth-child(-n+5){animation-delay:calc(var(--mk)*.42s)}
+  .an-e .month-cell:nth-child(-n+21),.an-e .wk-day:nth-child(-n+4){animation-delay:calc(var(--mk)*.32s)}
+  .an-e .month-cell:nth-child(-n+14),.an-e .wk-day:nth-child(-n+3){animation-delay:calc(var(--mk)*.22s)}
+  .an-e .month-cell:nth-child(-n+7),.an-e .wk-day:nth-child(-n+2){animation-delay:calc(var(--mk)*.12s)}
+  /* a game plan fills the way the quarter is played: minute by minute, left to right */
+  .an-e .gp2-tbl td{animation-name:anFade;animation-duration:calc(var(--mk)*.5s);animation-timing-function:ease-out;animation-fill-mode:both}
+  .an-e .gp2-tbl td:nth-child(2){animation-delay:calc(var(--mk)*.10s)}
+  .an-e .gp2-tbl td:nth-child(3){animation-delay:calc(var(--mk)*.17s)}
+  .an-e .gp2-tbl td:nth-child(4){animation-delay:calc(var(--mk)*.24s)}
+  .an-e .gp2-tbl td:nth-child(5){animation-delay:calc(var(--mk)*.31s)}
+  .an-e .gp2-tbl td:nth-child(6){animation-delay:calc(var(--mk)*.38s)}
+  .an-e .gp2-tbl td:nth-child(7){animation-delay:calc(var(--mk)*.45s)}
+  .an-e .gp2-tbl td:nth-child(8){animation-delay:calc(var(--mk)*.52s)}
+  .an-e .gp2-tbl td:nth-child(9){animation-delay:calc(var(--mk)*.59s)}
+  .an-e .gp2-tbl td:nth-child(10){animation-delay:calc(var(--mk)*.66s)}
+  .an-e .gp2-tbl td:nth-child(n+11){animation-delay:calc(var(--mk)*.73s)}
+  /* a floor of shots, a league chart, a scale: drawn, not dropped */
+  .an-e .sc-svg{animation:anRise calc(var(--mk)*.9s) var(--me) calc(var(--mk)*.15s) both}
+  .an-e .lg-grph svg,.an-e .lg-pc svg{animation:anWipe calc(var(--mk)*1.5s) cubic-bezier(.35,.5,.25,1) calc(var(--mk)*.25s) both}
+  .an-e .cmp-fill,.an-e .pyr-b,.an-e .lg-bar>i{transform-origin:left center;animation:anGrowX calc(var(--mk)*1s) var(--me) calc(var(--mk)*.3s) both}
+  .an-e .sx-cell,.an-e .sx-vol{animation:anFade calc(var(--mk)*.7s) ease-out calc(var(--mk)*.45s) both}
+  /* the door: the tiles of the cover and the sign-in card */
+  .cover-tile,.cover-user{animation-name:anUp;animation-duration:calc(var(--mk)*.55s);animation-timing-function:var(--me);animation-fill-mode:both;animation-delay:calc(var(--mk)*.5s)}
+  .cover-tile:nth-child(1),.cover-user:nth-child(1){animation-delay:calc(var(--mk)*.10s)}
+  .cover-tile:nth-child(2),.cover-user:nth-child(2){animation-delay:calc(var(--mk)*.17s)}
+  .cover-tile:nth-child(3),.cover-user:nth-child(3){animation-delay:calc(var(--mk)*.24s)}
+  .cover-tile:nth-child(4),.cover-user:nth-child(4){animation-delay:calc(var(--mk)*.31s)}
+  .cover-tile:nth-child(5),.cover-user:nth-child(5){animation-delay:calc(var(--mk)*.38s)}
+  .cover-tile:nth-child(6),.cover-user:nth-child(6){animation-delay:calc(var(--mk)*.45s)}
+  .cover-logo,.cover-title,.cover-sub{animation:anUp calc(var(--mk)*.7s) var(--me) both}
+  .login-dlg{animation:anRise calc(var(--mk)*.5s) var(--me) both}
+  .rst-pop{animation:anRise calc(var(--mk)*.3s) var(--me) both}
+  /* what can be opened lifts a little under the hand */
+  .pdb-card:hover,.day-card:hover,.cover-tile:hover{transform:translateY(-3px)}
+  .cover-tile{transition:transform .25s var(--me),box-shadow .25s ease,border-color .25s ease,background-color .25s ease}
   /* a report opening, and going back to the list */
   .rep-enter{animation:anUp calc(var(--mk)*.55s) var(--me) both}
   /* a dialog and the side panel */
@@ -24711,7 +24775,7 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
   body.app-edit .view-enter,body.app-edit .view-enter *,body.app-edit .rep-enter,body.app-edit .rep-enter *,
   body.app-edit .lgg-body *{animation:none!important}
 }
-@media print{ .lgg,.lgg *,.prf,.prf *,.view-enter,.view-enter *,.rep-enter,.rep-enter *{animation:none!important} .an-wait{opacity:1!important} }
+@media print{ .lgg,.lgg *,.prf,.prf *,.view-enter,.view-enter *,.rep-enter,.rep-enter *,.an-e,.an-e *,.an-hold,.an-hold *{animation:none!important} .an-wait{opacity:1!important} }
 body.app-edit .an-wait{opacity:1!important}
 .prf-in{--lgh:#c6a15b;--lga:#4a86d8;border:1px solid var(--line,#e4e7ec);border-radius:14px;padding:12px 16px 14px;margin:0 0 16px;background:var(--panel,#fff)}
 .prf-strip{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
