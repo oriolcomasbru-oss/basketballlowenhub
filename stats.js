@@ -826,6 +826,8 @@
       var row = el("tr", r.cls || null);
       (r.cells || r).forEach(function (c) {
         var td = el("td", (c && c.cls) || null, c && c.v != null ? c.v : c);
+        /* a small mark after the text: a rank, in the colour of what it ranks */
+        if (c && typeof c === "object" && c.sup != null) td.appendChild(el("sup", c.supCls || null, String(c.sup)));
         /* a band row is one cell across the whole table; the page's own sorter already
            knows one of those is a heading and sorts the block under it, not the band */
         if (c && c.span > 1) td.colSpan = c.span;
@@ -3358,12 +3360,13 @@
       mine.forEach(function (r) { grouped.push({ set: r }); });
     });
 
-    /* THE FIVE BEST AND THE FIVE WORST, MARKED WHERE THEY STAND. Ranked on points per
+    /* THE EIGHT BEST AND THE EIGHT WORST, MARKED WHERE THEY STAND - a small number after
+       the name, green for the best and red for the worst, and nothing else on the row. Ranked on points per
        possession over the season, among the sets called often enough to be ranked at
        all - the same cut as the colour: under it a season figure is an anecdote. */
     var rankable = rows.filter(function (r) { return r.n >= MIN; })
       .sort(function (a, b) { return (b.pts / b.n) - (a.pts / a.n) || (b.n - a.n); });
-    var nMark = Math.min(5, Math.floor(rankable.length / 2));
+    var nMark = Math.min(8, Math.floor(rankable.length / 2));
     var bestAt = {}, worstAt = {};
     rankable.slice(0, nMark).forEach(function (r, i) { bestAt[r.k] = i + 1; });
     rankable.slice(-nMark).reverse().forEach(function (r, i) { if (nMark) worstAt[r.k] = i + 1; });
@@ -3379,8 +3382,8 @@
       }
       var r = g.set;
       var ppp = r.n ? r.pts / r.n : NaN;
-      var cells = [bestAt[r.k] ? { v: r.k + "   BEST " + bestAt[r.k], cls: "tr-best" }
-        : worstAt[r.k] ? { v: r.k + "   WORST " + worstAt[r.k], cls: "tr-worst" } : r.k];
+      var cells = [bestAt[r.k] ? { v: r.k, sup: bestAt[r.k], supCls: "tr-sup good", cls: "tr-supc" }
+        : worstAt[r.k] ? { v: r.k, sup: worstAt[r.k], supCls: "tr-sup bad", cls: "tr-supc" } : r.k];
       var seq = [];
       games.forEach(function (gm, gi) {
         var c = r.per[gi];
@@ -3823,39 +3826,75 @@
       hl.appendChild(hsec);
     }
 
-    /* THE FIVE BEST AND THE FIVE WORST SETS, AS A RANKING. One best and one worst said
-       nothing about the second, and the worst was usually a set run twice. A set needs
-       a handful of runs to be ranked at all. */
+    /* THE SETS, RANKED FOUR WAYS, SIDE BY SIDE. The eight that return the most and the
+       eight that return the least say where a set stands; the other two columns say which
+       way it is moving - the five that have gained the most and the five that have lost
+       the most, the last games each was run in against the ones before. A set needs a
+       handful of runs to be ranked at all, and a handful on each side of the split to be
+       said to have moved: two possessions are not a trend. */
     if (sets4 && sets4.length) {
-      var minRuns = 4;
+      var minRuns = 4, minSide = 3;
       var ranked = sets4.filter(function (x) { return x.n >= minRuns; })
         .map(function (x) { return { k: x.k, n: x.n, ppp: x.pts / x.n }; })
         .sort(function (a, b) { return (b.ppp - a.ppp) || (b.n - a.n); });
+      /* how each set has moved: its runs in the last games it was called in, added up,
+         against its runs in the games before them, added up */
+      var moved = [];
+      sets4.forEach(function (x) {
+        var gs = Object.keys(x.per || {}).map(Number).sort(function (a, b) { return a - b; });
+        if (gs.length < 3) return;
+        var k = Math.min(3, Math.floor(gs.length / 2));
+        var sum = function (list) { var n = 0, p = 0;
+          list.forEach(function (gi) { n += x.per[gi].n; p += x.per[gi].pts; });
+          return { n: n, p: p }; };
+        var a = sum(gs.slice(-k)), b = sum(gs.slice(0, gs.length - k));
+        if (a.n < minSide || b.n < minSide) return;
+        moved.push({ k: x.k, n: x.n, now: a.p / a.n, was: b.p / b.n, d: a.p / a.n - b.p / b.n,
+          games: k, nNow: a.n, nWas: b.n });
+      });
+      var upList = moved.filter(function (x) { return x.d > 0.005; })
+        .sort(function (a, b) { return b.d - a.d; }).slice(0, 5);
+      var downList = moved.filter(function (x) { return x.d < -0.005; })
+        .sort(function (a, b) { return a.d - b.d; }).slice(0, 5);
       if (ranked.length >= 2) {
-        var nTop = Math.min(5, Math.floor(ranked.length / 2) || 1);
+        var nTop = Math.min(8, Math.floor(ranked.length / 2) || 1);
         var rsec = el("div", "tr-top");
-        rsec.appendChild(el("div", "sx-h", "Sets — best " + nTop + " and worst " + nTop));
-        var two = el("div", "tr-rank2");
-        var col = function (title, list, cls) {
+        rsec.appendChild(el("div", "sx-h", "Sets — where they stand and where they are heading"));
+        var four = el("div", "tr-rank2 tr-rank4");
+        var topPpp = Math.max.apply(null, ranked.map(function (x) { return x.ppp; })) || 1;
+        var topD = Math.max.apply(null, moved.map(function (x) { return Math.abs(x.d); }).concat([0.01]));
+        var col = function (title, list, cls, row) {
           var c = el("div", "tr-rank " + cls);
           c.appendChild(el("div", "tr-rank-h", title));
-          var top = Math.max.apply(null, ranked.map(function (x) { return x.ppp; })) || 1;
+          if (!list.length) c.appendChild(el("div", "tr-rank-e", "None yet — not enough runs on both sides."));
           list.forEach(function (x, i) {
             var r = el("div", "tr-rank-r");
             r.appendChild(el("span", "tr-rank-n", String(i + 1)));
             r.appendChild(el("span", "tr-rank-k", x.k));
-            var bar = el("span", "tr-rank-bar"); var fill = el("i"); fill.style.width = Math.round(100 * x.ppp / top) + "%"; bar.appendChild(fill);
+            var v = row(x);
+            r.appendChild(el("b", "tr-rank-v", v.v));
+            var bar = el("span", "tr-rank-bar"); var fill = el("i");
+            fill.style.width = Math.max(3, Math.round(100 * v.w)) + "%"; bar.appendChild(fill);
             r.appendChild(bar);
-            r.appendChild(el("b", "tr-rank-v", f2(x.ppp)));
-            r.appendChild(el("span", "tr-rank-c", x.n + " runs"));
+            r.appendChild(el("span", "tr-rank-c", v.c));
+            r.title = x.k + " — " + v.t;
             c.appendChild(r);
           });
           return c;
         };
-        two.appendChild(col("Best — points per possession", ranked.slice(0, nTop), "good"));
-        two.appendChild(col("Worst", ranked.slice(-nTop).reverse(), "bad"));
-        rsec.appendChild(two);
-        rsec.appendChild(el("div", "sx-sub", "Sets run at least " + minRuns + " times. The bar is each set against the best one."));
+        var stand = function (x) { return { v: f2(x.ppp), w: x.ppp / topPpp, c: x.n + " runs",
+          t: f2(x.ppp) + " points per possession over " + x.n + " runs" }; };
+        var move = function (x) { return { v: (x.d > 0 ? "+" : "−") + f2(Math.abs(x.d)), w: Math.abs(x.d) / topD,
+          c: f2(x.was) + " → " + f2(x.now),
+          t: f2(x.was) + " over " + x.nWas + " runs before, " + f2(x.now) + " over " + x.nNow +
+             " runs in the last " + x.games + " game" + (x.games === 1 ? "" : "s") + " it was run in" }; };
+        four.appendChild(col("Best " + nTop + " — points per possession", ranked.slice(0, nTop), "good", stand));
+        four.appendChild(col("Worst " + nTop, ranked.slice(-nTop).reverse(), "bad", stand));
+        four.appendChild(col("Improved the most", upList, "good", move));
+        four.appendChild(col("Dropped the most", downList, "bad", move));
+        rsec.appendChild(four);
+        rsec.appendChild(el("div", "sx-sub", "Ranked: sets run at least " + minRuns + " times, the bar is each set against the best one. " +
+          "Moved: the last games a set was run in (up to three) against the ones before, at least " + minSide + " runs on each side."));
         hl.appendChild(rsec);
       }
     }
