@@ -741,14 +741,29 @@ async function whoIs(token) {
   if (!token) return null;
   const hit = whoCache[token];
   if (hit && Date.now() - hit.at < WHO_TTL) return hit.who;
-  const r = await fetch(SB_URL + "/rest/v1/rpc/me", {
-    method: "POST",
-    headers: { "content-type": "application/json", apikey: SB_KEY, authorization: "Bearer " + SB_KEY },
-    body: JSON.stringify({ p_token: token })
-  });
-  let j = null;
-  try { j = await r.json(); } catch (e) {}
-  if (!r.ok || !j || j.ok !== true) return null;
+  /* "THE SESSION COULD NOT BE CHECKED" IS NOT "NOT SIGNED IN".
+     One slow or refused answer from the database - a busy moment, a limit hit by several
+     of these calls landing together - used to be read as nobody being signed in, and the
+     page was told to sign in while it was. That is what "sign in to read this" on a game
+     plan was. Only an answer that actually says the token is not a session is taken as
+     that; anything else is tried once more and then reported as what it is, a check that
+     failed, which the page can try again. */
+  let r = null, j = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    j = null;
+    try {
+      r = await fetch(SB_URL + "/rest/v1/rpc/me", {
+        method: "POST",
+        headers: { "content-type": "application/json", apikey: SB_KEY, authorization: "Bearer " + SB_KEY },
+        body: JSON.stringify({ p_token: token })
+      });
+      try { j = await r.json(); } catch (e) {}
+    } catch (e) { r = null; }
+    if (r && r.ok && j) break;
+    if (attempt === 0) await new Promise(res => setTimeout(res, 350));
+  }
+  if (!r || !r.ok || !j) throw new Error("the session check answered " + (r ? r.status : "nothing"));
+  if (j.ok !== true) return null;
   const scope = String(j.scope || j.role || "").toLowerCase();
   const who = { username: j.username || "", staff: scope === "coach" || scope === "admin", scope: scope };
   whoCache[token] = { at: Date.now(), who: who };

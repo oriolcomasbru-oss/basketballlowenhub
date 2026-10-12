@@ -1959,7 +1959,7 @@
   function monthIndex(text) {
     var low = (text || "").toLowerCase();
     for (var m = 0; m < 12; m++) {
-      var name = new Date(2020, m, 15).toLocaleDateString(undefined, { month: "long" }).toLowerCase();
+      var name = new Date(2020, m, 15).toLocaleDateString("en-GB", { month: "long" }).toLowerCase();
       if (name && low.indexOf(name) >= 0) return m;
     }
     return -1;
@@ -2127,7 +2127,7 @@
   }
   function monthLabel(m) {
     var d = new Date(m + "-15T12:00:00");
-    return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    return d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
   }
 
   /* ---- little chart ---------------------------------------------------- */
@@ -2475,7 +2475,10 @@
             (isFinite(uv) ? UND.fmt(uv) : "—") + "</span></div>";
         }
         tip.innerHTML = '<div class="tl-th">' + (p.kind === "game" ? "◆ " : "") + (p.label || p.d) + "</div>" + rows +
-          '<div class="tl-tf">' + (p.s.poss ? (p.s.poss + " possessions") : "no 5x5 \u2014 not counted") +
+          /* a chart whose series carry their own possession counts says them on each line
+             above; "no 5x5" belongs to the measures that need a count of the whole day */
+          '<div class="tl-tf">' + (p.s.poss ? (p.s.poss + " possessions")
+            : (series.some(function (s) { return !!s.n; }) ? (p.kind === "game" ? "game" : "training") : "no 5x5 \u2014 not counted")) +
           (window.LowenOpenDay ? " \u00b7 click to open it" : "") + "</div>";
         tip.style.display = "block";
         var rr = svg.getBoundingClientRect();
@@ -3337,6 +3340,16 @@
       mine.forEach(function (r) { grouped.push({ set: r }); });
     });
 
+    /* THE FIVE BEST AND THE FIVE WORST, MARKED WHERE THEY STAND. Ranked on points per
+       possession over the season, among the sets called often enough to be ranked at
+       all - the same cut as the colour: under it a season figure is an anecdote. */
+    var rankable = rows.filter(function (r) { return r.n >= MIN; })
+      .sort(function (a, b) { return (b.pts / b.n) - (a.pts / a.n) || (b.n - a.n); });
+    var nMark = Math.min(5, Math.floor(rankable.length / 2));
+    var bestAt = {}, worstAt = {};
+    rankable.slice(0, nMark).forEach(function (r, i) { bestAt[r.k] = i + 1; });
+    rankable.slice(-nMark).reverse().forEach(function (r, i) { if (nMark) worstAt[r.k] = i + 1; });
+
     var body = [];
     grouped.forEach(function (g) {
       if (g.band) {
@@ -3348,7 +3361,8 @@
       }
       var r = g.set;
       var ppp = r.n ? r.pts / r.n : NaN;
-      var cells = [r.k];
+      var cells = [bestAt[r.k] ? { v: r.k + "   BEST " + bestAt[r.k], cls: "tr-best" }
+        : worstAt[r.k] ? { v: r.k + "   WORST " + worstAt[r.k], cls: "tr-worst" } : r.k];
       var seq = [];
       games.forEach(function (gm, gi) {
         var c = r.per[gi];
@@ -3871,9 +3885,9 @@
       dash.appendChild(tdCard("Transition defense · DER", "the line is the last five sessions together · small dots trainings, diamonds games · days under four possessions left out — lower is better",
         tKpi,
         timelineChart("", "", tb.pts, [
-          { name: "TAG", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2,
+          { name: "TAG: after our long shot", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2,
             n: function (s) { return s.tagN; }, roll: function (s) { return [s.tagP, s.tagN]; } },
-          { name: "BACK", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2,
+          { name: "BACK: after our shot at the rim or a turnover", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2,
             n: function (s) { return s.backN; }, roll: function (s) { return [s.backP, s.backN]; } } ], tOpt)));
     }
     var heat = tdPhaseHeat(games);

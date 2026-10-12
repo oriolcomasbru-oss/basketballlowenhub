@@ -3391,7 +3391,7 @@ function nowCls(iso){ return (isToday(iso)?" is-today":"") + (isThisWeek(iso)?" 
 function nowHead(iso){ return isToday(iso)? " is-now" : (isThisWeek(iso)? " in-now" : ""); }
 function addDays(iso,n){ const d=new Date(iso+"T00:00:00"); d.setDate(d.getDate()+n); return isoLocal(d); }
 function shiftMonth(ym,n){ let [y,m]=ym.split("-").map(Number); m+=n; while(m<1){m+=12;y--;} while(m>12){m-=12;y++;} return y+"-"+String(m).padStart(2,"0"); }
-function weekDays(mon){ return DAYK.map((k,i)=>{ const iso=addDays(mon,i); return {k, iso, label:new Date(iso+"T00:00:00").toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"})}; }); }
+function weekDays(mon){ return DAYK.map((k,i)=>{ const iso=addDays(mon,i); return {k, iso, label:new Date(iso+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}; }); }
 
 /* THE PAGE STAYS WHERE THE HAND IS.
    Almost everything here redraws by emptying a block and building it again: a filter
@@ -3569,7 +3569,7 @@ function cycleFor(anchor){
   return {mode:"cycle",start,end,days};
 }
 function mdLabel(iso,cyc){ if(state.games.some(g=>g.date===iso&&isCycleGame(g))) return "GAME"; if(cyc.mode==="cycle"){ const diff=Math.round((new Date(cyc.end)-new Date(iso))/86400000); return "MD-"+diff; } return ""; }
-function fmtDayShort(iso){ return new Date(iso+"T00:00:00").toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"}); }
+function fmtDayShort(iso){ return new Date(iso+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"}); }
 function parseTime(t){ const m=(t||"11:15").match(/(\d{1,2}):(\d{2})/); return m?(+m[1])*60+(+m[2]):675; }
 function fmtTime(mins){ let hh=Math.floor(mins/60)%24, mm=mins%60, ap=hh>=12?"PM":"AM", h12=hh%12; if(h12===0)h12=12; return h12+":"+String(mm).padStart(2,"0")+" "+ap; }
 
@@ -3719,7 +3719,7 @@ function planYear(){
     const row=h("div",{class:"pyr-m"+(isThisMonth(ym)?" now":"")+((state.plan.monthCursor===ym)?" on":"")});
     row.appendChild(h("button",{class:"pyr-l", title:"Open this month",
       onclick:()=>{ state.plan.monthCursor=ym; persist(); renderPlan(); }},
-      new Date(y,m-1,1).toLocaleDateString(undefined,{month:"short"})));
+      new Date(y,m-1,1).toLocaleDateString("en-GB",{month:"short"})));
     const strip=h("div",{class:"pyr-d"});
     let ng=0;
     for(let d=1; d<=dim; d++){
@@ -3825,7 +3825,7 @@ function planHome(){
     h("div",{class:"pn-foot"},
       h("span",{class:"cal-syncing", style:"display:none"},"syncing…")));
   const mp=h("section",{class:"pn pn-m"},
-    _pnHead(new Date(cur+"-01T00:00:00").toLocaleDateString(undefined,{month:"long",year:"numeric"}),
+    _pnHead(new Date(cur+"-01T00:00:00").toLocaleDateString("en-GB",{month:"long",year:"numeric"}),
       null, monthNav(cur)),
     monthlyView({bare:true}));
   wrap.appendChild(h("div",{class:"phome-two"}, yp, mp));
@@ -4228,7 +4228,7 @@ function sessionView(){
   jump.addEventListener("change",()=>{ if(jump.value){ state.ui.sessionDate=jump.value; state.ui.sessionIdx=0; persist(); renderPlan(); } });
   wrap.appendChild(h("div",{class:"sess-head"},
     h("button",{class:"btn icon",onclick:()=>{state.ui.sessionDate=addDays(iso,-1);state.ui.sessionIdx=0;persist();renderPlan();}},"‹"),
-    h("div",{class:"sh-date"}, new Date(iso+"T00:00:00").toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long",year:"numeric"}), gms.length? h("span",{class:"ps-vs"}, " · GAME "+(gms[0].venue==="Home"?"vs ":"@ "), _lgOppCrest(gms[0],"opp big"), h("span",{}, gms[0].opponent)) : null),
+    h("div",{class:"sh-date"}, new Date(iso+"T00:00:00").toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"}), gms.length? h("span",{class:"ps-vs"}, " · GAME "+(gms[0].venue==="Home"?"vs ":"@ "), _lgOppCrest(gms[0],"opp big"), h("span",{}, gms[0].opponent)) : null),
     h("button",{class:"btn icon",onclick:()=>{state.ui.sessionDate=addDays(iso,1);state.ui.sessionIdx=0;persist();renderPlan();}},"›"),
     h("label",{class:"jump-lbl"},"Jump to ", jump),
     h("div",{class:"spacer"}),
@@ -4396,14 +4396,14 @@ function seasonView(){
     const mgames=planGames.filter(g=>g.date.slice(0,7)===ym);
     const msess=Object.keys(sess).filter(d=>d.slice(0,7)===ym).reduce((a,d)=>{ const v=sess[d]; return a+(Array.isArray(v)?v.length:(v?1:0)); },0);
     const card=h("div",{class:"season-mcard"+(isThisMonth(ym)?" cur-month":"")});
-    const title=new Date(y,mo-1,1).toLocaleDateString(undefined,{month:"long",year:"numeric"});
+    const title=new Date(y,mo-1,1).toLocaleDateString("en-GB",{month:"long",year:"numeric"});
     card.appendChild(h("button",{class:"sm-head", title:"Open this month", onclick:()=>{ state.plan.monthCursor=ym; state.ui.planTab="home"; persist(); renderPlan();
         const el=document.querySelector("#viewPlan .month-grid"); if(el) el.scrollIntoView({block:"center"}); }},
       h("span",{class:"sm-name"}, title), h("span",{class:"sm-cnt"}, mgames.length+(mgames.length===1?" game":" games"))));
     if(mgames.length){ mgames.forEach(g=>{ const d=new Date(g.date+"T00:00:00");
       card.appendChild(h("button",{class:"sm-game"+(g.date===todayISO()?" today":"")+nowCls(g.date), title:"Open week in Game-to-game",
         onclick:()=>{ state.plan.weekStart=g.date; state.ui.planTab="cycle"; persist(); renderPlan(); }},
-        h("span",{class:"smg-d"}, d.toLocaleDateString(undefined,{weekday:"short",day:"numeric"})),
+        h("span",{class:"smg-d"}, d.toLocaleDateString("en-GB",{weekday:"short",day:"numeric"})),
         h("span",{class:"smg-vs"}, g.home?"vs ":"@ "),
         _lgOppCrest(g), _lgMovedTag(g),
         h("span",{class:"smg-opp"}, g.opponent),
@@ -4430,7 +4430,7 @@ function monthlyView(opts){
   const wrap=h("div",{class:"monthly"+(O.bare?" bare":"")});
   if(!O.bare) wrap.appendChild(h("div",{class:"week-nav"},
     h("button",{class:"btn icon",onclick:()=>{state.plan.monthCursor=shiftMonth(cur,-1);persist();renderPlan();}},"‹"),
-    h("div",{class:"week-label"}, first.toLocaleDateString(undefined,{month:"long",year:"numeric"})),
+    h("div",{class:"week-label"}, first.toLocaleDateString("en-GB",{month:"long",year:"numeric"})),
     h("button",{class:"btn icon",onclick:()=>{state.plan.monthCursor=shiftMonth(cur,1);persist();renderPlan();}},"›"),
     h("button",{class:"btn"+(isThisMonth(cur)?" is-now":""),onclick:()=>{state.plan.monthCursor=todayISO().slice(0,7);persist();renderPlan();}},"This month")));
   const cal=h("div",{class:"month-grid"});
@@ -5014,7 +5014,7 @@ function calMonth(){
   const wrap=h("div",{});
   wrap.appendChild(h("div",{class:"week-nav"},
     h("button",{class:"btn icon",onclick:()=>{state.plan.monthCursor=shiftMonth(cur,-1);persist();renderCal();}},"‹"),
-    h("div",{class:"week-label", style:"min-width:170px;text-align:center"}, first.toLocaleDateString(undefined,{month:"long",year:"numeric"})),
+    h("div",{class:"week-label", style:"min-width:170px;text-align:center"}, first.toLocaleDateString("en-GB",{month:"long",year:"numeric"})),
     h("button",{class:"btn icon",onclick:()=>{state.plan.monthCursor=shiftMonth(cur,1);persist();renderCal();}},"›"),
     h("button",{class:"btn"+(isThisMonth(cur)?" is-now":""),onclick:()=>{state.plan.monthCursor=todayISO().slice(0,7);persist();renderCal();}},"Today")));
   const cal=h("div",{class:"month-grid"});
@@ -5369,7 +5369,7 @@ function calYear(){
   if(!keys.length){ wrap.appendChild(h("div",{class:"empty-state"},"No games yet — DB_Games has not been read.")); return wrap; }
   const grid=h("div",{class:"year-grid"});
   keys.forEach(k=>{
-    const [yy,mm]=k.split("-"); const label=new Date(+yy,+mm-1,1).toLocaleDateString(undefined,{month:"long",year:"numeric"});
+    const [yy,mm]=k.split("-"); const label=new Date(+yy,+mm-1,1).toLocaleDateString("en-GB",{month:"long",year:"numeric"});
     const col=h("div",{class:"year-month"+(isThisMonth(k)?" cur-month":"")},
       h("button",{class:"ym-head", onclick:()=>{ state.plan.monthCursor=k; state.ui.calView="month"; persist(); renderCal(); }}, label+" →"));
     byMonth[k].forEach(g=>col.appendChild(h("div",{class:"ym-row comp-"+(g.competition||"x")+nowCls(g.date)},
@@ -5811,7 +5811,7 @@ async function openAdmin(){
   if(!SB_TOKEN){ toast("Sign in again"); return; }
   const wrap=h("div",{class:"admin"});
   wrap.appendChild(h("h3",{},"Permissions & users"));
-  const body=h("div",{}, h("div",{class:"ld"},"Cargando…", h("span",{class:"ld-bar"})));
+  const body=h("div",{}, h("div",{class:"ld"},"Loading…", h("span",{class:"ld-bar"})));
   wrap.appendChild(body);
   wrap.appendChild(h("div",{class:"dialog-foot"}, h("button",{class:"btn primary", onclick:closeDialog},"Done")));
   openDialog(wrap);
@@ -5948,7 +5948,7 @@ async function refreshAdmin(body){
     body.appendChild(h("div",{class:"adm-user"},
       h("div",{class:"adm-uname"}, a.username, a.must_change?h("span",{class:"adm-badge"},"must change password"):null, a.role==="admin"?h("span",{class:"adm-badge admin"},"admin"):null),
       permGrid(a),
-      h("div",{class:"adm-pwrow"}, resetBtn(a), a.username==="Oriol"?null:removeBtn(a), h("span",{class:"adm-last"}, a.last_login?("last: "+new Date(a.last_login).toLocaleString()):"never signed in"))));
+      h("div",{class:"adm-pwrow"}, resetBtn(a), a.username==="Oriol"?null:removeBtn(a), h("span",{class:"adm-last"}, a.last_login?("last: "+new Date(a.last_login).toLocaleString("en-GB")):"never signed in"))));
   });
   // Players
   body.appendChild(h("div",{class:"adm-secttitle"},"Players (Players Hub)  ", h("button",{class:"btn", onclick:()=>addAccountDlg("player",body)},"＋ Add player")));
@@ -5989,7 +5989,7 @@ async function refreshAdmin(body){
     box.appendChild(row("Screens", SECT_KEYS.map(k=>[k,SECT_LABELS[k]||k]), sects,
       "which tabs exist for a player at all"));
     box.appendChild(row("Inside a pre game report", PLAYER_BLOCKS, blocks,
-      "and only for the games you set to Publicado"));
+      "and only for the games you set to Published"));
     btn.disabled=true;
     btn.onclick=async ()=>{
       btn.disabled=true; note.textContent="Saving…";
@@ -6012,13 +6012,13 @@ async function refreshAdmin(body){
   // Drive sources
   body.appendChild(h("div",{class:"adm-secttitle"},"Drive connections"));
   sources.forEach(s=>{ const inp=h("input",{class:"adm-src"}); inp.value=s.sheet_id||"";
-    inp.addEventListener("change",async ()=>{ try{ await sbrpc("admin_set_source",{p_token:SB_TOKEN,p_key:s.key,p_sheet_id:inp.value.trim(),p_label:s.label}); toast("Guardado"); }catch(e){ toast("Error"); } });
+    inp.addEventListener("change",async ()=>{ try{ await sbrpc("admin_set_source",{p_token:SB_TOKEN,p_key:s.key,p_sheet_id:inp.value.trim(),p_label:s.label}); toast("Saved"); }catch(e){ toast("Error"); } });
     body.appendChild(h("div",{class:"adm-srcrow"}, h("span",{class:"adm-srck"}, s.label||s.key), inp)); });
   // Session history
   body.appendChild(h("div",{class:"adm-secttitle"},"Session history"));
   const logbox=h("div",{class:"adm-log"});
   if(!log.length) logbox.appendChild(h("div",{class:"empty-state"},"No sessions yet."));
-  log.forEach(e=>logbox.appendChild(h("div",{class:"adm-logrow"}, h("b",{},e.username), h("span",{}, new Date(e.ts).toLocaleString()))));
+  log.forEach(e=>logbox.appendChild(h("div",{class:"adm-logrow"}, h("b",{},e.username), h("span",{}, new Date(e.ts).toLocaleString("en-GB")))));
   body.appendChild(logbox);
 
   /* Usage. This panel is the owner's and nobody else's - the admin screen is already
@@ -6079,7 +6079,7 @@ async function renderUsage(body, accounts, log){
         h("td",{title:Object.keys(r.vids).map(k=>(r.vids[k].title||k)+" \u00d7"+r.vids[k].n
           +(r.vids[k].where?(" ("+r.vids[k].where+")"):"")).join("\n")},
           r.plays? (r.plays+(r.vidn>1? (" / "+r.vidn) : "")) : "\u2014"),
-        h("td",{class:"l use-last"}, r.last? new Date(r.last).toLocaleString() : "never"));
+        h("td",{class:"l use-last"}, r.last? new Date(r.last).toLocaleString("en-GB") : "never"));
       t.appendChild(row);
     });
     box.appendChild(t);
@@ -6350,7 +6350,7 @@ function seasonGrid(kind){
   const wanted=[];
   const DXg=docIndex(), TXg=tagIndex();
   const grid=h("div",{class:"year-grid"});
-  keys.forEach(k=>{ const [yy,mm]=k.split("-"); const label=new Date(+yy,+mm-1,1).toLocaleDateString(undefined,{month:"long",year:"numeric"});
+  keys.forEach(k=>{ const [yy,mm]=k.split("-"); const label=new Date(+yy,+mm-1,1).toLocaleDateString("en-GB",{month:"long",year:"numeric"});
     let items=map[k];
     items=items.filter(x=> x.type==="training" || ["BBL","CUP"].includes(x.g.competition));
     if(kind==="oppscout"||kind==="gameplan") items=items.filter(x=>x.type==="game");
@@ -6444,7 +6444,7 @@ function trainingCard(iso, idx){
   const wrap=h("div",{});
   wrap.appendChild(h("div",{class:"plan-head"},
     h("button",{class:"btn",onclick:()=>{ state.ui.ts={mode:"overview"}; renderTeamScout(); }},"‹ Back"),
-    h("div",{class:"week-label"+nowHead(iso)}, new Date(iso+"T00:00:00").toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long",year:"numeric"})+" · Training"+(se?(" · "+(se.label||"")):""))));
+    h("div",{class:"week-label"+nowHead(iso)}, new Date(iso+"T00:00:00").toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})+" · Training"+(se?(" · "+(se.label||"")):""))));
   /* A practice has nothing to confirm by hand: it is complete when the sheet is
      built and the tagging file for that day exists. The second half is a
      question for Drive, so the bar paints straight away with what is already
@@ -6589,7 +6589,7 @@ function gameCard(gameId, from){
       _lgOppCrest(g,"opp big"),
       h("span",{}, (g.opponent||"")+(g.competition?(" · "+g.competition):"")+(g.result?(" · "+g.result):""))));
   wrap.appendChild(head);
-  const body=h("div",{}, h("div",{class:"ld"},"Cargando informe…", h("span",{class:"ld-bar"})));
+  const body=h("div",{}, h("div",{class:"ld"},"Loading the report…", h("span",{class:"ld-bar"})));
   body.__head=head;
   wrap.appendChild(body);
   loadScout(body, g, key, kind, from);
@@ -6696,17 +6696,17 @@ function renderScout(body, g, key, kind, from, rep){
      as Oculto; only "hidden" and "published" are ever written from here, so nothing that
      already depends on the old values breaks. */
   const share=h("select",{class:"sess-goal"});
-  [["hidden","Oculto"],["published","Publicado"]].forEach(([v,l])=>{
+  [["hidden","Hidden"],["published","Published"]].forEach(([v,l])=>{
     const o=h("option",{value:v},l);
     if(v==="published" ? rep.share_state==="published" : rep.share_state!=="published") o.selected=true;
     share.appendChild(o); });
   share.disabled=!mayEdit;
-  share.title="Publicado: every player account can open this game. Oculto: staff only.";
+  share.title="Published: every player account can open this game. Hidden: staff only.";
   share.addEventListener("change",async ()=>{ try{ const r=await sbrpc("set_share",{p_token:SB_TOKEN,p_key:key,p_state:share.value}); if(r&&r.ok){ rep.share_state=share.value; try{ repStatSet(key, rep); }catch(e){} toast(share.value==="published"?"Players can see this game":"Hidden from players"); } else toast((r&&r.error)||"Save the report first"); }catch(e){ toast("Save the report first"); } });
   const editBtn = mayEdit ? h("button",{class:"btn"+(EDIT_MODE?" primary":"")}, EDIT_MODE?"✓ Done editing":"✎ Edit") : null;
   if(editBtn) editBtn.onclick=()=>{ setEditMode(!EDIT_MODE); renderScout(body,g,key,kind,from,rep); };
   const saveBtn = mayEdit ? h("button",{class:"btn primary"},"Save") : null;
-  if(saveBtn) saveBtn.onclick=async ()=>{ if(!SB_TOKEN){toast("Sign in first");return;} try{ const r=await sbrpc("save_report",{p_token:SB_TOKEN,p_key:key,p_kind:kind,p_opponent:g.opponent,p_date:g.date,p_data:rep.data,p_html:rep.html||""}); if(r&&r.ok) repStatSet(key, rep); toast(r&&r.ok?"Guardado ✓":((r&&r.error)||"Error")); }catch(e){ toast("Error: "+e.message); } };
+  if(saveBtn) saveBtn.onclick=async ()=>{ if(!SB_TOKEN){toast("Sign in first");return;} try{ const r=await sbrpc("save_report",{p_token:SB_TOKEN,p_key:key,p_kind:kind,p_opponent:g.opponent,p_date:g.date,p_data:rep.data,p_html:rep.html||""}); if(r&&r.ok) repStatSet(key, rep); toast(r&&r.ok?"Saved ✓":((r&&r.error)||"Error")); }catch(e){ toast("Error: "+e.message); } };
   if(g && g.__older && mayEdit){
     /* both reports exist: say so and let the staff choose, rather than choosing for them */
     const older=g.__older;
@@ -7458,7 +7458,7 @@ function renderReportCard(sec,it,ii,canEd,save,reRender,ctx){
     const lab=h("input",{class:"rs-card-title-in"}); lab.value=it.t||""; lab.addEventListener("input",()=>{it.t=lab.value; save();});
     head.appendChild(lab);
     head.appendChild(h("button",{class:"rs-card-w", title:"Ancho: 1 o 2 columnas", onclick:()=>{ it.w=(it.w==2?1:2); save(); reRender(); }}, it.w==2? "⇔" : "⬌"));
-    head.appendChild(h("button",{class:"rs-card-x", title:"Quitar apartado", onclick:()=>{ sec.items.splice(ii,1); save(); reRender(); }},"✕"));
+    head.appendChild(h("button",{class:"rs-card-x", title:"Remove section", onclick:()=>{ sec.items.splice(ii,1); save(); reRender(); }},"✕"));
   } else head.appendChild(h("span",{class:"rs-card-title"}, it.t||""));
   const val=h("div",{class:"rs-card-val rs-rich", contenteditable: canEd?"true":"false", "data-ph": canEd?"Write here…":""});
   val.innerHTML = _rtNorm(it.v);
@@ -9772,7 +9772,9 @@ function _preFixtures(L){
     const ph=_lgPhase(g);
     const oppId=home? (g.awayId||g.away) : (g.homeId||g.home);
     const diff=sc? (sc.us-sc.them) : null;
-    tbl.appendChild(h("tr",{class:(i===nextI?"nextg ":"")+(sc? (sc.win?"w":"l") : "")},
+    const canOpen=!!(sc && g.id && ph!=="euro");
+    tbl.appendChild(h("tr",{class:(i===nextI?"nextg ":"")+(sc? (sc.win?"w":"l") : "")+(canOpen?" open":""),
+        title:canOpen?"Open the game":null, onclick:canOpen? (()=>_lgGameOpen(g)) : null},
       h("td",{class:"l lg-fix-d", title:(g.utc? ("the league sends "+g.utc+" — shown in German time") : "")},
         (g.date||"")+(g.time? ("  "+g.time) : "")),
       h("td",{class:"lg-fix-ha"}, home? "vs" : "@"),
@@ -12387,7 +12389,7 @@ function renderPlaybookCard(sec,it,ii,canEd,save,reRender,ctx,L){
       row.appendChild(box);
       const act=h("div",{class:"pbx-act"});
       if(canEd){
-        const x=h("button",{class:"pbx-x", title:"Quitar"},"✕");
+        const x=h("button",{class:"pbx-x", title:"Remove"},"✕");
         x.addEventListener("click",()=>{ it.pbSets.splice(pi,1); save(); drawPicks(); drawList(); });
         act.appendChild(x);
         /* the adjustment the staff wrote is where he is reading when he decides this set
@@ -12454,7 +12456,7 @@ function renderPlaybookCard(sec,it,ii,canEd,save,reRender,ctx,L){
       list.appendChild(row);
     });
     if(it.pbHide.length && canEd){
-      const back=h("button",{class:"pbx-restore"},"Recuperar "+it.pbHide.length+" quitado"+(it.pbHide.length===1?"":"s"));
+      const back=h("button",{class:"pbx-restore"},"Restore "+it.pbHide.length+" removed");
       back.addEventListener("click",()=>{ it.pbHide.length=0; save(); drawList(); });
       list.appendChild(back);
     }
@@ -12859,7 +12861,8 @@ function _gpOnFloorQ(plan, side, idx, q){
    the report's own plan, changed here like any other. A player's browser does not ask:
    the function answers staff only. */
 const _gpSheetSt=new WeakMap();     /* a plan section -> what became of its sheet, this visit */
-const _gpSheetMemo={};              /* a Drive file -> the function's answer */
+const _gpSheetMemo={};
+const _gpSheetTry={};              /* a Drive file -> how many times it has been asked for again */              /* a Drive file -> the function's answer */
 function gpPlanEmpty(plan){
   if(gpHalfFill(plan)>0) return false;
   if((plan.offleg||[]).concat(plan.defleg||[]).some(x=>String(x||"").trim())) return false;
@@ -12889,17 +12892,32 @@ function renderPlanSection(sec, canEd, save, allSecs){
         _gpSheetSt.set(sec, {name:f.name, busy:1});
         const ask=_gpSheetMemo[f.id] || (_gpSheetMemo[f.id]=
           driveFetch(DOCS_FN+"?plan="+encodeURIComponent(f.id), {cache:"no-store"}).then(r=>r.json()));
+        const retry=why=>{
+          /* a check that failed, a busy server, a download that did not come: none of
+             those says anything about the sheet, so it is asked for again - twice, a
+             little later each time - before the page gives up and says so */
+          const n=(_gpSheetTry[f.id]=(_gpSheetTry[f.id]||0)+1);
+          if(n>2 || !/sign in|session|check|status 5|status 429|HTML page|could not open|fetch|network/i.test(String(why||""))) return false;
+          delete _gpSheetMemo[f.id];
+          setTimeout(()=>{ _gpSheetSt.delete(sec);
+            try{ const fresh=renderPlanSection(sec, canEd, save, allSecs); if(box.parentNode) box.parentNode.replaceChild(fresh, box); }catch(e){} }, 1400*n);
+          return true;
+        };
         ask.then(j=>{
           if(!j || !j.plan || !(j.filled>0)){
-            _gpSheetSt.set(sec, {name:f.name, fail:(j&&j.warn&&j.warn[0])||(j&&j.error)||"nothing could be read from it"});
+            const why=(j&&j.warn&&j.warn[0])||(j&&j.error)||"nothing could be read from it";
+            if(retry(why)) return;
+            _gpSheetSt.set(sec, {name:f.name, fail:/sign in/i.test(why)? "the session could not be confirmed — sign out and in again if this stays" : why});
             delete _gpSheetMemo[f.id]; redraw(); return;
           }
+          delete _gpSheetTry[f.id];
           const err=importPlanJSON(sec, JSON.stringify(j.plan));
           if(err){ _gpSheetSt.set(sec, {name:f.name, fail:String(err)}); redraw(); return; }
           planEnsure(sec);
           _gpSheetSt.set(sec, {name:f.name, ok:1, kept:0, warn:j.warn||[]});
           keep(); redraw();
         }).catch(e=>{ delete _gpSheetMemo[f.id];
+          if(retry("network "+((e&&e.message)||""))) return;
           _gpSheetSt.set(sec, {name:f.name, fail:(e&&e.message)||"the Drive could not be reached"}); redraw(); });
       } else if(!_docsTried || _docsBusy){
         /* the folder has not been listed yet in this visit, or is being listed right
@@ -13346,9 +13364,9 @@ function rivalCard(p,i,rep,editable,body,g,key,kind,from){
     return h("div",{class:"rp-card view"},
       h("div",{class:"rp-nm"}, _lgFaceName(g, p.name), h("span",{}, (p.name||"—")), p.pos?h("span",{class:"rp-pos"},p.pos):null, p.role?h("span",{class:"rp-role"},p.role):null),
       p.note? h("div",{class:"rp-note"}, p.note):null,
-      p.video? h("a",{class:"rp-video",href:p.video,target:"_blank",rel:"noopener"},"▶ Ver vídeo"):null);
+      p.video? h("a",{class:"rp-video",href:p.video,target:"_blank",rel:"noopener"},"▶ Watch video"):null);
   }
-  const nm=h("input",{placeholder:"Nombre"}); nm.value=p.name||""; nm.addEventListener("input",()=>p.name=nm.value);
+  const nm=h("input",{placeholder:"Name"}); nm.value=p.name||""; nm.addEventListener("input",()=>p.name=nm.value);
   const pos=h("input",{placeholder:"Pos",class:"rp-sm"}); pos.value=p.pos||""; pos.addEventListener("input",()=>p.pos=pos.value);
   const role=h("input",{placeholder:"Rol (SHOOTER / DRIVE…)"}); role.value=p.role||""; role.addEventListener("input",()=>p.role=role.value);
   const note=h("textarea",{placeholder:"Notas de scouting…",class:"rp-note-in"}); note.value=p.note||""; note.addEventListener("input",()=>p.note=note.value);
@@ -13356,7 +13374,7 @@ function rivalCard(p,i,rep,editable,body,g,key,kind,from){
   return h("div",{class:"rp-card edit"},
     h("div",{class:"rp-row"}, _lgFaceName(g, p.name), nm, pos),
     role, note, vid,
-    h("button",{class:"rp-del", onclick:()=>{ rep.data.players.splice(i,1); renderScout(body,g,key,kind,from,rep); }},"✕ Quitar"));
+    h("button",{class:"rp-del", onclick:()=>{ rep.data.players.splice(i,1); renderScout(body,g,key,kind,from,rep); }},"✕ Remove"));
 }
 function renderTeamScout(){
   syncPrintBtn();
@@ -13907,7 +13925,7 @@ function _lgAgo(iso){
   if(m<60) return "updated "+m+" min ago";
   const h2=Math.round(m/60);
   if(h2<24) return "updated "+h2+(h2===1?" hour ago":" hours ago");
-  return "updated "+new Date(t).toLocaleDateString();
+  return "updated "+new Date(t).toLocaleDateString("en-GB");
 }
 function _lgOurs(n){ const s=(n||"").toLowerCase(); return s.indexOf("braunschweig")>=0 || s.indexOf("owen")>=0 || s.indexOf("\u00f6wen")>=0; }
 /* One club, many names: the BBL calls it "FC Bayern München Basketball", the EuroLeague
@@ -14402,8 +14420,11 @@ function _lgCalBody(L, id, ym, box){
       const ph=_lgPhase(g);
       const comp=(ph==="cup")?"pk":((ph==="euro")?"eu":((ph==="playoff"||ph==="playin")?"po":"lg"));
       const oppId=(String(g.homeId||g.home)===String(id))? (g.awayId||g.away) : (g.homeId||g.home);
-      const chip=h("div",{class:"lg-g c-"+comp+" "+(s? (s.win?"w":"l") : "next"),
-        title:(home?"vs ":"@ ")+_lgOpp(g,id)+(g.time? ("  "+g.time) : "")},
+      /* a game that has been played opens its summary, here as in the results */
+      const canOpen=!!(_lgDone(g) && g.id && ph!=="euro");
+      const chip=h("div",{class:"lg-g c-"+comp+" "+(s? (s.win?"w":"l") : "next")+(canOpen?" open":""),
+        onclick:canOpen? (e=>{ e.stopPropagation(); _lgGameOpen(g); }) : null,
+        title:(home?"vs ":"@ ")+_lgOpp(g,id)+(g.time? ("  "+g.time) : "")+(canOpen?" · open the game":"")},
         h("span",{class:"lg-g-opp"}, _lgCrest(L, oppId, "cal"),
           h("span",{}, (home?"vs ":"@ ")+_lgShort(_lgOpp(g,id)))),
         h("span",{class:"lg-g-res"}, s? ((s.win?"W ":"L ")+s.us+"-"+s.them) : (g.time||"")));
@@ -14429,7 +14450,7 @@ function _lgCalendar(L){
   const nav=h("div",{class:"lg-navrow"},
     _lgTeamSelect(L, id, v=>_lgSetClub(L,v)),
     h("button",{class:"btn sm", onclick:()=>{ L.month=_lgShiftMonth(ym,-1); persist(); _lgRerender(); }},"‹"),
-    h("span",{class:"lg-month"}, new Date(ym+"-01T00:00:00").toLocaleDateString(undefined,{month:"long",year:"numeric"})),
+    h("span",{class:"lg-month"}, new Date(ym+"-01T00:00:00").toLocaleDateString("en-GB",{month:"long",year:"numeric"})),
     h("button",{class:"btn sm", onclick:()=>{ L.month=_lgShiftMonth(ym,1); persist(); _lgRerender(); }},"›"));
   return _lgCalBody(L, id, ym, _lgPanel("Calendar & results", nav));
 }
@@ -14454,7 +14475,7 @@ function _preCal(L){
   const set=d=>{ L.preMonth=L.preMonth||{}; L.preMonth[tid]=_lgShiftMonth(ym,d); persist(); _lgRerender(); };
   const nav=h("div",{class:"lg-navrow"},
     h("button",{class:"btn sm", onclick:()=>set(-1)},"‹"),
-    h("span",{class:"lg-month"}, new Date(ym+"-01T00:00:00").toLocaleDateString(undefined,{month:"long",year:"numeric"})),
+    h("span",{class:"lg-month"}, new Date(ym+"-01T00:00:00").toLocaleDateString("en-GB",{month:"long",year:"numeric"})),
     h("button",{class:"btn sm", onclick:()=>set(1)},"›"),
     _lgEmbedTag(L, tid));
   const box=_lgCalBody(L, tid, ym, _lgPanel("Calendar & results", nav));
@@ -15404,11 +15425,13 @@ const AN_BLOCKS=".sx-sec, .td-card, .tr-sec, .lg-panel, .year-month, .day-card, 
 const AN_UNITS="tr, .gp2-tbl, .tl-host, .rt-svg, .rt-wrap, .sc-wrap, .lg-grph, .lg-pc, .cmp-row, .td-kpis, .card, .rs-card, .pc-card, .pb-entry, "+
   ".pbx-row, .lg-md-row, .ym-row, .month-cell, .dc-sess-box, .dc-blk, .dc-loadbar, .ps-item, .ps-play, .presc-c, .sxp-c, .ss-item, "+
   ".tr-chip, .sx-gauge, .td-pr, .lg-key-i, .pc-stat, .pc-role, .need-chip, .pyr-m, .lg-cal-cell, .lg-g, .ldr-c, .ldr-r, .tr-rank-r, .avl-r";
-let _anSeenKeys=new Set(), _anMo=null;
-function _anNewContext(){ _anSeenKeys=new Set(); }
+let _anSeenKeys=new Set(), _anSeenAt={}, _anMo=null;
+function _anNewContext(){ _anSeenKeys=new Set(); _anSeenAt={}; }
 function _anKeyOf(e){
   return String(e.className||"").replace(/\ban-[a-z]+\b/g,"").replace(/\s+/g," ").trim()+"|"+
-    String(e.textContent||"").replace(/\s+/g," ").trim().slice(0,48);
+    /* the first words only: a heading stays the same when the figures after it change,
+       and a block must not look new because a count in it went from 0/4 to 3/4 */
+    String(e.textContent||"").replace(/\s+/g," ").trim().slice(0,18);
 }
 function _anUnit(u){
   if(u.__an) return; u.__an=1;
@@ -15428,8 +15451,17 @@ function _anMark(node){
     if(e.__an) return;
     e.__an=1;
     const key=_anKeyOf(e);
-    if(_anSeenKeys.has(key)) return;              /* the same block, drawn again: it has arrived already */
-    _anSeenKeys.add(key);
+    if(_anSeenKeys.has(key)){
+      /* The same block, drawn again: it has arrived already. But a long list is often
+         drawn twice in its first seconds - once as it is, once more when the calendar or
+         the Drive answers - and the second drawing used to drop everything onto the page
+         at once, halfway through the arrival. So a block redrawn that soon is not sent
+         in again, but what of it is still below the screen goes on waiting for the
+         scroll; only what is already in view is simply there. */
+      if(now-(_anSeenAt[key]||0)<7000){ e.__anAt=now; e.__anCarry=true; }
+      return;
+    }
+    _anSeenKeys.add(key); _anSeenAt[key]=now;
     e.__anAt=now;
     e.classList.add("an-e");
     _anHold([e], (x,k)=>{
@@ -15446,6 +15478,10 @@ function _anMark(node){
     const b=u.closest(AN_BLOCKS);
     if(!b || !b.__anAt || now-b.__anAt>9000) return;
     if(u.tagName==="TR" && u.closest(".gp2-tbl")) return;
+    if(b.__anCarry){
+      const r=u.getBoundingClientRect();
+      if(r.top<(window.innerHeight||800)*0.94){ u.__an=1; return; }      /* already in view: it is there */
+    }
     n++; _anUnit(u);
   });
 }
@@ -15677,24 +15713,40 @@ function _lgFormParts(rows, name){
       h("em",{}, x.date? x.date.slice(8,10)+"/"+x.date.slice(5,7) : ""))); });
   return { strip:strip, cards:cards, avail:A, n:n };
 }
-/* the availability table: every man on the sheets of these games, who played which */
+/* The availability table. Read like the season: the oldest of the five games on the
+   left, the newest on the right, so a gap at the right-hand end is a man who is missing
+   NOW. The rotation first, then whoever else has played, and everybody who has not played
+   a minute of the five in one line at the foot instead of a row each. */
 function _lgAvailTable(rows, A){
   const f1=v=>(v==null||!isFinite(v))?"—":v.toFixed(1);
+  const n=A.n, order=[]; for(let i=n-1;i>=0;i--) order.push(i);          /* oldest -> newest */
   const tb=h("table",{class:"lg-tbl avl-t"});
-  tb.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Player"), h("th",{},"GP"), h("th",{},"MIN"), h("th",{},"PIR"),
-    rows.map(r=>h("th",{title:(r.home?"vs ":"@ ")+(r.home? r.g.away : r.g.home)}, r.g.date? r.g.date.slice(8,10)+"/"+r.g.date.slice(5,7) : "")),
-    h("th",{class:"l"},"Status")));
-  const LBL={ back:"Back", "new":"First game of the five", up:"Minutes up", down:"Minutes down", ok:"", none:"Has not played" };
-  A.list.forEach(e=>{
-    const txt=(e.status==="out"? (e.core? "DOUBT · missed the last "+(e.missed>1? e.missed+" games" : "game") : "Missed the last "+(e.missed>1? e.missed : "game"))
-      : (e.status==="up"||e.status==="down")? LBL[e.status]+" ("+(e.dMin>0?"+":"")+f1(e.dMin)+")" : LBL[e.status]);
-    tb.appendChild(h("tr",{class:"avl-r st-"+e.status+(e.core?" core":"")},
-      h("td",{class:"lg-pos"}, e.num), h("td",{class:"l lg-team"}, e.name), h("td",{}, e.gp+"/"+A.n),
-      h("td",{}, e.gp? f1(e.avgMin) : "—"), h("td",{}, e.gp? f1(e.apir) : "—"),
-      e.played.map((p,i)=>h("td",{class:"avl-g "+(p?"y":"n")}, p? String(Math.round((e.sec[i]||0)/60)) : "·")),
-      h("td",{class:"l avl-s"}, txt)));
-  });
-  return h("div",{class:"lg-scroll"}, tb);
+  tb.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Player"),
+    order.map(i=>{ const r=rows[i]; return h("th",{class:"avl-gh", title:(r.home?"vs ":"@ ")+(r.home? r.g.away : r.g.home)+" · "+(r.win?"W":"L")+" "+r.S.pts+"–"+r.O.pts},
+      h("span",{}, (r.home?"":"@")+_lgShort(r.home? r.g.away : r.g.home).slice(0,3).toUpperCase()), h("i",{class:r.win?"w":"l"}, r.win?"W":"L")); }),
+    h("th",{},"GP"), h("th",{},"MIN"), h("th",{},"PIR"), h("th",{class:"l"},"")));
+  const LBL={ back:"Back", "new":"New in the five", up:"Minutes up", down:"Minutes down", ok:"" };
+  const line=e=>{
+    const txt=(e.status==="out"? (e.core? "Doubt · missed the last "+(e.missed>1? e.missed : "game") : "Missed the last "+(e.missed>1? e.missed : "game"))
+      : (e.status==="up"||e.status==="down")? LBL[e.status]+" "+(e.dMin>0?"+":"")+f1(e.dMin) : (LBL[e.status]||""));
+    return h("tr",{class:"avl-r st-"+e.status+(e.core?" core":"")},
+      h("td",{class:"lg-pos"}, e.num), h("td",{class:"l lg-team"}, e.name),
+      order.map(i=>{ const p=e.played[i], m=Math.round((e.sec[i]||0)/60);
+        /* the cell is a small bar of his minutes, so a rotation reads as a shape */
+        return h("td",{class:"avl-g "+(p?"y":"n")}, p? h("span",{style:"--m:"+Math.min(1,m/36).toFixed(2)}, String(m)) : h("span",{class:"x"},"×")); }),
+      h("td",{}, e.gp+"/"+n), h("td",{}, f1(e.avgMin)), h("td",{}, f1(e.apir)),
+      h("td",{class:"l avl-s"}, txt));
+  };
+  const played=A.list.filter(e=>e.gp>0), core=played.filter(e=>e.core), rest=played.filter(e=>!e.core);
+  core.forEach(e=>tb.appendChild(line(e)));
+  if(rest.length){
+    tb.appendChild(h("tr",{class:"avl-sep"}, h("td",{colspan:String(6+n)}, "Outside the rotation")));
+    rest.forEach(e=>tb.appendChild(line(e)));
+  }
+  const never=A.list.filter(e=>e.gp===0);
+  return h("div",{}, h("div",{class:"lg-scroll"}, tb),
+    never.length? h("div",{class:"avl-never"}, h("b",{},"On the sheet, not a minute in the five: "),
+      never.map(e=>"#"+e.num+" "+_lgLastName(e.name)).join(" · ")) : null);
 }
 let _prfKeep=null;
 function _preRecentForm(sg){
@@ -15780,27 +15832,32 @@ function _lgTeamOpen(tid){
     _anCount(body, ".lgg-key b, .lgg-kp b", 1200);
   }).catch(e=>{ body.innerHTML=""; body.appendChild(h("div",{class:"lg-empty"},"Could not be read: "+((e&&e.message)||e))); });
 }
-/* under the rotations: the same availability, for the club the page is about */
-function _lgAvailPanel(L){
-  const tid=_lgPanelClub(L);
-  const box=_lgPanel("Availability — the last five games", null,
-    "Read from the play by play of the last five games. A man of the rotation (two games or more, twelve minutes a game) who did not play last time is marked as a doubt. Nothing here knows why he did not play.");
-  box.classList.add("avl");
-  if(!tid){ box.appendChild(h("div",{class:"lg-empty"},"Pick a club.")); return box; }
+/* Inside the rotations, wherever they are shown - the league page and the pre game: who
+   of the rotation was missing last time out, and the table it is read from. A rotation
+   chart says who played; this says who did not, which is the first thing a staff asks
+   about the next game. */
+function _lgAvailBlock(tid){
+  const box=h("div",{class:"avl"});
+  if(!tid) return box;
+  box.appendChild(h("div",{class:"avl-h"}, h("b",{},"Availability"), h("span",{},"the last five games, oldest on the left · minutes played, × for a game missed")));
   const slot=h("div",{}, h("div",{class:"ld"},"Reading the last five games…", h("span",{class:"ld-bar"})));
   box.appendChild(slot);
   _lgFormRows(tid, null, 5).then(F=>{
     slot.innerHTML="";
     if(F.rows.length<2){ slot.appendChild(h("div",{class:"lg-empty"},"Fewer than two finished games with a published sheet.")); return; }
     const A=_lgAvail(F.rows), f1=v=>v.toFixed(1);
-    const dz=h("div",{class:"avl-doubt"+(A.out.length?"":" none")},
-      h("b",{}, A.out.length? "Doubts" : "No doubts"),
+    slot.appendChild(h("div",{class:"avl-doubt"+(A.out.length?"":" none")},
+      h("b",{}, A.out.length? (A.out.length===1? "Doubt" : "Doubts") : "No doubts"),
       A.out.length? A.out.map(e=>h("span",{class:"avl-chip out"}, h("b",{}, "#"+e.num+" "+e.name), " missed the last "+(e.missed>1? e.missed+" games" : "game")+" · "+f1(e.avgMin)+" min · PIR "+f1(e.apir)))
         : h("span",{}, "everybody in the rotation played last time out"),
-      A.back.map(e=>h("span",{class:"avl-chip back"}, h("b",{}, "#"+e.num+" "+e.name), " back last time")));
-    slot.appendChild(dz);
+      A.back.map(e=>h("span",{class:"avl-chip back"}, h("b",{}, "#"+e.num+" "+e.name), " back last time"))));
     slot.appendChild(_lgAvailTable(F.rows, A));
   }).catch(()=>{ slot.innerHTML=""; slot.appendChild(h("div",{class:"lg-empty"},"Could not be read.")); });
+  return box;
+}
+function _lgRot(L){
+  const box=_lgRotCore(L);
+  try{ const tid=_lgPanelClub(L); if(box && tid) box.appendChild(_lgAvailBlock(tid)); }catch(e){}
   return box;
 }
 /* THE BEST IN THE LEAGUE, AND WHERE A CLUB'S OWN MEN STAND AMONG THEM.
@@ -15900,10 +15957,14 @@ function _lgLeaders(L){
       h("b",{class:"ldr-v"}, fmt(r.v)));
     rows.slice(0,5).forEach((r,i)=>card.appendChild(line(r, i+1, r.x.tid===sel)));
     /* the club picked: its best man here, with his place, when he is not already above */
+    /* The club picked always shows its best three in every board. The ones who made the
+       five are marked there; the ones who did not are added underneath with the place
+       they really hold, so the board answers "who is theirs in this" every time. */
     if(sel){
-      const i=rows.findIndex(r=>r.x.tid===sel);
-      if(i>=5) card.appendChild(h("div",{class:"ldr-own"}, line(rows[i], i+1, true)));
-      else if(i<0) card.appendChild(h("div",{class:"ldr-own none"}, (selT&&(selT.tlc||selT.short)||"This club")+": nobody qualifies"));
+      const mine=rows.map((r,i)=>({ r:r, i:i })).filter(o=>o.r.x.tid===sel).slice(0,3);
+      const below=mine.filter(o=>o.i>=5);
+      if(below.length) card.appendChild(h("div",{class:"ldr-own"}, below.map(o=>line(o.r, o.i+1, true))));
+      else if(!mine.length) card.appendChild(h("div",{class:"ldr-own none"}, (selT&&(selT.tlc||selT.short)||"This club")+": nobody qualifies"));
     }
     grid.appendChild(card);
   });
@@ -18006,7 +18067,7 @@ function _lgRotRaster(L, games, ids, names){
   });
   return wrap;
 }
-function _lgRot(L){
+function _lgRotCore(L){
   const teams=(L.teams||[]).slice().sort((a,b)=>(a.name||"").localeCompare(b.name||""));
   const tid=(L.rsTeam && teams.some(t=>t.id===L.rsTeam))? L.rsTeam : _lgPanelClub(L);
   const d=(L.players||{})[tid];
@@ -19642,7 +19703,6 @@ function renderLeague(){
   root.appendChild(h("div",{style:"margin-top:14px"}, _lgRoster(L)));
   root.appendChild(h("div",{style:"margin-top:14px"}, _lgShots(L)));
   root.appendChild(h("div",{style:"margin-top:14px"}, _lgRot(L)));
-  root.appendChild(h("div",{style:"margin-top:14px"}, _lgAvailPanel(L)));
   root.appendChild(h("div",{style:"margin-top:14px"}, _lgUnits(L)));
   root.appendChild(h("div",{style:"margin-top:14px"}, _lgClock(L)));
   root.appendChild(h("div",{style:"margin-top:14px"},
@@ -20048,7 +20108,7 @@ async function pickUser(u, scope){
   const pw=h("input",{type:"password", placeholder:"Password", autocomplete:"current-password"});
   const err=h("div",{class:"login-err"});
   const submit=async ()=>{
-    err.textContent=""; if(!pw.value){ err.textContent="Escribe la contraseña."; return; }
+    err.textContent=""; if(!pw.value){ err.textContent="Type the password."; return; }
     try{
       const res=await sbrpc("login",{p_scope:scope, p_username:u, p_password:pw.value});
       if(!res || res.ok!==true){ err.textContent=(res&&res.error)||"Wrong username or password"; return; }
@@ -20261,7 +20321,7 @@ async function openMailbox(){
   const list=h("div",{style:"display:flex;flex-direction:column;gap:8px;max-height:38vh;overflow:auto"});
   if(!inbox.length) list.appendChild(h("div",{class:"empty-state"},"No messages yet."));
   inbox.forEach(m=>list.appendChild(h("div",{class:"msg-item"},
-    h("div",{class:"msg-from"}, m.from+" · "+new Date(m.ts).toLocaleString()), h("div",{}, m.text))));
+    h("div",{class:"msg-from"}, m.from+" · "+new Date(m.ts).toLocaleString("en-GB")), h("div",{}, m.text))));
   const to=h("select",{}); USERS.filter(u=>u!==currentUser).forEach(u=>to.appendChild(h("option",{value:u},u)));
   const txt=h("textarea",{placeholder:"Message…", rows:"2"});
   const send=async ()=>{ const t=txt.value.trim(); if(!t) return; const msg={id:uid(),from:currentUser,to:to.value,text:t,ts:Date.now(),read:false};
@@ -20486,7 +20546,7 @@ function confirmDialog(title, msg, okLabel, onOk, danger){
 async function saveVersion(){
   const txt=h("input",{type:"text", placeholder:"e.g. After meeting with agents"});
   const submit=async ()=>{
-    const name=txt.value.trim() || ("Roster "+new Date().toLocaleDateString());
+    const name=txt.value.trim() || ("Roster "+new Date().toLocaleDateString("en-GB"));
     closeDialog();
     const usedPhotoIds=[...new Set(state.players.map(p=>p.photoId).filter(Boolean))];
     const photoSubset={}; usedPhotoIds.forEach(id=>{ if(photos[id]) photoSubset[id]=photos[id]; });
@@ -20512,7 +20572,7 @@ async function openVersions(){
     listEl.appendChild(h("div",{class:"ver-item"},
       h("div",{class:"vinfo"},
         h("div",{class:"vname"}, v.name),
-        h("div",{class:"vmeta"}, new Date(v.createdAt).toLocaleString()+" · "+v.snap.players.length+" players")),
+        h("div",{class:"vmeta"}, new Date(v.createdAt).toLocaleString("en-GB")+" · "+v.snap.players.length+" players")),
       h("div",{class:"vacts"},
         h("button",{class:"icon-btn", title:"Restore", onclick:()=>restoreVersion(v)}, "⟳"),
         h("button",{class:"icon-btn", title:"Duplicate", onclick:()=>duplicateVersion(v)}, "⧉"),
@@ -21259,7 +21319,7 @@ function prtCleanup(){
 
 function printCurrentView(){
   const spec=printSpec();
-  if(!spec){ toast("Esta pantalla no tiene impresión propia"); return; }
+  if(!spec){ toast("This screen has no print layout of its own"); return; }
   if(spec.dialog){ exportPDF(); return; }
   /* the session sheet and the game plan sheet already have print paths of
      their own, both built for A4 */
@@ -24931,6 +24991,33 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 .avl-chip.back{border-color:#9ed3c6;background:rgba(47,158,134,.10)}
 .avl-chip.new{border-color:#d9c39a;background:rgba(214,184,119,.14)}
 .avl-t tr{cursor:default}
+/* compact, and in the same hand as the other league tables */
+.avl{margin-top:16px;padding-top:12px;border-top:1px solid var(--line,#e4e7ec)}
+.avl-h{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+.avl-h b{font-family:'Oswald',sans-serif;font-size:13px;letter-spacing:.07em;text-transform:uppercase}
+.avl-h span{font-size:11.5px;color:var(--ink-faint,#8a93a2)}
+.avl-t{font-size:12px}
+.avl-t td{padding:2px 6px}
+.avl-t th.avl-gh{padding:2px 3px;width:44px}
+.avl-t th.avl-gh span{display:block;font-size:9px}
+.avl-t th.avl-gh i{display:inline-block;font-style:normal;font-size:8.5px;width:13px;height:13px;line-height:13px;border-radius:50%;color:#fff;margin-top:1px}
+.avl-t th.avl-gh i.w{background:#2f9e86}.avl-t th.avl-gh i.l{background:#d8524e}
+.avl-t td.avl-g{width:44px;padding:2px 3px;background:transparent!important}
+.avl-t td.avl-g span{display:block;position:relative;font-size:11px;line-height:17px;border-radius:4px;z-index:0}
+.avl-t td.avl-g.y span::before{content:"";position:absolute;left:0;top:0;bottom:0;width:calc(var(--m,0)*100%);border-radius:4px;background:rgba(47,158,134,.30);z-index:-1}
+.avl-t td.avl-g.y span{background:rgba(47,158,134,.08)}
+.avl-t td.avl-g span.x{color:#d8524e;font-weight:800;background:rgba(216,82,78,.10)}
+.avl-t tr.avl-sep td{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);text-align:left;padding:7px 6px 3px;border-bottom:1px solid var(--line-strong,#d2d7df)}
+.avl-t tr:not(.core):not(.lg-tbl-h):not(.avl-sep) td{color:var(--ink-soft,#5b6472)}
+.avl-never{font-size:11.5px;color:var(--ink-faint,#8a93a2);margin-top:6px}
+.avl-never b{font-weight:600;color:var(--ink-soft,#5b6472)}
+/* a played game opens, in the calendar and in the fixtures */
+.lg-g.open,.lg-fix tr.open{cursor:pointer}
+.lg-g.open:hover{filter:brightness(.95);box-shadow:0 0 0 2px var(--accent,#c6a15b)}
+.lg-fix tr.open:hover td{background:rgba(201,162,39,.12)}
+/* the five best and the five worst sets, marked in the systems table */
+td.tr-best{font-weight:800;box-shadow:inset 4px 0 0 #2f9e86;background:rgba(47,158,134,.10)}
+td.tr-worst{font-weight:800;box-shadow:inset 4px 0 0 #d8524e;background:rgba(216,82,78,.09)}
 .avl-t td.avl-g{font-size:11.5px;width:38px}
 .avl-t td.avl-g.y{background:rgba(47,158,134,.13)}
 .avl-t td.avl-g.n{color:#d8524e;font-weight:800;background:rgba(216,82,78,.07)}
@@ -29501,9 +29588,9 @@ function paintMgr(d){ var list=(d&&d.profiles)||[]; var pws=(d&&d.passwords)||{}
 function post(b){return _deadFetch('/.netlify/functions/profiles',{method:'POST',headers:ah(),body:JSON.stringify(b)}).then(function(r){return r.json();});}
 function vstr(v){ return Object.keys(v||{}).map(function(n){var x=v[n]||{};return n+' '+fmt(x.play)+' ('+(x.plays||0)+'x)';}).join(', ')||'—'; }
 function renderData(){ _deadFetch('/.netlify/functions/get-analytics',{headers:ah()}).then(function(r){return r.json();}).then(function(d){ var el=document.getElementById('slData'); if(!el)return; var reps=(d&&d.data)||{}; var sess=(d&&d.sessions)||{};
-  var bm=Object.keys(reps).map(function(id){ var pl=reps[id]||{}; var rows=Object.keys(pl).map(function(p){ var v=pl[p]; return '<tr><td style="padding:5px 8px;">'+p+'</td><td style="padding:5px 8px;">'+fmt(v.active)+'</td><td style="padding:5px 8px;">'+(v.opens||0)+'</td><td style="padding:5px 8px;">'+(v.toggles||0)+'</td><td style="padding:5px 8px;">'+vstr(v.videos)+'</td><td style="padding:5px 8px;color:#8C8770;">'+(v.lastSeen?new Date(v.lastSeen).toLocaleString():'')+'</td></tr>'; }).join('');
+  var bm=Object.keys(reps).map(function(id){ var pl=reps[id]||{}; var rows=Object.keys(pl).map(function(p){ var v=pl[p]; return '<tr><td style="padding:5px 8px;">'+p+'</td><td style="padding:5px 8px;">'+fmt(v.active)+'</td><td style="padding:5px 8px;">'+(v.opens||0)+'</td><td style="padding:5px 8px;">'+(v.toggles||0)+'</td><td style="padding:5px 8px;">'+vstr(v.videos)+'</td><td style="padding:5px 8px;color:#8C8770;">'+(v.lastSeen?new Date(v.lastSeen).toLocaleString("en-GB"):'')+'</td></tr>'; }).join('');
     return '<details style="background:#19180F;border:1px solid rgba(241,238,226,.1);border-radius:10px;margin-bottom:10px;padding:10px 12px;"><summary style="cursor:pointer;font-family:Oswald,sans-serif;text-transform:uppercase;color:#E4C158;">'+id+' <span style="color:#8C8770;font-size:12px;">('+Object.keys(pl).length+' players)</span></summary><table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;"><thead><tr style="color:#8C8770;text-align:left;"><th style="padding:5px 8px;">Player</th><th style="padding:5px 8px;">Active</th><th style="padding:5px 8px;">Opens</th><th style="padding:5px 8px;">Toggles</th><th style="padding:5px 8px;">Videos (played)</th><th style="padding:5px 8px;">Last seen</th></tr></thead><tbody>'+rows+'</tbody></table></details>'; }).join('')||'<p style="color:#8C8770;">No activity yet.</p>';
-  var bp=Object.keys(sess).map(function(p){ var arr=(sess[p]||[]).slice().reverse(); var rows=arr.map(function(x){ return '<tr><td style="padding:5px 8px;">'+new Date(x.start).toLocaleString()+'</td><td style="padding:5px 8px;">'+(x.scoutId||'')+'</td><td style="padding:5px 8px;">'+fmt(x.active)+'</td><td style="padding:5px 8px;">'+(x.toggles||0)+'</td><td style="padding:5px 8px;">'+vstr(x.videos)+'</td></tr>'; }).join('');
+  var bp=Object.keys(sess).map(function(p){ var arr=(sess[p]||[]).slice().reverse(); var rows=arr.map(function(x){ return '<tr><td style="padding:5px 8px;">'+new Date(x.start).toLocaleString("en-GB")+'</td><td style="padding:5px 8px;">'+(x.scoutId||'')+'</td><td style="padding:5px 8px;">'+fmt(x.active)+'</td><td style="padding:5px 8px;">'+(x.toggles||0)+'</td><td style="padding:5px 8px;">'+vstr(x.videos)+'</td></tr>'; }).join('');
     return '<details style="background:#19180F;border:1px solid rgba(241,238,226,.1);border-radius:10px;margin-bottom:10px;padding:10px 12px;"><summary style="cursor:pointer;font-family:Oswald,sans-serif;text-transform:uppercase;color:#E4C158;">'+p+' <span style="color:#8C8770;font-size:12px;">('+arr.length+' sessions, 8 wks)</span></summary><table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;"><thead><tr style="color:#8C8770;text-align:left;"><th style="padding:5px 8px;">When</th><th style="padding:5px 8px;">Scout</th><th style="padding:5px 8px;">Active</th><th style="padding:5px 8px;">Toggles</th><th style="padding:5px 8px;">Videos (played)</th></tr></thead><tbody>'+rows+'</tbody></table></details>'; }).join('')||'<p style="color:#8C8770;">No sessions yet.</p>';
   el.innerHTML='<div style="display:flex;justify-content:flex-end;margin-bottom:12px;"><button id="slClear" style="background:#3a1512;border:1px solid #D8524E;color:#D8524E;border-radius:7px;font-weight:700;font-size:12px;padding:8px 12px;cursor:pointer;">🗑 Clear all analytics</button></div>'+'<h3 style="font-family:Oswald,sans-serif;text-transform:uppercase;color:#8C8770;font-size:13px;margin:4px 0 8px;">By match</h3>'+bm+'<h3 style="font-family:Oswald,sans-serif;text-transform:uppercase;color:#8C8770;font-size:13px;margin:18px 0 8px;">By player (sessions)</h3>'+bp;
   var cb=document.getElementById('slClear'); if(cb) cb.addEventListener('click',function(){ if(confirm('Delete ALL player analytics (matches + sessions)? This cannot be undone.')){ _deadFetch('/.netlify/functions/get-analytics',{method:'POST',headers:ah(),body:JSON.stringify({action:'clear'})}).then(function(){renderData();}).catch(function(){}); } });
