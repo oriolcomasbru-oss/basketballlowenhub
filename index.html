@@ -23928,7 +23928,11 @@ body.edit-mode .phx .card .extra-block:has(.extra-line:empty)::before{display:bl
 .lg-tbl tr{cursor:pointer}
 .lg-tbl tr.sel td{background:rgba(201,162,39,.12)}
 .lg-tbl tr.ours td{font-weight:800}
-.lg-tbl tr.ours td.lg-team{color:var(--accent,#c9a227)}
+/* our own row is a gold band across the table; the name used to be gold type on white,
+   which is the hardest thing on the page to read */
+.lg-tbl tr.ours td{background:rgba(236,208,138,.42)}
+.lg-tbl tr.ours td.lg-team{color:var(--ink,#141821)}
+body.dark .lg-tbl tr.ours td{background:rgba(216,184,119,.22)}
 /* ---- ONE COLOUR RULE FOR THE WHOLE APP ------------------------------------------
    Red is more of it, green is less of it. Not "good for us" and "bad for us": a table
    that flips its colours depending on whose column it is makes the reader work out the
@@ -24249,7 +24253,11 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 @media (max-width:760px){ .lgg-pl-g{grid-template-columns:1fr} .lgg-kps.six{grid-template-columns:repeat(2,1fr)} }
 .lgg-box td{white-space:nowrap}
 .lgg-box td.b{font-weight:800;color:var(--ink,#141821)}
-.lgg-box td.top{font-weight:800;color:var(--accent-strong,#b0873c)}
+/* the best of a column is a gold cell, not gold type: gold letters on a white table are
+   the first thing to disappear on a projector or a phone in a sports hall */
+.lgg-box td.top{font-weight:800;color:#1a1408;background:#ecd08a;box-shadow:inset 0 0 0 2px var(--panel,#fff);border-radius:6px}
+body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 0 2px var(--panel,#161b23)}
+.lgg-box tr.pick:hover td.top{background:#e3c06a}
 .lgg-box tr.first-bench td{border-top:2px solid var(--line-strong,#d2d7df)}
 .lgg-shots{display:grid;grid-template-columns:1fr 1fr;gap:22px}
 .lgg-shots.one{grid-template-columns:1fr;gap:14px}
