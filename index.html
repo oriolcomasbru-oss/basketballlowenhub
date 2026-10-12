@@ -3510,8 +3510,8 @@ function applyView(v){
          screen - a filter, a sort, a saved cell - would send them all in again. */
       clearTimeout(applyView._t);
       applyView._t=setTimeout(()=>{ try{ roEl.classList.remove("view-enter"); }catch(e){} }, 1500);
-      /* the blocks further down the screen wait until they are scrolled to */
-      try{ _anReveal(roEl, ".year-month, .lg-panel, .day-card, .sx-sec, .td-card, .pdb-card, .pb-card"); }catch(e){}
+      /* and whatever lands on this screen in the next moments arrives, block by block */
+      try{ _anWatchEnter(roEl); }catch(e){}
     }
   }catch(e){}
   syncPrintBtn();
@@ -6526,6 +6526,7 @@ function gameCard(gameId, from){
   /* a report arrives; the class comes off again so that saving or editing does not replay it */
   const wrap=h("div",{class:"rep-enter"});
   setTimeout(()=>{ try{ wrap.classList.remove("rep-enter"); }catch(e){} }, 1500);
+  try{ _anWatchEnter(wrap); }catch(e){}
   /* ONE LINE. Back, what this report is, whether it is finished, which club it reads and
      what the colours mean used to be five stacked bars - most of a screen of furniture
      before a single number. They are one row now, and the report fills the rest of it. */
@@ -15283,7 +15284,49 @@ function _anHold(els, onSeen){
   els=Array.prototype.slice.call(els||[]);
   if(_anOff()){ els.forEach(e=>{ try{ onSeen&&onSeen(e); }catch(_){ } }); return; }
   els.forEach(e=>{ e.classList.add("an-hold");
-    _anAdd(e, ()=>{ e.classList.remove("an-hold"); try{ onSeen&&onSeen(e); }catch(_){ } }); });
+    _anAdd(e, k=>{ e.classList.remove("an-hold"); try{ onSeen&&onSeen(e, k); }catch(_){ } }); });
+}
+/* A SCREEN OR A REPORT THAT HAS JUST BEEN OPENED.
+   Most of what these pages show is not there when they open: the tagging comes from the
+   Drive, the league from its feed, and each lands a second or five later and is drawn
+   then. So the arrival cannot be given to what is on the page at the moment of opening.
+   For a short while after a screen or a report is opened, every block that lands in it
+   is marked to arrive - held until it is on screen, a few at a time one after another,
+   its chart drawn and its figures counted. Then the watch ends: from there on a filter,
+   a sort or a saved cell redraws its block without sending it in again. */
+const AN_BLOCKS=".sx-sec, .td-card, .tr-sec, .lg-panel, .year-month, .day-card, .pdb-card, .pb-card, .rs-block, .rs-banner";
+function _anWatchEnter(box){
+  if(!box) return;
+  try{ if(box.__anMo){ box.__anMo.disconnect(); clearTimeout(box.__anT1); clearTimeout(box.__anT2); } }catch(e){}
+  if(_anOff() || !("MutationObserver" in window)) return;
+  let closing=0;
+  const stop=()=>{ try{ mo.disconnect(); }catch(e){} };
+  const mark=node=>{
+    if(!node || node.nodeType!==1) return;
+    const list=(node.matches&&node.matches(AN_BLOCKS)? [node] : []).concat(Array.prototype.slice.call(node.querySelectorAll(AN_BLOCKS)));
+    let any=false;
+    list.forEach(e=>{
+      if(e.__an) return;
+      /* a block inside a block that is already arriving comes in with it, not on its own */
+      if(e.parentElement && e.parentElement.closest(".an-e")) return;
+      e.__an=1; any=true;
+      e.classList.add("an-e");
+      _anHold([e], (x,k)=>{
+        x.style.animationDelay=((k||0)*90)+"ms";
+        _anCount(x, ".td-kpi b, .sx-gbig, .lgg-key b", 1300);
+        /* once it has arrived it is an ordinary block again, so a chart redrawn for a
+           new width or a table sorted again does not draw itself in a second time */
+        setTimeout(()=>{ try{ x.classList.remove("an-e"); x.style.animationDelay=""; }catch(_){ } }, 3200);
+      });
+    });
+    /* the watch closes a little after the first blocks have landed */
+    if(any && !closing){ closing=1; box.__anT2=setTimeout(stop, 3500); }
+  };
+  const mo=new MutationObserver(recs=>recs.forEach(r=>r.addedNodes&&r.addedNodes.forEach(mark)));
+  mo.observe(box, { childList:true, subtree:true });
+  box.__anMo=mo;
+  box.__anT1=setTimeout(stop, 25000);
+  mark(box);
 }
 function _anReveal(root, sel){
   if(!root || _anOff()) return;
@@ -24595,16 +24638,45 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
   /* ------------------------------------------------- moving around the app (part two) */
   /* a screen arrives, and the big blocks on it follow one after another */
   .view-enter{animation:anUp calc(var(--mk)*.55s) var(--me) both}
-  .view-enter .year-month,.view-enter .lg-panel,.view-enter .day-card,.view-enter .sx-sec,.view-enter .td-card,
-  .view-enter .pdb-card,.view-enter .pb-card,.view-enter .pos-col{animation-name:anUp;animation-duration:calc(var(--mk)*.6s);animation-timing-function:var(--me);animation-fill-mode:both}
-  .view-enter .year-month:nth-child(2),.view-enter .lg-panel:nth-child(2),.view-enter .day-card:nth-child(2),.view-enter .sx-sec:nth-child(2),.view-enter .td-card:nth-child(2),.view-enter .pdb-card:nth-child(2),.view-enter .pos-col:nth-child(2){animation-delay:calc(var(--mk)*.08s)}
-  .view-enter .year-month:nth-child(3),.view-enter .lg-panel:nth-child(3),.view-enter .day-card:nth-child(3),.view-enter .sx-sec:nth-child(3),.view-enter .td-card:nth-child(3),.view-enter .pdb-card:nth-child(3),.view-enter .pos-col:nth-child(3){animation-delay:calc(var(--mk)*.16s)}
-  .view-enter .year-month:nth-child(4),.view-enter .lg-panel:nth-child(4),.view-enter .day-card:nth-child(4),.view-enter .sx-sec:nth-child(4),.view-enter .td-card:nth-child(4),.view-enter .pdb-card:nth-child(4),.view-enter .pos-col:nth-child(4){animation-delay:calc(var(--mk)*.24s)}
-  .view-enter .year-month:nth-child(5),.view-enter .lg-panel:nth-child(5),.view-enter .day-card:nth-child(5),.view-enter .sx-sec:nth-child(5),.view-enter .td-card:nth-child(5),.view-enter .pdb-card:nth-child(5),.view-enter .pos-col:nth-child(5){animation-delay:calc(var(--mk)*.32s)}
-  .view-enter .year-month:nth-child(n+6),.view-enter .lg-panel:nth-child(n+6),.view-enter .day-card:nth-child(n+6),.view-enter .sx-sec:nth-child(n+6),.view-enter .td-card:nth-child(n+6),.view-enter .pdb-card:nth-child(n+6){animation-delay:calc(var(--mk)*.40s)}
+  /* ------------------------------------- a block that has just landed (part three)
+     Trends, post practice, post game, the league panels, the months of the calendar and
+     the sections of a report all arrive the same way: the block comes up, its chart is
+     drawn from left to right, its headline figures land one after another and its table
+     comes in a row at a time. Which blocks, and when, is decided in _anWatchEnter. */
+  .an-e{animation-name:anUp;animation-duration:calc(var(--mk)*.65s);animation-timing-function:var(--me);animation-fill-mode:both}
+  .an-e .tl-svg{animation:anWipe calc(var(--mk)*1.7s) cubic-bezier(.35,.5,.25,1) calc(var(--mk)*.3s) both}
+  .an-e .tl-legend,.an-e .sx-sub,.an-e .sx-legend{animation:anFade calc(var(--mk)*.8s) ease-out calc(var(--mk)*.3s) both}
+  .an-e .td-kpi,.an-e .tr-chip{animation-name:anUp;animation-duration:calc(var(--mk)*.55s);animation-timing-function:var(--me);animation-fill-mode:both}
+  .an-e .td-kpi:nth-child(1),.an-e .tr-chip:nth-child(1){animation-delay:calc(var(--mk)*.20s)}
+  .an-e .td-kpi:nth-child(2),.an-e .tr-chip:nth-child(2){animation-delay:calc(var(--mk)*.29s)}
+  .an-e .td-kpi:nth-child(3),.an-e .tr-chip:nth-child(3){animation-delay:calc(var(--mk)*.38s)}
+  .an-e .td-kpi:nth-child(4),.an-e .tr-chip:nth-child(4){animation-delay:calc(var(--mk)*.47s)}
+  .an-e .td-kpi:nth-child(n+5),.an-e .tr-chip:nth-child(n+5){animation-delay:calc(var(--mk)*.56s)}
+  .an-e table tr{animation-name:anLeft;animation-duration:calc(var(--mk)*.45s);animation-timing-function:var(--me);animation-fill-mode:both;animation-delay:calc(var(--mk)*.70s)}
+  .an-e table tr:nth-child(1){animation-delay:calc(var(--mk)*.15s)}
+  .an-e table tr:nth-child(2){animation-delay:calc(var(--mk)*.20s)}
+  .an-e table tr:nth-child(3){animation-delay:calc(var(--mk)*.25s)}
+  .an-e table tr:nth-child(4){animation-delay:calc(var(--mk)*.30s)}
+  .an-e table tr:nth-child(5){animation-delay:calc(var(--mk)*.35s)}
+  .an-e table tr:nth-child(6){animation-delay:calc(var(--mk)*.40s)}
+  .an-e table tr:nth-child(7){animation-delay:calc(var(--mk)*.45s)}
+  .an-e table tr:nth-child(8){animation-delay:calc(var(--mk)*.50s)}
+  .an-e table tr:nth-child(9){animation-delay:calc(var(--mk)*.55s)}
+  .an-e table tr:nth-child(10){animation-delay:calc(var(--mk)*.60s)}
+  .an-e table tr:nth-child(11){animation-delay:calc(var(--mk)*.65s)}
+  /* the gauges and the coloured tracks of the tagging blocks fill from the left */
+  .an-e .sx-gtrack>*,.an-e .td-pr-bar>*,.an-e .sx-bar>*{transform-origin:left center;animation:anGrowX calc(var(--mk)*1s) var(--me) calc(var(--mk)*.3s) both}
+  /* the rows of a season list */
+  .an-e .ym-row{animation-name:anLeft;animation-duration:calc(var(--mk)*.4s);animation-timing-function:var(--me);animation-fill-mode:both;animation-delay:calc(var(--mk)*.42s)}
+  .an-e .ym-row:nth-of-type(1){animation-delay:calc(var(--mk)*.12s)}
+  .an-e .ym-row:nth-of-type(2){animation-delay:calc(var(--mk)*.18s)}
+  .an-e .ym-row:nth-of-type(3){animation-delay:calc(var(--mk)*.24s)}
+  .an-e .ym-row:nth-of-type(4){animation-delay:calc(var(--mk)*.30s)}
+  .an-e .ym-row:nth-of-type(5){animation-delay:calc(var(--mk)*.36s)}
+  /* a game plan grid and a rotation table are read whole: they do not come in by rows */
+  .an-e .gp2-tbl tr,.an-e .gp-wrap table tr,.an-e .lgg-box tr,.an-e .lgg-qt tr{animation:none}
   /* a report opening, and going back to the list */
   .rep-enter{animation:anUp calc(var(--mk)*.55s) var(--me) both}
-  .rep-enter .rs-banner,.rep-enter .rs-block{animation:anUp calc(var(--mk)*.55s) var(--me) calc(var(--mk)*.15s) both}
   /* a dialog and the side panel */
   .dialog.open{animation:anFade calc(var(--mk)*.25s) ease-out both}
   .dialog.open .dialog-card{animation:anRise calc(var(--mk)*.45s) var(--me) both}
