@@ -9378,6 +9378,7 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
      which can be edited; this cannot. */
   const PV = (typeof isPlayerUser==="function") && isPlayerUser();
   _scoutOpponent = (g && g.opponent) || "";
+  _scoutRep = rep;
   _preSeasonDone = false; _prePlayersDone = false;
   _scoutPlayersSlot = false;   /* only the first PLAYERS STATS section takes it */
   _scoutDate = (g && g.date) || "";
@@ -13015,7 +13016,7 @@ function _gpFace(nick, redraw){
   }
   const n=_lgNorm(nick).split(" ")[0]||"";
   if(n.length<2) return null;
-  const ALIAS={ benny:"benjamin", ferdi:"ferdinand", chris:"christopher", eddy:"eddy", zaba:"zaba", dejour:"de jour" };
+  const ALIAS={ benny:"benjamin", ferdi:"ferdinand", chris:"christopher", eddy:"eddy", zaba:"zaba", dejour:"de jour", daedae:"de jour", dae:"de jour" };
   const want=ALIAS[n]||n;
   let best=null, bestS=0, tie=false;
   men.forEach(p=>{
@@ -13095,6 +13096,8 @@ function _gpOppFive(opp, date){
   return p;
 }
 let _gpForPrint=false;
+/* the report being drawn: the game plan reads the opponent's cards out of it */
+let _scoutRep=null;
 function renderPlanSection(sec, canEd, save, allSecs){
   const plan=planEnsure(sec);
   const box=h("div",{class:"gp-wrap gp2"});
@@ -13205,7 +13208,8 @@ function renderPlanSection(sec, canEd, save, allSecs){
         for(let c=0;c<GP_COLS;c++){ const id=plan.grid[q][r][c]; const pl=id?_gpById(plan,id):null;
           const isnew = c>0 && id && id!==plan.grid[q][r][c-1];
           const td=h("td",{class:"gp2-st ed"+(pl?" f":"")+(isnew?" in":"")});
-          td.textContent=pl?pl.name:"";
+          if(pl && isnew){ const fc=_gpFace(pl.name, redraw); if(fc){ fc.classList.add("gpc"); td.classList.add("wf"); td.appendChild(fc); } }
+          td.appendChild(document.createTextNode(pl?pl.name:""));
           td.addEventListener("click",()=>stamp(q,r,c));
           td.addEventListener("dragover",e=>{ e.preventDefault(); td.classList.add("over"); });
           td.addEventListener("dragleave",()=>td.classList.remove("over"));
@@ -13222,6 +13226,8 @@ function renderPlanSection(sec, canEd, save, allSecs){
         for(let c=0;c<GP_COLS;c++){ const id=plan.grid[q][r][c]; const pl=id?_gpById(plan,id):null;
           const isnew = c>0 && id && id!==plan.grid[q][r][c-1];
           const td=h("td",{class:"gp2-st"+(pl?" f":"")+(isnew?" in":"")});
+          /* the minute a man comes in carries his face, left of his name */
+          if(pl && isnew){ const fc=_gpFace(pl.name, redraw); if(fc){ fc.classList.add("gpc"); td.classList.add("wf"); td.appendChild(fc); } }
           td.appendChild(h("span",{class:"gp2-nm"}, pl?pl.name:""));
           tr.appendChild(td); }
       }
@@ -13264,37 +13270,76 @@ function renderPlanSection(sec, canEd, save, allSecs){
     return wrap;
   }
 
+  /* THEIR ROSTER, ON ONE RAIL. Who starts and how long each man plays is read from the
+     play by play of their last games; what each of them is - the role, the closeout, the
+     two things worth remembering - is what the staff wrote on his card in the pre game.
+     One line a man, under the position his card is filed in; the cards decide the
+     position, and where there are no cards yet the play by play does. */
   function oppFiveBlock(){
     const wrap=h("div",{class:"gp-opp"});
     const opp=_scoutOpponent||"";
-    wrap.appendChild(h("div",{class:"gp2-sec"}, "Their five · by position"));
+    wrap.appendChild(h("div",{class:"gp2-sec",
+      title:"S = starter, with his starts in their last games; minutes a game from the play by play. The dot is the closeout on his card. ? = missed their last game."},
+      "Their roster"));
     if(!opp || _gamePlaceholder(opp)){ wrap.style.display="none"; return wrap; }
-    const slot=h("div",{class:"gp-opp-b"}, h("div",{class:"gp3-ksn"},"Reading their last five games…"));
+    const slot=h("div",{class:"gp-opp-b"});
     wrap.appendChild(slot);
-    _gpOppFive(opp, _scoutDate).then(R=>{
+    const cards=((_scoutRep && _scoutRep.data && _scoutRep.data.cards)||{}).pos||null;
+    const hasCards=!!cards && GP_POS.some(k=>(cards[k]||[]).length);
+    const CO={ red:["Shooter","#d8524e"], yellow:["Mix","#d9a521"], green:["Driver","#2f9e86"] };
+    const nk=s=>_lgNorm(_lgLastName(String(s||"")));
+    const paint=R=>{
       slot.innerHTML="";
-      if(!R){ slot.appendChild(h("div",{class:"gp3-ksn"},"Not enough finished games in the league feed to say.")); return; }
-      R.five.forEach((e,i)=>{
-        slot.appendChild(h("div",{class:"gp-opp-r"},
-          h("b",{class:"pos"}, GP_POS[i]),
-          h("div",{},
-            h("div",{class:"st"}, h("span",{class:"nm"}, "#"+e.num+" "+_lgLastName(e.name)),
-              h("i",{title:"starts in their last "+R.n+" games · minutes a game"}, e.st+"/"+R.n+" · "+Math.round(e.min)+"′"),
-              e.last? null : h("em",{title:"did not play their last game"},"?")),
-            R.bench[i].length? h("div",{class:"bn"}, R.bench[i].map(b=>"#"+b.num+" "+_lgLastName(b.name)+" "+Math.round(b.min)+"′"+(b.last?"":" ?")).join(" · ")) : null)));
+      const pb={};
+      const put=(e, st)=>{ const v={ e:e, st:st }; if(e.num!=="" && e.num!=null && !pb["#"+e.num]) pb["#"+e.num]=v; const k=nk(e.name); if(k && !pb[k]) pb[k]=v; };
+      if(R){ R.five.forEach(e=>put(e,true)); R.bench.forEach(b=>b.forEach(e=>put(e,false))); }
+      const groups=GP_POS.map(()=>[]);
+      if(hasCards){
+        GP_POS.forEach((k,i)=>(cards[k]||[]).forEach(c=>{
+          const m=pb["#"+String(c.num||"")] || pb[nk(c.name)] || null;
+          const ideas=(c.ideas||[]).filter(x=>String(x||"").trim());
+          /* a man at the end of the bench with nothing written about him is left out */
+          if(!m && String(c.badge||"").toUpperCase()==="BENCH" && !String(c.tag||"").trim() && !ideas.length) return;
+          const mn=m? m.e.min : (parseFloat(c.min)||0);
+          groups[i].push({ num:String(c.num||""), name:c.name||"", st:!!(m&&m.st), e:m? m.e : null, min:mn,
+            tag:String(c.tag||"").trim(), ideas:ideas, co:CO[c.co]||null, doubt:!!c.doubt });
+        }));
+      } else if(R){
+        R.five.forEach((e,i)=>groups[i].push({ num:String(e.num||""), name:e.name, st:true, e:e, min:e.min, tag:"", ideas:[], co:null }));
+        R.bench.forEach((b,i)=>b.forEach(e=>groups[i].push({ num:String(e.num||""), name:e.name, st:false, e:e, min:e.min, tag:"", ideas:[], co:null })));
+      }
+      if(!groups.some(g=>g.length)){
+        slot.appendChild(h("div",{class:"gp3-ksn"}, R===undefined? "Reading their last games…" : "Nothing from the league for this club yet."));
+        return;
+      }
+      groups.forEach((g,i)=>{
+        if(!g.length) return;
+        g.sort((a,b)=>(b.st-a.st)||(b.min-a.min));
+        slot.appendChild(h("div",{class:"gp-opp-r"}, h("b",{class:"pos"}, GP_POS[i]),
+          h("div",{}, g.map(p=>h("div",{class:"gp-ros-p"+(p.st? " start" : "")},
+            h("div",{class:"l1"},
+              h("i",{class:"co"+(p.co? "" : " none"), style:p.co? "background:"+p.co[1] : "", title:p.co? "Closeout: "+p.co[0] : ""}),
+              h("span",{class:"nm"}, (p.num? "#"+p.num+" " : "")+_lgLastName(p.name)),
+              (p.e && !p.e.last) || p.doubt? h("em",{title:p.doubt? "Marked as a doubt on his card" : "Did not play their last game"},"?") : null,
+              h("span",{class:"mn", title:p.st&&R? "Started "+p.e.st+" of their last "+R.n+" games" : ""},
+                (p.st&&R? "S "+p.e.st+"/"+R.n+" · " : "")+(p.min? Math.round(p.min)+"′" : ""))),
+            (p.tag || p.ideas.length)? h("div",{class:"l2"}, p.tag? h("b",{}, p.tag) : null,
+              p.ideas.slice(0,2).join(" · ")) : null)))));
       });
-      slot.appendChild(h("div",{class:"gp3-ksn"},"Starts and minutes in their last "+R.n+" games, from the play by play. Under each starter, who plays that position off the bench. ? = missed their last game."));
-      if(canEd){
-        const fill=h("button",{class:"gp2-add", title:"Writes their five into the empty Opponent boxes of Defensive pairs, in position order"},"Use as defensive pairs");
+      if(canEd && R){
+        const fill=h("button",{class:"gp2-add", title:"Writes their starters into the empty Opponent boxes of Defensive pairs, in position order"},"Use as defensive pairs");
         fill.addEventListener("click",()=>{
-          R.five.forEach((e,i)=>{ const t="#"+e.num+" "+_lgLastName(e.name).toUpperCase();
+          const five=[]; groups.forEach(g=>g.forEach(p=>{ if(p.st) five.push(p); }));
+          five.slice(0,5).forEach((p,i)=>{ const t=(p.num? "#"+p.num+" " : "")+_lgLastName(p.name).toUpperCase();
             if(!plan.pairs1[i]) plan.pairs1[i]={ us:"", them:"" };
             if(!String(plan.pairs1[i].them||"").trim()) plan.pairs1[i].them=t; });
           save(); redraw();
         });
         slot.appendChild(fill);
       }
-    }).catch(()=>{ slot.innerHTML=""; slot.appendChild(h("div",{class:"gp3-ksn"},"Their games could not be read.")); });
+    };
+    paint(undefined);
+    _gpOppFive(opp, _scoutDate).then(R=>paint(R||null)).catch(()=>paint(null));
     return wrap;
   }
   function minutesBlock(){
@@ -13586,7 +13631,8 @@ function renderPlanSection(sec, canEd, save, allSecs){
     sheet.appendChild(left); sheet.appendChild(mid);
     /* the key sets go under the minutes on the screen, where the eye already is for the
        matchups; on paper they keep their own place on the sheet */
-    try{ const ks=keySetsBlock(); if(_gpForPrint) sheet.appendChild(ks); else { left.appendChild(ks); sheet.classList.add("ks-rail"); } }
+    try{ const ks=keySetsBlock(); if(_gpForPrint) sheet.appendChild(ks);
+      else { const colb=mid.querySelector(".gp3-colb"); (colb||left).appendChild(ks); sheet.classList.add("ks-rail"); } }
     catch(e){ try{ console.warn("game plan key sets", e); }catch(_){} }
     box.appendChild(sheet);
 
@@ -28099,6 +28145,26 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .gp-opp-r .st em{font-style:normal;font-weight:800;color:#d8524e}
 .gp-opp-r .bn{font-size:10.5px;color:var(--ink-soft,#5b6472);line-height:1.3}
 .gp-opp .gp2-add{margin-top:6px}
+/* their roster: one line a man, and one more for what his card says */
+.gp-ros-p{padding:2px 0 3px}
+.gp-ros-p+.gp-ros-p{border-top:1px dotted var(--line,#e6e8ec)}
+.gp-ros-p .l1{display:flex;align-items:center;gap:5px;min-width:0}
+.gp-ros-p .co{flex:none;width:7px;height:7px;border-radius:50%}
+.gp-ros-p .co.none{box-shadow:inset 0 0 0 1px var(--line-strong,#cfd4dc)}
+.gp-ros-p .nm{font:500 11.5px 'Inter',system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.gp-ros-p.start .nm{font-weight:800}
+.gp-ros-p em{font-style:normal;font-weight:800;color:#d8524e;font-size:11px}
+.gp-ros-p .mn{margin-left:auto;flex:none;font:500 9.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);white-space:nowrap}
+.gp-ros-p.start .mn{color:var(--ink,#141821)}
+.gp-ros-p .l2{font-size:10px;line-height:1.3;color:var(--ink-soft,#5b6472);padding-left:12px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.gp-ros-p .l2 b{font:700 9.5px 'Oswald',sans-serif;letter-spacing:.05em;color:var(--ink,#141821);margin-right:5px}
+/* the face in the cell where a man comes in */
+.lg-bdg.face.gpf.gpc{width:17px;height:17px;margin-right:2px;vertical-align:middle}
+.gp2-st.wf{white-space:nowrap}
+.gp2-st.wf .gp2-nm{display:inline-block;max-width:calc(100% - 24px);vertical-align:middle;padding:0 1px}
+/* the key sets under the two boards */
+.gp3-colb > .gp3-ks{margin-top:14px}
 .gp3-qh{display:flex;align-items:baseline;gap:7px}
 .gp3-qh span{font:600 9.5px 'Inter',sans-serif;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint,#8a919c)}
 .gp3-minw{margin-top:20px}
