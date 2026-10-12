@@ -14854,6 +14854,72 @@ function _lgGameLead(g, M){
     ", not the official "+g.hs+"–"+g.as+": the feed is missing a basket somewhere, so the line is close but not exact."));
   return wrap;
 }
+/* THE GAME IN ONE LOOK.
+   Everything below this block is the evidence; this is the verdict. Each candidate is
+   something a coach would say about a game in one breath - what decided it, the quarter
+   it turned in, who carried it - and each is given a weight by how far the two sides
+   were apart on it, in points wherever it can be counted in points. The six heaviest are
+   shown, heaviest first, in the colour of the side they favour. Nothing is shown for the
+   sake of filling a slot: a game with no run worth the name has no run card. */
+function _lgGameKeys(g, M){
+  const H=M.H, A=M.A, F=M.flow, part=!!F.sel;
+  const ht=g.homeTlc||g.home, at=g.awayTlc||g.away;
+  const tl=home=>home?ht:at;
+  const f1=v=>v==null?"—":v.toFixed(1), pc=(m,a)=>a? Math.round(100*m/a)+"%" : "—";
+  const cards=[];
+  const add=(w, home, big, lbl, sub)=>{ if(w>0 && isFinite(w)) cards.push({ w:w, home:home, big:big, lbl:lbl, sub:sub }); };
+  const hw=H.pts>=A.pts;
+  /* --- the four factors: the one with the widest gap, each on its own scale --- */
+  if(H.has && A.has){
+    const ff=[
+      { k:"Shooting", d:(H.efg||0)-(A.efg||0), per:4, txt:"eFG% "+f1(H.efg)+" – "+f1(A.efg) },
+      { k:"Ball security", d:(A.tovp||0)-(H.tovp||0), per:3, txt:"turnovers per 100 poss. "+f1(H.tovp)+" – "+f1(A.tovp) },
+      { k:"Offensive glass", d:(H.orbp||0)-(A.orbp||0), per:6, txt:"offensive rebound % "+f1(H.orbp)+" – "+f1(A.orbp) },
+      { k:"Getting to the line", d:(H.ftr||0)-(A.ftr||0), per:9, txt:"FT rate "+f1(H.ftr)+" – "+f1(A.ftr) }
+    ].map(x=>Object.assign(x,{ w:Math.abs(x.d)/x.per })).sort((a,b)=>b.w-a.w);
+    const top=ff[0];
+    if(top && top.w>=0.6) add(4+top.w, top.d>0, top.k, "the factor that separated them", tl(top.d>0)+" · "+top.txt);
+    /* --- the three point line, in points --- */
+    const d3=3*(H.p3m-A.p3m);
+    if(Math.abs(d3)>=9) add(Math.abs(d3)/3, d3>0, "+"+Math.abs(d3), "points from three", ht+" "+H.p3m+"/"+H.p3a+" ("+pc(H.p3m,H.p3a)+") · "+at+" "+A.p3m+"/"+A.p3a+" ("+pc(A.p3m,A.p3a)+")");
+    /* --- the line --- */
+    const dft=H.ftm-A.ftm;
+    if(Math.abs(dft)>=7) add(Math.abs(dft)/3, dft>0, "+"+Math.abs(dft), "points at the line", ht+" "+H.ftm+"/"+H.fta+" · "+at+" "+A.ftm+"/"+A.fta);
+    /* --- the counts a staff quotes, whichever is furthest apart --- */
+    const ex=[
+      ["Bench points", H.bench, A.bench, 1], ["Second chance points", H.sc, A.sc, 1], ["Points off turnovers", H.pto, A.pto, 1],
+      ["Points in the paint", H.paint, A.paint, 1], ["Fast points", H.fast, A.fast, 1],
+      ["Rebounds", H.reb, A.reb, 1.6], ["Turnovers", A.tov, H.tov, 1.6, [H.tov, A.tov]], ["Assists", H.ast, A.ast, 1.3]
+    ].map(x=>({ k:x[0], d:(x[1]||0)-(x[2]||0), w:Math.abs((x[1]||0)-(x[2]||0))*x[3]/3.2, a:(x[4]?x[4][0]:x[1])||0, b:(x[4]?x[4][1]:x[2])||0 }))
+     .filter(x=>x.w>=1.8).sort((a,b)=>b.w-a.w).slice(0,2);
+    ex.forEach(x=>add(x.w, x.d>0, x.a+" – "+x.b, x.k.toLowerCase(), tl(x.d>0)+" by "+Math.abs(x.d)));
+  }
+  /* --- the man of the game --- */
+  const all=H.pl.map(p=>({p:p,home:true})).concat(A.pl.map(p=>({p:p,home:false}))).sort((a,b)=>b.p.pir-a.p.pir);
+  if(all.length && all[0].p.pir>0){ const x=all[0], p=x.p;
+    add(5.5, x.home, p.name, "PIR "+p.pir+" · best on the floor",
+      p.pts+" pts · "+p.reb+" reb · "+p.ast+" ast"+(p.fga? " · "+p.fgm+"/"+p.fga+" FG" : "")); }
+  if(!part){
+    /* --- the quarter it turned in --- */
+    const qs=(g.quarters||[]);
+    let bq=-1, bd=0; qs.forEach((q,i)=>{ const d=q[0]-q[1]; if(Math.abs(d)>Math.abs(bd)){ bd=d; bq=i; } });
+    if(bq>=0 && Math.abs(bd)>=7) add(Math.abs(bd)/2.6, bd>0, (bq<4?("Q"+(bq+1)):("OT"+(bq-3)))+"  "+qs[bq][0]+"–"+qs[bq][1],
+      "the widest period", tl(bd>0)+" won it by "+Math.abs(bd));
+    /* --- how the lead went --- */
+    if(F.ev.length){
+      const wSec=hw?F.secH:F.secA, lMax=hw?F.maxA:F.maxH, share=Math.round(100*wSec/F.total);
+      if(lMax>=8) add(3+lMax/4, hw, "−"+lMax, "the deficit "+tl(hw)+" came back from", "at "+_lgGameClock(hw?F.atA:F.atH)+" · final "+H.pts+"–"+A.pts);
+      else if(share>=75) add(2.5+share/40, hw, share+"%", "of the game in front", tl(hw)+" · "+F.changes+" lead change"+(F.changes===1?"":"s"));
+      else if(F.changes>=8) add(3.2, hw, String(F.changes), "lead changes", F.ties+" ties · decided late");
+      const run=F.runs[0];
+      if(run && run.pts>=9) add(run.pts/3.2, run.home, run.pts+"–0", "the biggest run", tl(run.home)+" · "+_lgGameClock(run.t0));
+    }
+  }
+  if(!cards.length) return null;
+  cards.sort((a,b)=>b.w-a.w);
+  return h("div",{class:"lgg-keys"}, cards.slice(0,6).map(c=>h("div",{class:"lgg-key "+(c.home?"h":"a")},
+    h("b",{}, c.big), h("span",{}, c.lbl), h("i",{}, c.sub))));
+}
 /* The four factors, each side's attack and each side's defence. One side's defence is the
    other side's attack seen from the far end - except the rebound, where the defensive
    number is the share of the other side's misses we took. */
@@ -15244,6 +15310,9 @@ function _lgGamePanel(g, close){
     const lead=(S)=>{ const t=k=>S.pl.slice().sort((a,b)=>b[k]-a[k])[0];
       const one=(k,l)=>{ const p=t(k); return (p&&p[k])? h("span",{}, h("i",{},l), h("b",{}, p[k]), " "+p.name) : null; };
       return h("div",{class:"lgg-ldr"}, one("pts","PTS"), one("reb","REB"), one("ast","AST"), one("pir","PIR")); };
+    { const keys=_lgGameKeys(g, M);
+      if(keys) body.appendChild(sec("The game in one look", keys,
+        "what stood out most, heaviest first · the colour is the side it favours")); }
     if(M.flow.ev.length) body.appendChild(sec("Who was in front", _lgGameLead(g, M),
       picked.length? "the whole game; the periods being read are shaded" : "the margin, minute by minute"));
     if(M.H.has && M.A.has){
@@ -24190,6 +24259,13 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 .lgg-flt-l{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
 .lgg-flt-s{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600}
 .lgg-selq{fill:var(--ink,#141821);opacity:.07}
+.lgg-keys{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.lgg-key{border:1px solid var(--line,#e4e7ec);border-radius:12px;padding:10px 14px 11px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.lgg-key.h{box-shadow:inset 4px 0 0 var(--lgh)}.lgg-key.a{box-shadow:inset 4px 0 0 var(--lga)}
+.lgg-key b{font-family:'Oswald',sans-serif;font-size:26px;font-weight:600;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lgg-key span{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.lgg-key i{font-style:normal;font-size:12px;color:var(--ink-soft,#5b6472);margin-top:2px}
+@media (max-width:760px){ .lgg-keys{grid-template-columns:1fr} }
 .lgg-shot .presc{margin-top:4px;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}
 .lgg-shot .presc-g{grid-template-columns:repeat(3,minmax(0,1fr))}
 .lgg{width:min(1240px,100%)}
