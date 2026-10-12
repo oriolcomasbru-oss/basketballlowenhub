@@ -3505,6 +3505,11 @@ function applyView(v){
       roEl.classList.remove("view-enter");
       void roEl.offsetWidth;
       roEl.classList.add("view-enter");
+      /* The class is what makes the blocks of a screen arrive one after another, and it
+         is taken off again once they have: left on, every later redraw of the same
+         screen - a filter, a sort, a saved cell - would send them all in again. */
+      clearTimeout(applyView._t);
+      applyView._t=setTimeout(()=>{ try{ roEl.classList.remove("view-enter"); }catch(e){} }, 1500);
     }
   }catch(e){}
   syncPrintBtn();
@@ -6516,7 +6521,9 @@ function gameCard(gameId, from){
   g=g||{};
   const kind = (from==="oppscout"||from==="gameplan") ? "pregame" : "postgame";
   const key = (g.date||"")+"|"+scoutSlug(g.opponent||"");
-  const wrap=h("div",{});
+  /* a report arrives; the class comes off again so that saving or editing does not replay it */
+  const wrap=h("div",{class:"rep-enter"});
+  setTimeout(()=>{ try{ wrap.classList.remove("rep-enter"); }catch(e){} }, 1500);
   /* ONE LINE. Back, what this report is, whether it is finished, which club it reads and
      what the colours mean used to be five stacked bars - most of a screen of furniture
      before a single number. They are one row now, and the report fills the rest of it. */
@@ -15369,7 +15376,7 @@ function _preRecentForm(sg){
       h("div",{class:"lgg-h"}, h("b",{}, "How "+name+" arrive"),
         h("span",{}, "their last "+n+" games · red is what to respect, green is what to attack")),
       strip, h("div",{class:"lgg-keys"}, cards)));
-    _anCount(box, ".lgg-key b", 650);
+    _anCount(box, ".lgg-key b", 1300);
   };
   run().catch(()=>{ box.innerHTML=""; });
   return box;
@@ -15403,7 +15410,7 @@ function _lgGamePanel(g, close){
     qs.length? h("div",{class:"lgg-qtw"}, qt) : null,
     body);
   body.appendChild(h("div",{class:"lg-empty"},"Reading the game sheet…"));
-  _anCount(panel, ".lgg-score b", 700);
+  _anCount(panel, ".lgg-score b, .lgg-qt td.f", 1400);
   const ask=_lgGameMemo[g.id] || (_lgGameMemo[g.id]=
     fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(g.id)).then(r=>r.json()));
   ask.then(j=>{
@@ -15501,7 +15508,7 @@ function _lgGamePanel(g, close){
       s.boxScorePDFUrl? h("a",{href:s.boxScorePDFUrl, target:"_blank", rel:"noopener"},"Official box score (PDF)") : null,
       s.playByPlayPDFUrl? h("a",{href:s.playByPlayPDFUrl, target:"_blank", rel:"noopener"},"Official play by play (PDF)") : null);
     if(links.childNodes.length) body.appendChild(links);
-    _anCount(body, ".lgg-key b, .lgg-kp b", drawn?280:650);
+    _anCount(body, ".lgg-key b, .lgg-kp b, .lgg-cr .v, .lgg-box tr.lg-avg td", drawn?450:1300);
     drawn=true;
     };
     draw();
@@ -24401,48 +24408,139 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
 .lgg-flt-l{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
 .lgg-flt-s{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600}
 .lgg-selq{fill:var(--ink,#141821);opacity:.07}
-/* MOTION, PART ONE: THE GAME WINDOW AND THE WAY THE OPPONENT ARRIVES.
-   The rules it is written to, so the next part is written to the same ones:
-     - it explains a change, it does not decorate: a window opening, a figure arriving
-     - quick: 150-250 ms for what happens all the time, 350 at most for a window
+/* MOTION. One block, one set of rules, so every part of the app moves the same way:
+     - it explains a change, it does not decorate: a screen arriving, a window opening,
+       a figure landing, a line being drawn the way the thing it shows happened
+     - unhurried but never in the way: about half a second for something arriving, a
+       little over a second for a chart that draws itself; nothing has to finish before
+       the page can be used
      - the first time a thing is drawn it arrives; when a filter redraws it, it only
        blinks, because the staff is working and not watching
-     - no bounce on data
-     - none of it exists for somebody who asked their device for less motion, or on paper */
+     - no bounce on data; a small settle on windows and cards only
+     - nothing moves while a report is being edited, for a device that asked for less
+       motion, or on paper
+   --mk scales every duration at once: 1 is the pace below, 1.3 is slower, 0.7 quicker. */
+:root{--mk:1;--me:cubic-bezier(.2,.8,.2,1)}
 @keyframes anFade{from{opacity:0}to{opacity:1}}
-@keyframes anUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-@keyframes anRise{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes anUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes anLeft{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:none}}
+@keyframes anRise{from{opacity:0;transform:translateY(22px) scale(.975)}to{opacity:1;transform:none}}
+@keyframes anPop{0%{opacity:0;transform:scale(.72)}70%{opacity:1;transform:scale(1.04)}100%{opacity:1;transform:none}}
 @keyframes anWipe{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
 @keyframes anGrowX{from{transform:scaleX(0)}to{transform:none}}
 @keyframes anGrowY{from{transform:scaleY(0)}to{transform:none}}
+@keyframes anGold{0%{background:transparent;color:inherit}60%{background:#f6dc93}100%{background:#ecd08a}}
 @media (prefers-reduced-motion: no-preference){
-  .lgg-back,.lgg-plback{animation:anFade .18s ease-out both}
-  .lgg-back>.lgg,.lgg-plback>.lgg-pl{animation:anRise .32s cubic-bezier(.2,.8,.2,1) both}
-  .lgg-body.first>*{animation:anUp .36s cubic-bezier(.2,.8,.2,1) both}
-  .lgg-body.first>*:nth-child(2){animation-delay:.05s}
-  .lgg-body.first>*:nth-child(3){animation-delay:.10s}
-  .lgg-body.first>*:nth-child(4){animation-delay:.15s}
-  .lgg-body.first>*:nth-child(5){animation-delay:.20s}
-  .lgg-body.first>*:nth-child(n+6){animation-delay:.25s}
-  .lgg-body.re>.lgg-sec{animation:anFade .16s ease-out both}
-  .lgg-body.first .lgg-key,.prf .lgg-key,.prf-g{animation:anUp .34s cubic-bezier(.2,.8,.2,1) both}
-  .lgg-key:nth-child(1),.prf-g:nth-child(1){animation-delay:.08s}
-  .lgg-key:nth-child(2),.prf-g:nth-child(2){animation-delay:.13s}
-  .lgg-key:nth-child(3),.prf-g:nth-child(3){animation-delay:.18s}
-  .lgg-key:nth-child(4),.prf-g:nth-child(4){animation-delay:.23s}
-  .lgg-key:nth-child(5),.prf-g:nth-child(5){animation-delay:.28s}
-  .lgg-key:nth-child(6){animation-delay:.33s}
+  /* ---------------------------------------------------------------- the game window */
+  .lgg-back,.lgg-plback{animation:anFade calc(var(--mk)*.3s) ease-out both}
+  .lgg-back>.lgg,.lgg-plback>.lgg-pl{animation:anRise calc(var(--mk)*.55s) var(--me) both}
+  .lgg-team{animation:anUp calc(var(--mk)*.6s) var(--me) calc(var(--mk)*.1s) both}
+  .lgg-team .lgg-crest,.lgg-team img{animation:anPop calc(var(--mk)*.7s) var(--me) calc(var(--mk)*.2s) both}
+  .lgg-score b{animation:anPop calc(var(--mk)*.7s) var(--me) calc(var(--mk)*.15s) both}
+  .lgg-meta{animation:anFade calc(var(--mk)*.6s) ease-out both}
+  .lgg-qt tr{animation:anUp calc(var(--mk)*.5s) var(--me) both}
+  .lgg-qt tr:nth-child(1){animation-delay:calc(var(--mk)*.25s)}
+  .lgg-qt tr:nth-child(2){animation-delay:calc(var(--mk)*.33s)}
+  .lgg-qt tr:nth-child(3){animation-delay:calc(var(--mk)*.41s)}
+  .lgg-qt tr:nth-child(4){animation-delay:calc(var(--mk)*.49s)}
+  .lgg-body.first>*{animation:anUp calc(var(--mk)*.6s) var(--me) both}
+  .lgg-body.first>*:nth-child(2){animation-delay:calc(var(--mk)*.10s)}
+  .lgg-body.first>*:nth-child(3){animation-delay:calc(var(--mk)*.20s)}
+  .lgg-body.first>*:nth-child(4){animation-delay:calc(var(--mk)*.30s)}
+  .lgg-body.first>*:nth-child(5){animation-delay:calc(var(--mk)*.40s)}
+  .lgg-body.first>*:nth-child(n+6){animation-delay:calc(var(--mk)*.50s)}
+  .lgg-body.re>.lgg-sec{animation:anFade calc(var(--mk)*.28s) ease-out both}
+  /* cards and tiles land one after another */
+  .lgg-body.first .lgg-key,.prf .lgg-key,.prf-g,.lgg-body.first .lgg-kp,.lgg-pl .lgg-kp,.lgg-body.first .lgg-run,
+  .lgg-body.first .presc-c{animation-name:anUp;animation-duration:calc(var(--mk)*.55s);animation-timing-function:var(--me);animation-fill-mode:both}
+  /* written out rather than as one shorthand: the shorthand would also set the delay
+     back to nothing and undo the one-after-another below */
+  .lgg-key:nth-child(1),.prf-g:nth-child(1),.lgg-kp:nth-child(1),.lgg-run:nth-child(2),.presc-c:nth-child(1){animation-delay:calc(var(--mk)*.18s)}
+  .lgg-key:nth-child(2),.prf-g:nth-child(2),.lgg-kp:nth-child(2),.lgg-run:nth-child(3),.presc-c:nth-child(2){animation-delay:calc(var(--mk)*.27s)}
+  .lgg-key:nth-child(3),.prf-g:nth-child(3),.lgg-kp:nth-child(3),.lgg-run:nth-child(4),.presc-c:nth-child(3){animation-delay:calc(var(--mk)*.36s)}
+  .lgg-key:nth-child(4),.prf-g:nth-child(4),.lgg-kp:nth-child(4),.lgg-run:nth-child(5),.presc-c:nth-child(4){animation-delay:calc(var(--mk)*.45s)}
+  .lgg-key:nth-child(5),.prf-g:nth-child(5),.lgg-kp:nth-child(5),.lgg-run:nth-child(6),.presc-c:nth-child(5){animation-delay:calc(var(--mk)*.54s)}
+  .lgg-key:nth-child(6),.lgg-kp:nth-child(6),.presc-c:nth-child(6){animation-delay:calc(var(--mk)*.63s)}
+  .lgg-kp:nth-child(7),.presc-c:nth-child(7){animation-delay:calc(var(--mk)*.72s)}
+  .lgg-kp:nth-child(8),.presc-c:nth-child(8){animation-delay:calc(var(--mk)*.81s)}
   /* the line of the score is drawn the way the game went: left to right */
-  .lgg-body.first .lgg-lead{animation:anWipe .9s cubic-bezier(.3,.6,.2,1) .2s both}
+  .lgg-body.first .lgg-lead{animation:anWipe calc(var(--mk)*1.5s) cubic-bezier(.35,.5,.25,1) calc(var(--mk)*.35s) both}
   /* the two bars of a comparison grow out from their own side */
-  .lgg-cr .bar i{animation:anGrowX .55s cubic-bezier(.2,.8,.2,1) .1s both}
+  .lgg-cr{animation:anFade calc(var(--mk)*.5s) ease-out both}
+  .lgg-cr .bar i{animation:anGrowX calc(var(--mk)*.95s) var(--me) calc(var(--mk)*.2s) both}
   .lgg-cr .bar i.h{transform-origin:left center}.lgg-cr .bar i.a{transform-origin:right center}
-  .lgg-body.re .lgg-cr .bar i{animation-duration:.25s;animation-delay:0s}
-  .lgg-pl-q i{transform-origin:center bottom;animation:anGrowY .45s cubic-bezier(.2,.8,.2,1) .12s both}
-  .lgg-body.first .lgg-shot .sc-svg{animation:anFade .5s ease-out .1s both}
-  .prf-in{animation:anUp .36s cubic-bezier(.2,.8,.2,1) both}
+  .lgg-body.re .lgg-cr .bar i{animation-duration:calc(var(--mk)*.4s);animation-delay:0s}
+  .lgg-adv{animation:anUp calc(var(--mk)*.5s) var(--me) both}
+  /* the box score comes in a row at a time, and the best of each column lights up last */
+  .lgg-body.first .lgg-box tr,.lgg-body.first .lgg-four tr{animation-name:anLeft;animation-duration:calc(var(--mk)*.45s);animation-timing-function:var(--me);animation-fill-mode:both}
+  .lgg-box tr:nth-child(2),.lgg-four tr:nth-child(2){animation-delay:calc(var(--mk)*.06s)}
+  .lgg-box tr:nth-child(3),.lgg-four tr:nth-child(3){animation-delay:calc(var(--mk)*.12s)}
+  .lgg-box tr:nth-child(4),.lgg-four tr:nth-child(4){animation-delay:calc(var(--mk)*.18s)}
+  .lgg-box tr:nth-child(5){animation-delay:calc(var(--mk)*.24s)}
+  .lgg-box tr:nth-child(6){animation-delay:calc(var(--mk)*.30s)}
+  .lgg-box tr:nth-child(7){animation-delay:calc(var(--mk)*.36s)}
+  .lgg-box tr:nth-child(8){animation-delay:calc(var(--mk)*.42s)}
+  .lgg-box tr:nth-child(9){animation-delay:calc(var(--mk)*.48s)}
+  .lgg-box tr:nth-child(10){animation-delay:calc(var(--mk)*.54s)}
+  .lgg-box tr:nth-child(11){animation-delay:calc(var(--mk)*.60s)}
+  .lgg-box tr:nth-child(n+12){animation-delay:calc(var(--mk)*.66s)}
+  .lgg-body.first .lgg-box td.top{animation:anGold calc(var(--mk)*.9s) ease-out calc(var(--mk)*1.1s) both}
+  /* the floor, then the men who shot on it */
+  .lgg-body.first .lgg-shot .presc-l,.lgg-pl .lgg-shot{animation:anRise calc(var(--mk)*.8s) var(--me) calc(var(--mk)*.1s) both}
+  /* one player's game */
+  .lgg-pl-h{animation:anUp calc(var(--mk)*.5s) var(--me) calc(var(--mk)*.1s) both}
+  .lgg-pl-li{animation:anLeft calc(var(--mk)*.45s) var(--me) both}
+  .lgg-pl-li:nth-of-type(2){animation-delay:calc(var(--mk)*.05s)}
+  .lgg-pl-li:nth-of-type(3){animation-delay:calc(var(--mk)*.10s)}
+  .lgg-pl-li:nth-of-type(4){animation-delay:calc(var(--mk)*.15s)}
+  .lgg-pl-li:nth-of-type(5){animation-delay:calc(var(--mk)*.20s)}
+  .lgg-pl-li:nth-of-type(6){animation-delay:calc(var(--mk)*.25s)}
+  .lgg-pl-li:nth-of-type(7){animation-delay:calc(var(--mk)*.30s)}
+  .lgg-pl-li:nth-of-type(n+8){animation-delay:calc(var(--mk)*.35s)}
+  .lgg-pl-q i{transform-origin:center bottom;animation:anGrowY calc(var(--mk)*.8s) var(--me) calc(var(--mk)*.3s) both}
+  .lgg-pbp{animation:anUp calc(var(--mk)*.5s) var(--me) both}
+  .prf-in{animation:anUp calc(var(--mk)*.6s) var(--me) both}
+  /* something that can be opened answers the hand before it is pressed */
+  .lgg-key,.lgg-kp,.prf-g,.presc-c,.lg-md-row.open,.lgg-box tr.pick td{transition:transform .22s var(--me),box-shadow .22s ease,background-color .22s ease,border-color .22s ease}
+  .lgg-key:hover,.lgg-kp:hover{transform:translateY(-3px);box-shadow:0 8px 20px rgba(16,24,40,.10)}
+  .lgg-key.h:hover{box-shadow:inset 4px 0 0 var(--lgh),0 8px 20px rgba(16,24,40,.10)}
+  .lgg-key.a:hover{box-shadow:inset 4px 0 0 var(--lga),0 8px 20px rgba(16,24,40,.10)}
+  .lgg-key.n:hover{box-shadow:inset 4px 0 0 var(--lgh,#c6a15b),0 8px 20px rgba(16,24,40,.10)}
+  .lgg-key.t:hover{box-shadow:inset 4px 0 0 #d8524e,0 8px 20px rgba(16,24,40,.10)}
+  .lgg-key.o:hover{box-shadow:inset 4px 0 0 #2f9e86,0 8px 20px rgba(16,24,40,.10)}
+  .prf-g:hover{transform:translateY(-2px)}
+  .lg-md-row.open:hover{transform:translateX(3px)}
+  .lg-seg-b{transition:background-color .25s ease,color .25s ease,border-color .25s ease}
+
+  /* ------------------------------------------------- moving around the app (part two) */
+  /* a screen arrives, and the big blocks on it follow one after another */
+  .view-enter{animation:anUp calc(var(--mk)*.55s) var(--me) both}
+  .view-enter .year-month,.view-enter .lg-panel,.view-enter .day-card,.view-enter .sx-sec,.view-enter .td-card,
+  .view-enter .pdb-card,.view-enter .pb-card,.view-enter .pos-col{animation-name:anUp;animation-duration:calc(var(--mk)*.6s);animation-timing-function:var(--me);animation-fill-mode:both}
+  .view-enter .year-month:nth-child(2),.view-enter .lg-panel:nth-child(2),.view-enter .day-card:nth-child(2),.view-enter .sx-sec:nth-child(2),.view-enter .td-card:nth-child(2),.view-enter .pdb-card:nth-child(2),.view-enter .pos-col:nth-child(2){animation-delay:calc(var(--mk)*.08s)}
+  .view-enter .year-month:nth-child(3),.view-enter .lg-panel:nth-child(3),.view-enter .day-card:nth-child(3),.view-enter .sx-sec:nth-child(3),.view-enter .td-card:nth-child(3),.view-enter .pdb-card:nth-child(3),.view-enter .pos-col:nth-child(3){animation-delay:calc(var(--mk)*.16s)}
+  .view-enter .year-month:nth-child(4),.view-enter .lg-panel:nth-child(4),.view-enter .day-card:nth-child(4),.view-enter .sx-sec:nth-child(4),.view-enter .td-card:nth-child(4),.view-enter .pdb-card:nth-child(4),.view-enter .pos-col:nth-child(4){animation-delay:calc(var(--mk)*.24s)}
+  .view-enter .year-month:nth-child(5),.view-enter .lg-panel:nth-child(5),.view-enter .day-card:nth-child(5),.view-enter .sx-sec:nth-child(5),.view-enter .td-card:nth-child(5),.view-enter .pdb-card:nth-child(5),.view-enter .pos-col:nth-child(5){animation-delay:calc(var(--mk)*.32s)}
+  .view-enter .year-month:nth-child(n+6),.view-enter .lg-panel:nth-child(n+6),.view-enter .day-card:nth-child(n+6),.view-enter .sx-sec:nth-child(n+6),.view-enter .td-card:nth-child(n+6),.view-enter .pdb-card:nth-child(n+6){animation-delay:calc(var(--mk)*.40s)}
+  /* a report opening, and going back to the list */
+  .rep-enter{animation:anUp calc(var(--mk)*.55s) var(--me) both}
+  .rep-enter .rs-banner,.rep-enter .rs-block{animation:anUp calc(var(--mk)*.55s) var(--me) calc(var(--mk)*.15s) both}
+  /* a dialog and the side panel */
+  .dialog.open{animation:anFade calc(var(--mk)*.25s) ease-out both}
+  .dialog.open .dialog-card{animation:anRise calc(var(--mk)*.45s) var(--me) both}
+  .panel{transition:transform calc(var(--mk)*.38s) var(--me)}
+  .toast{transition:opacity .35s ease,transform .35s var(--me)}
+  /* a button gives under the finger; a row in a list leans towards it */
+  .btn,.tb-tab,.subtab,.sc-chip{transition:transform .14s ease,background-color .22s ease,border-color .22s ease,color .22s ease,box-shadow .22s ease}
+  .btn:active,.tb-tab:active,.subtab:active,.sc-chip:active,.lg-seg-b:active{transform:scale(.96)}
+  .ym-row.clk{transition:transform .2s var(--me),background-color .2s ease}
+  .ym-row.clk:hover{transform:translateX(3px)}
+  .year-month,.day-card,.pdb-card{transition:transform .25s var(--me),box-shadow .25s ease,border-color .25s ease}
+  /* nothing arrives under somebody who is writing */
+  body.app-edit .view-enter,body.app-edit .view-enter *,body.app-edit .rep-enter,body.app-edit .rep-enter *,
+  body.app-edit .lgg-body *{animation:none!important}
 }
-@media print{ .lgg,.lgg *,.prf,.prf *{animation:none!important} }
+@media print{ .lgg,.lgg *,.prf,.prf *,.view-enter,.view-enter *,.rep-enter,.rep-enter *{animation:none!important} }
 .prf-in{--lgh:#c6a15b;--lga:#4a86d8;border:1px solid var(--line,#e4e7ec);border-radius:14px;padding:12px 16px 14px;margin:0 0 16px;background:var(--panel,#fff)}
 .prf-strip{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
 .prf-g{display:flex;align-items:center;gap:8px;border:1px solid var(--line,#e4e7ec);border-radius:999px;padding:4px 12px 4px 5px;background:transparent;color:var(--ink,#141821);cursor:pointer;font-size:12.5px}
@@ -25195,7 +25293,7 @@ body.dark .rs-banner.rs-banner-sec{background:#0d1017}
    one variant that cost frames - more of the view repaints each step. A slight scale was
    tried too and dropped: it resamples every letter on the way, so the text goes soft. */
 @keyframes viewIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-.view-enter{animation:viewIn .28s cubic-bezier(.16,.84,.26,1) both}
+/* the pace of a screen arriving is set with the rest of the motion, in the MOTION block */
 /* and a card grows into place instead of being there suddenly. allow-discrete is what
    keeps the overlay on screen long enough to fade out, since it closes to display:none. */
 .modal-overlay{opacity:0;transition:opacity .15s ease, display .15s allow-discrete}
