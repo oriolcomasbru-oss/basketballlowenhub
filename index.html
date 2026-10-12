@@ -12906,6 +12906,113 @@ function gpSheetFor(){
   if(!g) return null;
   try{ return docIndex().game[g.id]||null; }catch(e){ return null; }
 }
+/* A FACE NEXT TO A NAME ON THE PLAN. The plan calls our players what the bench calls them -
+   GIAN, FERDI, BENNY - and the league knows them as Gian Aydinoglu, Ferdinand Zylka,
+   Benjamin Schröder. A nickname is matched to a man by his first name, then his surname,
+   then the first three letters, and only when one man answers; the face is the league's
+   own portrait, cropped to the head. No match, no face - never somebody else's. */
+let _gpOurAsked=false;
+function _gpOurMen(){
+  const L=leagueState();
+  let tid=""; try{ tid=_lgOurTeamId(L); }catch(e){}
+  if(!tid) return null;
+  const full=(L.players||{})[tid], slim=(L.lead||{})[tid];
+  const list=(full && (full.players||[]).length)? full.players : (slim? slim.players : null);
+  return list||null;
+}
+function _gpFace(nick, redraw){
+  if(_gpForPrint) return null;                 /* the printed sheet keeps its own measures */
+  const men=_gpOurMen();
+  if(!men){
+    /* our own totals have not been read in this browser yet: one light request, then the
+       plan is drawn again with the faces in it */
+    if(!_gpOurAsked){ _gpOurAsked=true;
+      try{ const L=leagueState(), tid=_lgOurTeamId(L);
+        if(tid) _lgAvailX(tid).then(()=>{ try{ redraw&&redraw(); }catch(e){} }); }catch(e){} }
+    return null;
+  }
+  const n=_lgNorm(nick).split(" ")[0]||"";
+  if(n.length<2) return null;
+  const ALIAS={ benny:"benjamin", ferdi:"ferdinand", chris:"christopher", eddy:"eddy", zaba:"zaba", dejour:"de jour" };
+  const want=ALIAS[n]||n;
+  let best=null, bestS=0, tie=false;
+  men.forEach(p=>{
+    const w=_lgNorm(p.name||"").split(" ").filter(Boolean);
+    if(!w.length) return;
+    const first=w[0], last=w[w.length-1], joined=w.join("");
+    let s=0;
+    if(first===want || first===n) s=5;
+    else if(last===n) s=4;
+    else if(joined.indexOf(want.replace(/ /g,""))===0 || joined.indexOf(n)===0) s=3;
+    else if(first.indexOf(n)===0 || n.indexOf(first)===0 || first.indexOf(want)===0) s=3;
+    else if(n.length>=3 && first.slice(0,3)===n.slice(0,3)) s=1;
+    if(s>bestS){ best=p; bestS=s; tie=false; } else if(s && s===bestS) tie=true;
+  });
+  if(!best || tie) return null;
+  try{ return _lgFace(leagueState(), {n:best.num, name:best.name, photo:best.photo, pid:best.pid, id:best.id}, "gpf"); }catch(e){ return null; }
+}
+/* THEIR FIVE, AND WHO COMES IN FOR WHOM - BY POSITION.
+   Read from the play by play of their last five games: who was on the floor at the tip,
+   how often, and for how long everybody else plays. The five who start most are set on
+   the five positions so that each is as close to his own as the group allows - a club
+   that starts two centres has one of them at the four, not a centre at the point. Every
+   other man of the rotation is listed behind the position he plays, most minutes first.
+   It is what they have been doing, not a prediction: a starter who missed the last game
+   is still shown, and marked. */
+const _gpOppMemo={};
+const GP_POS=["PG","SG","SF","PF","C"];
+function _gpPosIx(p){
+  const s=String(p||"").toUpperCase();
+  if(/POINT/.test(s)) return 0;
+  if(/SHOOTING/.test(s)) return 1;
+  if(/SMALL/.test(s)) return 2;
+  if(/POWER/.test(s)) return 3;
+  if(/CENT/.test(s)) return 4;
+  if(/GUARD/.test(s)) return 0.5;
+  if(/FORWARD/.test(s)) return 2.5;
+  return null;
+}
+function _gpOppFive(opp, date){
+  const key=String(opp||"")+"|"+String(date||"");
+  if(_gpOppMemo[key]) return _gpOppMemo[key];
+  const p=(async ()=>{
+    const all=await _lgAll(), L=leagueState();
+    const tid=_lgTeamIdByName({ teams:(all&&all.teams)||[], alias:L.alias }, opp) || _lgTeamIdByName(L, opp);
+    if(!tid) return null;
+    const [F, ros]=await Promise.all([ _lgFormRows(tid, date||null, 5),
+      fetch("/.netlify/functions/bbl?res=roster&id="+encodeURIComponent(tid)+"&season="+encodeURIComponent(L.season||"")).then(r=>r.ok? r.json() : null).catch(()=>null) ]);
+    if(!F || F.rows.length<2) return null;
+    const pos={}; ((ros&&ros.players)||[]).forEach(x=>{ const v={ ix:_gpPosIx(x.pos), h:Number(x.height)||0 }; pos[String(x.id)]=v; if(x.pid) pos[String(x.pid)]=v; });
+    const men={}, n=F.rows.length;
+    F.rows.forEach((r,gi)=>r.S.pl.forEach(pl=>{ if(!(pl.sec>0)) return;
+      const e=men[pl.id]||(men[pl.id]={ id:pl.id, num:pl.num, name:pl.name, gp:0, st:0, sec:0, last:false });
+      e.gp++; e.sec+=pl.sec; if(pl.st) e.st++; if(gi===0) e.last=true; }));
+    let list=Object.keys(men).map(k=>{ const e=men[k], q=pos[String(e.id)]||{};
+      e.min=e.sec/e.gp/60; e.ix=(q.ix==null)? null : q.ix; e.h=q.h||0; return e; });
+    /* a man with no position on the roster is placed by his height among the others */
+    const withIx=list.filter(e=>e.ix!=null && e.h);
+    list.forEach(e=>{ if(e.ix!=null) return;
+      if(e.h && withIx.length){ const near=withIx.slice().sort((a,b)=>Math.abs(a.h-e.h)-Math.abs(b.h-e.h))[0]; e.ix=near.ix; }
+      else e.ix=2; });
+    const five=list.slice().sort((a,b)=>(b.st-a.st)||(b.min-a.min)).slice(0,5);
+    if(five.length<5) return null;
+    /* the arrangement of the five on the five positions that moves them least */
+    let bestP=null, bestC=1e9;
+    const perm=(arr, k)=>{ if(k===arr.length){ let c=0; arr.forEach((e,slot)=>{ c+=Math.abs(e.ix-slot); }); if(c<bestC-1e-9){ bestC=c; bestP=arr.slice(); } return; }
+      for(let i=k;i<arr.length;i++){ const t=arr[k]; arr[k]=arr[i]; arr[i]=t; perm(arr,k+1); arr[i]=arr[k]; arr[k]=t; } };
+    perm(five.slice().sort((a,b)=>a.ix-b.ix), 0);
+    const inFive={}; bestP.forEach(e=>{ inFive[e.id]=1; });
+    const bench=[[],[],[],[],[]];
+    list.filter(e=>!inFive[e.id] && e.gp>=2 && e.min>=5).forEach(e=>{
+      const slot=Math.max(0, Math.min(4, Math.round(e.ix))); bench[slot].push(e); });
+    bench.forEach(b=>b.sort((a,b2)=>b2.min-a.min));
+    return { n:n, five:bestP, bench:bench };
+  })();
+  _gpOppMemo[key]=p;
+  p.catch(()=>{ delete _gpOppMemo[key]; });
+  return p;
+}
+let _gpForPrint=false;
 function renderPlanSection(sec, canEd, save, allSecs){
   const plan=planEnsure(sec);
   const box=h("div",{class:"gp-wrap gp2"});
@@ -13066,7 +13173,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
         del.addEventListener("click",()=>{ arr.splice(i,1); save(); redraw(); });
         row.appendChild(us); row.appendChild(them); row.appendChild(del);
       } else {
-        row.appendChild(h("span",{class:"gp2-u"}, pr2.us||""));
+        row.appendChild(h("span",{class:"gp2-u"}, _gpFace(pr2.us||"", redraw), h("span",{}, pr2.us||"")));
         row.appendChild(h("span",{class:"gp2-t"}, pr2.them||""));
       }
       wrap.appendChild(row); });
@@ -13075,6 +13182,39 @@ function renderPlanSection(sec, canEd, save, allSecs){
     return wrap;
   }
 
+  function oppFiveBlock(){
+    const wrap=h("div",{class:"gp-opp"});
+    const opp=_scoutOpponent||"";
+    wrap.appendChild(h("div",{class:"gp2-sec"}, "Their five · by position"));
+    if(!opp || _gamePlaceholder(opp)){ wrap.style.display="none"; return wrap; }
+    const slot=h("div",{class:"gp-opp-b"}, h("div",{class:"gp3-ksn"},"Reading their last five games…"));
+    wrap.appendChild(slot);
+    _gpOppFive(opp, _scoutDate).then(R=>{
+      slot.innerHTML="";
+      if(!R){ slot.appendChild(h("div",{class:"gp3-ksn"},"Not enough finished games in the league feed to say.")); return; }
+      R.five.forEach((e,i)=>{
+        slot.appendChild(h("div",{class:"gp-opp-r"},
+          h("b",{class:"pos"}, GP_POS[i]),
+          h("div",{},
+            h("div",{class:"st"}, h("span",{class:"nm"}, "#"+e.num+" "+_lgLastName(e.name)),
+              h("i",{title:"starts in their last "+R.n+" games · minutes a game"}, e.st+"/"+R.n+" · "+Math.round(e.min)+"′"),
+              e.last? null : h("em",{title:"did not play their last game"},"?")),
+            R.bench[i].length? h("div",{class:"bn"}, R.bench[i].map(b=>"#"+b.num+" "+_lgLastName(b.name)+" "+Math.round(b.min)+"′"+(b.last?"":" ?")).join(" · ")) : null)));
+      });
+      slot.appendChild(h("div",{class:"gp3-ksn"},"Starts and minutes in their last "+R.n+" games, from the play by play. Under each starter, who plays that position off the bench. ? = missed their last game."));
+      if(canEd){
+        const fill=h("button",{class:"gp2-add", title:"Writes their five into the empty Opponent boxes of Defensive pairs, in position order"},"Use as defensive pairs");
+        fill.addEventListener("click",()=>{
+          R.five.forEach((e,i)=>{ const t="#"+e.num+" "+_lgLastName(e.name).toUpperCase();
+            if(!plan.pairs1[i]) plan.pairs1[i]={ us:"", them:"" };
+            if(!String(plan.pairs1[i].them||"").trim()) plan.pairs1[i].them=t; });
+          save(); redraw();
+        });
+        slot.appendChild(fill);
+      }
+    }).catch(()=>{ slot.innerHTML=""; slot.appendChild(h("div",{class:"gp3-ksn"},"Their games could not be read.")); });
+    return wrap;
+  }
   function minutesBlock(){
     const perQ={}; GP_HALF.forEach(q=>{ perQ[q]={}; (plan.grid[q]||[]).forEach(row=>row.forEach(id=>{ if(id) perQ[q][id]=(perQ[q][id]||0)+1; })); });
     const totals=gpTotals(plan);
@@ -13087,7 +13227,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
     tbl.appendChild(h("tr",{}, h("th",{},"Player"), h("th",{},"Q1"), h("th",{},"Q2"), h("th",{},"Mapped → game"), h("th",{class:"bar"},"")));
     rows.forEach(pl=>{ const a=perQ.Q1[pl.id]||0, b=perQ.Q2[pl.id]||0, m=a+b;
       tbl.appendChild(h("tr",{},
-        h("td",{class:"nm"}, pl.name),
+        h("td",{class:"nm"}, _gpFace(pl.name, redraw), h("span",{}, pl.name)),
         h("td",{}, a||"–"), h("td",{}, b||"–"),
         h("td",{class:"map"}, m? (m+" ") : "– ", m? h("span",{class:"x2"},"→ "+(m*2)) : null),
         h("td",{class:"bar"}, h("i",{style:"width:"+Math.round((m/max)*100)+"%"})))); });
@@ -13337,20 +13477,35 @@ function renderPlanSection(sec, canEd, save, allSecs){
     const left=h("div",{class:"gp2-rail"});
     left.appendChild(pairsBlock("Defensive pairs", plan.pairs1));
     left.appendChild(pairsBlock("Off the bench", plan.pairs2));
+    /* on the screen only: who they start and who comes in, under the pairs it informs */
+    if(!_gpForPrint){ try{ left.appendChild(oppFiveBlock()); }catch(e){} }
     left.appendChild(minutesBlock());
     const mid=h("div",{class:"gp2-mid"});
-    GP_HALF.forEach(q=>{
-      /* the board is the document: whatever goes wrong building the box beside it, or
-         the key sets under it, the rotation is still drawn */
-      let card=null; try{ card=quarterCard(q); }catch(e){ try{ console.warn("game plan box", q, e); }catch(_){} }
-      mid.appendChild(h("div",{class:"gp3-qrow"+(card?"":" solo")}, quarterBoard(q), card));
-    });
+    /* ON THE SCREEN THE BOARDS AND THE BOXES ARE TWO COLUMNS OF THEIR OWN. They used to be
+       two rows, each a board with its box beside it, so a box with a lot of text in it
+       made its row tall and pushed the second quarter's board down the page, away from
+       the first. Now the two boards sit one right under the other whatever is written,
+       and the two boxes run down beside them at their own length. The printed sheet keeps
+       the rows: its sizes are set for that shape and it is not touched. */
+    const cards={}; GP_HALF.forEach(q=>{ try{ cards[q]=quarterCard(q); }catch(e){ cards[q]=null; try{ console.warn("game plan box", q, e); }catch(_){} } });
+    if(_gpForPrint){
+      GP_HALF.forEach(q=>{ const card=cards[q];
+        mid.appendChild(h("div",{class:"gp3-qrow"+(card?"":" solo")}, quarterBoard(q), card)); });
+    } else {
+      const anyCard=GP_HALF.some(q=>!!cards[q]);
+      mid.appendChild(h("div",{class:"gp3-cols"+(anyCard?"":" solo")},
+        h("div",{class:"gp3-colb"}, GP_HALF.map(q=>quarterBoard(q))),
+        anyCard? h("div",{class:"gp3-colc"}, GP_HALF.map(q=>cards[q])) : null));
+    }
     /* both boxes are set the same size: one quarter in smaller type than the other reads
        as one mattering less */
     if(mid.querySelector(".gp3-qc.dense")) mid.querySelectorAll(".gp3-qc").forEach(c=>c.classList.add("dense"));
     sheet.classList.add("gp3-sheet");
     sheet.appendChild(left); sheet.appendChild(mid);
-    try{ sheet.appendChild(keySetsBlock()); }catch(e){ try{ console.warn("game plan key sets", e); }catch(_){} }
+    /* the key sets go under the minutes on the screen, where the eye already is for the
+       matchups; on paper they keep their own place on the sheet */
+    try{ const ks=keySetsBlock(); if(_gpForPrint) sheet.appendChild(ks); else { left.appendChild(ks); sheet.classList.add("ks-rail"); } }
+    catch(e){ try{ console.warn("game plan key sets", e); }catch(_){} }
     box.appendChild(sheet);
 
     const foot=h("div",{class:"gp2-foot"},
@@ -13360,8 +13515,12 @@ function renderPlanSection(sec, canEd, save, allSecs){
     /* what is printed is the reader's sheet, whoever presses the button: printed from the
        editor it came out with unlabelled rails and the colour key as raw sentences */
     pr.addEventListener("click",()=>{
-      if(!canEd){ gpPrintSheet(sheet); return; }
-      const ro=renderPlanSection(sec, false, ()=>{}, allSecs).querySelector(".gp2-sheet");
+      /* the sheet that is printed is always built for paper, whoever presses the button:
+         the screen's arrangement is not the one the A4 sizes were set for */
+      let ro=null;
+      _gpForPrint=true;
+      try{ ro=renderPlanSection(sec, false, ()=>{}, allSecs).querySelector(".gp2-sheet"); }catch(e){ ro=null; }
+      finally{ _gpForPrint=false; }
       if(ro) gpPrintSheet(ro, true); else gpPrintSheet(sheet);
     });
     foot.appendChild(pr);
@@ -27321,6 +27480,32 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .gp3-qrow{display:grid;grid-template-columns:minmax(0,1fr) 310px;column-gap:16px;align-items:start}
 .gp3-qrow.solo{grid-template-columns:minmax(0,1fr)}
 .gp3-qrow+.gp3-qrow{margin-top:18px}
+/* on the screen: the two boards in one column, the two boxes in the other */
+.gp3-cols{display:grid;grid-template-columns:minmax(0,1fr) 310px;column-gap:16px;align-items:start}
+.gp3-cols.solo{grid-template-columns:minmax(0,1fr)}
+.gp3-colb .gp2-q+.gp2-q{margin-top:10px}
+.gp3-colc .gp3-qc+.gp3-qc{margin-top:10px}
+@media(max-width:1380px){ .gp3-cols{grid-template-columns:minmax(0,1fr);row-gap:10px} }
+/* the key sets under the minutes, in the rail */
+.gp2-sheet.gp3-sheet.ks-rail{grid-template-columns:292px minmax(0,1fr);grid-template-rows:auto}
+.gp3-sheet.ks-rail > .gp2-rail{grid-row:1}
+.gp2-rail .gp3-ks{margin-top:16px;padding-top:10px}
+.gp2-rail .gp3-ksb{column-width:auto;column-count:1}
+/* a face next to a name: the head, not the portrait */
+.lg-bdg.face.gpf{width:22px;height:22px;margin-right:6px;vertical-align:-6px;flex:none;overflow:hidden}
+.lg-bdg.face.gpf img{object-fit:cover;object-position:50% 8%;transform:scale(1.25);transform-origin:50% 12%}
+.gp2-rail .gp2-min th:first-child,.gp2-rail .gp2-min td.nm{width:46%}
+.gp2-u{display:inline-flex;align-items:center;min-width:0}
+/* their five, by position */
+.gp-opp{margin-top:18px}
+.gp-opp-r{display:grid;grid-template-columns:24px minmax(0,1fr);gap:6px;align-items:start;padding:3px 0;border-bottom:1px solid var(--line,#eef0f3)}
+.gp-opp-r .pos{font:700 11px 'Oswald',sans-serif;letter-spacing:.05em;color:var(--ink-faint,#8a93a2);padding-top:1px}
+.gp-opp-r .st{display:flex;align-items:baseline;gap:6px;min-width:0}
+.gp-opp-r .st .nm{font:700 12px 'Inter',system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gp-opp-r .st i{font-style:normal;font:500 9.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);white-space:nowrap}
+.gp-opp-r .st em{font-style:normal;font-weight:800;color:#d8524e}
+.gp-opp-r .bn{font-size:10.5px;color:var(--ink-soft,#5b6472);line-height:1.3}
+.gp-opp .gp2-add{margin-top:6px}
 .gp3-qh{display:flex;align-items:baseline;gap:7px}
 .gp3-qh span{font:600 9.5px 'Inter',sans-serif;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint,#8a919c)}
 .gp3-minw{margin-top:20px}
