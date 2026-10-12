@@ -6745,6 +6745,8 @@ function renderScout(body, g, key, kind, from, rep){
     return;
   }
   {
+    /* how they arrive, before anything else on the page - staff only */
+    try{ if(!isPlayerUser()) body.appendChild(_preRecentForm(g)); }catch(e){}
     const canEd = editable;   /* permission AND not presenting — same rule everywhere */
     /* The scouting sheet above the report is the hand-built one, and for most opponents
        there is nothing in it: an empty PLAYERS header with a Rooster / Player Roles switch
@@ -15244,6 +15246,101 @@ function _lgGameInline(sg){
   if(have.length && put(have)) return box;
   _lgAllMemo=_lgAllMemo || fetch("/.netlify/functions/bbl?res=all").then(r=>r.json());
   _lgAllMemo.then(j=>{ put(((j&&j.games)||[]).concat((j&&j.cup)||[])); }).catch(()=>{ _lgAllMemo=null; });
+  return box;
+}
+/* HOW THEY ARRIVE. The first thing in a pre game, before any section the staff wrote.
+   The report below is the season and the tagging; this is the last five games read the
+   way the game window reads one, and boiled down to what a coach would say on the way to
+   the bus: what their record is, how good they have been at each end, the one thing they
+   have been winning games with, the one thing they have been giving away, how much of it
+   is the three, and who is carrying them. Six cards and the five results, each of which
+   opens that game. It says nothing that is not in those five box scores. */
+function _preRecentForm(sg){
+  const box=h("div",{class:"prf"});
+  if(!sg || !sg.opponent || _gamePlaceholder(sg.opponent)) return box;
+  const N=5;
+  const run=async ()=>{
+    _lgAllMemo=_lgAllMemo || fetch("/.netlify/functions/bbl?res=all").then(r=>r.json());
+    const all=await _lgAllMemo;
+    const L=leagueState();
+    /* the list just asked for first: the league page's saved copy may be short or old */
+    const tid=_lgTeamIdByName({ teams:(all&&all.teams)||[], alias:L.alias }, sg.opponent) || _lgTeamIdByName(L, sg.opponent);
+    if(!tid) return;
+    const seen={};
+    const games=((all&&all.games)||[]).concat((all&&all.cup)||[])
+      .filter(x=>{ if(seen[x.id]) return false; seen[x.id]=1;
+        return _lgDone(x) && (String(x.homeId)===String(tid)||String(x.awayId)===String(tid)) && (!sg.date || x.date<sg.date); })
+      .sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,N);
+    if(games.length<2) return;
+    box.appendChild(h("div",{class:"lg-empty"},"Reading their last "+games.length+" games…"));
+    const feeds=await Promise.all(games.map(x=>(_lgGameMemo[x.id]||(_lgGameMemo[x.id]=
+      fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(x.id)).then(r=>r.json()))).catch(()=>null)));
+    const rows=[];
+    games.forEach((x,i)=>{ const j=feeds[i];
+      if(!j || !j.feed || !(j.feed.actions||[]).length) return;
+      const M=_lgGameModel(x, j), home=String(x.homeId)===String(tid);
+      const S=home?M.H:M.A, O=home?M.A:M.H;
+      if(!S.has || !O.has) return;
+      rows.push({ g:x, home:home, S:S, O:O, win:S.pts>O.pts,
+        q:(x.quarters||[]).slice(0,4).map(q=>home? q[0]-q[1] : q[1]-q[0]) }); });
+    box.innerHTML="";
+    if(rows.length<2) return;
+    const n=rows.length, avg=f=>rows.reduce((a,r)=>a+(f(r)||0),0)/n;
+    const f1=v=>(v==null||!isFinite(v))?"—":v.toFixed(1);
+    const wins=rows.filter(r=>r.win).length;
+    const name=_gTidy(sg.opponent);
+    const cards=[];
+    const add=(tone,big,lbl,sub)=>cards.push(h("div",{class:"lgg-key "+tone}, h("b",{},big), h("span",{},lbl), h("i",{},sub)));
+    /* 1 - the record, and the quarter they win and the one they lose */
+    const qa=[0,1,2,3].map(i=>rows.reduce((a,r)=>a+(r.q[i]||0),0)/n);
+    const qb=qa.indexOf(Math.max.apply(null,qa)), qw=qa.indexOf(Math.min.apply(null,qa));
+    const sg1=v=>(v>0?"+":"")+v.toFixed(1);
+    add("n", wins+"–"+(n-wins), "last "+n+" games", f1(avg(r=>r.S.pts))+" scored · "+f1(avg(r=>r.O.pts))+" allowed"+
+      ((rows[0].q.length===4)? " · best Q"+(qb+1)+" ("+sg1(qa[qb])+"), worst Q"+(qw+1)+" ("+sg1(qa[qw])+")" : ""));
+    /* 2 - how good at each end */
+    const ortg=avg(r=>r.S.ortg), drtg=avg(r=>r.O.ortg);
+    add(ortg-drtg>=0?"t":"o", f1(ortg)+" / "+f1(drtg), "points per 100 poss. · scored / allowed",
+      "net "+sg1(ortg-drtg)+" · pace "+f1(avg(r=>r.S.pace))+" possessions");
+    /* 3 and 4 - what they win games with, and what they give away */
+    const ff=[
+      { k:"Shooting", d:avg(r=>r.S.efg-r.O.efg), per:4, t:"eFG% "+f1(avg(r=>r.S.efg))+" · opponents "+f1(avg(r=>r.O.efg)) },
+      { k:"Taking care of the ball", d:avg(r=>r.O.tovp-r.S.tovp), per:3, t:"turnover % "+f1(avg(r=>r.S.tovp))+" · opponents "+f1(avg(r=>r.O.tovp)) },
+      { k:"Offensive glass", d:avg(r=>r.S.orbp-r.O.orbp), per:6, t:"off. rebound % "+f1(avg(r=>r.S.orbp))+" · opponents "+f1(avg(r=>r.O.orbp)) },
+      { k:"Getting to the line", d:avg(r=>r.S.ftr-r.O.ftr), per:9, t:"FT rate "+f1(avg(r=>r.S.ftr))+" · opponents "+f1(avg(r=>r.O.ftr)) }
+    ].map(x=>Object.assign(x,{ w:x.d/x.per })).sort((a,b)=>b.w-a.w);
+    const best=ff[0], worst=ff[ff.length-1];
+    if(best.w>0.25) add("t", best.k, "where they have been better", best.t);
+    if(worst.w<-0.25) add("o", worst.k, "where they have been worse", worst.t);
+    /* 5 - the three */
+    const m3=rows.reduce((a,r)=>a+r.S.p3m,0), a3=rows.reduce((a,r)=>a+r.S.p3a,0), fga=rows.reduce((a,r)=>a+r.S.fga,0);
+    const p3=(l)=>{ const m=l.reduce((a,r)=>a+r.S.p3m,0), a=l.reduce((a,r)=>a+r.S.p3a,0); return a? Math.round(100*m/a)+"%" : "—"; };
+    const W=rows.filter(r=>r.win), Lo=rows.filter(r=>!r.win);
+    add("n", (a3? Math.round(100*m3/a3) : 0)+"%", "from three · "+f1(a3/n)+" a game",
+      Math.round(100*a3/Math.max(1,fga))+"% of their shots"+((W.length&&Lo.length)? " · "+p3(W)+" in wins, "+p3(Lo)+" in losses" : ""));
+    /* 6 - who is carrying them */
+    const men={};
+    rows.forEach(r=>r.S.pl.forEach(p=>{ const e=men[p.id]||(men[p.id]={ name:p.name, num:p.num, gp:0, pir:0, pts:0 }); e.gp++; e.pir+=p.pir; e.pts+=p.pts; }));
+    const top=Object.keys(men).map(k=>men[k]).filter(e=>e.gp>=Math.ceil(n/2))
+      .map(e=>Object.assign(e,{ apir:e.pir/e.gp, apts:e.pts/e.gp })).sort((a,b)=>b.apir-a.apir).slice(0,3);
+    if(top.length) add("n", top[0].name, "PIR "+f1(top[0].apir)+" · "+f1(top[0].apts)+" pts a game",
+      top.slice(1).map(e=>{ const w=e.name.trim().split(/\s+/);
+        /* "Edigin Jr" is a surname in two words, not a man called Jr */
+        const ln=(w.length>1 && /^(jr|sr|ii|iii|iv)\.?$/i.test(w[w.length-1]))? w.slice(-2).join(" ") : w[w.length-1];
+        return ln+" "+f1(e.apir)+" PIR, "+f1(e.apts)+" pts"; }).join(" · ")||"—");
+    /* the five results, newest first; each opens its game */
+    const strip=h("div",{class:"prf-strip"});
+    rows.forEach(r=>{ const x=r.g, opp=r.home? x.away : x.home;
+      strip.appendChild(h("button",{class:"prf-g "+(r.win?"w":"l"), title:"Open the game", onclick:()=>_lgGameOpen(x)},
+        h("b",{}, r.win?"W":"L"),
+        h("span",{}, (r.home?"vs ":"@ ")+_gTidy(opp)),
+        h("i",{}, r.S.pts+"–"+r.O.pts),
+        h("em",{}, x.date? x.date.slice(8,10)+"/"+x.date.slice(5,7) : ""))); });
+    box.appendChild(h("div",{class:"prf-in"},
+      h("div",{class:"lgg-h"}, h("b",{}, "How "+name+" arrive"),
+        h("span",{}, "their last "+n+" games · red is what to respect, green is what to attack")),
+      strip, h("div",{class:"lgg-keys"}, cards)));
+  };
+  run().catch(()=>{ box.innerHTML=""; });
   return box;
 }
 function _lgGamePanel(g, close){
@@ -24267,6 +24364,17 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
 .lgg-flt-l{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
 .lgg-flt-s{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600}
 .lgg-selq{fill:var(--ink,#141821);opacity:.07}
+.prf-in{--lgh:#c6a15b;--lga:#4a86d8;border:1px solid var(--line,#e4e7ec);border-radius:14px;padding:12px 16px 14px;margin:0 0 16px;background:var(--panel,#fff)}
+.prf-strip{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.prf-g{display:flex;align-items:center;gap:8px;border:1px solid var(--line,#e4e7ec);border-radius:999px;padding:4px 12px 4px 5px;background:transparent;color:var(--ink,#141821);cursor:pointer;font-size:12.5px}
+.prf-g:hover{border-color:var(--accent,#c6a15b)}
+.prf-g b{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Oswald',sans-serif;font-size:12px;color:#fff}
+.prf-g.w b{background:#2f9e86}.prf-g.l b{background:#d8524e}
+.prf-g i{font-style:normal;font-family:'IBM Plex Mono',monospace;font-weight:600}
+.prf-g em{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-faint,#8a93a2)}
+.lgg-key.n{box-shadow:inset 4px 0 0 var(--lgh,#c6a15b)}
+.lgg-key.t{box-shadow:inset 4px 0 0 #d8524e}
+.lgg-key.o{box-shadow:inset 4px 0 0 #2f9e86}
 .lgg-keys{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .lgg-key{border:1px solid var(--line,#e4e7ec);border-radius:12px;padding:10px 14px 11px;display:flex;flex-direction:column;gap:2px;min-width:0}
 .lgg-key.h{box-shadow:inset 4px 0 0 var(--lgh)}.lgg-key.a{box-shadow:inset 4px 0 0 var(--lga)}
