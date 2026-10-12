@@ -15403,7 +15403,7 @@ function _anCount(root, sel, ms){
    game was - the score by quarter, who was in front, the two box scores - had to be looked
    up somewhere else first. The report knows the opponent and the day; the league's list
    of games gives the game that was played against them that day. */
-let _lgAllMemo=null;
+let _lgAllMemo=null, _lgInlineKeep=null;
 function _lgGameInline(sg){
   const box=h("div",{class:"lgg-inl"});
   if(!sg || !sg.date) return box;
@@ -15419,7 +15419,21 @@ function _lgGameInline(sg){
     return mine.filter(x=>x.date && Math.abs(day(x.date)-day(sg.date))<=1 && opp &&
       (String(x.home||"")+" "+String(x.away||"")).toLowerCase().indexOf(opp)>=0)[0]||null;
   };
-  const put=list=>{ const g=find(list); if(g){ box.innerHTML=""; box.appendChild(_lgGamePanel(g, null)); } return !!g; };
+  /* BUILT ONCE PER GAME, THEN KEPT. The report around it is drawn again whenever something
+     it shows lands late - a file from the Drive, a status, a save - and each of those
+     used to throw this block away and build it again: the sheet read again, everything
+     arriving again, the page short for a moment and the scroll lost. The block for a
+     game is kept and put back as it is, with its periods and whatever was opened in it;
+     put back, it does not arrive a second time. */
+  const put=list=>{ const g=find(list);
+    if(g){
+      box.innerHTML="";
+      let el=(_lgInlineKeep && _lgInlineKeep.id===g.id)? _lgInlineKeep.el : null;
+      if(el){ el.classList.add("an-done"); el.querySelectorAll(".an-hold").forEach(x=>x.classList.remove("an-hold")); }
+      else { el=_lgGamePanel(g, null); _lgInlineKeep={ id:g.id, el:el }; }
+      box.appendChild(el);
+    }
+    return !!g; };
   const have=(L.games||[]).concat(L.cup||[]);
   if(have.length && put(have)) return box;
   _lgAllMemo=_lgAllMemo || fetch("/.netlify/functions/bbl?res=all").then(r=>r.json());
@@ -15433,8 +15447,14 @@ function _lgGameInline(sg){
    have been winning games with, the one thing they have been giving away, how much of it
    is the three, and who is carrying them. Six cards and the five results, each of which
    opens that game. It says nothing that is not in those five box scores. */
+let _prfKeep=null;
 function _preRecentForm(sg){
+  /* kept for the game it was built for, like the post game block: a report that is drawn
+     again puts it back as it is instead of reading five games and arriving once more */
+  const kk=String((sg&&sg.opponent)||"")+"|"+String((sg&&sg.date)||"");
+  if(_prfKeep && _prfKeep.k===kk && _prfKeep.el.firstChild){ _prfKeep.el.classList.add("an-done"); return _prfKeep.el; }
   const box=h("div",{class:"prf"});
+  _prfKeep={ k:kk, el:box };
   if(!sg || !sg.opponent || _gamePlaceholder(sg.opponent)) return box;
   const N=5;
   const run=async ()=>{
@@ -15621,7 +15641,18 @@ function _lgGamePanel(g, close){
     if(M.H.shots.length || M.A.shots.length){
       /* the league's own shooting from each spot is what the hexagons are coloured against;
          it is read once for the whole league page, so it is asked for here if nobody has */
-      try{ if(!L.pbp && !_lgPbpBusy && !_lgPbpTried && !L.demo) syncPbp(false); }catch(e){}
+      /* ONLY FROM THE LEAGUE PAGE. Reading the league's shooting is every game sheet of
+         every club, fetched in rounds, and each round redraws whatever league block is on
+         screen. Asked for from a post game it turned the report into a page that redrew
+         itself over and over while the rounds came in - the top of it arriving again and
+         again, and the scroll thrown back each time. The post game colours its floor
+         against the league when the league has already been read, and against the team's
+         own average when it has not; it never starts the reading. */
+      try{
+        const lgv=document.getElementById("viewLeague");
+        const onLeague=!!(close && lgv && lgv.style.display!=="none");
+        if(onLeague && !L.pbp && !_lgPbpBusy && !_lgPbpTried && !L.demo) syncPbp(false);
+      }catch(e){}
       const lgOn=!!(L.pbp&&L.pbp.league);
       const key=h("div",{class:"sc-sum"},
         h("span",{class:"sc-kl"},"Efficiency"), h("span",{class:"sc-kz mn2"},"below"), h("span",{class:"sc-kz mn1"},""),
@@ -24769,6 +24800,8 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
   /* held until it is on screen: paused at the first frame of its own arrival, and
      everything inside it with it */
   .an-hold,.an-hold *{animation-play-state:paused!important}
+  /* a block put back where it was has already arrived */
+  .an-done,.an-done *{animation:none!important}
   .an-wait{opacity:0;animation:none!important}
   .an-in{animation:anUp calc(var(--mk)*.6s) var(--me) both}
   /* nothing arrives under somebody who is writing */
