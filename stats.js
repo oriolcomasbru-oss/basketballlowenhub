@@ -1555,6 +1555,24 @@
         cells.push({ v: f2(shotLine(sub).ppp), cls: "sx-cell sx-tot" });
         return cells;
       });
+      /* THE WHOLE, UNDER ITS PARTS. Each row says how a phase or a quarter splits into
+         none, one, two or more; what was missing was the same split for everything
+         together - how many possessions of the game had none, one, two or more, and
+         what share of the total that is. */
+      var allList = [];
+      items.forEach(function (it) { allList = allList.concat(it.list); });
+      if (items.length > 1 && allList.length) {
+        var tc = ["Total", allList.length, { v: pct(allList.length, N), cls: "" }];
+        [0, 1, 2].forEach(function (k) {
+          var g = allList.filter(function (q) { return k < 2 ? (q[key] || 0) === k : (q[key] || 0) >= 2; });
+          tc.push(g.length);
+          tc.push({ v: pct(g.length, allList.length), cls: "sx-vol " + volStep(100 * g.length / allList.length) });
+          tc.push({ v: f2(shotLine(g).ppp), cls: "sx-cell " + pppStep(shotLine(g).ppp) });
+        });
+        tc.push({ v: f2(shotLine(allList.filter(function (q) { return (q[key] || 0) > 0; })).ppp), cls: "sx-cell" });
+        tc.push({ v: f2(shotLine(allList).ppp), cls: "sx-cell sx-tot" });
+        rows.push({ cls: "sx-totrow", cells: tc });
+      }
       return table([dimName, "Poss", "% all", "0", "%", "PPP", "1", "%", "PPP", "2+", "%", "PPP", "PPP w/ 1+", dimName + " PPP"], rows);
     }
 
@@ -3510,7 +3528,17 @@
     if (ka !== kb) return ka - kb;
     return String(a.name || a.label || "") < String(b.name || b.label || "") ? -1 : 1;
   }
+  /* THE PAGE IS SHOWN WHEN IT IS WHOLE. The highlights at the top are worked out from the
+     charts under them, so they are built last - and built straight into the page that
+     meant the bottom of it appeared first and the top landed on it afterwards. It is
+     built off the page now and put in in one piece, top to bottom. */
   function renderTrendsDash(root, sets, noDate, folder) {
+    var stage0 = document.createElement("div");
+    renderTrendsDashInner(stage0, sets, noDate, folder);
+    root.innerHTML = "";
+    root.appendChild(stage0);
+  }
+  function renderTrendsDashInner(root, sets, noDate, folder) {
     root.innerHTML = "";
     /* a day with no training never arrives here; the two kinds of empty session are
        dropped here, and both are counted so the line is not read as the whole season */

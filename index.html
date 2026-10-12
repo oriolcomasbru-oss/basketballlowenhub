@@ -5363,7 +5363,7 @@ function _gTidy(n){
    way back from it, and a switch between the two. All three wrote the schedule, which
    is the one thing nothing but DB_Games is allowed to do now - see loadGames above. */
 function calYear(){
-  const wrap=h("div",{class:"year-wrap"});
+  const wrap=h("div",{class:"year-wrap"+_anSoftOnce("calyear")});
   const byMonth={}; state.games.filter(g=>calFilterOn(g.competition)).slice().sort((a,b)=>a.date.localeCompare(b.date)).forEach(g=>{ const k=g.date.slice(0,7); (byMonth[k]=byMonth[k]||[]).push(g); });
   const keys=Object.keys(byMonth).sort();
   if(!keys.length){ wrap.appendChild(h("div",{class:"empty-state"},"No games yet — DB_Games has not been read.")); return wrap; }
@@ -6341,9 +6341,16 @@ function loadPraFiles(after){
 
 function seasonGrid(kind){
   const {keys,map}=seasonMonths();
-  const wrap=h("div",{class:"year-wrap"});
+  const wrap=h("div",{class:"year-wrap"+_anSoftOnce("season:"+kind)});
   const slot = kind==="gameplan" ? "plan" : (kind==="oppscout" ? "pre" : "post");
-  const redraw = ()=>{ if(kind==="gameplan") renderGamePlan(); else if(kind==="oppscout") renderOppScout(); else renderTeamScout(); };
+  /* The list is drawn again when the calendar, the Drive or the statuses answer, and for
+     the instant it is empty the page has no height: whoever had already scrolled down it
+     was thrown back. The place is kept across the redraw. */
+  const redraw = ()=>{
+    const ws=document.getElementById("workspace"), y=ws? ws.scrollTop : 0;
+    if(kind==="gameplan") renderGamePlan(); else if(kind==="oppscout") renderOppScout(); else renderTeamScout();
+    if(ws && y){ ws.scrollTop=y; }
+  };
   /* the season these screens list is DB_Games, read on the way in */
   loadGamesOnce(redraw);
   if(!keys.length){ wrap.appendChild(h("div",{class:"empty-state"},"Nothing scheduled yet.")); return wrap; }
@@ -14684,8 +14691,13 @@ function _lgGameClock(t){
    at the start of each period, moved by every substitution after it.
    The answer has the same shape as the feed's own lines, so everything downstream reads
    a quarter exactly as it reads a game. */
-function _lgGamePeriodBox(feed, sel){
+function _lgGamePeriodBox(feed, sel, clip){
   const qi=q=>_lgGameElapsed(q,0).qi;
+  /* clip: only the last so-many seconds of each period asked for - the closing two
+     minutes are 120. The floor is still followed from the start of the period, since who
+     is on it at 2:00 depends on every substitution before. */
+  const inClip=a=>clip==null || (Number(a.time)||0)<=clip;
+  const cv=v=>clip==null? v : Math.min(v, clip);
   const T={ A:null, B:null }, P={};
   ["A","B"].forEach(c=>{ T[c]={ type:"team", teamcode:c, FTM:0,FTA:0,P2M:0,P2A:0,P3M:0,P3A:0,FOUL:0,DREB:0,OREB:0,BL:0,STL:0,TOV:0, PTS:0 }; });
   (feed.teams||[]).forEach(t=>{ if(T[t.teamcode]) T[t.teamcode].id=t.id; });
@@ -14702,21 +14714,21 @@ function _lgGamePeriodBox(feed, sel){
     (feed.starters||[]).filter(s=>qi(s.quarter)===+qk).forEach(s=>{
       [1,2,3,4,5].forEach(n=>{ const id=String(s["player_id"+n]||""); if(id && id!=="0"){ on[s.teamcode][id]=1; known[s.teamcode]=true; } }); });
     let last=len;
-    const tick=t=>{ const dt=Math.max(0,last-t); last=Math.min(last,t);
+    const tick=t=>{ const dt=Math.max(0,cv(last)-cv(t)); last=Math.min(last,t);
       if(!dt) return;
       ["A","B"].forEach(c=>{ if(known[c]) Object.keys(on[c]).forEach(id=>{ const p=pl(id,c); if(p) p.SP+=dt; }); }); };
     byQ[qk].slice().sort((x,y)=>(Number(y.time)||0)-(Number(x.time)||0)).forEach(a=>{
       const t=Number(a.time)||0, c=a.teamcode;
       tick(t);
       if(a.action==="SUBST" && on[c]){ delete on[c][String(a.player_id1)]; const inn=String(a.player_id2||""); if(inn && inn!=="0") on[c][inn]=1; return; }
-      if(a.result==="+" && (a.action==="P2"||a.action==="P3"||a.action==="FT")){
+      if(a.result==="+" && inClip(a) && (a.action==="P2"||a.action==="P3"||a.action==="FT")){
         const v=(a.action==="P3")?3:(a.action==="P2")?2:1;
         ["A","B"].forEach(k=>{ if(known[k]) Object.keys(on[k]).forEach(id=>{ const p=pl(id,k); if(p) p.PM+=(k===c? v : -v); }); });
       }
     });
     tick(0);
   });
-  acts.forEach(x=>{ const a=x.a, c=a.teamcode, t=T[c]; if(!t) return;
+  acts.forEach(x=>{ const a=x.a, c=a.teamcode, t=T[c]; if(!t || !inClip(a)) return;
     const p=pl(a.player_id1, c, a.player_nr1), k=a.action, made=(a.result==="+");
     if(k==="P2"||k==="P3"||k==="FT"){
       const f=(k==="FT")?"FT":k, v=(k==="P3")?3:(k==="P2")?2:1;
@@ -14739,15 +14751,15 @@ function _lgGamePeriodBox(feed, sel){
     p.EFF=p.PTS+p.REB+p.AST+p.STL+p.BL-(p.P2A+p.P3A-p.P2M-p.P3M)-(p.FTA-p.FTM)-p.TOV;
     return p; });
   return { teams:[T.A,T.B], players:players, pts:{ A:T.A.PTS, B:T.B.PTS },
-           actions:acts.map(x=>x.a), shots:(feed.shots||[]).filter(s=>sel[qi(s.q)]) };
+           actions:acts.map(x=>x.a).filter(inClip), shots:(feed.shots||[]).filter(s=>sel[qi(s.q)] && inClip(s)) };
 }
 /* Everything the popup shows, worked out once from the feed. H is the home side.
    sel names the periods to read - {0:1, 2:1} is the first and third quarters - and
    nothing means the whole game, which is read off the feed's own official lines. */
-function _lgGameModel(g, j, sel){
+function _lgGameModel(g, j, sel, clip){
   let feed=j.feed||{}; const sheet=j.game||{}, full=feed;
   if(sel && Object.keys(sel).length){
-    const part=_lgGamePeriodBox(full, sel);
+    const part=_lgGamePeriodBox(full, sel, clip);
     let hcode="A"; (full.teams||[]).forEach(t=>{ if(String(t.id)===String(g.homeId)) hcode=t.teamcode; });
     feed=Object.assign({}, full, { teams:part.teams, players:part.players, actions:part.actions, shots:part.shots });
     g=Object.assign({}, g, { hs:part.pts[hcode], as:part.pts[hcode==="A"?"B":"A"], _full:g });
@@ -15235,6 +15247,61 @@ function _lgGameCompare(g, M, adv){
   row("Fast points", H.fast, A.fast, null, "hi", "scored within seven seconds of a defensive rebound or a turnover");
   return box;
 }
+/* THE LAST TWO MINUTES. How the game was closed is its own question, and a box score of
+   forty minutes cannot answer it: the closing two minutes of the fourth quarter, and of
+   every overtime, read on their own from the play by play - the score going in and the
+   score of the stretch, each side as a team in attack (which is the other side's
+   defence), and every man who was on the floor for any of it. Two minutes is a handful
+   of possessions, so the figures are shown as counts first and rates second; a rate off
+   four possessions is said, not hidden, but it is not a tendency. */
+function _lgGameClutch(g, j, flow){
+  const feed=j.feed||{};
+  let nq=4; (feed.actions||[]).forEach(a=>{ nq=Math.max(nq, _lgGameElapsed(a.quarter,0).qi+1); });
+  const wrap=h("div",{class:"lgg-clutch"});
+  const f2=v=>(v==null||!isFinite(v))?"—":v.toFixed(2);
+  const sh=(m,a)=>a? (m+"/"+a) : "–";
+  const mm=s=>Math.floor(s/60)+":"+String(Math.round(s%60)).padStart(2,"0");
+  for(let q=3;q<nq;q++){
+    const sel={}; sel[q]=1;
+    const M=_lgGameModel(g, j, sel, 120);
+    const H=M.H, A=M.A;
+    if(!H.has || !A.has) continue;
+    if(!(H.fga+A.fga+H.fta+A.fta+H.tov+A.tov)) continue;
+    const len=q<4?600:300, base=q<4? q*600 : 2400+(q-4)*300, t0=base+len-120;
+    let in0={h:0,a:0}; (flow.ev||[]).forEach(e=>{ if(e.t<t0) in0=e; });
+    const lbl=(q<4? "Q4" : "OT"+(q-3));
+    const d0=in0.h-in0.a, d1=(in0.h+H.pts)-(in0.a+A.pts);
+    wrap.appendChild(h("div",{class:"lgg-cl-h"},
+      h("b",{}, lbl+" · last 2:00"),
+      h("span",{class:"sc"}, (g.homeTlc||g.home)+" "+H.pts+" – "+A.pts+" "+(g.awayTlc||g.away)),
+      h("span",{}, "went in "+in0.h+"–"+in0.a+(d0===0? " (tied)" : " ("+(d0>0?(g.homeTlc||g.home):(g.awayTlc||g.away))+" +"+Math.abs(d0)+")")+
+        " · came out "+(in0.h+H.pts)+"–"+(in0.a+A.pts)+(d1===0? " (tied)" : " ("+(d1>0?(g.homeTlc||g.home):(g.awayTlc||g.away))+" +"+Math.abs(d1)+")"))));
+    /* as a team: one side's attack is the other side's defence */
+    const tt=h("table",{class:"lg-tbl lgg-four"});
+    tt.appendChild(h("tr",{}, ["Attack","PTS","Poss","PPP","FG","2P","3P","FT","OR","AST","TO","Fouls drawn","Defended by"].map((c,i)=>h("th",{class:i===0||i===12?"l":""}, c))));
+    [[g.home,H,A,g.away],[g.away,A,H,g.home]].forEach(r=>{ const S=r[1], O=r[2];
+      tt.appendChild(h("tr",{}, h("td",{class:"l lg-team"}, r[0]||""), h("td",{class:"b"}, S.pts), h("td",{}, S.poss.toFixed(1)),
+        h("td",{class:(S.poss&&O.poss&&(S.pts/S.poss)>(O.pts/O.poss))?"b":""}, S.poss? f2(S.pts/S.poss) : "—"),
+        h("td",{}, sh(S.fgm,S.fga)), h("td",{}, sh(S.p2m,S.p2a)), h("td",{}, sh(S.p3m,S.p3a)), h("td",{}, sh(S.ftm,S.fta)),
+        h("td",{}, S.or), h("td",{}, S.ast), h("td",{}, S.tov), h("td",{}, S.fd), h("td",{class:"l"}, _lgShort(r[3]||""))));
+    });
+    wrap.appendChild(h("div",{class:"lgg-scroll"}, tt));
+    /* and every man who was out there */
+    const men=(name,S)=>{
+      const tb=h("table",{class:"lg-tbl lgg-box"});
+      tb.appendChild(h("tr",{}, ["#","Player","MIN","PTS","FG","3P","FT","REB","AST","STL","TO","PF","FD","+/−"].map((c,i)=>h("th",{class:i===1?"l":""}, c))));
+      S.pl.filter(p=>p.sec>0 || p.pts || p.fga || p.fta || p.tov || p.pf).sort((a,b)=>b.sec-a.sec).forEach(p=>{
+        tb.appendChild(h("tr",{}, h("td",{class:"lg-pos"}, p.num), h("td",{class:"l lg-team"}, p.name), h("td",{}, mm(p.sec)),
+          h("td",{class:"b"}, p.pts), h("td",{}, sh(p.fgm,p.fga)), h("td",{}, sh(p.p3m,p.p3a)), h("td",{}, sh(p.ftm,p.fta)),
+          h("td",{}, p.reb), h("td",{}, p.ast), h("td",{}, p.stl), h("td",{}, p.tov), h("td",{}, p.pf), h("td",{}, p.fd),
+          h("td",{class:p.pm>0?"pos":(p.pm<0?"neg":"")}, (p.pm>0?"+":"")+p.pm)));
+      });
+      return h("div",{}, h("div",{class:"lgg-sub"}, name), h("div",{class:"lgg-scroll"}, tb));
+    };
+    wrap.appendChild(h("div",{class:"lgg-cl-2"}, men(g.home||"", H), men(g.away||"", A)));
+  }
+  return wrap.childNodes.length? wrap : null;
+}
 function _lgGameBox(name, S, onPick){
   const mm=s=>Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
   const sh=(m,a)=>a? (m+"/"+a) : "–";
@@ -15308,7 +15375,7 @@ function _lgGameShots(name, S){
           h("div",{class:"presc-ch"}, h("span",{class:"presc-rk"}, String(i+1)),
             h("b",{}, _lgWho(who) || ("#"+(who.n||"?"))),
             h("span",{class:"presc-n"}, p.pts+" pts · "+p.n+" · "+p.efg.toFixed(0)+"%")),
-          _lgMiniChart(p.sh, fit, lgRef, gridN))); });
+          _lgMiniChart(p.sh, fit, lgRef, gridN, {vol:true}))); });
     }
   }
   const z=k=>{ const l=S.shots.filter(x=>k.indexOf(x.zone)>=0), m=l.filter(x=>x.made).length;
@@ -15419,14 +15486,27 @@ function _anHold(els, onSeen){
    heading is new and does arrive, which is how opening Defense in the playbook or the
    rotations in the league animate without anybody listing those buttons here. The
    memory is cleared when the screen or the report changes. */
-const AN_BLOCKS=".sx-sec, .td-card, .tr-sec, .lg-panel, .year-month, .day-card, .pdb-card, .pb-card, .rs-block, .rs-banner, "+
+const AN_BLOCKS=".sx-sec, .td-card, .tr-sec, .lg-panel, .day-card, .pdb-card, .pb-card, .rs-block, .rs-banner, "+
   ".scout-panel, .pos-col, .squad-col, .us-col, .month-grid, .wk-grid, .ps-wrap, .gp2-q, .gp3-box, .gp3-keys, .presc, .sxp, .lg-diag, "+
   ".tier-surface, .pc-col, .pb-col, .lg-mdc, .cycle-row, .lg-emb, .lg-month, .lg-cal, .ldr, .avl, .tr-top";
 const AN_UNITS="tr, .gp2-tbl, .tl-host, .rt-svg, .rt-wrap, .sc-wrap, .lg-grph, .lg-pc, .cmp-row, .td-kpis, .card, .rs-card, .pc-card, .pb-entry, "+
-  ".pbx-row, .lg-md-row, .ym-row, .month-cell, .dc-sess-box, .dc-blk, .dc-loadbar, .ps-item, .ps-play, .presc-c, .sxp-c, .ss-item, "+
+  ".pbx-row, .lg-md-row, .month-cell, .dc-sess-box, .dc-blk, .dc-loadbar, .ps-item, .ps-play, .presc-c, .sxp-c, .ss-item, "+
   ".tr-chip, .sx-gauge, .td-pr, .lg-key-i, .pc-stat, .pc-role, .need-chip, .pyr-m, .lg-cal-cell, .lg-g, .ldr-c, .ldr-r, .tr-rank-r, .avl-r";
 let _anSeenKeys=new Set(), _anSeenAt={}, _anMo=null;
 function _anNewContext(){ _anSeenKeys=new Set(); _anSeenAt={}; }
+/* A LONG LIST ARRIVES IN ONE PIECE. The season lists - every game and every training of
+   the year, by month - are a hundred rows, and they are drawn two or three times in
+   their first seconds as the calendar, the Drive and the report statuses answer. Sent in
+   month by month and row by row, each redraw cut the arrival in half and dropped the
+   rest on the page. They come up as one soft fade instead, once: a list drawn again
+   within a few seconds of itself is simply there. */
+const _anSoftAt={};
+function _anSoftOnce(key){
+  try{ if(_anOff()) return ""; }catch(e){ return ""; }
+  const now=Date.now(), was=_anSoftAt[key]||0;
+  _anSoftAt[key]=now;
+  return (now-was>8000)? " an-soft" : "";
+}
 function _anKeyOf(e){
   return String(e.className||"").replace(/\ban-[a-z]+\b/g,"").replace(/\s+/g," ").trim()+"|"+
     /* the first words only: a heading stays the same when the figures after it change,
@@ -16070,6 +16150,9 @@ function _lgGamePanel(g, close){
       h("div",{}, lead(M.H), _lgGameBox(g.home||"", M.H, pick(M.H,M.A,g.homeTlc||g.home)),
                   lead(M.A), _lgGameBox(g.away||"", M.A, pick(M.A,M.H,g.awayTlc||g.away))),
       "starters first; the line separates the bench · click a player for his game"));
+    /* how it was closed - only when the whole game is being read */
+    if(!picked.length){ try{ const cl=_lgGameClutch(g, j, M.flow);
+      if(cl) body.appendChild(sec("The last two minutes", cl, "the close of the fourth quarter, and of each overtime, on its own")); }catch(e){} }
     if(M.H.shots.length || M.A.shots.length){
       /* the league's own shooting from each spot is what the hexagons are coloured against;
          it is read once for the whole league page, so it is asked for here if nobody has */
@@ -17402,11 +17485,12 @@ function _lgZoneLabels(z, opts){
     /* on a chart a quarter of the width the made-of-attempted line is four pixels of grey
        and the percentage is the whole point, so the small version prints that alone, bigger,
        and leaves out a zone with too few attempts to mean anything */
-    if(o.small && e.a<3) return;
+    if(o.small && !o.vol && e.a<3) return;
     const x=Math.max(o.small?110:78, Math.min(LG_FLOOR_W-(o.small?110:78), p[0]));
     g.appendChild(sv("text",{x:x,y:p[1]+(o.small?18:0),class:"sc-zt"+(o.small?" sm":"")},
       e.a? Math.round(100*e.m/e.a)+"%" : "—"));
     if(!o.small) g.appendChild(sv("text",{x:x,y:p[1]+52,class:"sc-zn"}, e.m+"/"+e.a));
+    else if(o.vol) g.appendChild(sv("text",{x:x,y:p[1]+18+78,class:"sc-zn sm"}, e.m+"/"+e.a));
   });
   return g;
 }
@@ -17525,11 +17609,12 @@ function _lgHexG(map, fit, opts){
    The mesh keeps only its busiest cells and the zone percentages are set small, because at
    this scale a full label set is a grey smudge. The pre-game report and the League panel
    draw the same thing from here rather than each keeping its own copy. */
-function _lgMiniChart(shots, fit, lg, grid){
+function _lgMiniChart(shots, fit, lg, grid, opts){
   const g=sv("g",{});
   const hm=_lgHexMap(shots, fit, lg, grid);
   g.appendChild(_lgCourt(hm? _lgHexG(hm, fit, {min:true, top:60}) : null));
-  g.appendChild(_lgZoneLabels(_lgZoneAgg(shots, fit), {small:true}));
+  /* vol: one game is few shots, so each zone also says how many of how many */
+  g.appendChild(_lgZoneLabels(_lgZoneAgg(shots, fit), {small:true, vol:!!(opts&&opts.vol)}));
   return sv("svg",{viewBox:"0 236 1500 1164", width:"100%", class:"sc-svg",
     preserveAspectRatio:"xMidYMid meet"}, g);
 }
@@ -25015,6 +25100,16 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 .lg-g.open,.lg-fix tr.open{cursor:pointer}
 .lg-g.open:hover{filter:brightness(.95);box-shadow:0 0 0 2px var(--accent,#c6a15b)}
 .lg-fix tr.open:hover td{background:rgba(201,162,39,.12)}
+/* made of attempted under the percentage, on the small floors of one game */
+.sc-zn.sm{font-size:60px;fill:var(--ink-soft,#5b6472)}
+/* the last two minutes */
+.lgg-cl-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin:14px 0 6px}
+.lgg-cl-h:first-child{margin-top:0}
+.lgg-cl-h b{font-family:'Oswald',sans-serif;font-size:14px;letter-spacing:.05em;text-transform:uppercase}
+.lgg-cl-h .sc{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:13px}
+.lgg-cl-h span{font-size:12px;color:var(--ink-soft,#5b6472)}
+.lgg-cl-2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+@media (max-width:900px){ .lgg-cl-2{grid-template-columns:1fr} }
 /* the five best and the five worst sets, marked in the systems table */
 td.tr-best{font-weight:800;box-shadow:inset 4px 0 0 #2f9e86;background:rgba(47,158,134,.10)}
 td.tr-worst{font-weight:800;box-shadow:inset 4px 0 0 #d8524e;background:rgba(216,82,78,.09)}
@@ -25329,6 +25424,7 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
   /* held until it is on screen: paused at the first frame of its own arrival, and
      everything inside it with it */
   .an-hold,.an-hold *{animation-play-state:paused!important}
+  .an-soft{animation:anFade calc(var(--mk)*.55s) ease-out both}
   /* a block put back where it was has already arrived */
   .an-done,.an-done *{animation:none!important}
   .an-wait{opacity:0;animation:none!important}
