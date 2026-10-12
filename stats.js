@@ -1283,6 +1283,30 @@
         if (alt.length > 1) { hit = alt; break; }
       }
     }
+    if (!hit.length && opponent) {
+      /* A NAME TYPED WITH ONE SLIP IS STILL THAT GAME. "G10 BBL LUDWISGBURG.csv" has two
+         letters the wrong way round, so the Ludwigsburg game had its tagging in the folder
+         and no report, and was missing from every trend. One slip in a word of six
+         letters or more is let through: two neighbours swapped, or one letter wrong,
+         missing or extra. Only when exactly one file answers, so it cannot pick between
+         two. */
+      var slip = function (a, b) {
+        var la = a.length, lb = b.length, i = 0;
+        if (Math.abs(la - lb) > 1) return false;
+        while (i < la && i < lb && a.charAt(i) === b.charAt(i)) i++;
+        if (i === la && i === lb) return true;
+        if (la === lb) return a.slice(i + 1) === b.slice(i + 1) ||
+          (a.charAt(i) === b.charAt(i + 1) && a.charAt(i + 1) === b.charAt(i) && a.slice(i + 2) === b.slice(i + 2));
+        var lg = la > lb ? a : b, sh = la > lb ? b : a;
+        return lg.slice(i + 1) === sh.slice(i);
+      };
+      var ws = String(opponent).split(/\s+/).map(slug).filter(function (w) { return w.length >= 6; });
+      var near = files.filter(function (f) {
+        var toks = String(f.name || "").replace(/\.csv$/i, "").split(/[^A-Za-zÀ-ÿ]+/).map(slug).filter(Boolean);
+        return ws.some(function (w) { return toks.some(function (t) { return t.length >= 6 && slip(t, w); }); });
+      });
+      if (near.length === 1) hit = near;
+    }
     if (!hit.length) return null;
     if (hit.length > 1 && date) {
       // two games against the same opponent: the date in the file name decides
@@ -2206,8 +2230,28 @@
       var uTop = padT + ih + undGap, uBot = uTop + undH;
       var plotBot = UND ? uBot : padT + ih;
 
+      /* A DAY BUILT ON TWO POSSESSIONS IS NOT A DAY'S DEFENCE.
+         A rate per possession over one or two possessions can only come out as 0, 1.5 or
+         3, so a line drawn through every day was mostly a drawing of how few possessions
+         there were: a spike to 3.00 was one three conceded, a floor of 0.00 was two stops.
+         A series that says how many possessions each point stands on (s.n) is drawn in
+         two layers. The LINE is the last few sessions added together - points over
+         possessions, not an average of averages - so one play cannot move it. The DOTS
+         are still each day, but a day under the minimum is small and pale, is not joined
+         to anything, and does not stretch the axis. */
+      var MINN = opts.minN || 0, ROLLW = opts.rollWindow || 5;
+      var thinAt = function (s, p) { return !!(MINN && s.n && (s.n(p.s) || 0) < MINN); };
+      var rollOf = function (s) {
+        if (!s.roll) return null;
+        return points.map(function (p, i) {
+          var num = 0, den = 0;
+          for (var k = Math.max(0, i - ROLLW + 1); k <= i; k++) { var r = s.roll(points[k].s) || [0, 0]; num += r[0] || 0; den += r[1] || 0; }
+          return (den >= Math.max(1, MINN)) ? num / den : NaN;
+        });
+      };
       var vals = [];
-      points.forEach(function (p) { series.forEach(function (s) { var v = s.get(p.s); if (isFinite(v)) vals.push(v); }); });
+      points.forEach(function (p) { series.forEach(function (s) { var v = s.get(p.s); if (isFinite(v) && !thinAt(s, p)) vals.push(v); }); });
+      series.forEach(function (s) { (rollOf(s) || []).forEach(function (v) { if (isFinite(v)) vals.push(v); }); });
       var peak = Math.max.apply(null, vals.concat(opts.ref ? [opts.ref.v] : [0]));
       var sc = opts.max != null ? { max: opts.max, step: opts.max / 4 } : niceScale(peak * 1.08, 4);
       var max = sc.max;
@@ -2253,9 +2297,14 @@
       /* one line per series, then its markers on top */
       var ends = [];
       series.forEach(function (s) {
-        var pts = points.map(function (p, i) { var v = s.get(p.s); return isFinite(v) ? [X(i), Y(v), v, i] : null; });
+        var pts = points.map(function (p, i) { var v = s.get(p.s); return isFinite(v) ? [X(i), Y(v), v, i, thinAt(s, p)] : null; });
+        /* what the line runs through: the sessions added together when the series can be,
+           otherwise the days themselves, leaving out the ones too thin to join */
+        var rl = rollOf(s);
+        var linePts = rl ? rl.map(function (v, i) { return isFinite(v) ? [X(i), Y(v), v, i] : null; })
+                         : pts.map(function (q) { return (q && !q[4]) ? q : null; });
         var run = [], runs = [];
-        pts.forEach(function (q) { if (q) run.push(q); else { if (run.length) runs.push(run); run = []; } });
+        linePts.forEach(function (q) { if (q) run.push(q); else { if (run.length) runs.push(run); run = []; } });
         if (run.length) runs.push(run);
         runs.forEach(function (r) {
           if (r.length < 2) return;
@@ -2272,10 +2321,16 @@
             m = sv("circle", { cx: q[0], cy: q[1], r: 4.5, class: "tl-mk", fill: s.color });
           }
           if (s.hollow) { m.setAttribute("class", "tl-mk hollow"); m.style.fill = "var(--tl-surface)"; m.style.stroke = s.color; }
+          /* a thin day: half the size and pale. Under a line of sessions added together,
+             every day steps back a little, since the line is now what is being read */
+          if (q[4]) { m.setAttribute("transform", (m.getAttribute("transform") || "") + " translate(" + q[0] + " " + q[1] + ") scale(0.6) translate(" + (-q[0]) + " " + (-q[1]) + ")"); m.style.opacity = "0.3"; }
+          else if (rl) m.style.opacity = "0.6";
           svg.appendChild(m);
         });
         /* direct label at the end of the line — the relief the palette asks for */
-        var last = null; for (var i2 = pts.length - 1; i2 >= 0; i2--) { if (pts[i2]) { last = pts[i2]; break; } }
+        var last = null, lastSrc = rl ? linePts : pts;
+        for (var i2 = lastSrc.length - 1; i2 >= 0; i2--) { if (lastSrc[i2] && !lastSrc[i2][4]) { last = lastSrc[i2]; break; } }
+        if (!last) for (var i3 = pts.length - 1; i3 >= 0; i3--) { if (pts[i3]) { last = pts[i3]; break; } }
         if (last) ends.push({ x: last[0], y: last[1], txt: s.fmt ? s.fmt(last[2]) : String(Math.round(last[2])) });
       });
 
@@ -2391,7 +2446,10 @@
           var v = s.get(p.s);
           return '<div class="tl-trow"><span class="tl-tk" style="background:' + s.color + '"></span>' +
             '<span class="tl-tn">' + s.name + '</span><span class="tl-tv">' +
-            (isFinite(v) ? (s.fmt ? s.fmt(v) : Math.round(v)) : "—") + "</span></div>";
+            (isFinite(v) ? (s.fmt ? s.fmt(v) : Math.round(v)) : "—") +
+            /* what the figure stands on, and a word when that is not enough to read */
+            (s.n ? ' <i style="opacity:.6;font-style:normal">· ' + (s.n(p.s) || 0) + " poss" + (thinAt(s, p) ? ", too few" : "") + "</i>" : "") +
+            "</span></div>";
         }).join("");
         if (UND) {
           var uv = UND.get(p.s);
@@ -3044,9 +3102,12 @@
     });
     if (!pts.length) { sec.appendChild(el("div", "sx-empty", "No session carries it yet.")); return null; }
     sec.appendChild(timelineChart("", "", pts, [
-      { name: "TAG — DER after a long shot", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2 },
-      { name: "BACK — DER after a shot at the rim or a turnover", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2 }
-    ], { axisFmt: f2, height: 200 }));
+      { name: "TAG — DER after a long shot", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2,
+        n: function (s) { return s.tagN; }, roll: function (s) { return [s.tagP, s.tagN]; } },
+      { name: "BACK — DER after a shot at the rim or a turnover", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2,
+        n: function (s) { return s.backN; }, roll: function (s) { return [s.backP, s.backN]; } }
+    ], { axisFmt: f2, height: 200, minN: 4, rollWindow: 5 }));
+    sec.appendChild(el("div", "sx-sub", "The line is the last five sessions added together, points over possessions. The dots are each day; a day with fewer than four possessions is small and pale and joins nothing."));
     var sum = function (list, f) { return list.reduce(function (a, p) { return a + p.s[f]; }, 0); };
     var tot = function (label, list) {
       var tN = sum(list, "tagN"), tP = sum(list, "tagP"), bN = sum(list, "backN"), bP = sum(list, "backP");
@@ -3675,7 +3736,7 @@
     if (tb && tb.pts && tb.pts.length) {
       var derGet = function (s) { return s.der; };
       var derAvg = meanOf(tb.pts, derGet), derLast = lastOf(tb.pts, derGet);
-      var tOpt = { axisFmt: f2, height: 200 }, tKpi = [{ l: "TAG", v: f2(tb.tag) }, { l: "BACK", v: f2(tb.back) }];
+      var tOpt = { axisFmt: f2, height: 200, minN: 4, rollWindow: 5 }, tKpi = [{ l: "TAG", v: f2(tb.tag) }, { l: "BACK", v: f2(tb.back) }];
       /* a training has no DER of its own - both fives are ours, so what one concedes is
          what the other scores and the figure would just be the OER again - so the band
          carries the games, where there is an opponent to concede to */
@@ -3685,11 +3746,13 @@
         tKpi.push({ l: "DER last", v: f2(derLast), cls: derLast <= derAvg ? "good" : "bad" });
         tKpi.push({ l: "DER season", v: f2(derAvg) });
       }
-      dash.appendChild(tdCard("Transition defense · DER", "DER after our shot (TAG, BACK), and the DER of the whole game underneath — lower is better",
+      dash.appendChild(tdCard("Transition defense · DER", "the line is the last five sessions together; a pale dot is a day with under four possessions — lower is better",
         tKpi,
         timelineChart("", "", tb.pts, [
-          { name: "TAG", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2 },
-          { name: "BACK", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2 } ], tOpt)));
+          { name: "TAG", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2,
+            n: function (s) { return s.tagN; }, roll: function (s) { return [s.tagP, s.tagN]; } },
+          { name: "BACK", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2,
+            n: function (s) { return s.backN; }, roll: function (s) { return [s.backP, s.backN]; } } ], tOpt)));
     }
     var heat = tdPhaseHeat(games);
     if (heat) dash.appendChild(tdCard("Where our possessions came from",
