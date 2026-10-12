@@ -6769,8 +6769,6 @@ function renderScout(body, g, key, kind, from, rep){
     return;
   }
   {
-    /* how they arrive, before anything else on the page - staff only */
-    try{ if(!isPlayerUser()) body.appendChild(_preRecentForm(g)); }catch(e){}
     const canEd = editable;   /* permission AND not presenting — same rule everywhere */
     /* The scouting sheet above the report is the hand-built one, and for most opponents
        there is nothing in it: an empty PLAYERS header with a Rooster / Player Roles switch
@@ -9413,6 +9411,10 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
         wrap.appendChild(_preSafe("ROSTER ROLES IN THE TEAM", ()=>_preRolesBlock(rep, canEd, save, leagueState(), tid0)));
       if(playerBlockOk("season"))
         wrap.appendChild(_preSafe("THEIR SEASON", ()=>_preSeasonBlock(tid0)));
+      /* Their last five games, read from the play by play - a section of its own, after the
+         season it is the close-up of. Staff only: it is working material, not one of the
+         four blocks a player is given. */
+      if(!PV) wrap.appendChild(_preSafe("PLAY BY PLAY STATS", ()=>_preBlock("PLAY BY PLAY STATS", _preRecentForm(g))));
     }
   }
   /* A report on disk was written by whichever build was live the day it was written, and
@@ -12836,6 +12838,8 @@ function renderPlanSection(sec, canEd, save, allSecs){
   const box=h("div",{class:"gp-wrap gp2"});
   const sel={ id:_planSel };
   const redraw=()=>{ _planSel=sel.id; box.innerHTML=""; build(); };
+  /* true while the Drive is still being asked whether this game has a sheet */
+  let waiting=false;
 
   if(SB_TOKEN && !isPlayerUser()){
     const st=_gpSheetSt.get(sec);
@@ -12863,13 +12867,15 @@ function renderPlanSection(sec, canEd, save, allSecs){
         /* the folder has not been listed yet in this visit, or is being listed right
            now: wait for the list, then look again */
         let tries=0;
+        waiting=true;
         const again=()=>{
           if(_gpSheetSt.get(sec) || !box.parentNode) return;
           if(_docsBusy && tries++<40){ setTimeout(again, 1500); return; }
-          if(!gpSheetFor()) return;
+          /* no sheet for this game: stop saying it is being looked for, and show the empty plan */
+          if(!gpSheetFor()){ waiting=false; redraw(); return; }
           try{ const fresh=renderPlanSection(sec, canEd, save, allSecs); box.parentNode.replaceChild(fresh, box); }catch(e){}
         };
-        try{ Promise.resolve(syncDocs(false)).then(()=>setTimeout(again, 50)); }catch(e){}
+        try{ Promise.resolve(syncDocs(false)).then(()=>setTimeout(again, 50)).catch(()=>{ waiting=false; redraw(); }); }catch(e){ waiting=false; }
       }
     }
   }
@@ -13201,6 +13207,17 @@ function renderPlanSection(sec, canEd, save, allSecs){
 
   function build(){
     const drv=_gpSheetSt.get(sec);
+    /* A PLAN THAT IS ON ITS WAY IS NOT AN EMPTY PLAN. While the Drive is being asked for
+       this game's sheet, or the sheet is being read, the page showed the blank grid - the
+       same thing it shows for a game nobody has planned - and then swapped it for the real
+       plan a few seconds later. It says it is loading instead, the way every other block
+       that waits on the Drive does. */
+    if(gpPlanEmpty(plan) && ((drv && drv.busy) || waiting)){
+      box.appendChild(h("div",{class:"ld"},
+        (drv && drv.busy)? ("Loading the game plan from the Drive — "+drv.name+"…") : "Looking for this game’s plan in the Drive…",
+        h("span",{class:"ld-bar"})));
+      return;
+    }
     if(drv && !(drv.ok && drv.kept)){
       const drvNote=h("div",{class:"gp-sheetnote no-print"},
         drv.busy ? "Reading this game's sheet from the Drive — "+drv.name+" …"
@@ -15272,14 +15289,17 @@ let _anT=0, _anTick=0;
 function _anSweep(){
   _anT=0;
   const vh=window.innerHeight||800;
-  let k=0;
-  for(let i=_anQ.length-1;i>=0;i--){
+  /* in the order they sit on the page, so the ones let go together arrive top to bottom */
+  const ready=[], keep=[];
+  for(let i=0;i<_anQ.length;i++){
     const q=_anQ[i], e=q.el;
-    if(!e.isConnected){ _anQ.splice(i,1); continue; }
+    if(!e.isConnected) continue;
     const r=e.getBoundingClientRect();
-    if(!(r.width||r.height)) continue;                      /* not laid out: a folded block */
-    if(r.top<vh*0.92 && r.bottom>0){ _anQ.splice(i,1); q.go(k++); }
+    if(!(r.width||r.height)){ keep.push(q); continue; }     /* not laid out: a folded block */
+    if(r.top<vh*0.94 && r.bottom>0) ready.push(q); else keep.push(q);
   }
+  _anQ.length=0; Array.prototype.push.apply(_anQ, keep);
+  ready.forEach((q,k)=>{ try{ q.go(k); }catch(e){} });
   if(!_anQ.length && _anTick){ clearInterval(_anTick); _anTick=0; }
 }
 function _anKick(){ if(!_anT) _anT=setTimeout(_anSweep, 40); }
@@ -15300,73 +15320,94 @@ function _anHold(els, onSeen){
   els.forEach(e=>{ e.classList.add("an-hold");
     _anAdd(e, k=>{ e.classList.remove("an-hold"); try{ onSeen&&onSeen(e, k); }catch(_){ } }); });
 }
-/* A SCREEN OR A REPORT THAT HAS JUST BEEN OPENED.
-   Most of what these pages show is not there when they open: the tagging comes from the
-   Drive, the league from its feed, and each lands a second or five later and is drawn
-   then. So the arrival cannot be given to what is on the page at the moment of opening.
-   For a short while after a screen or a report is opened, every block that lands in it
-   is marked to arrive - held until it is on screen, a few at a time one after another,
-   its chart drawn and its figures counted. Then the watch ends: from there on a filter,
-   a sort or a saved cell redraws its block without sending it in again. */
+/* WHAT ARRIVES, EVERYWHERE IN THE APP.
+   Two sizes of thing arrive. A BLOCK is a panel of a screen: a section of a report, a
+   league panel, a card of the dashboard, a month, a column of the roster. A UNIT is what
+   is read inside one: a row of a table, a chart, a card, a bar, a day. Each of them is
+   held until it is itself on the screen - a row at the foot of a long table waits for
+   the scroll like anything else - and the ones let go together follow one another.
+
+   The page is watched all the time rather than for a few seconds after it opens, because
+   most of what these screens show lands late: the tagging from the Drive, the league
+   from its feed, a rotation that needs thirty game sheets. Watching for a few seconds
+   was why Trends, the team stats of a post game and the rotations never arrived - they
+   were drawn after the watch had closed.
+
+   What stops a filter, a sort or a late redraw from sending everything in again is that
+   a block arrives ONCE per screen: it is remembered by what it is - its kind and its
+   heading - and the same block drawn again is left alone. A block with a different
+   heading is new and does arrive, which is how opening Defense in the playbook or the
+   rotations in the league animate without anybody listing those buttons here. The
+   memory is cleared when the screen or the report changes. */
 const AN_BLOCKS=".sx-sec, .td-card, .tr-sec, .lg-panel, .year-month, .day-card, .pdb-card, .pb-card, .rs-block, .rs-banner, "+
-  ".scout-panel, .pos-col, .squad-col, .us-col, .month-grid, .wk-grid, .ps-wrap, .gp2-q, .gp3-box, .gp3-keys, .presc, .sxp, .lg-diag, .plan-head, .tier-surface";
-/* A tab inside a screen is a small change of screen: what it brings in arrives too. A
-   filter is not - All / Home / Away redraws the same thing - so only the controls that
-   take the page somewhere else start a watch. */
-try{
-  document.addEventListener("click", e=>{
-    const t=e.target && e.target.closest && e.target.closest(".subtab, .scope-tab, .sess-tab, .ssv-stab, .lg-tabbtn, .ym-head");
-    if(!t) return;
-    const ws=document.getElementById("workspace");
-    if(ws) setTimeout(()=>{ try{ _anWatchEnter(ws); }catch(_){ } }, 0);
-  }, true);
-}catch(e){}
-function _anWatchEnter(box){
-  if(!box) return;
-  try{ if(box.__anMo){ box.__anMo.disconnect(); clearTimeout(box.__anT1); clearTimeout(box.__anT2); } }catch(e){}
-  if(_anOff() || !("MutationObserver" in window)) return;
-  let closing=0;
-  const stop=()=>{ try{ mo.disconnect(); }catch(e){} };
-  const mark=node=>{
-    if(!node || node.nodeType!==1) return;
-    const list=(node.matches&&node.matches(AN_BLOCKS)? [node] : []).concat(Array.prototype.slice.call(node.querySelectorAll(AN_BLOCKS)));
-    let any=false;
-    list.forEach(e=>{
-      if(e.__an) return;
-      /* a block inside a block that is already arriving comes in with it, not on its own */
-      if(e.parentElement && e.parentElement.closest(".an-e")) return;
-      e.__an=1; any=true;
-      e.classList.add("an-e");
-      _anHold([e], (x,k)=>{
-        x.style.animationDelay=((k||0)*90)+"ms";
-        _anCount(x, ".td-kpi b, .sx-gbig, .lgg-key b", 1300);
-        /* once it has arrived it is an ordinary block again, so a chart redrawn for a
-           new width or a table sorted again does not draw itself in a second time */
-        setTimeout(()=>{ try{ x.classList.remove("an-e"); x.style.animationDelay=""; }catch(_){ } }, 3200);
-      });
-    });
-    /* the watch closes a little after the first blocks have landed */
-    if(any && !closing){ closing=1; box.__anT2=setTimeout(stop, 3500); }
-  };
-  const mo=new MutationObserver(recs=>recs.forEach(r=>r.addedNodes&&r.addedNodes.forEach(mark)));
-  mo.observe(box, { childList:true, subtree:true });
-  box.__anMo=mo;
-  box.__anT1=setTimeout(stop, 25000);
-  mark(box);
+  ".scout-panel, .pos-col, .squad-col, .us-col, .month-grid, .wk-grid, .ps-wrap, .gp2-q, .gp3-box, .gp3-keys, .presc, .sxp, .lg-diag, "+
+  ".tier-surface, .pc-col, .pb-col, .lg-mdc, .cycle-row, .lg-emb";
+const AN_UNITS="tr, .gp2-tbl, .tl-host, .rt-svg, .rt-wrap, .sc-wrap, .lg-grph, .lg-pc, .cmp-row, .td-kpis, .card, .rs-card, .pc-card, .pb-entry, "+
+  ".pbx-row, .lg-md-row, .ym-row, .month-cell, .dc-sess-box, .dc-blk, .dc-loadbar, .ps-item, .ps-play, .presc-c, .sxp-c, .ss-item, "+
+  ".tr-chip, .sx-gauge, .td-pr, .lg-key-i, .pc-stat, .pc-role, .need-chip, .pyr-m";
+let _anSeenKeys=new Set(), _anMo=null;
+function _anNewContext(){ _anSeenKeys=new Set(); }
+function _anKeyOf(e){
+  return String(e.className||"").replace(/\ban-[a-z]+\b/g,"").replace(/\s+/g," ").trim()+"|"+
+    String(e.textContent||"").replace(/\s+/g," ").trim().slice(0,48);
 }
-function _anReveal(root, sel){
-  if(!root || _anOff()) return;
-  const vh=window.innerHeight||800;
-  Array.prototype.slice.call(root.querySelectorAll(sel)).forEach(e=>{
-    const r=e.getBoundingClientRect();
-    if(!(r.height>0 && r.top>vh*0.92)) return;             /* already in view: it arrives with the screen */
-    e.classList.add("an-wait");
-    _anAdd(e, k=>{
-      e.style.animationDelay=(k*90)+"ms";
-      e.classList.remove("an-wait"); e.classList.add("an-in");
-      setTimeout(()=>{ try{ e.classList.remove("an-in"); e.style.animationDelay=""; }catch(_){ } }, 1700); });
+function _anUnit(u){
+  if(u.__an) return; u.__an=1;
+  u.classList.add("an-r");
+  _anHold([u], (x,k)=>{
+    x.style.animationDelay=(Math.min(k||0,12)*60)+"ms";
+    x.style.setProperty("--ad", (Math.min(k||0,12)*60)+"ms");
+    setTimeout(()=>{ try{ x.classList.remove("an-r"); x.style.animationDelay=""; x.style.removeProperty("--ad"); }catch(_){ } }, 3400);
   });
 }
+function _anMark(node){
+  if(!node || node.nodeType!==1 || _anOff()) return;
+  if(node.closest && node.closest(".lgg, .prf, .an-done, .dialog, .cover")) return;   /* those have their own arrival */
+  const pick=sel=>(node.matches&&node.matches(sel)? [node] : []).concat(Array.prototype.slice.call(node.querySelectorAll(sel)));
+  const now=Date.now();
+  pick(AN_BLOCKS).forEach(e=>{
+    if(e.__an) return;
+    e.__an=1;
+    const key=_anKeyOf(e);
+    if(_anSeenKeys.has(key)) return;              /* the same block, drawn again: it has arrived already */
+    _anSeenKeys.add(key);
+    e.__anAt=now;
+    e.classList.add("an-e");
+    _anHold([e], (x,k)=>{
+      x.style.animationDelay=(Math.min(k||0,6)*90)+"ms";
+      _anCount(x, ".td-kpi b, .sx-gbig", 1300);
+      setTimeout(()=>{ try{ x.classList.remove("an-e"); x.style.animationDelay=""; }catch(_){ } }, 2600);
+    });
+  });
+  /* the units of a block that is arriving - including the ones drawn into it a moment
+     later, the way a chart is painted after its panel is in the page */
+  let n=0;
+  pick(AN_UNITS).forEach(u=>{
+    if(u.__an || n>420) return;
+    const b=u.closest(AN_BLOCKS);
+    if(!b || !b.__anAt || now-b.__anAt>9000) return;
+    if(u.tagName==="TR" && u.closest(".gp2-tbl")) return;
+    n++; _anUnit(u);
+  });
+}
+function _anStart(){
+  if(_anMo || !("MutationObserver" in window)) return;
+  const ws=document.getElementById("workspace");
+  if(!ws) return;
+  _anMo=new MutationObserver(recs=>{
+    for(let i=0;i<recs.length;i++){ const a=recs[i].addedNodes; if(!a) continue;
+      for(let j=0;j<a.length;j++) if(a[j].nodeType===1) _anMark(a[j]); }
+  });
+  _anMo.observe(ws, { childList:true, subtree:true });
+}
+/* kept under its old name: a screen or a report has just been opened */
+function _anWatchEnter(box){
+  _anNewContext();
+  _anStart();
+  try{ if(box) _anMark(box); }catch(e){}
+}
+try{ if(document.readyState==="loading") document.addEventListener("DOMContentLoaded", _anStart); else _anStart(); }catch(e){}
+function _anReveal(){}
 /* A figure that arrives counts up to itself. Only for text that is a plain number - "98",
    "+18", "85%", "113.8" - so a name or a score with a dash in it is left alone. It ends on
    the exact text it started from, and does nothing at all for anybody who asked their
@@ -15463,14 +15504,15 @@ function _preRecentForm(sg){
     const L=leagueState();
     /* the list just asked for first: the league page's saved copy may be short or old */
     const tid=_lgTeamIdByName({ teams:(all&&all.teams)||[], alias:L.alias }, sg.opponent) || _lgTeamIdByName(L, sg.opponent);
-    if(!tid) return;
+    const none=t=>{ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"}, t)); };
+    if(!tid){ none("This opponent is not in the league feed, so there is no play by play to read."); return; }
     const seen={};
     const games=((all&&all.games)||[]).concat((all&&all.cup)||[])
       .filter(x=>{ if(seen[x.id]) return false; seen[x.id]=1;
         return _lgDone(x) && (String(x.homeId)===String(tid)||String(x.awayId)===String(tid)) && (!sg.date || x.date<sg.date); })
       .sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,N);
-    if(games.length<2) return;
-    box.appendChild(h("div",{class:"lg-empty"},"Reading their last "+games.length+" games…"));
+    if(games.length<2){ none("Fewer than two finished games in the league feed yet."); return; }
+    box.appendChild(h("div",{class:"ld"},"Reading their last "+games.length+" games…"));
     const feeds=await Promise.all(games.map(x=>(_lgGameMemo[x.id]||(_lgGameMemo[x.id]=
       fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(x.id)).then(r=>r.json()))).catch(()=>null)));
     const rows=[];
@@ -15482,7 +15524,7 @@ function _preRecentForm(sg){
       rows.push({ g:x, home:home, S:S, O:O, win:S.pts>O.pts,
         q:(x.quarters||[]).slice(0,4).map(q=>home? q[0]-q[1] : q[1]-q[0]) }); });
     box.innerHTML="";
-    if(rows.length<2) return;
+    if(rows.length<2){ none("The league has not published the sheets of their last games."); return; }
     const n=rows.length, avg=f=>rows.reduce((a,r)=>a+(f(r)||0),0)/n;
     const f1=v=>(v==null||!isFinite(v))?"—":v.toFixed(1);
     const wins=rows.filter(r=>r.win).length;
@@ -24610,6 +24652,10 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
 @keyframes anGrowX{from{transform:scaleX(0)}to{transform:none}}
 @keyframes anGrowY{from{transform:scaleY(0)}to{transform:none}}
 @keyframes anGold{0%{background:transparent;color:inherit}60%{background:#f6dc93}100%{background:#ecd08a}}
+@keyframes cvLogo{0%{opacity:0;transform:scale(.45) rotate(-14deg);filter:blur(8px)}55%{opacity:1;transform:scale(1.08) rotate(2deg);filter:blur(0)}100%{opacity:1;transform:none;filter:none}}
+@keyframes cvTitle{0%{opacity:0;letter-spacing:.7em;transform:translateY(14px)}100%{opacity:1;transform:none}}
+@keyframes cvTile{0%{opacity:0;transform:translateY(34px) scale(.94)}100%{opacity:1;transform:none}}
+@keyframes cvShine{0%{transform:translateX(-120%)}55%{transform:translateX(-120%)}100%{transform:translateX(120%)}}
 @media (prefers-reduced-motion: no-preference){
   /* ---------------------------------------------------------------- the game window */
   .lgg-back,.lgg-plback{animation:anFade calc(var(--mk)*.3s) ease-out both}
@@ -24695,91 +24741,77 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
   /* ------------------------------------------------- moving around the app (part two) */
   /* a screen arrives, and the big blocks on it follow one after another */
   .view-enter{animation:anUp calc(var(--mk)*.55s) var(--me) both}
-  /* ------------------------------------- a block that has just landed (part three)
-     Trends, post practice, post game, the league panels, the months of the calendar and
-     the sections of a report all arrive the same way: the block comes up, its chart is
-     drawn from left to right, its headline figures land one after another and its table
-     comes in a row at a time. Which blocks, and when, is decided in _anWatchEnter. */
-  .an-e{animation-name:anUp;animation-duration:calc(var(--mk)*.65s);animation-timing-function:var(--me);animation-fill-mode:both}
-  .an-e .tl-svg{animation:anWipe calc(var(--mk)*1.7s) cubic-bezier(.35,.5,.25,1) calc(var(--mk)*.3s) both}
-  .an-e .tl-legend,.an-e .sx-sub,.an-e .sx-legend{animation:anFade calc(var(--mk)*.8s) ease-out calc(var(--mk)*.3s) both}
-  .an-e .td-kpi,.an-e .tr-chip{animation-name:anUp;animation-duration:calc(var(--mk)*.55s);animation-timing-function:var(--me);animation-fill-mode:both}
-  .an-e .td-kpi:nth-child(1),.an-e .tr-chip:nth-child(1){animation-delay:calc(var(--mk)*.20s)}
-  .an-e .td-kpi:nth-child(2),.an-e .tr-chip:nth-child(2){animation-delay:calc(var(--mk)*.29s)}
-  .an-e .td-kpi:nth-child(3),.an-e .tr-chip:nth-child(3){animation-delay:calc(var(--mk)*.38s)}
-  .an-e .td-kpi:nth-child(4),.an-e .tr-chip:nth-child(4){animation-delay:calc(var(--mk)*.47s)}
-  .an-e .td-kpi:nth-child(n+5),.an-e .tr-chip:nth-child(n+5){animation-delay:calc(var(--mk)*.56s)}
-  .an-e table tr{animation-name:anLeft;animation-duration:calc(var(--mk)*.45s);animation-timing-function:var(--me);animation-fill-mode:both;animation-delay:calc(var(--mk)*.70s)}
-  .an-e table tr:nth-child(1){animation-delay:calc(var(--mk)*.15s)}
-  .an-e table tr:nth-child(2){animation-delay:calc(var(--mk)*.20s)}
-  .an-e table tr:nth-child(3){animation-delay:calc(var(--mk)*.25s)}
-  .an-e table tr:nth-child(4){animation-delay:calc(var(--mk)*.30s)}
-  .an-e table tr:nth-child(5){animation-delay:calc(var(--mk)*.35s)}
-  .an-e table tr:nth-child(6){animation-delay:calc(var(--mk)*.40s)}
-  .an-e table tr:nth-child(7){animation-delay:calc(var(--mk)*.45s)}
-  .an-e table tr:nth-child(8){animation-delay:calc(var(--mk)*.50s)}
-  .an-e table tr:nth-child(9){animation-delay:calc(var(--mk)*.55s)}
-  .an-e table tr:nth-child(10){animation-delay:calc(var(--mk)*.60s)}
-  .an-e table tr:nth-child(11){animation-delay:calc(var(--mk)*.65s)}
-  /* the gauges and the coloured tracks of the tagging blocks fill from the left */
-  .an-e .sx-gtrack>*,.an-e .td-pr-bar>*,.an-e .sx-bar>*{transform-origin:left center;animation:anGrowX calc(var(--mk)*1s) var(--me) calc(var(--mk)*.3s) both}
-  /* the rows of a season list */
-  .an-e .ym-row{animation-name:anLeft;animation-duration:calc(var(--mk)*.4s);animation-timing-function:var(--me);animation-fill-mode:both;animation-delay:calc(var(--mk)*.42s)}
-  .an-e .ym-row:nth-of-type(1){animation-delay:calc(var(--mk)*.12s)}
-  .an-e .ym-row:nth-of-type(2){animation-delay:calc(var(--mk)*.18s)}
-  .an-e .ym-row:nth-of-type(3){animation-delay:calc(var(--mk)*.24s)}
-  .an-e .ym-row:nth-of-type(4){animation-delay:calc(var(--mk)*.30s)}
-  .an-e .ym-row:nth-of-type(5){animation-delay:calc(var(--mk)*.36s)}
-  /* a game plan grid and a rotation table are read whole: they do not come in by rows */
-  .an-e .gp2-tbl tr,.an-e .gp-wrap table tr,.an-e .lgg-box tr,.an-e .lgg-qt tr{animation:none}
-  /* --------------------------------------------- the rest of the app (part four)
-     Inside a block that is arriving, the things a coach reads one by one come one by
-     one: the cards of a position, the rows of a playbook, the days of a month, the
-     results of a matchday. Eight at most are spaced out; the rest come with the eighth,
-     so a long list is never a long wait. */
-  .an-e .card,.an-e .rs-card,.an-e .pbx-row,.an-e .ss-item,.an-e .sxp-c,.an-e .lg-md-row,.an-e .ps-item,.an-e .ps-play,
-  .an-e .pp-chip,.an-e .dc-sess-box,.an-e .need-chip,.an-e .presc-c,.an-e .lg-key-i,.an-e .m-sess{
-    animation-name:anUp;animation-duration:calc(var(--mk)*.5s);animation-timing-function:var(--me);animation-fill-mode:both;animation-delay:calc(var(--mk)*.66s)}
-  .an-e .card:nth-child(1),.an-e .rs-card:nth-child(1),.an-e .pbx-row:nth-child(1),.an-e .ss-item:nth-child(1),.an-e .sxp-c:nth-child(1),.an-e .lg-md-row:nth-child(1),.an-e .ps-item:nth-child(1),.an-e .presc-c:nth-child(1){animation-delay:calc(var(--mk)*.14s)}
-  .an-e .card:nth-child(2),.an-e .rs-card:nth-child(2),.an-e .pbx-row:nth-child(2),.an-e .ss-item:nth-child(2),.an-e .sxp-c:nth-child(2),.an-e .lg-md-row:nth-child(2),.an-e .ps-item:nth-child(2),.an-e .presc-c:nth-child(2){animation-delay:calc(var(--mk)*.21s)}
-  .an-e .card:nth-child(3),.an-e .rs-card:nth-child(3),.an-e .pbx-row:nth-child(3),.an-e .ss-item:nth-child(3),.an-e .sxp-c:nth-child(3),.an-e .lg-md-row:nth-child(3),.an-e .ps-item:nth-child(3),.an-e .presc-c:nth-child(3){animation-delay:calc(var(--mk)*.28s)}
-  .an-e .card:nth-child(4),.an-e .rs-card:nth-child(4),.an-e .pbx-row:nth-child(4),.an-e .ss-item:nth-child(4),.an-e .sxp-c:nth-child(4),.an-e .lg-md-row:nth-child(4),.an-e .ps-item:nth-child(4),.an-e .presc-c:nth-child(4){animation-delay:calc(var(--mk)*.35s)}
-  .an-e .card:nth-child(5),.an-e .rs-card:nth-child(5),.an-e .pbx-row:nth-child(5),.an-e .ss-item:nth-child(5),.an-e .sxp-c:nth-child(5),.an-e .lg-md-row:nth-child(5),.an-e .ps-item:nth-child(5),.an-e .presc-c:nth-child(5){animation-delay:calc(var(--mk)*.42s)}
-  .an-e .card:nth-child(6),.an-e .rs-card:nth-child(6),.an-e .pbx-row:nth-child(6),.an-e .ss-item:nth-child(6),.an-e .sxp-c:nth-child(6),.an-e .lg-md-row:nth-child(6),.an-e .ps-item:nth-child(6),.an-e .presc-c:nth-child(6){animation-delay:calc(var(--mk)*.49s)}
-  .an-e .card:nth-child(7),.an-e .rs-card:nth-child(7),.an-e .pbx-row:nth-child(7),.an-e .ss-item:nth-child(7),.an-e .sxp-c:nth-child(7),.an-e .lg-md-row:nth-child(7),.an-e .ps-item:nth-child(7),.an-e .presc-c:nth-child(7){animation-delay:calc(var(--mk)*.56s)}
-  /* the days of a month come up as one sheet, a row of the week at a time */
-  .an-e .month-cell,.an-e .wk-day{animation-name:anFade;animation-duration:calc(var(--mk)*.55s);animation-timing-function:ease-out;animation-fill-mode:both;animation-delay:calc(var(--mk)*.55s)}
-  .an-e .month-cell:nth-child(-n+28),.an-e .wk-day:nth-child(-n+5){animation-delay:calc(var(--mk)*.42s)}
-  .an-e .month-cell:nth-child(-n+21),.an-e .wk-day:nth-child(-n+4){animation-delay:calc(var(--mk)*.32s)}
-  .an-e .month-cell:nth-child(-n+14),.an-e .wk-day:nth-child(-n+3){animation-delay:calc(var(--mk)*.22s)}
-  .an-e .month-cell:nth-child(-n+7),.an-e .wk-day:nth-child(-n+2){animation-delay:calc(var(--mk)*.12s)}
+  /* ------------------------------- what arrives on a screen (parts three and four)
+     A block comes up; inside it each unit - a row, a chart, a card, a bar, a day -
+     arrives when it is itself reached. Which elements, and when, is _anMark's business;
+     these rules only say how each kind moves. The classes are taken off again once the
+     thing has arrived, so nothing here can replay on a redraw. */
+  .an-e{animation-name:anUp;animation-duration:calc(var(--mk)*.7s);animation-timing-function:var(--me);animation-fill-mode:both}
+  .an-r{animation-name:anUp;animation-duration:calc(var(--mk)*.6s);animation-timing-function:var(--me);animation-fill-mode:both}
+  tr.an-r,.pbx-row.an-r,.lg-md-row.an-r,.ym-row.an-r,.cmp-row.an-r,.ps-item.an-r,.ps-play.an-r,.pb-entry.an-r{animation-name:anLeft;animation-duration:calc(var(--mk)*.55s)}
+  .month-cell.an-r,.pyr-m.an-r{animation-name:anFade;animation-duration:calc(var(--mk)*.7s)}
+  /* a chart is drawn from left to right, the way the season or the game ran */
+  .tl-host.an-r,.rt-wrap.an-r,.lg-grph.an-r,.lg-pc.an-r{animation-name:anFade;animation-duration:calc(var(--mk)*.3s)}
+  .tl-host.an-r svg,.rt-wrap.an-r svg,.rt-svg.an-r,.lg-grph.an-r svg,.lg-pc.an-r svg{
+    animation:anWipe calc(var(--mk)*1.9s) cubic-bezier(.35,.5,.25,1) both;animation-delay:var(--ad,0ms)}
+  /* a floor of shots settles into place */
+  .sc-wrap.an-r{animation-name:anRise;animation-duration:calc(var(--mk)*1s)}
+  /* a bar fills from its own end */
+  .cmp-row.an-r .cmp-fill,.sx-gauge.an-r .sx-gtrack>*,.td-pr.an-r .td-pr-bar>*,.dc-loadbar.an-r .dc-lb-fill,.pc-stat.an-r i,.pyr-m.an-r .pyr-b{
+    transform-origin:left center;animation:anGrowX calc(var(--mk)*1.1s) var(--me) both;animation-delay:calc(var(--ad,0ms) + 150ms)}
+  /* the figures at the head of a card land one after another */
+  .td-kpis.an-r{animation-name:anFade}
+  .td-kpis.an-r .td-kpi{animation:anUp calc(var(--mk)*.6s) var(--me) both}
+  .td-kpis.an-r .td-kpi:nth-child(1){animation-delay:.10s}
+  .td-kpis.an-r .td-kpi:nth-child(2){animation-delay:.20s}
+  .td-kpis.an-r .td-kpi:nth-child(3){animation-delay:.30s}
+  .td-kpis.an-r .td-kpi:nth-child(4){animation-delay:.40s}
+  .td-kpis.an-r .td-kpi:nth-child(n+5){animation-delay:.50s}
   /* a game plan fills the way the quarter is played: minute by minute, left to right */
-  .an-e .gp2-tbl td{animation-name:anFade;animation-duration:calc(var(--mk)*.5s);animation-timing-function:ease-out;animation-fill-mode:both}
-  .an-e .gp2-tbl td:nth-child(2){animation-delay:calc(var(--mk)*.10s)}
-  .an-e .gp2-tbl td:nth-child(3){animation-delay:calc(var(--mk)*.17s)}
-  .an-e .gp2-tbl td:nth-child(4){animation-delay:calc(var(--mk)*.24s)}
-  .an-e .gp2-tbl td:nth-child(5){animation-delay:calc(var(--mk)*.31s)}
-  .an-e .gp2-tbl td:nth-child(6){animation-delay:calc(var(--mk)*.38s)}
-  .an-e .gp2-tbl td:nth-child(7){animation-delay:calc(var(--mk)*.45s)}
-  .an-e .gp2-tbl td:nth-child(8){animation-delay:calc(var(--mk)*.52s)}
-  .an-e .gp2-tbl td:nth-child(9){animation-delay:calc(var(--mk)*.59s)}
-  .an-e .gp2-tbl td:nth-child(10){animation-delay:calc(var(--mk)*.66s)}
-  .an-e .gp2-tbl td:nth-child(n+11){animation-delay:calc(var(--mk)*.73s)}
-  /* a floor of shots, a league chart, a scale: drawn, not dropped */
-  .an-e .sc-svg{animation:anRise calc(var(--mk)*.9s) var(--me) calc(var(--mk)*.15s) both}
-  .an-e .lg-grph svg,.an-e .lg-pc svg{animation:anWipe calc(var(--mk)*1.5s) cubic-bezier(.35,.5,.25,1) calc(var(--mk)*.25s) both}
-  .an-e .cmp-fill,.an-e .pyr-b,.an-e .lg-bar>i{transform-origin:left center;animation:anGrowX calc(var(--mk)*1s) var(--me) calc(var(--mk)*.3s) both}
-  .an-e .sx-cell,.an-e .sx-vol{animation:anFade calc(var(--mk)*.7s) ease-out calc(var(--mk)*.45s) both}
-  /* the door: the tiles of the cover and the sign-in card */
-  .cover-tile,.cover-user{animation-name:anUp;animation-duration:calc(var(--mk)*.55s);animation-timing-function:var(--me);animation-fill-mode:both;animation-delay:calc(var(--mk)*.5s)}
-  .cover-tile:nth-child(1),.cover-user:nth-child(1){animation-delay:calc(var(--mk)*.10s)}
-  .cover-tile:nth-child(2),.cover-user:nth-child(2){animation-delay:calc(var(--mk)*.17s)}
-  .cover-tile:nth-child(3),.cover-user:nth-child(3){animation-delay:calc(var(--mk)*.24s)}
-  .cover-tile:nth-child(4),.cover-user:nth-child(4){animation-delay:calc(var(--mk)*.31s)}
-  .cover-tile:nth-child(5),.cover-user:nth-child(5){animation-delay:calc(var(--mk)*.38s)}
-  .cover-tile:nth-child(6),.cover-user:nth-child(6){animation-delay:calc(var(--mk)*.45s)}
-  .cover-logo,.cover-title,.cover-sub{animation:anUp calc(var(--mk)*.7s) var(--me) both}
-  .login-dlg{animation:anRise calc(var(--mk)*.5s) var(--me) both}
+  .gp2-tbl.an-r{animation-name:anFade;animation-duration:calc(var(--mk)*.3s)}
+  .gp2-tbl.an-r td{animation:anFade calc(var(--mk)*.55s) ease-out both}
+  .gp2-tbl.an-r td:nth-child(2){animation-delay:.10s}
+  .gp2-tbl.an-r td:nth-child(3){animation-delay:.18s}
+  .gp2-tbl.an-r td:nth-child(4){animation-delay:.26s}
+  .gp2-tbl.an-r td:nth-child(5){animation-delay:.34s}
+  .gp2-tbl.an-r td:nth-child(6){animation-delay:.42s}
+  .gp2-tbl.an-r td:nth-child(7){animation-delay:.50s}
+  .gp2-tbl.an-r td:nth-child(8){animation-delay:.58s}
+  .gp2-tbl.an-r td:nth-child(9){animation-delay:.66s}
+  .gp2-tbl.an-r td:nth-child(10){animation-delay:.74s}
+  .gp2-tbl.an-r td:nth-child(n+11){animation-delay:.82s}
+  /* --------------------------------------------------------------------- the door
+     The cover is the one place where the page is the show: it takes its time. The crest
+     turns in and settles, the name opens out from its letters, and the tiles rise one
+     after another with a light crossing each as it lands. */
+  .cover-logo{animation:cvLogo calc(var(--mk)*1.7s) cubic-bezier(.2,.9,.2,1) .2s both}
+  .cover-col{animation:cvTile calc(var(--mk)*1.1s) cubic-bezier(.2,.9,.2,1) both}
+  .cover-col:nth-child(1){animation-delay:1.0s}
+  .cover-col:nth-child(2){animation-delay:1.2s}
+  .cover-tile,.cover-user{animation-name:cvTile;animation-duration:calc(var(--mk)*.9s);animation-timing-function:cubic-bezier(.2,.9,.2,1);animation-fill-mode:both;animation-delay:3.1s}
+  .cover-tile:nth-child(1),.cover-user:nth-child(1){animation-delay:1.45s}
+  .cover-tile:nth-child(2),.cover-user:nth-child(2){animation-delay:1.54s}
+  .cover-tile:nth-child(3),.cover-user:nth-child(3){animation-delay:1.63s}
+  .cover-tile:nth-child(4),.cover-user:nth-child(4){animation-delay:1.72s}
+  .cover-tile:nth-child(5),.cover-user:nth-child(5){animation-delay:1.81s}
+  .cover-tile:nth-child(6),.cover-user:nth-child(6){animation-delay:1.90s}
+  .cover-tile:nth-child(7),.cover-user:nth-child(7){animation-delay:1.99s}
+  .cover-tile:nth-child(8),.cover-user:nth-child(8){animation-delay:2.08s}
+  .cover-tile:nth-child(9),.cover-user:nth-child(9){animation-delay:2.17s}
+  .cover-tile:nth-child(10),.cover-user:nth-child(10){animation-delay:2.26s}
+  .cover-tile:nth-child(11),.cover-user:nth-child(11){animation-delay:2.35s}
+  .cover-tile:nth-child(12),.cover-user:nth-child(12){animation-delay:2.44s}
+  .cover-tile:nth-child(13),.cover-user:nth-child(13){animation-delay:2.53s}
+  .cover-tile:nth-child(14),.cover-user:nth-child(14){animation-delay:2.62s}
+  .cover-tile:nth-child(15),.cover-user:nth-child(15){animation-delay:2.71s}
+  .cover-tile:nth-child(16),.cover-user:nth-child(16){animation-delay:2.80s}
+  .cover-tile:nth-child(17),.cover-user:nth-child(17){animation-delay:2.89s}
+  .cover-tile:nth-child(18),.cover-user:nth-child(18){animation-delay:2.98s}
+  .cover-tile,.cover-user{position:relative;overflow:hidden}
+  .cover-tile::after,.cover-user::after{content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(105deg,transparent 35%,rgba(232,202,139,.38) 50%,transparent 65%);
+    transform:translateX(-120%);animation:cvShine calc(var(--mk)*1.3s) ease-out both;animation-delay:inherit}
+  .login-dlg{animation:anRise calc(var(--mk)*.7s) var(--me) both}
   .rst-pop{animation:anRise calc(var(--mk)*.3s) var(--me) both}
   /* what can be opened lifts a little under the hand */
   .pdb-card:hover,.day-card:hover,.cover-tile:hover{transform:translateY(-3px)}
@@ -24808,7 +24840,7 @@ body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 
   body.app-edit .view-enter,body.app-edit .view-enter *,body.app-edit .rep-enter,body.app-edit .rep-enter *,
   body.app-edit .lgg-body *{animation:none!important}
 }
-@media print{ .lgg,.lgg *,.prf,.prf *,.view-enter,.view-enter *,.rep-enter,.rep-enter *,.an-e,.an-e *,.an-hold,.an-hold *{animation:none!important} .an-wait{opacity:1!important} }
+@media print{ .lgg,.lgg *,.prf,.prf *,.view-enter,.view-enter *,.rep-enter,.rep-enter *,.an-e,.an-e *,.an-r,.an-r *,.an-hold,.an-hold *,.cover,.cover *{animation:none!important} .an-wait{opacity:1!important} }
 body.app-edit .an-wait{opacity:1!important}
 .prf-in{--lgh:#c6a15b;--lga:#4a86d8;border:1px solid var(--line,#e4e7ec);border-radius:14px;padding:12px 16px 14px;margin:0 0 16px;background:var(--panel,#fff)}
 .prf-strip{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}

@@ -321,6 +321,19 @@
     "Pass & Chase", "HO", "Cut", "Spot Up", "1n1", "Putback", "Catch & Drive",
     "Drive & Drop Off", "Duck In", "Post Up"];
 
+  /* WHICH PERIOD A CLIP BELONGS TO. The four quarters are tagged 1Q to 4Q and that was
+     all that was read, so a game that went to overtime lost every possession of it: the
+     tagging marks extra time "PR." (prórroga), which matched none of the four, and those
+     clips fell out of every table split by period. Extra time is one more period, called
+     OT, however it is written. */
+  function periodOf(tags) {
+    for (var i = 0; i < tags.length; i++) {
+      var t = String(tags[i] || "").trim().toUpperCase();
+      if (/^[1-4]Q$/.test(t)) return t;
+      if (/^(PR\.?|PRORROGA|PRÓRROGA|OT\d?|[5-9]Q|EXTRA ?TIME|ET)$/.test(t)) return "OT";
+    }
+    return "";
+  }
   /* Their possessions, chained exactly like ours: consecutive defensive clips
      are one possession unless we had the ball in between, so the PPP conceded
      is on the same scale as the PPP we produce. */
@@ -342,7 +355,7 @@
       /* on a defensive clip an "Offensive Rebound" is theirs — the second chance
          we gave away. Without this the OREB column read zero on every row. */
       q.oreb = count(q.tags, "Offensive Rebound");
-      q.q = ["1Q", "2Q", "3Q", "4Q"].filter(function (x) { return has(q.tags, x); })[0] || "";
+      q.q = periodOf(q.tags);
       q.pnr = PNR_DEF.indexOf(q.first) >= 0;
       /* the block is the defense, so every row does not need to say so */
       q.label = String(q.first || "\u2014").replace(/\s*defense\s*$/i, "");
@@ -550,7 +563,7 @@
       q.pt = ptMarks(q.tags);
       q.br = q.tags.filter(function (t) { return t.indexOf("BR:") === 0; }).length;
       q.oreb = count(q.tags, "Offensive Rebound");
-      q.q = ["1Q", "2Q", "3Q", "4Q"].filter(function (x) { return has(q.tags, x); })[0] || "";
+      q.q = periodOf(q.tags);
       var base = FB_CATS.indexOf(q.first) >= 0 ? "Fastbreak"
         : SEC_CATS.indexOf(q.first) >= 0 ? "Secondary break"
           : OOB_CATS.indexOf(q.first) >= 0 ? "OOB (SLOB/BLOB)" : "Half court";
@@ -1506,7 +1519,7 @@
       var key = fam + "||" + cat;
       (bySet[key] || (bySet[key] = { fam: fam, cat: cat, list: [] })).list.push(q);
     });
-    var qs = ["1Q", "2Q", "3Q", "4Q"].filter(function (q) { return P.some(function (x) { return x.q === q; }); });
+    var qs = ["1Q", "2Q", "3Q", "4Q", "OT"].filter(function (q) { return P.some(function (x) { return x.q === q; }); });
     var phases = PHASES.filter(function (ph) { return P.some(function (q) { return q.phase === ph; }); });
     var byPhase = phases.map(function (ph) {
       return { label: ph, list: P.filter(function (q) { return q.phase === ph; }) };
