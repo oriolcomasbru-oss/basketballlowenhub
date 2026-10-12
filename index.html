@@ -2631,6 +2631,15 @@ body.prt.prt-textonly .rs-block-stats{display:none!important}
   font:inherit;font-weight:700;font-size:12px;color:var(--ink);cursor:pointer}
 .rep-tb:hover:not(:disabled){border-color:var(--ink-faint)}
 .rep-tb:disabled{opacity:.4;cursor:not-allowed}
+/* the copies of a report */
+.repv{min-width:min(620px,86vw)}
+.repv-list{max-height:52vh;overflow:auto;margin:8px 0}
+.repv-n{font-size:12.5px;color:var(--ink-faint,#8a919c);padding:6px 0}
+.repv-r{display:grid;grid-template-columns:110px minmax(0,1fr) 80px 110px;gap:10px;align-items:center;padding:6px 4px;border-bottom:1px solid var(--line,#e6e8ec);font-size:12.5px;font-variant-numeric:tabular-nums}
+.repv-r.repv-h{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint,#8a919c)}
+.repv-r.now{background:var(--panel-2,#f4f5f7);font-weight:700}
+.repv-r.big span:nth-child(3){color:#1f8068;font-weight:800}
+.repv-r span:nth-child(3){text-align:right}
 .rep-tb.primary{background:var(--sidebar);color:var(--gold-1,#c9a227);border-color:transparent}
 /* autosave state — the only permanent control left on the report bar */
 .rep-savestate{display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:12px;
@@ -6607,6 +6616,79 @@ function gameCard(gameId, from){
   loadScout(body, g, key, kind, from);
   return wrap;
 }
+/* A COPY OF EVERY REPORT, KEPT IN THIS BROWSER.
+   A report is one record on the server and saving replaces it, so a save that wrote less
+   than there was left nothing to go back to. Every report is now copied here when it is
+   opened, every few minutes while it is being written, and always just before anything
+   that replaces a lot of it at once - a rebuild, a restore, a step back. The last forty
+   copies of each report are kept, in this browser only; the server keeps its own (see
+   supabase/005_report_history.sql). "Versions" on the report bar lists both. */
+const _vault=(()=>{
+  let dbp=null; const last={}, lastT={};
+  const open=()=>dbp||(dbp=new Promise((res,rej)=>{ try{
+    const rq=indexedDB.open("lowen-vault",1);
+    rq.onupgradeneeded=()=>{ const s=rq.result.createObjectStore("v",{keyPath:"id",autoIncrement:true}); s.createIndex("key","key"); };
+    rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }catch(e){ rej(e); } }));
+  const list=async key=>{ try{ const db=await open();
+    return await new Promise((res,rej)=>{ const out=[];
+      const rq=db.transaction("v").objectStore("v").index("key").openCursor(IDBKeyRange.only(key));
+      rq.onsuccess=()=>{ const c=rq.result; if(c){ const v=c.value; out.push({ id:v.id, t:v.t, why:v.why, size:v.size }); c.continue(); }
+        else res(out.sort((a,b)=>b.t-a.t)); };
+      rq.onerror=()=>rej(rq.error); }); }catch(e){ return []; } };
+  const get=async id=>{ try{ const db=await open();
+    return await new Promise((res,rej)=>{ const rq=db.transaction("v").objectStore("v").get(id);
+      rq.onsuccess=()=>{ try{ res(rq.result? JSON.parse(rq.result.json) : null); }catch(e){ res(null); } }; rq.onerror=()=>rej(rq.error); }); }catch(e){ return null; } };
+  const put=async (key, rep, why, force)=>{ try{
+    if(!key || !rep) return;
+    const json=JSON.stringify({ data:rep.data||{}, html:rep.html||"" });
+    if(json.length<300 || last[key]===json) return;           /* nothing in it, or nothing new */
+    const now=Date.now();
+    if(!force && lastT[key] && now-lastT[key]<180000) return;
+    last[key]=json; lastT[key]=now;
+    const db=await open();
+    await new Promise((res,rej)=>{ const tx=db.transaction("v","readwrite");
+      tx.objectStore("v").add({ key:key, t:now, why:why||"", size:json.length, json:json });
+      tx.oncomplete=res; tx.onerror=()=>rej(tx.error); });
+    const all=await list(key);
+    if(all.length>40){ const tx=db.transaction("v","readwrite"); all.slice(40).forEach(v=>tx.objectStore("v").delete(v.id)); }
+  }catch(e){} };
+  return { put:put, list:list, get:get };
+})();
+/* THE COPIES OF A REPORT, AND THE WAY BACK TO ONE. */
+async function _repVersions(key, rep, apply){
+  const box=h("div",{class:"repv"}, h("h3",{},"Versions of this report"),
+    h("p",{},"Copies kept while the report was written. Restoring one replaces what is on the page; what is on the page now is kept as a copy first."));
+  const listEl=h("div",{class:"repv-list"}, h("div",{class:"ld"},"Looking for copies…", h("span",{class:"ld-bar"})));
+  box.appendChild(listEl);
+  box.appendChild(h("div",{class:"dialog-foot"}, h("button",{class:"btn", onclick:closeDialog},"Close")));
+  openDialog(box);
+  let server=[], serverErr="";
+  try{ const r=await sbrpc("report_versions",{p_token:SB_TOKEN,p_key:key});
+    if(r && r.ok) server=r.versions||[]; else serverErr=(r&&r.error)||""; }catch(e){ serverErr="off"; }
+  const local=await _vault.list(key);
+  const nowSize=JSON.stringify({ data:rep.data||{}, html:rep.html||"" }).length;
+  const rows=server.map(v=>({ t:Date.parse(v.kept_at||v.saved_at)||0, where:"Server", note:"written by "+(v.saved_by||"?"), size:v.size||0,
+      load:async ()=>{ const r=await sbrpc("report_version",{p_token:SB_TOKEN,p_id:v.id}); return (r&&r.ok&&r.version)? { data:r.version.data||{}, html:r.version.html } : null; } }))
+    .concat(local.map(v=>({ t:v.t, where:"This browser", note:v.why||"", size:v.size, load:()=>_vault.get(v.id) })))
+    .sort((a,b)=>b.t-a.t);
+  listEl.innerHTML="";
+  if(serverErr) listEl.appendChild(h("div",{class:"repv-n"},"The server keeps no copies yet (its history has not been switched on). The copies below are the ones this browser kept."));
+  if(!rows.length){ listEl.appendChild(h("div",{class:"repv-n"},"No copy of this report has been kept yet.")); return; }
+  listEl.appendChild(h("div",{class:"repv-r repv-h"}, h("span",{},"When"), h("span",{},"Kept by"), h("span",{},"Size"), h("span",{},"")));
+  listEl.appendChild(h("div",{class:"repv-r now"}, h("span",{},"On the page now"), h("span",{},""), h("span",{}, nowSize.toLocaleString("en-GB")), h("span",{},"")));
+  rows.forEach(v=>{
+    const b=h("button",{class:"btn sm"},"Restore");
+    b.onclick=async ()=>{ b.disabled=true; b.textContent="…";
+      let got=null; try{ got=await v.load(); }catch(e){ got=null; }
+      if(!got || !got.data){ b.textContent="Could not read it"; return; }
+      if(!confirm("Replace what is on the page with the copy of "+new Date(v.t).toLocaleString("en-GB")+"?\n\nWhat is on the page now is kept as a copy first.")){ b.disabled=false; b.textContent="Restore"; return; }
+      closeDialog(); apply(got.data, got.html); };
+    listEl.appendChild(h("div",{class:"repv-r"+(v.size>nowSize*1.15? " big" : "")},
+      h("span",{}, new Date(v.t).toLocaleString("en-GB",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})),
+      h("span",{}, v.where+(v.note? " · "+v.note : "")),
+      h("span",{}, (v.size||0).toLocaleString("en-GB")), b));
+  });
+}
 async function loadScout(body, g, key, kind, from){
   let rep=null, failed=false;
   /* A SPINNER WITH NO END IS NOT A MESSAGE. This waited on the server for as long as the
@@ -6620,7 +6702,14 @@ async function loadScout(body, g, key, kind, from){
         sbrpc("get_report",{p_token:SB_TOKEN,p_key:key}),
         new Promise((_,rej)=>setTimeout(()=>rej(new Error("slow")), 15000))
       ]);
-      if(r&&r.ok){ rep=r.report; repStatSet(key, rep); }
+      /* ONLY A CLEAR ANSWER IS AN ANSWER. Anything that was not "here it is" or "there is
+         none" used to fall through as "there is none": a session that could not be
+         checked, a reply that could not be read. The page then opened an empty report over
+         a game that had one, in edit mode, and the first autosave - or the copy of an
+         earlier report further down - wrote that emptiness over the real thing. A reply
+         that is not a clear yes is a failure, and a failure opens nothing. */
+      if(r && r.ok===true){ rep=r.report||null; repStatSet(key, rep); if(rep) _vault.put(key, rep, "opened", true); }
+      else if(!(r && /not published|sin permiso/i.test(String(r.error||"")))) failed=true;
     }catch(e){ failed=true; }
   }
   if(failed && !rep){
@@ -9378,7 +9467,8 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
      which can be edited; this cannot. */
   const PV = (typeof isPlayerUser==="function") && isPlayerUser();
   _scoutOpponent = (g && g.opponent) || "";
-  _scoutRep = rep;
+  _scoutRep = rep; _preVaultKey = key;
+  if(rep.__w==null) rep.__w=_repWeight(rep);
   _preSeasonDone = false; _prePlayersDone = false;
   _scoutPlayersSlot = false;   /* only the first PLAYERS STATS section takes it */
   _scoutDate = (g && g.date) || "";
@@ -9423,13 +9513,24 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
      the indicator. Silence used to mean "saved" and "your session died" alike. */
   const pushNow=()=>{
     if(!SB_TOKEN){ repSaveState("err","Not saved — session expired, log in again"); return Promise.resolve(null); }
+    /* A SAVE THAT WOULD THROW MOST OF THE REPORT AWAY ASKS FIRST. Autosave writes whatever
+       is on the page, and a page that has lost its content - for whatever reason - used
+       to write that loss over the server without a word. */
+    const wNow=_repWeight(rep);
+    if(rep.__w>4000 && wNow<rep.__w*0.6){
+      if(!confirm("This save would replace a report of "+rep.__w.toLocaleString("en-GB")+" characters with one of "+wNow.toLocaleString("en-GB")+".\n\nSave it anyway?\n\nCancel keeps what is on the server. Undo, or Versions, brings the page back.")){
+        repSaveState("err","Not saved - the report would lose most of its content - Undo, or click to save anyway");
+        return Promise.resolve(null);
+      }
+    }
+    _vault.put(key, rep, "saved", wNow<(rep.__w||0)*0.8);
     repSaveState("busy","Saving…");
     /* the kind sent is the screen being written from, not the kind the record happens to
        be stored under: the two halves of a game are one record, and the server checks the
        right to edit against the half this screen is */
     return sbrpc("save_report",{p_token:SB_TOKEN,p_key:key,p_kind:(kind==="postgame"?"postgame":"pregame"),
       p_opponent:g.opponent||"",p_date:g.date||null,p_data:rep.data,p_html:null})
-      .then(r=>{ if(r&&r.ok) repSaveState("ok","Saved "+_repClock());
+      .then(r=>{ if(r&&r.ok){ rep.__w=wNow; repSaveState("ok","Saved "+_repClock()); }
                  else repSaveState("err","Not saved"+((r&&r.error)?" — "+r.error:"")); return r; })
       .catch(e=>{ repSaveState("err","Not saved — "+(e&&e.message||"no connection")+" · click to retry");
                   /* a dropped connection is the common case: try once more on
@@ -9453,7 +9554,8 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
     const json=from.pop();
     let was=null; try{ was=JSON.parse(json); }catch(e){ was=null; }
     if(!was){ histPaint(); return; }
-    to.push(H.last); rep.data=was; H.last=json;
+    _vault.put(key, rep, "before a step back or forward", true);
+    to.push(H.last); rep.data=was; H.last=json; rep.__w=_repWeight(rep);
     repSaveState("pend","Unsaved changes…");
     clearTimeout(saveT); saveT=setTimeout(()=>{ pushNow().catch(()=>{}); }, 600);
     reRender();
@@ -9475,7 +9577,18 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
     histBtns=[ h("button",{class:"rep-tb", type:"button", title:"Undo (Ctrl+Z)", onclick:()=>histStep(H.undo, H.redo)},"↶ Undo"),
                h("button",{class:"rep-tb", type:"button", title:"Redo (Ctrl+Shift+Z)", onclick:()=>histStep(H.redo, H.undo)},"↷ Redo") ];
     histPaint();
-    wrap.appendChild(h("div",{class:"rep-tools"}, repSaveBadge(), histBtns[0], histBtns[1]));
+    /* any copy of this report, from the server or from this browser, put back */
+    const restore=(d, html)=>{
+      record(); _vault.put(key, rep, "before a restore", true);
+      H.undo.push(H.last); histTrim(); H.redo.length=0;
+      rep.data=d||{}; rep.__w=_repWeight(rep); H.last=snap();
+      repSaveState("pend","Unsaved changes");
+      clearTimeout(saveT); saveT=setTimeout(()=>{ pushNow().catch(()=>{}); }, 400);
+      reRender(); H.last=snap();
+    };
+    wrap.appendChild(h("div",{class:"rep-tools"}, repSaveBadge(), histBtns[0], histBtns[1],
+      h("button",{class:"rep-tb", type:"button", title:"Copies of this report kept while it was written, and the way back to one",
+        onclick:()=>_repVersions(key, rep, restore)},"Versions")));
   }
   let dragFrom=-1;
   const moveSec=(from,to)=>{ if(from<0||to<0||from===to||to>=secs.length||from>=secs.length) return; const [it]=secs.splice(from,1); secs.splice(to,0,it); save(); reRender(); };
@@ -11410,6 +11523,9 @@ function _preCardsBlock(L, tid, rep, canEd, save){
     title:"Write the numbers, the passport and the minutes again from the league feed. "
       +"What you have typed into the cards is replaced; the roles below are not touched.",
     onclick:()=>{
+      /* it replaces every card: asked first, and a copy of the report is kept before */
+      if(!confirm("Rebuild every card from the league?\n\nEverything typed into the cards - roles, ideas, notes, closeouts - is replaced by the league's first draft. Undo brings it back.")) return;
+      try{ if(_scoutRep) _vault.put(_preVaultKey||_scoutRep.key, _scoutRep, "before a rebuild", true); }catch(e){}
       const d=_preCardsDraft(leagueState(), tid);
       if(!d){ toast("The league has not given a roster for this club yet."); return; }
       /* the rebuild replaces what was typed, which is what it says it does — but the bin
@@ -13097,7 +13213,7 @@ function _gpOppFive(opp, date){
 }
 let _gpForPrint=false;
 /* the report being drawn: the game plan reads the opponent's cards out of it */
-let _scoutRep=null;
+let _scoutRep=null, _preVaultKey="";
 function renderPlanSection(sec, canEd, save, allSecs){
   const plan=planEnsure(sec);
   const box=h("div",{class:"gp-wrap gp2"});
