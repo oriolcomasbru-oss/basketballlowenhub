@@ -13324,7 +13324,6 @@ function renderPlanSection(sec, canEd, save, allSecs){
         for(let c=0;c<GP_COLS;c++){ const id=plan.grid[q][r][c]; const pl=id?_gpById(plan,id):null;
           const isnew = c>0 && id && id!==plan.grid[q][r][c-1];
           const td=h("td",{class:"gp2-st ed"+(pl?" f":"")+(isnew?" in":"")});
-          if(pl && isnew){ const fc=_gpFace(pl.name, redraw); if(fc){ fc.classList.add("gpc"); td.classList.add("wf"); td.appendChild(fc); } }
           td.appendChild(document.createTextNode(pl?pl.name:""));
           td.addEventListener("click",()=>stamp(q,r,c));
           td.addEventListener("dragover",e=>{ e.preventDefault(); td.classList.add("over"); });
@@ -13342,8 +13341,6 @@ function renderPlanSection(sec, canEd, save, allSecs){
         for(let c=0;c<GP_COLS;c++){ const id=plan.grid[q][r][c]; const pl=id?_gpById(plan,id):null;
           const isnew = c>0 && id && id!==plan.grid[q][r][c-1];
           const td=h("td",{class:"gp2-st"+(pl?" f":"")+(isnew?" in":"")});
-          /* the minute a man comes in carries his face, left of his name */
-          if(pl && isnew){ const fc=_gpFace(pl.name, redraw); if(fc){ fc.classList.add("gpc"); td.classList.add("wf"); td.appendChild(fc); } }
           td.appendChild(h("span",{class:"gp2-nm"}, pl?pl.name:""));
           tr.appendChild(td); }
       }
@@ -13432,27 +13429,17 @@ function renderPlanSection(sec, canEd, save, allSecs){
         if(!g.length) return;
         g.sort((a,b)=>(b.st-a.st)||(b.min-a.min));
         slot.appendChild(h("div",{class:"gp-opp-r"}, h("b",{class:"pos"}, GP_POS[i]),
-          h("div",{}, g.map(p=>h("div",{class:"gp-ros-p"+(p.st? " start" : "")},
+          h("div",{}, g.map(p=>h("div",{class:"gp-ros-p"+(p.st? " start" : ""), style:p.co? "border-left-color:"+p.co[1] : "",
+              title:(p.st? "Probable starter" : "Off the bench")+(p.co? " · closeout: "+p.co[0] : "")},
             h("div",{class:"l1"},
-              h("i",{class:"co"+(p.co? "" : " none"), style:p.co? "background:"+p.co[1] : "", title:p.co? "Closeout: "+p.co[0] : ""}),
               h("span",{class:"nm"}, (p.num? "#"+p.num+" " : "")+_lgLastName(p.name)),
               (p.e && !p.e.last) || p.doubt? h("em",{title:p.doubt? "Marked as a doubt on his card" : "Did not play their last game"},"?") : null,
               h("span",{class:"mn", title:p.st&&R? "Started "+p.e.st+" of their last "+R.n+" games" : ""},
-                (p.st&&R? "S "+p.e.st+"/"+R.n+" · " : "")+(p.min? Math.round(p.min)+"′" : ""))),
+                p.min? Math.round(p.min)+"′" : ""),
+              p.st&&R? h("u",{class:"sx"}, "S "+p.e.st+"/"+R.n) : null),
             (p.tag || p.ideas.length)? h("div",{class:"l2"}, p.tag? h("b",{}, p.tag) : null,
               p.ideas.slice(0,2).join(" · ")) : null)))));
       });
-      if(canEd && R){
-        const fill=h("button",{class:"gp2-add", title:"Writes their starters into the empty Opponent boxes of Defensive pairs, in position order"},"Use as defensive pairs");
-        fill.addEventListener("click",()=>{
-          const five=[]; groups.forEach(g=>g.forEach(p=>{ if(p.st) five.push(p); }));
-          five.slice(0,5).forEach((p,i)=>{ const t=(p.num? "#"+p.num+" " : "")+_lgLastName(p.name).toUpperCase();
-            if(!plan.pairs1[i]) plan.pairs1[i]={ us:"", them:"" };
-            if(!String(plan.pairs1[i].them||"").trim()) plan.pairs1[i].them=t; });
-          save(); redraw();
-        });
-        slot.appendChild(fill);
-      }
     };
     paint(undefined);
     _gpOppFive(opp, _scoutDate).then(R=>paint(R||null)).catch(()=>paint(null));
@@ -13718,11 +13705,16 @@ function renderPlanSection(sec, canEd, save, allSecs){
 
     const sheet=h("div",{class:"gp2-sheet"});
     const left=h("div",{class:"gp2-rail"});
-    left.appendChild(pairsBlock("Defensive pairs", plan.pairs1));
-    left.appendChild(pairsBlock("Off the bench", plan.pairs2));
-    /* on the screen only: who they start and who comes in, under the pairs it informs */
-    if(!_gpForPrint){ try{ left.appendChild(oppFiveBlock()); }catch(e){} }
-    left.appendChild(minutesBlock());
+    /* ON THE SCREEN THE RAIL IS THEIRS: their roster, and under it their playbook with the
+       calls. The pairs are gone from it, and our minutes sit under the two boards they are
+       counted from. The printed sheet keeps its own arrangement - the minutes in the rail,
+       and the pairs only when somebody wrote one. */
+    const anyPair=a=>(a||[]).some(p=>String((p&&p.us)||"").trim() || String((p&&p.them)||"").trim());
+    if(_gpForPrint){
+      if(anyPair(plan.pairs1)) left.appendChild(pairsBlock("Defensive pairs", plan.pairs1));
+      if(anyPair(plan.pairs2)) left.appendChild(pairsBlock("Off the bench", plan.pairs2));
+      left.appendChild(minutesBlock());
+    } else { try{ left.appendChild(oppFiveBlock()); }catch(e){} }
     const mid=h("div",{class:"gp2-mid"});
     /* ON THE SCREEN THE BOARDS AND THE BOXES ARE TWO COLUMNS OF THEIR OWN. They used to be
        two rows, each a board with its box beside it, so a box with a lot of text in it
@@ -13748,7 +13740,8 @@ function renderPlanSection(sec, canEd, save, allSecs){
     /* the key sets go under the minutes on the screen, where the eye already is for the
        matchups; on paper they keep their own place on the sheet */
     try{ const ks=keySetsBlock(); if(_gpForPrint) sheet.appendChild(ks);
-      else { const colb=mid.querySelector(".gp3-colb"); (colb||left).appendChild(ks); sheet.classList.add("ks-rail"); } }
+      else { left.appendChild(ks); sheet.classList.add("ks-rail");
+        const colb=mid.querySelector(".gp3-colb"); (colb||left).appendChild(minutesBlock()); } }
     catch(e){ try{ console.warn("game plan key sets", e); }catch(_){} }
     box.appendChild(sheet);
 
@@ -28275,6 +28268,25 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .gp-ros-p .l2{font-size:10px;line-height:1.3;color:var(--ink-soft,#5b6472);padding-left:12px;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .gp-ros-p .l2 b{font:700 9.5px 'Oswald',sans-serif;letter-spacing:.05em;color:var(--ink,#141821);margin-right:5px}
+/* THEIR ROSTER AS CARDS: one small card a man, the closeout as its left edge, a probable
+   starter on a warm ground. The rail starts with it, flush with the top of the boards. */
+.gp2-rail > .gp-opp:first-child{margin-top:0}
+.gp-opp .gp-opp-r{border-bottom:0;padding:0 0 4px;grid-template-columns:22px minmax(0,1fr);gap:5px}
+.gp-opp .gp-opp-r .pos{padding-top:6px;font-size:11.5px;color:var(--ink,#141821)}
+.gp-opp .gp-ros-p{border:1px solid var(--line,#e6e8ec);border-left:3px solid var(--line-strong,#cfd4dc);border-radius:6px;
+  padding:3px 7px 4px;margin:0 0 3px;background:var(--panel,#fff)}
+.gp-opp .gp-ros-p+.gp-ros-p{border-top:1px solid var(--line,#e6e8ec)}
+.gp-opp .gp-ros-p.start{background:rgba(198,161,91,.16);border-color:rgba(198,161,91,.5)}
+.gp-opp .gp-ros-p .nm{font-size:12px}
+.gp-opp .gp-ros-p .mn{font-size:10.5px;font-weight:700;color:var(--ink,#141821)}
+.gp-opp .gp-ros-p .sx{text-decoration:none;flex:none;font:700 8.5px 'IBM Plex Mono',monospace;letter-spacing:.03em;
+  color:#7a5c12;background:rgba(198,161,91,.35);border-radius:3px;padding:1px 4px}
+.gp-opp .gp-ros-p .l2{padding-left:0;margin-top:1px}
+.gp-opp .gp-ros-p .l2 b{display:block;margin:0}
+/* our minutes, under the two boards */
+.gp3-colb > .gp3-minw{margin-top:16px;max-width:640px}
+/* their playbook, in the rail under their roster */
+.gp2-rail > .gp3-ks{margin-top:14px}
 /* the face in the cell where a man comes in */
 .lg-bdg.face.gpf.gpc{width:17px;height:17px;margin-right:2px;vertical-align:middle}
 .gp2-st.wf{white-space:nowrap}
