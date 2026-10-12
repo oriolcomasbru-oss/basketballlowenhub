@@ -15247,22 +15247,20 @@ function _lgGameCompare(g, M, adv){
   row("Fast points", H.fast, A.fast, null, "hi", "scored within seven seconds of a defensive rebound or a turnover");
   return box;
 }
-/* THE LAST TWO MINUTES, TOLD AS WHAT HAPPENED.
-   Two minutes is ten possessions. A box score of ten possessions is a table of noughts
-   and ones that has to be decoded; what a staff wants is the story - where the game
-   stood, what each side did with each trip, and where it stood after. So the stretch is
-   drawn as that: the score going in and coming out, four comparisons that say why, and
-   then every trip down the floor in order - who shot, what came of it, and the score
-   after each basket - with the home side on the left and the visitors on the right.
-   The tables of the first version are still there, folded away, for whoever wants them. */
+/* THE LAST TWO MINUTES, IN A FEW LINES.
+   Third attempt, and the smallest. Tables of a ten-possession stretch said nothing, and a
+   play-by-play line said everything, which in a report is the same fault from the other
+   side. What is wanted is the handful of things that decided those two minutes, and no
+   more room than that deserves: one row per stretch - where the score stood, what the two
+   minutes were, where it ended - and next to it the key factors, heaviest first, each in
+   the colour of the side it went for. A factor is only named when the two sides were
+   really apart on it. */
 function _lgGameClutch(g, j, flow){
   const feed=j.feed||{};
   let nq=4; (feed.actions||[]).forEach(a=>{ nq=Math.max(nq, _lgGameElapsed(a.quarter,0).qi+1); });
   const wrap=h("div",{class:"lgg-clutch"});
-  const f2=v=>(v==null||!isFinite(v))?"—":v.toFixed(2);
-  const sh=(m,a)=>a? (m+"/"+a) : "–";
-  const mm=s=>Math.floor(s/60)+":"+String(Math.round(s%60)).padStart(2,"0");
   const ht=g.homeTlc||g.home, at=g.awayTlc||g.away;
+  const sh=(m,a)=>m+"/"+a;
   for(let q=3;q<nq;q++){
     const sel={}; sel[q]=1;
     const M=_lgGameModel(g, j, sel, 120);
@@ -15271,97 +15269,49 @@ function _lgGameClutch(g, j, flow){
     if(!(H.fga+A.fga+H.fta+A.fta+H.tov+A.tov)) continue;
     const len=q<4?600:300, base=q<4? q*600 : 2400+(q-4)*300, t0=base+len-120;
     let in0={h:0,a:0}; (flow.ev||[]).forEach(e=>{ if(e.t<t0) in0=e; });
-    const lbl=(q<4? "4th quarter" : "Overtime"+(nq>5? " "+(q-3) : ""));
     const outH=in0.h+H.pts, outA=in0.a+A.pts;
     const lead=(a,b)=>a===b? "tied" : ((a>b?ht:at)+" +"+Math.abs(a-b));
-    const tone=(a,b)=>a===b? "" : (a>b? " h" : " a");
-    const blk=h("div",{class:"lgg-cl"});
-    /* ---- where it stood, what the stretch was, where it ended ---- */
-    blk.appendChild(h("div",{class:"lgg-cl-top"},
-      h("div",{class:"lgg-cl-t"}, h("b",{}, lbl), h("span",{}, "last 2:00")),
-      h("div",{class:"lgg-cl-flow"},
-        h("div",{class:"st"+tone(in0.h,in0.a)}, h("i",{},"went in"), h("b",{}, in0.h+"–"+in0.a), h("span",{}, lead(in0.h,in0.a))),
-        h("div",{class:"arrow"}, "→"),
-        h("div",{class:"st run"+tone(H.pts,A.pts)}, h("i",{},"the two minutes"), h("b",{}, H.pts+"–"+A.pts), h("span",{}, H.pts===A.pts? "even" : (H.pts>A.pts?ht:at)+" won them")),
-        h("div",{class:"arrow"}, "→"),
-        h("div",{class:"st"+tone(outH,outA)}, h("i",{},"came out"), h("b",{}, outH+"–"+outA), h("span",{}, lead(outH,outA))))));
-    /* ---- why: four things, side by side ---- */
-    const cmp=h("div",{class:"lgg-cmp lgg-cl-cmp"});
-    const row=(lbl2, hv, av, ht2, at2, better)=>{
-      const a=Number(hv)||0, b=Number(av)||0, tot=a+b, hw=tot? 100*a/tot : 50;
-      const win=(a===b||!better)? 0 : ((better==="hi")===(a>b)? 1 : -1);
-      cmp.appendChild(h("div",{class:"lgg-cr"},
-        h("b",{class:"v l"+(win>0?" w":"")}, ht2),
-        h("div",{class:"mid"}, h("span",{class:"lb"}, lbl2),
-          h("div",{class:"bar"}, h("i",{class:"h"+(win>0?" w":""), style:"width:"+hw.toFixed(1)+"%"}), h("i",{class:"a"+(win<0?" w":""), style:"width:"+(100-hw).toFixed(1)+"%"}))),
-        h("b",{class:"v r"+(win<0?" w":"")}, at2)));
-    };
-    row("Points per possession", H.poss?H.pts/H.poss:0, A.poss?A.pts/A.poss:0, H.poss? f2(H.pts/H.poss) : "—", A.poss? f2(A.pts/A.poss) : "—", "hi");
-    row("Field goals", H.fga?H.fgm/H.fga:0, A.fga?A.fgm/A.fga:0, sh(H.fgm,H.fga), sh(A.fgm,A.fga), "hi");
-    row("Free throws made", H.ftm, A.ftm, sh(H.ftm,H.fta), sh(A.ftm,A.fta), "hi");
-    row("Turnovers", H.tov, A.tov, String(H.tov), String(A.tov), "lo");
-    blk.appendChild(h("div",{class:"lgg-cmp-top"}, h("b",{class:"h"}, g.home||""), h("b",{class:"a"}, g.away||"")));
-    blk.appendChild(cmp);
-    /* ---- every trip, in order ---- */
+    const F=[];
+    const add=(w, home, txt)=>{ if(w>0) F.push({ w:w, home:home, txt:txt }); };
+    /* the basket that changed who was in front, or tied it, last */
     const last=n=>_lgLastName(M.names[String(n)]||"");
-    const SHOT={ LU:"layup", DU:"dunk", JS:"jumper", TI:"tip in", AO:"alley oop" };
-    const TOV={ BP:"bad pass", LB:"lost ball", TR:"travelling", VI:"violation", OB:"out of bounds", "24":"24 seconds", "8":"8 seconds", "5":"5 seconds", "3":"3 seconds" };
-    const line=h("div",{class:"lgg-cl-line"});
-    let hs=in0.h, as=in0.a, ft=null;
-    const flush=()=>{ if(!ft) return;
-      const home=ft.home;
-      line.appendChild(h("div",{class:"lgg-ev "+(home?"h":"a")+(ft.m? " good":" miss")},
-        h("span",{class:"t"}, ft.clock),
-        h("span",{class:"l"}, home? h("span",{class:"chip "+(ft.m?"ok":"no")}, "FT "+ft.m+"/"+ft.n, h("em",{}, ft.who)) : null),
-        h("b",{}, ft.m? (ft.hs+"–"+ft.as) : ""),
-        h("span",{class:"r"}, home? null : h("span",{class:"chip "+(ft.m?"ok":"no")}, "FT "+ft.m+"/"+ft.n, h("em",{}, ft.who)))));
-      ft=null; };
-    M.acts.forEach(x=>{ const a=x.a, k=a.action, home=(a.teamcode===M.hc);
-      const t=Number(a.time)||0, clock=Math.floor(t/60)+":"+String(t%60).padStart(2,"0");
-      if(k==="FT"){
-        const who=last(a.player_id1), made=(a.result==="+");
-        if(made){ if(home) hs++; else as++; }
-        if(ft && ft.home===home && ft.who===who && ft.t===t){ ft.n++; if(made) ft.m++; ft.hs=hs; ft.as=as; }
-        else { flush(); ft={ home:home, who:who, t:t, clock:clock, n:1, m:made?1:0, hs:hs, as:as }; }
-        return;
-      }
-      let chip=null, sc="";
-      if(k==="P2"||k==="P3"){
-        const made=(a.result==="+"), v=(k==="P3")?3:2;
-        if(made){ if(home) hs+=v; else as+=v; sc=hs+"–"+as; }
-        chip=h("span",{class:"chip "+(made?"ok":"no")}, (made? "+"+v : (a.result==="BL"? "blocked "+v : "miss "+v)),
-          h("em",{}, last(a.player_id1)+" · "+(SHOT[a.info3]||"shot")+((made && last(a.player_id2))? " · assist "+last(a.player_id2) : "")));
-      }
-      else if(k==="TO"||k==="TTO") chip=h("span",{class:"chip to"}, "turnover", h("em",{}, (k==="TTO"? "team" : last(a.player_id1))+(TOV[a.info1]? " · "+TOV[a.info1] : "")));
-      else if((k==="REB"||k==="TREB") && a.info1==="O") chip=h("span",{class:"chip or"}, "off. rebound", h("em",{}, k==="TREB"? "team" : last(a.player_id1)));
-      else if(k==="TIMEO") chip=h("span",{class:"chip tm"}, "timeout");
-      else return;
-      flush();
-      line.appendChild(h("div",{class:"lgg-ev "+(home?"h":"a")+(sc?" good":"")},
-        h("span",{class:"t"}, clock), h("span",{class:"l"}, home? chip : null), h("b",{}, sc), h("span",{class:"r"}, home? null : chip)));
+    let hs=in0.h, as=in0.a, turn=null;
+    M.acts.forEach(x=>{ const a=x.a; if(a.result!=="+") return;
+      const v=(a.action==="P3")?3:(a.action==="P2")?2:(a.action==="FT")?1:0; if(!v) return;
+      const before=Math.sign(hs-as), home=(a.teamcode===M.hc);
+      if(home) hs+=v; else as+=v;
+      const after=Math.sign(hs-as);
+      if(after!==before){ const t=Number(a.time)||0;
+        turn={ home:home, who:last(a.player_id1), how:(a.action==="FT"? "at the line" : (v===3? "with a three" : "with a two")),
+          clock:Math.floor(t/60)+":"+String(t%60).padStart(2,"0"), tie:(after===0), sc:hs+"–"+as }; }
     });
-    flush();
-    blk.appendChild(h("div",{class:"lgg-cl-lh"}, h("span",{class:"h"}, ht), h("span",{}, "every trip down the floor, in order · the score after each basket"), h("span",{class:"a"}, at)));
-    blk.appendChild(line);
-    /* ---- the tables, for whoever wants them ---- */
-    const men=(name,S)=>{
-      const tb=h("table",{class:"lg-tbl lgg-box"});
-      tb.appendChild(h("tr",{}, ["#","Player","MIN","PTS","FG","3P","FT","REB","AST","TO","PF","+/−"].map((c,i)=>h("th",{class:i===1?"l":""}, c))));
-      S.pl.filter(p=>p.sec>0 || p.pts || p.fga || p.fta || p.tov || p.pf).sort((a,b)=>b.sec-a.sec).forEach(p=>{
-        tb.appendChild(h("tr",{}, h("td",{class:"lg-pos"}, p.num), h("td",{class:"l lg-team"}, p.name), h("td",{}, mm(p.sec)),
-          h("td",{class:"b"}, p.pts), h("td",{}, sh(p.fgm,p.fga)), h("td",{}, sh(p.p3m,p.p3a)), h("td",{}, sh(p.ftm,p.fta)),
-          h("td",{}, p.reb), h("td",{}, p.ast), h("td",{}, p.tov), h("td",{}, p.pf),
-          h("td",{class:p.pm>0?"pos":(p.pm<0?"neg":"")}, (p.pm>0?"+":"")+p.pm)));
-      });
-      return h("div",{}, h("div",{class:"lgg-sub"}, name), h("div",{class:"lgg-scroll"}, tb));
-    };
-    const det=h("div",{class:"lgg-cl-2", style:"display:none"}, men(g.home||"", H), men(g.away||"", A));
-    const btn=h("button",{class:"btn sm lgg-advbtn", onclick:()=>{ const on=det.style.display==="none";
-      det.style.display=on?"":"none"; btn.textContent=on?"Hide the player lines":"Player lines of these two minutes"; btn.classList.toggle("on", on); }},
-      "Player lines of these two minutes");
-    blk.appendChild(h("div",{class:"lgg-advrow"}, btn));
-    blk.appendChild(det);
-    wrap.appendChild(blk);
+    if(turn) add(9, turn.home, (turn.who||"")+(turn.tie? " ties it " : " puts "+(turn.home?ht:at)+" ahead ")+turn.how+", "+turn.sc+" at "+turn.clock);
+    /* the line */
+    if(Math.abs(H.ftm-A.ftm)>=2) add(2+Math.abs(H.ftm-A.ftm), H.ftm>A.ftm,
+      "Free throws "+ht+" "+sh(H.ftm,H.fta)+" · "+at+" "+sh(A.ftm,A.fta));
+    /* the three */
+    if(H.p3m!==A.p3m && (H.p3a+A.p3a)>=2) add(1+3*Math.abs(H.p3m-A.p3m), H.p3m>A.p3m,
+      "Threes "+ht+" "+sh(H.p3m,H.p3a)+" · "+at+" "+sh(A.p3m,A.p3a));
+    /* a side that could not make a shot */
+    [[H,true,ht],[A,false,at]].forEach(r=>{ const S=r[0];
+      if(S.fga>=4 && S.fgm/S.fga<=0.25) add(4+S.fga-S.fgm, !r[1], r[2]+" "+sh(S.fgm,S.fga)+" from the field"); });
+    /* giving it away, and getting it back */
+    if(H.tov!==A.tov) add(1.5+2*Math.abs(H.tov-A.tov), H.tov<A.tov,
+      "Turnovers "+ht+" "+H.tov+" · "+at+" "+A.tov);
+    if(Math.abs((H.sc||0)-(A.sc||0))>=2) add(1+Math.abs(H.sc-A.sc), H.sc>A.sc,
+      "Second chance points "+ht+" "+H.sc+" · "+at+" "+A.sc);
+    /* the man who took them over */
+    [[H,true],[A,false]].forEach(r=>{ const S=r[0], p=S.pl.slice().sort((a,b)=>b.pts-a.pts)[0];
+      if(p && p.pts>=4 && p.pts>=0.55*S.pts) add(2+p.pts, r[1], _lgLastName(p.name)+" "+p.pts+" of "+(r[1]?ht:at)+"’s "+S.pts); });
+    F.sort((a,b)=>b.w-a.w);
+    wrap.appendChild(h("div",{class:"lgg-cl"},
+      h("div",{class:"lgg-cl-s"},
+        h("b",{}, q<4? "Q4" : "OT"+(q-3)), h("span",{}, "last 2:00"),
+        h("div",{class:"flow"}, h("i",{}, in0.h+"–"+in0.a), h("u",{}, "→"),
+          h("b",{class:H.pts===A.pts? "" : (H.pts>A.pts?"h":"a")}, H.pts+"–"+A.pts), h("u",{}, "→"), h("i",{}, outH+"–"+outA)),
+        h("em",{}, lead(in0.h,in0.a)+" → "+lead(outH,outA))),
+      h("div",{class:"lgg-cl-f"}, F.length? F.slice(0,4).map(f=>h("span",{class:"kf "+(f.home?"h":"a")}, f.txt))
+        : h("span",{class:"kf"}, "Nothing separated the two sides in these two minutes."))));
   }
   return wrap.childNodes.length? wrap : null;
 }
@@ -25171,38 +25121,23 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 .lgg-cl-h b{font-family:'Oswald',sans-serif;font-size:14px;letter-spacing:.05em;text-transform:uppercase}
 .lgg-cl-h .sc{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:13px}
 .lgg-cl-h span{font-size:12px;color:var(--ink-soft,#5b6472)}
-.lgg-cl{border:1px solid var(--line,#e4e7ec);border-radius:14px;padding:14px 16px 12px;margin-bottom:14px}
-.lgg-cl:last-child{margin-bottom:0}
-.lgg-cl-top{display:flex;flex-wrap:wrap;align-items:center;gap:14px 28px;margin-bottom:12px}
-.lgg-cl-t b{display:block;font-family:'Oswald',sans-serif;font-size:17px;letter-spacing:.05em;text-transform:uppercase;line-height:1.1}
-.lgg-cl-t span{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
-.lgg-cl-flow{display:flex;align-items:stretch;gap:10px;flex:1;min-width:0}
-.lgg-cl-flow .st{flex:1;border:1px solid var(--line,#e4e7ec);border-radius:12px;padding:8px 14px;display:flex;flex-direction:column;align-items:center;gap:1px;min-width:0}
-.lgg-cl-flow .st i{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
-.lgg-cl-flow .st b{font-family:'Oswald',sans-serif;font-size:30px;font-weight:600;line-height:1.1}
-.lgg-cl-flow .st span{font-size:12px;font-weight:600;color:var(--ink-soft,#5b6472)}
-.lgg-cl-flow .st.h{box-shadow:inset 0 -4px 0 var(--lgh)}.lgg-cl-flow .st.a{box-shadow:inset 0 -4px 0 var(--lga)}
-.lgg-cl-flow .st.run{background:var(--bg,#f4f5f7)}
-.lgg-cl-flow .arrow{display:flex;align-items:center;font-size:22px;color:var(--ink-faint,#8a93a2)}
-.lgg-cl-cmp{margin-bottom:12px}
-.lgg-cl-lh{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:baseline;font-size:11px;color:var(--ink-faint,#8a93a2);margin:6px 0 4px}
-.lgg-cl-lh .h,.lgg-cl-lh .a{font-family:'Oswald',sans-serif;font-size:13px;color:var(--ink,#141821)}
-.lgg-cl-lh .h{text-align:right;box-shadow:inset 0 -3px 0 var(--lgh);justify-self:end}.lgg-cl-lh .a{box-shadow:inset 0 -3px 0 var(--lga);justify-self:start}
-.lgg-cl-line{border-top:1px solid var(--line,#e4e7ec)}
-.lgg-ev{display:grid;grid-template-columns:1fr 46px 70px 46px 1fr;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--line,#eef0f3)}
-.lgg-ev .t{grid-column:2;grid-row:1;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-faint,#8a93a2);text-align:center}
-.lgg-ev .l{grid-column:1;grid-row:1;display:flex;justify-content:flex-end}
-.lgg-ev>b{grid-column:3;grid-row:1;font-family:'Oswald',sans-serif;font-size:17px;text-align:center}
-.lgg-ev .r{grid-column:5;grid-row:1;display:flex;justify-content:flex-start}
-.lgg-ev.good{background:linear-gradient(90deg,transparent,rgba(47,158,134,.06),transparent)}
-.lgg-ev .chip{display:inline-flex;align-items:baseline;gap:7px;border-radius:999px;padding:3px 11px;font-family:'Oswald',sans-serif;font-size:13.5px;font-weight:600;border:1px solid var(--line,#e4e7ec);white-space:nowrap}
-.lgg-ev .chip em{font-style:normal;font-family:'Inter',system-ui,sans-serif;font-size:11.5px;font-weight:500;color:var(--ink-soft,#5b6472)}
-.lgg-ev .chip.ok{background:#2f9e86;border-color:#2f9e86;color:#fff}.lgg-ev .chip.ok em{color:rgba(255,255,255,.9)}
-.lgg-ev .chip.no{color:var(--ink-soft,#5b6472);border-style:dashed}
-.lgg-ev .chip.to{background:rgba(216,82,78,.12);border-color:#e2a5a2;color:#b83a34}
-.lgg-ev .chip.or{background:rgba(214,184,119,.18);border-color:#d9c39a}
-.lgg-ev .chip.tm{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.07em;text-transform:uppercase;font-weight:500;color:var(--ink-faint,#8a93a2)}
-@media (max-width:760px){ .lgg-cl-flow{flex-wrap:wrap} .lgg-cl-flow .arrow{display:none} .lgg-ev{grid-template-columns:1fr 40px 54px 0 1fr} .lgg-ev .chip em{display:none} }
+.lgg-cl{display:grid;grid-template-columns:auto 1fr;gap:6px 22px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line,#eef0f3)}
+.lgg-cl:last-child{border-bottom:0;padding-bottom:0}
+.lgg-cl:first-child{padding-top:0}
+.lgg-cl-s{display:grid;grid-template-columns:auto auto;gap:0 10px;align-items:baseline}
+.lgg-cl-s>b{font-family:'Oswald',sans-serif;font-size:15px;letter-spacing:.05em}
+.lgg-cl-s>span{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.lgg-cl-s .flow{grid-column:1/-1;display:flex;align-items:baseline;gap:7px;font-family:'Oswald',sans-serif;margin-top:1px}
+.lgg-cl-s .flow i{font-style:normal;font-size:17px;color:var(--ink-soft,#5b6472)}
+.lgg-cl-s .flow u{text-decoration:none;font-size:12px;color:var(--ink-faint,#8a93a2)}
+.lgg-cl-s .flow b{font-size:22px;font-weight:600;padding:0 7px;border-radius:6px;background:var(--bg,#f4f5f7)}
+.lgg-cl-s .flow b.h{box-shadow:inset 0 -3px 0 var(--lgh)}.lgg-cl-s .flow b.a{box-shadow:inset 0 -3px 0 var(--lga)}
+.lgg-cl-s>em{grid-column:1/-1;font-style:normal;font-size:11px;color:var(--ink-faint,#8a93a2)}
+.lgg-cl-f{display:flex;flex-wrap:wrap;gap:6px}
+.lgg-cl-f .kf{font-size:12.5px;padding:4px 11px 4px 12px;border-radius:8px;border:1px solid var(--line,#e4e7ec);color:var(--ink,#141821)}
+.lgg-cl-f .kf.h{box-shadow:inset 3px 0 0 var(--lgh)}.lgg-cl-f .kf.a{box-shadow:inset 3px 0 0 var(--lga)}
+.lgg-cl-f .kf:first-child{font-weight:700}
+@media (max-width:760px){ .lgg-cl{grid-template-columns:1fr} }
 .lgg-cl-2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
 @media (max-width:900px){ .lgg-cl-2{grid-template-columns:1fr} }
 /* the five best and the five worst sets, marked in the systems table */
