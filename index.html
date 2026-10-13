@@ -6640,10 +6640,10 @@ const _vault=(()=>{
       rq.onsuccess=()=>{ try{ res(rq.result? JSON.parse(rq.result.json) : null); }catch(e){ res(null); } }; rq.onerror=()=>rej(rq.error); }); }catch(e){ return null; } };
   const put=async (key, rep, why, force)=>{ try{
     if(!key || !rep) return;
-    const json=JSON.stringify({ data:rep.data||{}, html:rep.html||"" });
-    if(json.length<300 || last[key]===json) return;           /* nothing in it, or nothing new */
     const now=Date.now();
     if(!force && lastT[key] && now-lastT[key]<180000) return;
+    const json=JSON.stringify({ data:rep.data||{}, html:rep.html||"" });
+    if(json.length<300 || last[key]===json) return;           /* nothing in it, or nothing new */
     last[key]=json; lastT[key]=now;
     const db=await open();
     await new Promise((res,rej)=>{ const tx=db.transaction("v","readwrite");
@@ -7718,12 +7718,19 @@ function _rtNorm(html){
 function wireRichBox(val){
   /* whatever the browser did to a list while typing - Enter on an empty bullet, Backspace
      at the start of one - is put right as soon as it happens */
+  let fixing=false;
   val.addEventListener("input",()=>{
+    /* never from inside itself: the repair announces what it did, and that must not
+       start another repair */
+    if(fixing) return;
     if(!val.querySelector("ul > ul, ul > ol, ol > ul, ol > ol, ul:empty, ol:empty")) return;
-    const m=_rtMark(val);
-    let ch=false; try{ ch=_rtFixLists(val); }catch(_){}
-    if(m) _rtUnmark(val, m);
-    if(ch) val.dispatchEvent(new Event("input",{bubbles:true}));
+    fixing=true;
+    try{
+      const m=_rtMark(val);
+      let ch=false; try{ ch=_rtFixLists(val); }catch(_){}
+      if(m) _rtUnmark(val, m);
+      if(ch) val.dispatchEvent(new Event("input",{bubbles:true}));
+    } finally { fixing=false; }
   });
   val.addEventListener("contextmenu",e=>{ e.preventDefault(); e.stopPropagation(); showRepToolbar(val, e); });
   val.addEventListener("beforeinput",e=>{
@@ -9710,7 +9717,7 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
   let histBtns=null;
   const histPaint=()=>{ if(!histBtns) return; histBtns[0].disabled=!H.undo.length; histBtns[1].disabled=!H.redo.length; };
 
-  let saveT=null;
+  let saveT=null, recT=null;
   /* Autosave is the only way a report is written now, so it has to be visible.
      Every outcome — queued, in flight, written, refused, signed out — lands in
      the indicator. Silence used to mean "saved" and "your session died" alike. */
@@ -9745,7 +9752,10 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
     H.undo.push(H.last); histTrim(); H.redo.length=0; H.last=cur; histPaint(); };
   const save=()=>{ if(!canEd) return;               /* read-only: nothing is written */
     if(!SB_TOKEN){ repSaveState("err","Not saved — session expired, log in again"); return; }
-    record(); repSaveState("pend","Unsaved changes…");
+    /* the step back is recorded when the typing pauses: recording it on every key turned
+       the whole report into text on every key */
+    clearTimeout(recT); recT=setTimeout(record, 600);
+    repSaveState("pend","Unsaved changes…");
     clearTimeout(saveT); saveT=setTimeout(()=>{ pushNow().catch(()=>{}); }, 900); };
   const reRender=()=>{ const old=body.querySelector(".rs-sections.rs-"+kind); if(old) old.remove(); renderReportSections(body,rep,key,g,canEd,kind,opts); };
   /* one step back or forward: what is on the page is recorded first if it has not been,
@@ -13990,13 +14000,19 @@ function gpPrintFit(sheetEl){
   const area=$("#print-area"); if(!area || !sheetEl) return;
   area.innerHTML="";
   sheetEl.querySelectorAll("button, input").forEach(b=>b.remove());
+  /* THE PAGE IS A BOX OF EXACTLY ONE SHEET, AND THE PLAN IS SCALED INSIDE IT. The first
+     version shrank the plan with "zoom" and trusted the printer to lay the result out on
+     one page; it came out on three. A scaled drawing takes no room of its own, so the box
+     around it decides what is printed: it is the printable area of a landscape A4, to the
+     millimetre, nothing may spill out of it, and nothing else on the page is printed. */
   const page=h("div",{class:"gp-fit gp-wrap gp2"}, sheetEl);
-  area.appendChild(page);
+  const frame=h("div",{class:"gp-fitpage"}, page);
+  area.appendChild(frame);
   document.body.classList.add("gpfit-measure");
-  const W=1400, PW=1060, PH=728;      /* the sheet's own width; the printable A4, in CSS px */
-  const fit=()=>{ page.style.zoom="1";
+  const W=1400, PW=1058, PH=730;      /* the sheet's own width; the box, 280mm x 193mm, in CSS px */
+  const fit=()=>{ page.style.transform="none";
     const hgt=Math.max(1, page.scrollHeight);
-    page.style.zoom=String(Math.min(PW/W, PH/hgt).toFixed(4)); };
+    page.style.transform="scale("+Math.min(PW/W, PH/hgt).toFixed(4)+")"; };
   const done=()=>{ document.body.classList.remove("printing","printing-gpfit","gpfit-measure"); area.innerHTML="";
     if(_gpFitStyle){ _gpFitStyle.remove(); _gpFitStyle=null; }
     window.removeEventListener("afterprint",done); };
@@ -14008,7 +14024,7 @@ function gpPrintFit(sheetEl){
     if(tries++<13 && /Reading /.test(page.textContent||"")){ setTimeout(go, 300); return; }
     fit();
     _gpFitStyle=document.createElement("style");
-    _gpFitStyle.textContent="@page{size:A4 landscape;margin:7mm}";
+    _gpFitStyle.textContent="@page{size:A4 landscape;margin:7mm} html,body{margin:0!important;padding:0!important}";
     document.body.appendChild(_gpFitStyle);
     document.body.classList.remove("gpfit-measure");
     document.body.classList.add("printing","printing-gpfit");
@@ -28548,13 +28564,16 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .gp3-kc{max-width:30%}
 /* THE SHEET AS IT IS PRINTED: the screen's own arrangement at a fixed width, scaled as one
    piece to a landscape A4 (see gpPrintFit) */
-.gp-fit{width:1400px;background:#fff;color:#141821;padding:0;transform-origin:0 0}
+.gp-fit{width:1400px;background:#fff;color:#141821;padding:0;transform-origin:0 0;position:absolute;left:0;top:0}
+.gp-fitpage{position:relative;width:280mm;height:193mm;overflow:hidden;background:#fff}
 .gp-fit .gp2-foot,.gp-fit .gp-poolbar,.gp-fit .gp-sheetnote{display:none}
 body.gpfit-measure #print-area{display:block;position:fixed;left:-99999px;top:0;width:1400px}
 @media print{
   body.printing-gpfit #print-area{display:block;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   body.printing-gpfit #print-area *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  body.printing-gpfit .gp-fit{break-inside:avoid;page-break-inside:avoid}
+  body.printing-gpfit > *:not(#print-area){display:none!important}
+  body.printing-gpfit #print-area{position:static;width:auto;height:auto;margin:0;padding:0}
+  body.printing-gpfit .gp-fitpage{break-inside:avoid;page-break-inside:avoid;break-after:avoid;page-break-after:avoid}
 }
 /* the face in the cell where a man comes in */
 .lg-bdg.face.gpf.gpc{width:17px;height:17px;margin-right:2px;vertical-align:middle}
