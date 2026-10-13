@@ -1031,6 +1031,43 @@
        then a reversal table, then a touch table - so reading either one meant skipping
        over the other. Each now has its own group and its own gauge, and the groups lay
        their sections side by side like everywhere else. */
+    /* THE SESSIONS IN ONE LOOK, before any table: how much was tagged, what it returned,
+       the two rates the staff trains for, and how they moved from one session to the next */
+    try {
+      var KP = window.UIKit;
+      if (KP && KP.strip) {
+        var ptRate = 100 * withPT.length / N, brRate = 100 * withBR.length / N;
+        var gradeP = function (v) { return v >= 70 ? "good" : v >= 60 ? "neutral" : "bad"; };
+        var perSet = function (key, title, graded) {
+          if (sets.length < 2) return null;
+          return KP.strip({ title: title, sub: "share of possessions, session by session", items: sets.map(function (s, i) {
+            var n = s.poss.length, m = s.poss.filter(function (q) { return (q[key] || 0) > 0; }).length, v = n ? 100 * m / n : 0;
+            return { label: String(s.label || ("S" + (i + 1))).slice(5), value: v, text: Math.round(v) + "%", tone: graded ? gradeP(v) : "vol", title: (s.label || "") + " · " + n + " possessions" }; }) });
+        };
+        var worthP = function (key, title) {
+          var it = [0, 1, 2].map(function (k) {
+            var g = P.filter(function (q) { return k < 2 ? (q[key] || 0) === k : (q[key] || 0) >= 2; }), s = shotLine(g);
+            return g.length ? { label: (k === 2 ? "2+" : String(k)) + " · " + g.length + " poss", value: s.ppp || 0, text: f2(s.ppp),
+              tone: s.ppp >= all.ppp + 0.05 ? "good" : s.ppp <= all.ppp - 0.05 ? "bad" : "neutral" } : null; }).filter(Boolean);
+          return it.length >= 2 ? KP.strip({ title: title, sub: "points per possession by how many", items: it }) : null;
+        };
+        var types = PT_TYPES.map(function (t) { var n = 0; P.forEach(function (q) { n += count(q.tags, t); }); return { label: t, n: n }; })
+          .filter(function (x) { return x.n > 0; }).sort(function (a, b) { return b.n - a.n; });
+        var typeTot = 0; types.forEach(function (x) { typeTot += x.n; });
+        var sP = shotLine(withPT), sN = shotLine(P.filter(function (q) { return !(q.pt > 0); }));
+        root.appendChild(KP.summary({ cls: "sx-prsum", title: "The practice in one look", sub: label, figures: [
+          { label: "Tagged", value: N, note: "possessions · " + sets.length + (sets.length === 1 ? " session" : " sessions"), tone: "vol" },
+          { label: "Points per possession", value: f2(all.ppp), note: all.pts + " points · " + all.fgm + "/" + all.fga + " FG", tone: "vol" },
+          { label: "Paint touch rate", value: Math.round(ptRate) + "%", note: "target 70%", tone: gradeP(ptRate), scale: { lo: 0, hi: 100, v: ptRate, ref: 70 } },
+          { label: "PPP with / without a touch", value: f2(sP.ppp) + " / " + f2(sN.ppp), note: sP.n + " and " + sN.n + " possessions", tone: (sP.ppp || 0) >= (sN.ppp || 0) ? "good" : "bad" },
+          { label: "Ball reversal rate", value: Math.round(brRate) + "%", note: withBR.length + " possessions with one or more", tone: "vol", scale: { lo: 0, hi: 100, v: brRate } }],
+          visuals: [perSet("pt", "Paint touch rate", true), worthP("pt", "What a paint touch is worth"),
+            typeTot ? KP.split({ title: "Where the touches come from", sub: "share of the touches tagged",
+              parts: types.map(function (x) { return { label: x.label, share: x.n / typeTot, value: x.n }; }) }) : null,
+            perSet("br", "Ball reversal rate", false), worthP("br", "What a reversal is worth")] }));
+      }
+    } catch (e) { }
+
     var pG = g2Group("pt", "01", "Paint touches");
     var bG = g2Group("br", "02", "Ball reversals");
     /* in place from the start; the sections below fill them where they belong */
@@ -1920,15 +1957,89 @@
        Efficiency, by family and by set. playAgg and PLAYTYPES stay in the model: the
        marks are still parsed, and nothing in the block draws them. */
 
+    /* ------------------------------ each category, drawn before its tables
+       The tables answer a question once it has been asked; what was missing was the
+       answer itself at the top of each block - the rate, what it is worth, and how it
+       moved through the game - drawn with the same parts as every other summary. */
+    (function () {
+      var K = (typeof window !== "undefined") && window.UIKit;
+      if (!K || !K.strip) return;
+      var put = function (g, o) {
+        try { o.cls = "sx-cathead fit-span"; var c = K.summary(o); g.insertBefore(c, g.children[1] || null); } catch (e) { }
+      };
+      var rate = function (list, key) {
+        var m = list.filter(function (q) { return q.phase === "Fastbreak" || (q[key] || 0) > 0; }).length;
+        return list.length ? 100 * m / list.length : 0;
+      };
+      var grade = function (v) { return v >= 70 ? "good" : v >= 60 ? "neutral" : "bad"; };
+      var vs = function (v) { return v == null ? "neutral" : v >= anchor + 0.05 ? "good" : v <= anchor - 0.05 ? "bad" : "neutral"; };
+      var qStrip = function (key, title, graded) {
+        if (byQ.length < 2) return null;
+        return K.strip({ title: title, sub: "share of possessions, by quarter", items: byQ.map(function (it) {
+          var v = rate(it.list, key);
+          return { label: it.label, value: v, text: Math.round(v) + "%", tone: graded ? grade(v) : "vol" }; }) });
+      };
+      var worth = function (key, title) {
+        var it = [0, 1, 2].map(function (k) {
+          var g = P.filter(function (q) { return k < 2 ? (q[key] || 0) === k : (q[key] || 0) >= 2; });
+          var s = shotLine(g);
+          return g.length ? { label: (k === 2 ? "2+" : String(k)) + " · " + g.length + " poss", value: s.ppp || 0, text: f2(s.ppp), tone: vs(s.ppp) } : null;
+        }).filter(Boolean);
+        return it.length >= 2 ? K.strip({ title: title, sub: "points per possession by how many", items: it }) : null;
+      };
+      var pair = function (key) {
+        return [shotLine(P.filter(function (q) { return (q[key] || 0) > 0; })), shotLine(P.filter(function (q) { return (q[key] || 0) === 0; }))];
+      };
+      var ptR = rate(P, "pt"), brR = rate(P, "br"), pp = pair("pt"), bb = pair("br");
+      put(gPT, { figures: [
+        { label: "Paint touch rate", value: Math.round(ptR) + "%", note: "target 70% · fastbreaks count whole", tone: grade(ptR), scale: { lo: 0, hi: 100, v: ptR, ref: 70 } },
+        { label: "PPP with a paint touch", value: f2(pp[0].ppp), note: pp[0].n + " possessions", tone: vs(pp[0].ppp) },
+        { label: "PPP without", value: f2(pp[1].ppp), note: pp[1].n + " possessions", tone: vs(pp[1].ppp) },
+        { label: "Game PPP", value: f2(anchor), note: N + " possessions", tone: "vol" }],
+        visuals: [qStrip("pt", "Paint touch rate", true), worth("pt", "What a paint touch is worth")] });
+      put(gBR, { figures: [
+        { label: "Ball reversal rate", value: Math.round(brR) + "%", note: "fastbreaks count whole", tone: "vol", scale: { lo: 0, hi: 100, v: brR } },
+        { label: "PPP with a reversal", value: f2(bb[0].ppp), note: bb[0].n + " possessions", tone: vs(bb[0].ppp) },
+        { label: "PPP without", value: f2(bb[1].ppp), note: bb[1].n + " possessions", tone: vs(bb[1].ppp) }],
+        visuals: [qStrip("br", "Ball reversal rate", false), worth("br", "What a reversal is worth")] });
+      put(gEF, { figures: [
+        { label: "Points per possession", value: f2(all.ppp), note: all.pts + " points · " + N + " possessions", tone: "vol" },
+        { label: "Field goals", value: all.fgm + "/" + all.fga, note: pct(all.fgm, all.fga) + " · " + all.t3a + " threes taken", tone: "vol" },
+        { label: "Turnovers", value: all.tov, note: pct(all.tov, N) + " of possessions", tone: "vol" },
+        { label: "Offensive rebounds", value: orebOf(P), note: "possessions extended", tone: "vol" }],
+        visuals: [
+          byPhase.length >= 2 ? K.split({ title: "Our possessions by phase", sub: "share · points per possession",
+            parts: byPhase.map(function (it) { var s = shotLine(it.list); return { label: it.label, share: it.list.length / N, value: f2(s.ppp), tone: vs(s.ppp) }; }) }) : null,
+          byQ.length >= 2 ? K.strip({ title: "Points per possession", sub: "by quarter", items: byQ.map(function (it) { var s = shotLine(it.list);
+            return { label: it.label, value: s.ppp || 0, text: f2(s.ppp), tone: vs(s.ppp) }; }) }) : null] });
+      var tdP = function (o) { return o && o.n ? o.pts / o.n : null; };
+      var tdT = function (v) { return v == null ? "neutral" : v <= 0.9 ? "good" : v >= 1.15 ? "bad" : "neutral"; };
+      put(gTD, { figures: [
+        { label: "TAG · after a long shot", value: f2(tdP(TD.tag)), note: (TD.tag.pts || 0) + " conceded in " + (TD.tag.n || 0) + " situations", tone: tdT(tdP(TD.tag)) },
+        { label: "BACK · after the rim or a turnover", value: f2(tdP(TD.back)), note: (TD.back.pts || 0) + " conceded in " + (TD.back.n || 0) + " situations", tone: tdT(tdP(TD.back)) }] });
+      if (DN) {
+        var dAll = shotLine(DP), cats = Object.keys(byCat || {}).sort(function (a, b) { return byCat[b].length - byCat[a].length; });
+        var head = cats.slice(0, 6), restN = 0; cats.slice(6).forEach(function (k) { restN += byCat[k].length; });
+        var parts = head.map(function (k) { var s = shotLine(byCat[k]);
+          return { label: k, share: byCat[k].length / DN, value: f2(s.ppp), tone: s.ppp == null ? "neutral" : s.ppp <= dAll.ppp - 0.08 ? "good" : s.ppp >= dAll.ppp + 0.08 ? "bad" : "neutral" }; });
+        if (restN) parts.push({ label: "Other (" + (cats.length - 6) + ")", share: restN / DN });
+        put(gDF, { figures: [
+          { label: "Points allowed per possession", value: f2(dAll.ppp), note: dAll.pts + " points · " + DN + " possessions defended", tone: tdT(dAll.ppp) },
+          { label: "Their field goals", value: dAll.fgm + "/" + dAll.fga, note: pct(dAll.fgm, dAll.fga), tone: "vol" },
+          { label: "Turnovers forced", value: dAll.tov, note: pct(dAll.tov, DN) + " of what we defended", tone: "vol" }],
+          visuals: [parts.length >= 2 ? K.split({ title: "What we defended", sub: "share · points allowed", parts: parts }) : null] });
+      }
+    })();
+
     /* ---------------------------------------------------------- the menu */
-    var cat = "all";
+    var cat = "pt";
     function apply() {
       box.querySelectorAll(".sx-cat").forEach(function (g) {
         g.classList.toggle("hide", cat !== "all" && g.dataset.g !== cat);
       });
     }
-    [["all", "All"], ["pt", "Paint touches"], ["br", "Ball reversals"], ["eff", "Efficiency"],
-     ["td", "Transition D"], ["def", "What we concede"]]
+    [["pt", "Paint touches"], ["br", "Ball reversals"], ["eff", "Efficiency"],
+     ["td", "Transition D"], ["def", "What we concede"], ["all", "Everything"]]
       .forEach(function (t) {
         var b = el("button", "sx-tab" + (t[0] === cat ? " on" : ""), t[1]);
         b.addEventListener("click", function () {
@@ -4752,6 +4863,15 @@
       ".sx-tab.on{background:var(--accent-strong,#a8801a);border-color:var(--accent-strong,#a8801a);color:#fff}",
       /* level 1 — the category */
       ".sx-cat.hide{display:none}",
+      "@media print{.sx-cat.hide{display:grid!important}}",
+      "body.prt .sx-cat.hide{display:grid!important}",
+      /* the same headings and the same switch as the game read from the play by play */
+      ".sx-post .sx-menu{gap:4px;padding:4px;border-radius:11px;background:rgba(20,24,33,.05);margin:0 0 4px}",
+      ".sx-post .sx-tab{flex:1 1 auto;border:0;border-radius:8px;padding:8px 14px;font:700 11px 'Oswald',sans-serif;letter-spacing:.13em;color:#5b6472}",
+      ".sx-post .sx-tab:hover{background:rgba(20,24,33,.07);color:#141821}",
+      ".sx-post .sx-tab.on{background:#141821;color:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25)}",
+      ".sx-cathead{margin:0!important;border:0!important;padding:0!important;background:transparent!important;box-shadow:none!important}",
+      ".sx-cathead .ui-figs{margin-bottom:10px}",
       ".sx-cat{margin-top:26px;display:grid;grid-template-columns:1fr;gap:12px 16px;align-items:start}",
       ".sx-cat > *{min-width:0}",
       ".sx-post .sx-cath{display:flex;align-items:baseline;gap:9px;margin:0;padding-top:12px;",
@@ -4765,8 +4885,10 @@
       ".sx-post .sx-sec{margin:26px 0 0}",
       ".sx-post .sx-h{display:flex;align-items:center;gap:8px;font:700 11px 'Inter',sans-serif;",
       "letter-spacing:.13em;text-transform:uppercase;color:var(--ink-soft,#5b6472);margin:0 0 5px}",
-      ".sx-post .sx-h:before{content:'';width:9px;height:3px;border-radius:2px;flex:none;",
-      "background:var(--accent-strong,#a8801a)}",
+      ".sx-post .sx-h:before{content:none}",
+      ".sx-post .sx-h{font:700 12px 'Oswald',sans-serif;letter-spacing:.12em;color:#141821;border-bottom:2px solid #141821;padding-bottom:6px;margin-bottom:8px}",
+      ".sx-post .sx-cath{border-top:0!important}",
+      ".sx-post .sx-catt{font-size:18px!important}",
       ".sx-post .sx-sub{margin:0 0 11px 17px;max-width:64ch;font-size:11px;color:var(--ink-faint,#8a93a2)}",
       /* level 3 — the band inside a section */
       ".sx-post .sx-band{display:flex;align-items:center;gap:9px;background:transparent;color:var(--ink-faint,#8a93a2);",
@@ -4836,7 +4958,7 @@
                                  can draw its own trend in the same language instead of
                                  inventing a second one */
                               chart: timelineChart, table2: table,
-                              _t: { table: table, sortKey: sortKey, linfit: linfit,
+                              _t: { table: table, sortKey: sortKey, linfit: linfit, renderPostTeam: renderPostTeam,
                                     renderTrends: renderTrendsDash, measured: measured, addUp: addUp,
                                     phaseOf: phaseOf,
                                     fitXY: fitXY, oerBands: oerBands,

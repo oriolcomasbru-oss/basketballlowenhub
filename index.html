@@ -8756,22 +8756,123 @@ function uiPick(list, max){
 /* A SUMMARY CARD: a title, a row of figures, and the few sentences that matter.
    figures: [{ label, value, note, tone }]      ideas: [{ text, tone, n }] or groups of them:
    groups: [{ title, ideas:[...] }] */
+/* A SUMMARY IS LOOKED AT, NOT READ.
+   The first version of this card was a row of figures and then columns of sentences with
+   a coloured edge. Every conclusion was in it and none could be seen: a staff had to read
+   forty lines to find the three that mattered. A conclusion is drawn now.
+     A figure is a tile: its number, what it is measured against, and where it sits on
+     the way from one to the other.
+     A finding is a card, not a line: what it is about in small type, the number large,
+     the change as two numbers with an arrow, a bar for how far it is from its reference
+     in the colour of what it means, and how much it rests on.
+     Where the data is a series, a share or a rank it is a small chart - bars for games
+     or quarters, a split bar for a mix, a track for a rank among the clubs.
+   The makers of a summary still hand in what they always did; a sentence is taken apart
+   here into its subject, its number and its note, so no summary has to be rewritten to
+   be drawn. */
+function _uiParse(x){
+  let label=x.k||"", body=String(x.text||""), big=x.v||"", note="";
+  /* "in 4 of the last 5" is a count out of a count: that is the number */
+  const of=/\bin (\d+) of (?:the |our |their )?(?:last )?(\d+)\b/.exec(body);
+  if(!big && of){ big=of[1]+"/"+of[2]; label=label||body.slice(0,of.index).trim(); note="of the last "+of[2]; return { label:label, big:big, note:note }; }
+  if(!label){ const m=/^(.{2,60}?)\s*(?::|—)\s+(.+)$/.exec(body); if(m){ label=m[1]; body=m[2]; } }
+  if(x.plain) return { label:label, big:big, note:body };
+  if(!big){
+    /* a record or a score ("1–2", "23–27") is one number, not a number and a remainder */
+    const m=/([+−-]?\d[\d.,]*%?\s*(?:→|vs)\s*[+−-]?\d[\d.,]*%?|\d+\s*–\s*\d+|[+−-]?\d[\d.,]*(?:\/\d+)?%?(?:st|nd|rd|th)?)/.exec(body);
+    if(m){ big=m[1].trim(); note=(body.slice(0,m.index)+" "+body.slice(m.index+m[1].length)).replace(/\s{2,}/g," ").replace(/^[\s,·—:-]+|[\s,·—:-]+$/g,""); }
+    else note=body;
+  } else note=body;
+  if(!label && note && note.length<=46){ label=note; note=""; }
+  return { label:label, big:big, note:note };
+}
+function _uiCard(x){
+  const tone=uiTone(x.tone), txt=String(x.text||"");
+  /* several comparisons in one sentence: each is a chip, not a clause */
+  const parts=txt.split(" · ");
+  if(parts.length>=3 && txt.length>90){
+    const m=/^(.{2,90}?):\s+(.+)$/.exec(txt);
+    const head=m? m[1] : "", list=(m? m[2] : txt).split(" · ");
+    return h("div",{class:"ui-card wide "+tone}, head? h("div",{class:"ui-card-k"}, head) : null,
+      h("div",{class:"ui-chips"}, list.map(p=>{ const q=/^(.+?)\s+([+−-]?\d[\d.,/]*%?)\s*(.*)$/.exec(p);
+        return q? h("span",{class:"ui-chip"}, h("i",{}, q[1]), h("b",{}, q[2]), q[3]? h("em",{}, q[3]) : null) : h("span",{class:"ui-chip"}, h("i",{}, p)); })),
+      (x.n!=null)? h("div",{class:"ui-card-n"}, String(x.n)+(x.unit? " "+x.unit : "")) : null);
+  }
+  const P=_uiParse(x);
+  let bigEl=null;
+  if(P.big){
+    const ar=/^(.+?)\s*→\s*(.+)$/.exec(P.big);
+    bigEl=ar? h("div",{class:"ui-card-v"}, h("s",{}, ar[1]), h("i",{},"→"), h("b",{}, ar[2])) : h("div",{class:"ui-card-v"}, h("b",{}, P.big));
+  }
+  const w=(x.size==null)? 0 : Math.max(0, Math.min(1, x.size));
+  return h("div",{class:"ui-card "+tone, title:txt},
+    P.label? h("div",{class:"ui-card-k"}, P.label) : null, bigEl,
+    P.note? h("div",{class:"ui-card-t"}, P.note) : null,
+    h("div",{class:"ui-card-f"}, w? h("span",{class:"ui-card-bar"}, h("i",{style:"width:"+Math.round(100*w)+"%"})) : h("span",{}),
+      (x.n!=null)? h("span",{class:"ui-card-n"}, String(x.n)+(x.unit? " "+x.unit : "")) : null));
+}
+/* bars for a series: games, quarters. items: [{ label, value, tone, text }] */
+function uiStrip(o){
+  const items=(o.items||[]).filter(i=>i && isFinite(i.value));
+  if(!items.length) return null;
+  const mx=Math.max.apply(null, items.map(i=>Math.abs(i.value)).concat([o.min||0.0001]));
+  const signed=items.some(i=>i.value<0) || o.signed;
+  const box=h("div",{class:"ui-vis ui-strip"+(signed? " signed" : "")}, h("div",{class:"ui-vis-h"}, o.title||"", o.sub? h("span",{}, o.sub) : null));
+  box.appendChild(h("div",{class:"ui-strip-b"}, items.map(i=>{
+    const hgt=Math.max(3, Math.round((signed? 46 : 92)*Math.abs(i.value)/mx));
+    return h("div",{class:"ui-strip-c "+uiTone(i.tone), title:i.title||""},
+      h("span",{class:"plot"}, h("b",{style:(signed? (i.value>=0? "bottom" : "top")+":calc(50% + "+(hgt+2)+"px)" : "bottom:"+(hgt+2)+"px")}, i.text!=null? i.text : String(i.value)),
+        h("i",{class:i.value>=0? "up" : "dn", style:"height:"+hgt+"px"})),
+      h("em",{}, i.label||"")); })));
+  return box;
+}
+/* a mix as one bar: parts [{ label, share (0..1), value, tone }] */
+function uiSplit(o){
+  const parts=(o.parts||[]).filter(p=>p && p.share>0);
+  if(!parts.length) return null;
+  const PAL=["#4a86d8","#c6a15b","#8a93a2","#2f9e86","#a66bd4","#d8524e","#6fb3c9"];
+  const box=h("div",{class:"ui-vis ui-split"}, h("div",{class:"ui-vis-h"}, o.title||"", o.sub? h("span",{}, o.sub) : null));
+  box.appendChild(h("div",{class:"ui-split-bar"}, parts.map((p,i)=>h("i",{style:"width:"+(100*p.share).toFixed(2)+"%;background:"+PAL[i%PAL.length], title:p.label+" "+Math.round(100*p.share)+"%"}, p.share>=0.09? Math.round(100*p.share)+"%" : ""))));
+  box.appendChild(h("div",{class:"ui-split-l"}, parts.map((p,i)=>h("div",{}, h("i",{style:"background:"+PAL[i%PAL.length]}), h("span",{}, p.label),
+    p.value!=null? h("b",{class:uiTone(p.tone)}, String(p.value)) : null))));
+  return box;
+}
+/* a rank among a field: rows [{ label, value, rank, of, tone }] */
+function uiRanks(o){
+  const rows=(o.rows||[]).filter(r=>r && r.rank && r.of);
+  if(!rows.length) return null;
+  const box=h("div",{class:"ui-vis ui-ranks"}, h("div",{class:"ui-vis-h"}, o.title||"", o.sub? h("span",{}, o.sub) : null));
+  rows.forEach(r=>box.appendChild(h("div",{class:"ui-rank "+uiTone(r.tone), title:r.label+" "+r.value+" — "+r.rank+" of "+r.of},
+    h("span",{class:"k"}, r.label), h("b",{}, String(r.value)),
+    h("span",{class:"track"}, h("i",{style:"left:"+(100*(r.rank-1)/Math.max(1,r.of-1)).toFixed(1)+"%"})),
+    h("em",{}, r.rank+"/"+r.of))));
+  return box;
+}
 function uiSummary(o){
   o=o||{};
   const card=h("div",{class:"ui-sum"+(o.cls? " "+o.cls : "")});
-  if(o.title || o.sub) card.appendChild(h("div",{class:"ui-sum-h"},
-    h("b",{}, o.title||""), o.sub? h("span",{}, o.sub) : null));
+  if(o.title || o.sub) card.appendChild(h("div",{class:"ui-sum-h"}, h("b",{}, o.title||""), o.sub? h("span",{}, o.sub) : null));
   if((o.figures||[]).length){
-    card.appendChild(h("div",{class:"ui-figs"}, o.figures.map(f=>h("div",{class:"ui-fig "+uiTone(f.tone), title:f.title||""},
-      h("i",{}, f.label||""), h("b",{}, f.value==null? "—" : String(f.value)), f.note? h("span",{}, f.note) : null))));
+    card.appendChild(h("div",{class:"ui-figs"}, o.figures.map(f=>{
+      /* where the figure sits between the ends of its scale, with the reference marked */
+      let meter=null;
+      if(f.scale && isFinite(f.scale.v)){ const lo=f.scale.lo, hi=f.scale.hi, pos=v=>Math.max(0, Math.min(100, 100*(v-lo)/((hi-lo)||1)));
+        meter=h("span",{class:"ui-meter"}, h("i",{style:"width:"+pos(f.scale.v).toFixed(1)+"%"}),
+          isFinite(f.scale.ref)? h("u",{style:"left:"+pos(f.scale.ref).toFixed(1)+"%", title:"reference"}) : null); }
+      return h("div",{class:"ui-fig "+uiTone(f.tone), title:f.title||""},
+        h("i",{}, f.label||""), h("b",{}, f.value==null? "—" : String(f.value)), meter, f.note? h("span",{}, f.note) : null); })));
   }
-  const ideasOf=list=>h("ul",{class:"ui-ideas"}, (list||[]).map(x=>h("li",{class:uiTone(x.tone)},
-    h("span",{}, x.text), (x.n!=null)? h("em",{title:"what this rests on"}, String(x.n)+(x.unit? " "+x.unit : "")) : null)));
-  if((o.groups||[]).length){
-    card.appendChild(h("div",{class:"ui-groups"}, o.groups.filter(g=>g && (g.ideas||[]).length).map(g=>
-      h("div",{class:"ui-group"}, h("div",{class:"ui-group-h"}, g.title||""), ideasOf(g.ideas)))));
-  } else if((o.ideas||[]).length) card.appendChild(ideasOf(o.ideas));
-  if(o.empty && !(o.figures||[]).length && !(o.ideas||[]).length && !(o.groups||[]).some(g=>(g.ideas||[]).length))
+  const vis=(o.visuals||[]).filter(Boolean);
+  if(vis.length) card.appendChild(h("div",{class:"ui-visrow"}, vis));
+  const groups=(o.groups||[]).filter(g=>g && (g.ideas||[]).length);
+  if(groups.length){
+    card.appendChild(h("div",{class:"ui-groups"}, groups.map(g=>{
+      const tones=g.ideas.map(x=>uiTone(x.tone)), all=t=>tones.every(x=>x===t);
+      return h("div",{class:"ui-group "+(g.tone || (all("good")? "good" : all("bad")? "bad" : ""))},
+        h("div",{class:"ui-group-h"}, h("b",{}, g.title||""), h("span",{}, String(g.ideas.length))),
+        h("div",{class:"ui-cards"}, g.ideas.map(_uiCard))); })));
+  } else if((o.ideas||[]).length) card.appendChild(h("div",{class:"ui-cards"}, o.ideas.map(_uiCard)));
+  if(o.empty && !(o.figures||[]).length && !groups.length && !(o.ideas||[]).length && !vis.length)
     card.appendChild(h("div",{class:"ui-sum-e"}, o.empty));
   return card;
 }
@@ -8781,7 +8882,7 @@ function uiColourKey(){
     h("span",{}, h("i",{class:"good"}), "better for us"), h("span",{}, h("i",{class:"bad"}), "worse for us"),
     h("span",{}, h("i",{class:"vol"}), "volume, how often"), h("span",{}, h("i",{class:"neutral"}), "no reference, or too few"));
 }
-try{ window.UIKit={ tone:uiToneOf, pick:uiPick, summary:uiSummary, colourKey:uiColourKey }; }catch(e){}
+try{ window.UIKit={ tone:uiToneOf, pick:uiPick, summary:uiSummary, colourKey:uiColourKey, strip:uiStrip, split:uiSplit, ranks:uiRanks }; }catch(e){}
 /* WHAT IS THE PAGE DOING WHEN IT FEELS SLOW.
    A page that is slow on one machine, with one report and one session, and fine on the
    bench, cannot be fixed by reading the code: every guess is as good as the next. This is
@@ -10078,6 +10179,10 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
       if(playerBlockOk("colourkey")) wrap.appendChild(_preSafe("COLOUR KEY", ()=>_preColourKey()));
     }
     const tid0=_preClub();
+    /* the staff's roster table carries the tagging, so the tagging's own players table is
+       not drawn a second time further down */
+    _preTagOn=!!(tid0 && !PV && playerBlockOk("stats"));
+    try{ window.__preOneTable=_preTagOn; }catch(e){}
     if(!tid0 && !_preSeasonDone){
       _preSeasonDone=true;
       wrap.appendChild(_preSafe("FROM THE LEAGUE", ()=>_preNoClubBlock(leagueState(), reRender)));
@@ -10088,11 +10193,9 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
          below, drawn as part of the report, and they draft themselves. */
       /* For a player, which of these four he gets is the one setting in the admin panel;
          for staff, all of them. playerBlockOk answers both without a second branch. */
+      /* one table: the league's line and, for the staff, our tagging on the same row */
       if(playerBlockOk("stats"))
         wrap.appendChild(_preSafe("ROSTER STATS", ()=>_preBlock("ROSTER STATS", _lgEmbed(tid0, [ _lgRoster ]))));
-      /* the same players with our tagging beside the league's line - staff only */
-      if(playerBlockOk("stats") && !PV)
-        wrap.appendChild(_preSafe("PLAYERS", ()=>_preBlock("PLAYERS - LEAGUE AND TAGGING ON ONE LINE", _preJoinedPlayers(tid0))));
       /* roster first, then the cards drawn from it, then the roles written over the video -
          one page, no second screen, no button to press to see them */
       if(playerBlockOk("positions"))
@@ -13569,7 +13672,7 @@ function renderStatsSection(sec, canEd, save){
     /* The opponent's own players table used to close TEAM STATS at the bottom of
        the report. It opens PLAYERS STATS instead, above the pasted box score:
        scoutpre.js claims .scoutpre-players-slot and replaces it. */
-    if(!sec.own && !tagged && _scoutOpponent && !_scoutPlayersSlot){
+    if(!sec.own && !tagged && _scoutOpponent && !_scoutPlayersSlot && !window.__preOneTable){
       _scoutPlayersSlot = true;
       const pslot=h("div",{class:"scoutpre-players-slot"},
         "Opponent tagging — their players land here from the Drive folder.");
@@ -15213,7 +15316,30 @@ function _trendsDashDraw(R, TD){
     figs.push({ label:"Offense, last "+K, value:f1(oa), note:f1(ob)+" before", tone:K0.tone(oa, ob, true, 4) });
     figs.push({ label:"Defense, last "+K, value:f1(da), note:f1(db)+" before", tone:K0.tone(da, db, false, 4) }); }
   if(ptAll!=null && isFinite(ptAll)) figs.push({ label:"Paint touches", value:fP(ptAll), note:"target 70, floor 60 · "+nTag+" tagged", tone:ptAll>=70? "good" : ptAll<60? "bad" : "neutral" });
-  out.appendChild(K0.summary({ title:"Where we are, and where it is heading",
+  /* the season as three small charts: every game's net rating, the paint-touch measure of
+     the tagged ones against its two lines, and where in a game the points are won and lost */
+  const visuals=[];
+  try{
+    visuals.push(K0.strip({ title:"Net rating", sub:"game by game", signed:true, items:G.map(g=>{ const T1=one(g), o1=byName("Offensive rating").of(T1), d1=byName("Defensive rating").of(T1), v=o1-d1;
+      return { label:g.code||String(g.opp||"").slice(0,3).toUpperCase(), value:v, text:(v>=0? "+" : "−")+Math.abs(v).toFixed(0), tone:v>=0? "good" : "bad", title:(g.home? "vs " : "@ ")+g.opp+" "+g.us.pts+"–"+g.them.pts }; }) }));
+    if(nTag && API.measured) visuals.push(K0.strip({ title:"Paint touches", sub:"target 70 · floor 60", items:G.map((g,i)=>{ const x=tagged[i]; if(!x) return null; const v=API.measured(x.s,"pt");
+      return { label:g.code||"", value:v, text:Math.round(v)+"%", tone:v>=70? "good" : v<60? "bad" : "neutral" }; }).filter(Boolean) }));
+    const qs=[0,1,2,3].map(q=>G.reduce((a,g)=>a+((g.seg||[])[2*q]||0)+((g.seg||[])[2*q+1]||0),0));
+    visuals.push(K0.strip({ title:"Where the points are won", sub:"margin by quarter, all games", signed:true, items:qs.map((v,q)=>({ label:"Q"+(q+1), value:v, text:(v>0? "+" : v<0? "−" : "")+Math.abs(v), tone:v>0? "good" : v<0? "bad" : "neutral" })) }));
+    /* who scores them, by the position the roster gives each man */
+    const POS=R.pos||{}, pp={}; let ptsAll=0;
+    G.forEach(g=>(g.pl||[]).forEach(p=>{ const k=POS[String(p.i)]||"—"; pp[k]=(pp[k]||0)+p.p; ptsAll+=p.p; }));
+    const ord=["PG","SG","SF","PF","C","G","F","—"].filter(k=>pp[k]>0);
+    if(ord.length>1 && ptsAll) visuals.push(K0.split({ title:"Who scores", sub:"points by position", parts:ord.map(k=>({ label:k, share:pp[k]/ptsAll, value:(pp[k]/N).toFixed(1)+" a game" })) }));
+  }catch(e){}
+  /* what the rest of the page shows, as findings: who is in front, and the runs */
+  try{
+    const led=G.reduce((a,g)=>a+g.lead.us,0)/Math.max(1,G.reduce((a,g)=>a+g.lead.total,0));
+    hold.push({ k:"Time in front", v:Math.round(100*led)+"%", text:"of the minutes played", tone:led>=0.5? "good" : "bad", size:Math.abs(led-0.5)*2, n:N, solidN:5, unit:"games" });
+    const ru=G.reduce((a,g)=>a+(g.runs||[]).filter(r=>r.sd==="u").length,0), rt=G.reduce((a,g)=>a+(g.runs||[]).filter(r=>r.sd==="t").length,0);
+    if(ru+rt>=3) hold.push({ k:"Runs of 8 or more", v:ru+" vs "+rt, text:"ours against theirs", tone:ru>rt? "good" : ru<rt? "bad" : "neutral", size:Math.min(1,Math.abs(ru-rt)/6)+0.2, n:N, solidN:5, unit:"games" });
+  }catch(e){}
+  out.appendChild(K0.summary({ title:"Where we are, and where it is heading", visuals:visuals,
     sub:N+" games from the play by play"+(nTag? " · "+nTag+" of them tagged" : " · the tagging has not been read yet")+(K? " · the last "+K+" against the "+(N-K)+" before" : ""),
     figures:figs,
     groups:[ { title:"Getting better", ideas:K0.pick(up,6) }, { title:"Getting worse", ideas:K0.pick(down,6) },
@@ -18091,7 +18217,20 @@ function _postOverviewDraw(sg, P, Tg, API, K){
       tone:"neutral", size:Math.min(1,(hi.dppp-lo.dppp)/0.7), n:Math.min(hi.dn,lo.dn), solidN:10, unit:"poss" }); }
   /* ---- the card */
   const src=[P? "play by play" : null, model? "tagging: "+(Tg.name||"") : null].filter(Boolean).join(" · ");
-  out.appendChild(K.summary({ title:"Game performance overview", sub:src||"", figures:figs,
+  /* the game as charts: the margin of each quarter, the paint-touch measure of each, and
+     what our possessions were made of with what each kind returned */
+  const visuals=[];
+  try{
+    const qm=qRows.filter(r=>r.A).map(r=>{ const v=r.A.u.pts-r.A.t.pts; return { label:QN[r.q], value:v, text:r.A.u.pts+"–"+r.A.t.pts, tone:v>0? "good" : v<0? "bad" : "neutral" }; });
+    if(qm.length) visuals.push(K.strip({ title:"Quarter by quarter", sub:"our score – theirs", signed:true, items:qm }));
+    const qp=qRows.filter(r=>r.m && r.n>=4 && r.q<4).map(r=>({ label:QN[r.q], value:r.m.v, text:pc(r.m.v), tone:r.m.v>=70? "good" : r.m.v<60? "bad" : "neutral" }));
+    if(qp.length) visuals.push(K.strip({ title:"Paint touches", sub:"target 70 · floor 60", items:qp }));
+    if(poss.length && phases.length) visuals.push(K.split({ title:"What our possessions were", sub:"share · points per possession",
+      parts:phases.slice().sort((a,b)=>b.n-a.n).map(p=>({ label:p.k, share:p.n/poss.length, value:f2(p.ppp), tone:(p.n>=5 && allPpp!=null)? (p.ppp-allPpp>=0.15? "good" : p.ppp-allPpp<=-0.15? "bad" : "neutral") : "neutral" })) }));
+    if(dposs.length && concepts.length) visuals.push(K.split({ title:"What we defended", sub:"share · conceded per possession",
+      parts:concepts.slice().sort((a,b)=>b.n-a.n).slice(0,7).map(c=>({ label:c.k, share:c.n/dposs.length, value:f2(c.ppp), tone:(c.n>=4 && dAll!=null)? (c.ppp-dAll<=-0.15? "good" : c.ppp-dAll>=0.15? "bad" : "neutral") : "neutral" })) }));
+  }catch(e){}
+  out.appendChild(K.summary({ title:"Game performance overview", sub:src||"", figures:figs, visuals:visuals,
     groups:[ { title:"By quarter", ideas:K.pick(gQ,4) }, { title:"Paint touches · ball reversals", ideas:K.pick(gPT,4) },
              { title:"Sets", ideas:K.pick(gSets,6) }, { title:"Phases", ideas:K.pick(gPh,4) }, { title:"Defense", ideas:K.pick(gDef,5) } ],
     empty:"Neither the play by play nor the tagging of this game is in yet." }));
@@ -19928,13 +20067,49 @@ function _lgRoster(L){
     edge[c.k]=_lgEdges(pool, r=>_lgRsVal(c,r[split],per,ctx), dir, r=>r.id, LG_EDGE_K);
   });
 
-  const tbl=h("table",{class:"lg-tbl lg-rost"});
+  /* ONE TABLE A PLAYER. Inside a pre game report the same line carries what our own
+     tagging says about him: how much he finishes, what it returns, and where his
+     possessions end. Matched by shirt number, the one thing both sources write alike. */
+  const TG=_lgEmbedding? _preTagRows(tid) : null;
+  const tgRows=(TG&&TG.rows)||[];
+  const tgUsed=TG? (TG.roles||[]).filter(r=>tgRows.some(p=>p.roles && p.roles[r]>0)) : [];
+  const tgNum=s=>{ const m=/#\s*(\d+)/.exec(String(s||"")); return m? String(parseInt(m[1],10)) : ""; };
+  const tgBy={}; tgRows.forEach(r=>{ const n=tgNum(r.label); if(n && !tgBy[n]) tgBy[n]=r; });
+  const tgSeen={};
+  let tgMax=1; tgRows.forEach(p=>tgUsed.forEach(r=>{ tgMax=Math.max(tgMax, p.roles[r]||0); }));
+  const tgCells=(tr, r)=>{
+    if(!TG) return;
+    const dash=(cls)=>h("td",{class:"rt-x "+(cls||"")},"—");
+    if(!r){ tr.appendChild(dash("grp")); for(let i=0;i<5+tgUsed.length;i++) tr.appendChild(dash(i===5? "grp" : "")); return; }
+    const avg=TG.avg, d=(avg!=null && r.ppp!=null)? r.ppp-avg : null;
+    const pc=d==null? "" : d>=0.25? "rt-p5" : d>=0.12? "rt-p4" : d>=0.04? "rt-p3" : d>-0.04? "" : d>-0.12? "rt-p2" : d>-0.25? "rt-p1" : "rt-p0";
+    tr.appendChild(h("td",{class:"grp"}, String(r.n)));
+    const use=h("td",{class:"lg-minbar rt-use"}, r.use+"%"); use.style.setProperty("--s", String(Math.min(1, r.use/30))); tr.appendChild(use);
+    tr.appendChild(h("td",{}, h("span",{class:"rt-chip "+pc, title:"their average "+(avg==null? "—" : Number(avg).toFixed(2))}, Number(r.ppp).toFixed(2))));
+    tr.appendChild(h("td",{class:"rt-q"}, r.xppp==null? "—" : Number(r.xppp).toFixed(2)));
+    tr.appendChild(h("td",{}, r.efg+"%"));
+    tr.appendChild(h("td",{}, r.tov+"%"));
+    tgUsed.forEach((k,i)=>{ const v=r.roles[k]||0, s=v? Math.min(5, 1+Math.floor(4.999*v/tgMax)) : 0;
+      tr.appendChild(h("td",{class:(i===0? "grp " : "")+"rt-h"}, v? h("span",{class:"rt-heat h"+s}, String(v)) : "")); });
+  };
+  const TG_SHORT={ "Spot Up":"Spot", "PnR Ball Handler":"PnR BH", "PnR Roll Man":"Roll", "Iso 1n1":"Iso", "Catch & Drive":"C&D", "Off Screen":"Off scr",
+    "Hand Off":"HO", "Pick & Pop":"Pop", "Post Up":"Post", "Drive & Drop Off":"Drop", "Duck In":"Duck", "Pass & Chase":"P&C", "Back Pick":"Back pk" };
+  const tbl=h("table",{class:"lg-tbl lg-rost"+(TG? " lg-rost-one" : "")});
+  if(TG) tbl.appendChild(h("tr",{class:"lg-tbl-g"}, h("th",{colspan:"3"}), h("th",{colspan:String(cols.length), class:"g-lg"}, "League · "+(per? "per game" : "totals")),
+    h("th",{colspan:"6", class:"g-tg grp"}, "Our tagging · "+(TG.games||"")+" game"+(TG.games===1? "" : "s")),
+    tgUsed.length? h("th",{colspan:String(tgUsed.length), class:"g-en grp"}, "Where his possessions end") : null));
   const hr=h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Player"), h("th",{},"GP"));
   cols.forEach(c=>{
     hr.appendChild(h("th",{class:(c.pair?"":"srt")+(c.k===sort.k?" act":""), title:LG_RS_TIP[c.k]||"",
       onclick:c.pair? null : (()=>{ L.rsSort=(sort.k===c.k)?{k:c.k,dir:-sort.dir}:{k:c.k,dir:-1}; persist(); _lgRerender(); })},
       c.t+(c.k===sort.k?(sort.dir<0?" ▾":" ▴"):"")));
   });
+  if(TG){
+    [["Poss","Possessions he finished in the games tagged"],["Use","His share of their tagged possessions"],["PPP","Points per possession when he finishes - red is above their average, which is what hurts us"],
+     ["xPPP","What those shots are worth on average"],["eFG","Effective field goal %"],["TO","Turnover rate"]]
+      .forEach((c,i)=>hr.appendChild(h("th",{class:i===0? "grp" : "", title:c[1]}, c[0])));
+    tgUsed.forEach((k,i)=>hr.appendChild(h("th",{class:(i===0? "grp " : "")+"rt-hh", title:k}, TG_SHORT[k]||k)));
+  }
   tbl.appendChild(hr);
   const tot=blankAgg();
   rows.forEach(p=>{
@@ -19954,8 +20129,15 @@ function _lgRoster(L){
       }
       tr.appendChild(td);
     });
+    if(TG){ const r=tgBy[String(parseInt(p.num,10))]||null; if(r) tgSeen[r.label]=1; tgCells(tr, r); }
     tbl.appendChild(tr);
   });
+  /* a tagged name whose number is on no roster line keeps a row of its own and says so,
+     rather than being attached to somebody by a similar name */
+  if(TG) tgRows.filter(r=>!tgSeen[r.label]).forEach(r=>{
+    const tr=h("tr",{class:"rt-orphan"}, h("td",{class:"lg-pos"}, tgNum(r.label)), h("td",{class:"l lg-team", title:"Tagged under this name; the number is not on the league's roster"}, h("span",{}, r.label+" · tagging only")), h("td",{},"—"));
+    cols.forEach(()=>tr.appendChild(h("td",{class:"rt-x"},"—")));
+    tgCells(tr, r); tbl.appendChild(tr); });
   /* the team line divides by games played, not by the players' games added up */
   tot.gp=d.games||tot.gp;
   const ar=h("tr",{class:"lg-avg"}, h("td",{}," "), h("td",{class:"l"},"Team"), h("td",{}, String(d.games||"")));
@@ -19963,6 +20145,8 @@ function _lgRoster(L){
      team as a whole, so the team line leaves those blank rather than printing a number
      that looks like one */
   cols.forEach(c=>ar.appendChild(h("td",{}, c.solo? "\u2014" : _lgRsTxt(c, tot, per, ctx))));
+  if(TG){ ar.appendChild(h("td",{class:"grp"},"")); ar.appendChild(h("td",{},"")); ar.appendChild(h("td",{}, TG.avg==null? "" : Number(TG.avg).toFixed(2)));
+    for(let i=0;i<3+tgUsed.length;i++) ar.appendChild(h("td",{class:i===3? "grp" : ""},"")); }
   tbl.appendChild(ar);
   /* Inside a report the full box score is not what is read first - the cards above are -
      so the panel opens on one line that says who carries the club, and the table is one
@@ -19999,6 +20183,24 @@ function _lgRoster(L){
   _lgSetHelp(box, "The gold edge marks the five who play the most minutes. Dimmed rows average under "
     +"five minutes a game and are left out of the column comparison.");
   return box;
+}
+/* our tagging of the club a pre game report is about, for the roster table to carry on
+   each player's line. Asked for once per opponent; the table is redrawn when it lands.
+   null = not a staff pre game, or nothing tagged - the roster table is then just itself. */
+let _preTagOn=false;
+const _preTagKeep={ opp:"", tid:"", T:null, busy:false };
+function _preTagRows(tid){
+  try{
+    if(!_preTagOn || !_scoutOpponent || String(_preClub())!==String(tid)) return null;
+    const SP=window.ScoutPre; if(!SP || !SP.playersOf) return null;
+    const K=_preTagKeep;
+    if(K.opp===_scoutOpponent && K.tid===String(tid)) return (K.T && (K.T.rows||[]).length)? K.T : null;
+    if(K.busy===_scoutOpponent) return null;
+    const opp=_scoutOpponent; K.busy=opp;
+    SP.playersOf(opp).catch(()=>null).then(T=>{ K.busy=false; K.opp=opp; K.tid=String(tid); K.T=T||null;
+      if(T && (T.rows||[]).length){ _lgEmbeds=_lgEmbeds.filter(x=>x.el && document.body.contains(x.el)); _lgEmbeds.forEach(x=>{ try{ x.draw(); }catch(e){} }); } });
+  }catch(e){}
+  return null;
 }
 function blankAgg(){ return {gp:0,sec:0,pts:0,p2m:0,p2a:0,p3m:0,p3a:0,ftm:0,fta:0,oreb:0,dreb:0,reb:0,ast:0,stl:0,blk:0,tov:0,pf:0,pm:0,eff:0,fd:0,bla:0}; }
 function addAgg(a,b){ Object.keys(a).forEach(k=>{ a[k]+=(b[k]||0); }); }
@@ -22510,7 +22712,7 @@ function _lgTeamDash(L){
   if(!tid) return null;
   const club=(L.teams||[]).filter(t=>String(t.id)===String(tid))[0]; if(!club) return null;
   const f1=v=>v.toFixed(1), fP=v=>Math.round(100*v)+"%", ord=n=>n+(n%10===1&&n%100!==11? "st" : n%10===2&&n%100!==12? "nd" : n%10===3&&n%100!==13? "rd" : "th");
-  const figs=[], gForm=[], gGood=[], gBad=[], gMen=[], gShots=[], gUnits=[];
+  const figs=[], gForm=[], gGood=[], gBad=[], gMen=[], gShots=[], gUnits=[], RANKS=[];
   /* ---- standing and form */
   const st=(L.standings||[]).filter(r=>String(r.teamId)===String(tid))[0];
   const mine=(L.games||[]).filter(g=>String(g.homeId)===String(tid)||String(g.awayId)===String(tid));
@@ -22524,7 +22726,7 @@ function _lgTeamDash(L){
     const rec=l=>l.filter(won).length+"–"+(l.length-l.filter(won).length);
     if(hm.length && aw.length){
       const hp=hm.filter(won).length/hm.length, ap=aw.filter(won).length/aw.length;
-      gForm.push({ text:"Home "+rec(hm)+" · away "+rec(aw), tone:"neutral", size:Math.min(1,Math.abs(hp-ap)/0.6)+0.2, n:done.length, solidN:8, unit:"games" });
+      gForm.push({ k:"Home · away", v:rec(hm)+" · "+rec(aw), text:"", tone:"neutral", size:Math.min(1,Math.abs(hp-ap)/0.6)+0.2, n:done.length, solidN:8, unit:"games" });
     }
     let streak=1; for(let i=done.length-2;i>=0;i--){ if(won(done[i])===won(done[done.length-1])) streak++; else break; }
     if(streak>=3) gForm.push({ text:(won(done[done.length-1])? "Won" : "Lost")+" the last "+streak, tone:won(done[done.length-1])? "good" : "bad", size:Math.min(1,streak/6), n:streak, solidN:4, unit:"games", weight:1.2 });
@@ -22533,7 +22735,7 @@ function _lgTeamDash(L){
     if(close.length>=2) gForm.push({ text:"Games decided by five or fewer: "+close.filter(m=>m>0).length+"–"+close.filter(m=>m<0).length, tone:"neutral", size:0.5, n:close.length, solidN:5, unit:"games" });
   }
   const next=mine.filter(g=>!_lgDone(g) && g.date).sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(0,3);
-  if(next.length) gForm.push({ text:"Next: "+next.map(g=>{ const home=String(g.homeId)===String(tid); return (home? "vs " : "@ ")+_lgShort(home? g.away : g.home)+" "+g.date.slice(8,10)+"/"+g.date.slice(5,7); }).join(" · "), tone:"vol", size:0.4 });
+  if(next.length) gForm.push({ k:"Next games", plain:true, text:next.map(g=>{ const home=String(g.homeId)===String(tid); return (home? "vs " : "@ ")+_lgShort(home? g.away : g.home)+" "+g.date.slice(8,10)+"/"+g.date.slice(5,7); }).join(" · "), tone:"vol", size:0.4 });
   /* ---- the four factors, as ranks among the clubs */
   const F=(L.four||[]).filter(x=>x && x.teamId), me=F.filter(x=>String(x.teamId)===String(tid))[0];
   if(me && F.length>=6){
@@ -22546,6 +22748,8 @@ function _lgTeamDash(L){
     M.forEach(m=>{ const v=m[1](me); if(v==null || !isFinite(v)) return;
       const all=F.map(m[1]).filter(x=>x!=null && isFinite(x)); if(all.length<6) return;
       const better=m[2]===false? all.filter(x=>x<v).length : all.filter(x=>x>v).length, rank=better+1, n=all.length;
+      RANKS.push({ label:m[0], value:m[3](v), rank:rank, of:n, side:/Opponents|Defensive|forced/.test(m[0])? "d" : "o",
+        tone:m[2]==null? "vol" : rank<=4? "good" : rank>=n-3? "bad" : "neutral" });
       const item={ text:m[0]+": "+m[3](v)+" — "+ord(rank)+" of "+n, n:me.gp||null, solidN:6, unit:"games" };
       if(m[2]==null){ if(rank<=3 || rank>=n-2) gForm.push(Object.assign(item, { text:m[0]+": "+m[3](v)+" — "+(rank<=3? "among the highest" : "among the lowest")+" ("+ord(rank)+" of "+n+")", tone:"vol", size:0.6 })); return; }
       if(rank<=4) gGood.push(Object.assign(item, { tone:"good", size:1-(rank-1)/6 }));
@@ -22612,9 +22816,23 @@ function _lgTeamDash(L){
       if(tot!=null) gUnits.push({ text:"Late in the clock: "+late.toFixed(2)+" per possession ("+tot.toFixed(2)+" overall), "+Math.round(100*ck[2].poss/all.poss)+"% of their possessions", tone:late>=tot? "bad" : "good",
         size:Math.min(1,Math.abs(late-tot)/0.3), n:ck[2].poss, solidN:80, unit:"poss" }); }
   }catch(e){}
-  return K.summary({ cls:"lg-dash", title:club.name||"This club", sub:"read from the panels below · a rank is among the clubs with published numbers", figures:figs,
-    groups:[ { title:"How they are going", ideas:K.pick(gForm,5) }, { title:"Among the league's best at", ideas:K.pick(gGood,5) },
-      { title:"Among the league's worst at", ideas:K.pick(gBad,5) }, { title:"Who carries them", ideas:K.pick(gMen,7) },
+  /* the club as charts: its last games, and where it ranks in the league in everything
+     the four factors measure - the best on the left of the track, the worst on the right */
+  const visuals=[];
+  try{
+    const lastG=done.slice(-8).map(g=>{ const home=String(g.homeId)===String(tid), v=home? g.hs-g.as : g.as-g.hs;
+      return { label:(home? "" : "@")+String(_lgShort(home? g.away : g.home)).slice(0,3).toUpperCase(), value:v, text:(v>0? "+" : "−")+Math.abs(v), tone:v>0? "good" : "bad", title:g.home+" "+g.hs+"–"+g.as+" "+g.away }; });
+    if(lastG.length) visuals.push(K.strip({ title:"Results", sub:"margin of the last "+lastG.length, signed:true, items:lastG }));
+    if(RANKS.length){
+      visuals.push(K.ranks({ title:"Offense", sub:"rank in the league", rows:RANKS.filter(r=>r.side==="o") }));
+      visuals.push(K.ranks({ title:"Defense", sub:"rank in the league", rows:RANKS.filter(r=>r.side==="d") }));
+    }
+  }catch(e){}
+  return K.summary({ cls:"lg-dash", title:club.name||"This club", sub:"read from the panels below · a rank is among the clubs with published numbers", figures:figs, visuals:visuals,
+    groups:[ { title:"How they are going", ideas:K.pick(gForm,5) },
+      /* best and worst are on the rank tracks above when there are any */
+      RANKS.length? null : { title:"Among the league's best at", ideas:K.pick(gGood,5) },
+      RANKS.length? null : { title:"Among the league's worst at", ideas:K.pick(gBad,5) }, { title:"Who carries them", ideas:K.pick(gMen,7) },
       { title:"Where they shoot from", ideas:K.pick(gShots,3) }, { title:"Starters, units, late clock", ideas:K.pick(gUnits,6) } ],
     empty:"The league has not published enough about this club yet." });
 }
@@ -27764,6 +27982,26 @@ body.dark .lg-g.c-eu{--c-hue:#9b85e8;--c-fill:#6a51c0}
 .lg-rost tr.core td:first-child{box-shadow:inset 3px 0 0 var(--accent,#c9a227)}
 .lg-rost tr.core td.lg-team{font-weight:800}
 .lg-rost tr.thin td{opacity:.5}
+/* the roster table carrying our tagging on the same line */
+.lg-rost-one tr.lg-tbl-g th{font:700 9.5px 'Oswald',sans-serif;letter-spacing:.14em;color:#fff;padding:4px 6px;border-bottom:0}
+.lg-rost-one tr.lg-tbl-g th.g-lg{background:var(--ink,#141821);border-radius:5px 0 0 5px}
+.lg-rost-one tr.lg-tbl-g th.g-tg{background:#2f6cc0}
+.lg-rost-one tr.lg-tbl-g th.g-en{background:#5b6472;border-radius:0 5px 5px 0}
+.lg-rost-one th.grp,.lg-rost-one td.grp{border-left:2px solid var(--line-strong,#cfd4dc)}
+.lg-rost-one td,.lg-rost-one th{padding-left:2px;padding-right:2px;font-size:10.5px}
+.lg-rost-one tr.lg-tbl-h th{font-size:8.5px;letter-spacing:.03em}
+.lg-rost-one td.lg-team{position:sticky;left:0;background:var(--panel,#fff);z-index:1;font-size:11.5px}
+.lg-rost-one .rt-chip{min-width:32px;padding:1px 3px}.lg-rost-one .rt-heat{min-width:18px;padding:1px 3px}
+.lg-rost-one td.rt-x{color:var(--ink-faint,#b3b9c3)}
+.lg-rost-one td.rt-q{color:var(--ink-soft,#5b6472)}
+.lg-rost-one th.rt-hh{font-size:8.5px;letter-spacing:.02em;white-space:nowrap}
+.lg-rost-one tr.rt-orphan td.lg-team{font-weight:500;font-style:italic;color:var(--ink-soft,#5b6472)}
+.rt-chip{display:inline-block;min-width:38px;border-radius:5px;padding:1px 5px;font-weight:700}
+.rt-chip.rt-p5{background:#C53727;color:#fff}.rt-chip.rt-p4{background:#d4705f;color:#fff}.rt-chip.rt-p3{background:#f6ddd6;color:#8f2a1e}
+.rt-chip.rt-p2{background:#d6e5dc;color:#17603f}.rt-chip.rt-p1{background:#8fc0a9;color:#0f4a31}.rt-chip.rt-p0{background:#17805A;color:#fff}
+.rt-heat{display:inline-block;min-width:22px;border-radius:4px;padding:1px 4px;font-weight:600}
+.rt-heat.h1{background:rgba(74,134,216,.12)}.rt-heat.h2{background:rgba(74,134,216,.26)}.rt-heat.h3{background:rgba(74,134,216,.45)}
+.rt-heat.h4{background:rgba(74,134,216,.7);color:#fff}.rt-heat.h5{background:#2f6cc0;color:#fff}
 /* The chart needs room before it needs anything else: a thousand-unit drawing squeezed
    into a 380px column is a grey smear whatever is in it, so the panel asks the layout for
    a real width and the layout gives it one. */
@@ -28048,6 +28286,77 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pjp{margin-top:6px}
 .pjp .sx-table td:first-child{text-align:left;font-weight:600}
 .pjp .sx-table th:nth-child(9),.pjp .sx-table td:nth-child(9){border-left:3px solid var(--ink,#141821)}
+
+/* the summary drawn: meters, charts, and a card for every finding */
+.ui-fig{position:relative}
+.ui-meter{position:relative;display:block;height:5px;border-radius:3px;background:rgba(20,24,33,.10);margin:5px 0 3px;overflow:visible}
+.ui-meter i{display:block;height:100%;border-radius:3px;background:currentColor;opacity:.75}
+.ui-meter u{position:absolute;top:-3px;width:2px;height:11px;background:var(--ink,#141821);text-decoration:none;border-radius:1px}
+.ui-fig.good .ui-meter{color:#2f9e86}.ui-fig.bad .ui-meter{color:#d8524e}.ui-fig.vol .ui-meter{color:#4a86d8}.ui-fig.neutral .ui-meter{color:#8a93a2}
+.ui-visrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:0 0 14px}
+.ui-vis{border:1px solid var(--line,#e4e7ec);border-radius:11px;padding:10px 12px 8px;background:var(--panel,#fff);min-width:0}
+.ui-vis-h{font:700 10px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--ink,#141821);margin-bottom:8px;display:flex;gap:8px;align-items:baseline}
+.ui-vis-h span{font:400 10.5px 'Inter',sans-serif;letter-spacing:0;text-transform:none;color:var(--ink-faint,#8a93a2)}
+.ui-strip-b{display:flex;align-items:stretch;gap:5px}
+.ui-strip-c{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center}
+.ui-strip-c .plot{position:relative;width:100%;height:112px;display:block}
+.ui-strip-c .plot i{position:absolute;left:18%;right:18%;border-radius:4px 4px 0 0;bottom:0;background:#8a93a2}
+.ui-strip.signed .ui-strip-c .plot::before{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:var(--line-strong,#cfd4dc)}
+.ui-strip.signed .ui-strip-c .plot i.up{bottom:50%}
+.ui-strip.signed .ui-strip-c .plot i.dn{top:50%;bottom:auto;border-radius:0 0 4px 4px}
+.ui-strip-c .plot b{position:absolute;left:0;right:0;text-align:center;font:800 10.5px 'IBM Plex Mono',monospace;line-height:1}
+.ui-strip-c em{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.ui-strip-c.good .plot i{background:#2f9e86}.ui-strip-c.good .plot b{color:#17805a}
+.ui-strip-c.bad .plot i{background:#d8524e}.ui-strip-c.bad .plot b{color:#c0403c}
+.ui-strip-c.vol .plot i{background:#4a86d8}.ui-strip-c.vol .plot b{color:#2f6cc0}
+.ui-split-bar{display:flex;height:22px;border-radius:6px;overflow:hidden;margin-bottom:8px}
+.ui-split-bar i{display:flex;align-items:center;justify-content:center;font:700 10px 'IBM Plex Mono',monospace;font-style:normal;color:#fff;min-width:0;overflow:hidden}
+.ui-split-l div{display:flex;align-items:center;gap:7px;font-size:11.5px;padding:2px 0}
+.ui-split-l i{flex:none;width:10px;height:10px;border-radius:3px}
+.ui-split-l span{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ui-split-l b{font:700 11px 'IBM Plex Mono',monospace;border-radius:4px;padding:1px 6px;background:var(--panel-2,#f4f5f7)}
+.ui-split-l b.good{background:rgba(47,158,134,.18);color:#17805a}.ui-split-l b.bad{background:rgba(216,82,78,.16);color:#c0403c}
+.ui-rank{display:grid;grid-template-columns:minmax(90px,1.1fr) 52px minmax(80px,1.6fr) 38px;gap:8px;align-items:center;padding:3px 0;font-size:11.5px}
+.ui-rank .k{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ui-rank b{font:700 11.5px 'IBM Plex Mono',monospace;text-align:right}
+.ui-rank em{font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);text-align:right}
+.ui-rank .track{position:relative;height:6px;border-radius:3px;background:linear-gradient(90deg,rgba(47,158,134,.35),rgba(138,147,162,.18) 50%,rgba(216,82,78,.35))}
+.ui-rank .track i{position:absolute;top:-4px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:var(--ink,#141821);border:2px solid var(--panel,#fff);box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.ui-rank.good .track i{background:#2f9e86}.ui-rank.bad .track i{background:#d8524e}.ui-rank.vol .track i{background:#4a86d8}
+.ui-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px 16px}
+.ui-group{min-width:0}
+.ui-group-h{display:flex;align-items:center;gap:8px;border-bottom:0;padding:0;margin:0 0 6px}
+.ui-group-h b{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.15em;text-transform:uppercase;color:#fff;background:var(--ink,#141821);border-radius:5px;padding:4px 9px}
+.ui-group.good .ui-group-h b{background:#2f9e86}.ui-group.bad .ui-group-h b{background:#d8524e}
+.ui-group-h span{font:600 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+.ui-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:7px}
+.ui-card{display:flex;flex-direction:column;gap:2px;min-width:0;border-radius:10px;padding:8px 10px 7px;background:var(--panel-2,#f4f5f7);border-top:3px solid var(--line-strong,#cfd4dc)}
+.ui-card.good{border-top-color:#2f9e86;background:rgba(47,158,134,.09)}.ui-card.bad{border-top-color:#d8524e;background:rgba(216,82,78,.08)}.ui-card.vol{border-top-color:#4a86d8;background:rgba(74,134,216,.07)}
+.ui-card.wide{grid-column:1 / -1}
+.ui-card-k{font:700 9.5px/1.25 'Inter',sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft,#5b6472);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.ui-card-v{display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+.ui-card-v b{font:800 20px/1.1 'Inter',system-ui,sans-serif;color:var(--ink,#141821)}
+.ui-card-v s{text-decoration:none;font:600 13px 'Inter',sans-serif;color:var(--ink-faint,#8a93a2)}
+.ui-card-v i{font-style:normal;font-size:13px;color:var(--ink-faint,#8a93a2)}
+.ui-card.good .ui-card-v b{color:#17805a}.ui-card.bad .ui-card-v b{color:#c0403c}.ui-card.vol .ui-card-v b{color:#2f6cc0}
+.ui-card-t{font-size:10.5px;line-height:1.3;color:var(--ink-soft,#5b6472)}
+.ui-card-f{display:flex;align-items:center;gap:6px;margin-top:auto;padding-top:5px}
+.ui-card-bar{flex:1 1 auto;height:4px;border-radius:2px;background:rgba(20,24,33,.10);overflow:hidden}
+.ui-card-bar i{display:block;height:100%;border-radius:2px;background:#8a93a2}
+.ui-card.good .ui-card-bar i{background:#2f9e86}.ui-card.bad .ui-card-bar i{background:#d8524e}.ui-card.vol .ui-card-bar i{background:#4a86d8}
+.ui-card-n{flex:none;font:500 9px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+.ui-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.ui-chip{display:inline-flex;align-items:baseline;gap:6px;background:var(--panel,#fff);border:1px solid var(--line,#e4e7ec);border-radius:8px;padding:4px 9px;font-size:11.5px}
+.ui-chip i{font-style:normal;color:var(--ink-soft,#5b6472)}.ui-chip b{font:800 13px 'Inter',sans-serif}.ui-chip em{font-style:normal;font-size:10px;color:var(--ink-faint,#8a93a2)}
+/* a training block in the season list reads like the rows around it, only quieter */
+.ym-trg{margin:0}
+.ym-trg-h{border:0;border-radius:0;padding:5px 8px;background:transparent;opacity:.72;font-size:12px;gap:7px;border-bottom:1px solid var(--line,#eef0f3)}
+.ym-trg-h:hover{opacity:1;border-color:var(--line,#eef0f3)}
+.ym-trg-h b{font:500 12px 'Inter',system-ui,sans-serif;letter-spacing:0;text-transform:none;color:var(--ink-soft,#5b6472)}
+.ym-trg-n{font-size:10px}
+.ym-trg-c{width:12px;height:12px;background-size:12px 12px;background-color:transparent;filter:grayscale(1);opacity:.6}
+.ym-trg-b{border-left:0;margin-left:0;padding-left:14px}
+.ym-trg-bar{opacity:.85}
 
 /* THE FOLD: ONE WAY TO OPEN AND CLOSE, EVERYWHERE.
    A section of a report closed with a small minus sign in a circle, a league table opened

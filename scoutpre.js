@@ -1486,32 +1486,39 @@
      to scroll through to find them. Each block keeps one line saying what is in it, opens
      and closes on its own heading, and remembers the choice for as long as the page is
      open. Expand all and Collapse all are at the top of the tagging. */
-  var SUB_OPEN = {}, SUB_ALL = [];
-  function sub(host, title, what) {
-    var b = el("div", "sxp-blk sxp-fold");
-    var hd = el("div", "sxp-sub sxp-fold-h");
-    hd.appendChild(el("b", null, title));
-    if (what) hd.appendChild(el("span", "sxp-fold-w", String(what).replace(/\s+/g, " ")));
-    var pill = el("button", "lg-fold-b sxp-fold-b", "Show"); pill.type = "button";
-    hd.appendChild(pill);
-    var paint = function () { var o = !!SUB_OPEN[title];
-      b.classList.toggle("shut", !o); b.classList.toggle("open", o); pill.textContent = o ? "Hide" : "Show"; };
-    hd.addEventListener("click", function () { SUB_OPEN[title] = !SUB_OPEN[title]; paint();
-      try { window.dispatchEvent(new Event("resize")); } catch (e) {} });
-    b.appendChild(hd);
-    host.appendChild(b);
-    SUB_ALL.push({ t: title, paint: paint, el: b });
+  /* ONE QUESTION ON SCREEN AT A TIME. A row of Show buttons over a dozen shut tables was
+     still a dozen tables; the report is split by the question a staff is asking instead:
+     the overview, their offense, their defense, the ball screen, the games. Each block of
+     the report says which of those it answers (data-tabs) and the bar shows the ones that
+     answer the tab chosen - nothing is moved or rebuilt, so "Everything" is the old page.
+     Inside a tab every table is a card, open, with the same heading. */
+  var TABS = [["over", "Overview"], ["off", "Their offense"], ["def", "Their defense"],
+              ["bs", "Ball screen"], ["games", "Games and quarters"], ["all", "Everything"]];
+  var TAB = "over";
+  function tabOf(node, tabs) { try { node.setAttribute("data-tabs", tabs); } catch (e) {} return node; }
+  function tabBar(root) {
+    var bar = el("div", "sxp-tabs");
+    var paint = function () {
+      root.setAttribute("data-tab", TAB);
+      Array.prototype.forEach.call(bar.children, function (b) { b.classList.toggle("on", b.getAttribute("data-t") === TAB); });
+    };
+    TABS.forEach(function (t) {
+      var b = el("button", "sxp-tab", t[1]); b.type = "button"; b.setAttribute("data-t", t[0]);
+      b.addEventListener("click", function () { TAB = t[0]; paint();
+        try { window.dispatchEvent(new Event("resize")); } catch (e) {} });
+      bar.appendChild(b);
+    });
     paint();
-    return b;
-  }
-  function subAllBar() {
-    var bar = el("div", "sxp-allbar");
-    var mk = function (txt, open) { var x = el("button", "lg-fold-b sxp-fold-b", txt); x.type = "button";
-      x.addEventListener("click", function () { SUB_ALL = SUB_ALL.filter(function (s) { return s.el.isConnected; });
-        SUB_ALL.forEach(function (s) { SUB_OPEN[s.t] = open; s.paint(); });
-        try { window.dispatchEvent(new Event("resize")); } catch (e) {} }); return x; };
-    bar.appendChild(mk("Expand all", true)); bar.appendChild(mk("Collapse all", false));
     return bar;
+  }
+  function sub(host, title, what) {
+    var b = el("div", "sxp-blk sxp-card");
+    var hd = el("div", "sxp-sub");
+    hd.appendChild(el("b", null, title));
+    if (what) { try { hd.title = String(what).replace(/\s+/g, " "); } catch (e) {} }
+    if (title) b.appendChild(hd);
+    host.appendChild(b);
+    return b;
   }
   /* the prose under a table moves to the hover; the page keeps the numbers */
   function tnote(host, txt) { try { host.title = String(txt || "").replace(/\s+/g, " "); } catch (e) {} }
@@ -1797,11 +1804,62 @@
       if (D.second && D.second.chains >= 6) gQ.push({ text: "Second chances: " + D.second.orb + " offensive rebounds, " + D.second.pts + " points — " + f2n(D.second.ppp) + " per second chance",
         tone: D.second.ppp >= 1.1 ? "bad" : "neutral", size: Math.min(1, D.second.chains / 20), n: D.second.chains, solidN: 15, unit: "chances", weight: 1.1 });
     } catch (e) { }
+    /* what the summary used to leave to the tables: their defense by court state, where
+       their pressure forces turnovers, and who finishes their possessions */
+    try {
+      gDef = gDef.concat(line(D.courtDef, 12, function (r) { return r.label + ": " + f2n(r.ppp) + " allowed per possession (league " + f2n(r.ref) + ")"; }, 0.9));
+      (D.forceto || []).forEach(function (r) {
+        if (r.ref == null || r.poss < 15 || Math.abs(r.rate - r.ref) < 4) return;
+        gDef.push({ text: r.label + ": forces a turnover on " + r.rate + "% (league " + r.ref + "%)", tone: r.rate < r.ref ? "good" : "bad",
+          size: Math.min(1, Math.abs(r.rate - r.ref) / 12), n: Math.round(r.poss), solidN: 40, unit: "poss" });
+      });
+    } catch (e) { }
+    var gWho = [];
+    try {
+      var avgP = S.selfPpp;
+      ((D.players && D.players.rows) || []).slice(0, 8).forEach(function (p) {
+        if (p.n < 8) return;
+        var top = Object.keys(p.roles || {}).sort(function (a, b) { return p.roles[b] - p.roles[a]; })[0];
+        var d = (avgP != null) ? p.ppp - avgP : 0;
+        gWho.push({ k: p.label, v: f2n(p.ppp), text: p.use + "% of their possessions" + (top && p.roles[top] ? " · mostly " + top.toLowerCase() : ""),
+          tone: d >= 0.08 ? "bad" : d <= -0.08 ? "good" : "neutral", size: Math.min(1, p.use / 22), n: p.n, solidN: 20, unit: "poss" });
+      });
+    } catch (e) { }
+    /* the same tables as pictures: what their offense is made of, what they have to
+       defend, how they cover the ball, and how the games and the quarters went */
+    var visuals = [];
+    try {
+      var mixOf = function (rows, title, sub, inv) {
+        var use = (rows || []).filter(function (r) { return r && r.poss > 0; });
+        var tot = 0; use.forEach(function (r) { tot += r.poss; });
+        if (!tot || use.length < 2) return null;
+        use = use.slice().sort(function (a, b) { return b.poss - a.poss; });
+        var head = use.slice(0, 6), rest = use.slice(6), parts = head.map(function (r) {
+          return { label: r.label, share: r.poss / tot, value: f2n(r.ppp), tone: (r.ref == null || Math.abs(r.edge) < 0.06) ? "neutral" : (r.edge > 0 ? "good" : "bad") }; });
+        if (rest.length) { var rp = 0; rest.forEach(function (r) { rp += r.poss; }); parts.push({ label: "Other (" + rest.length + ")", share: rp / tot }); }
+        return K.split({ title: title, sub: sub, parts: parts });
+      };
+      visuals.push(mixOf(D.mix, "Their offense is made of", "share of possessions · points per possession"));
+      visuals.push(mixOf(D.defsit, "What they have to defend", "share · points allowed"));
+      visuals.push(mixOf(D.coverage, "How they cover the ball screen", "share · points allowed"));
+      var ggs = (D.gamebygame || []).filter(function (r) { return !r.total; });
+      if (ggs.length >= 2) visuals.push(K.strip({ title: "Game by game", sub: "their offense minus their defense, per possession", signed: true,
+        items: ggs.map(function (r) { return { label: String(r.label).slice(0, 9), value: r.net, text: (r.net > 0 ? "+" : r.net < 0 ? "−" : "") + Math.abs(r.net).toFixed(2),
+          tone: r.net > 0.03 ? "bad" : r.net < -0.03 ? "good" : "neutral", title: r.label + ": " + f2n(r.oPpp) + " scored, " + f2n(r.dPpp) + " allowed" }; }) }));
+      var qq = {}; (D.quarters || []).forEach(function (r) { var o = qq[r.q] || (qq[r.q] = { op: 0, opts: 0, dp: 0, dpts: 0 });
+        o.op += r.oPoss || 0; o.opts += (r.oPpp || 0) * (r.oPoss || 0); o.dp += r.dPoss || 0; o.dpts += (r.dPpp || 0) * (r.dPoss || 0); });
+      var qk = Object.keys(qq).filter(function (k) { return qq[k].op >= 8 && qq[k].dp >= 8; }).sort();
+      if (qk.length >= 2) visuals.push(K.strip({ title: "By quarter", sub: "their offense minus their defense, all games", signed: true,
+        items: qk.map(function (k) { var v = qq[k].opts / qq[k].op - qq[k].dpts / qq[k].dp;
+          return { label: k, value: v, text: (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2), tone: v > 0.03 ? "bad" : v < -0.03 ? "good" : "neutral",
+            title: k + ": " + f2n(qq[k].opts / qq[k].op) + " scored, " + f2n(qq[k].dpts / qq[k].dp) + " allowed" }; }) }));
+    } catch (e) { }
     return K.summary({ title: "The opponent, from the tagging",
-      sub: "red is what hurts us · green is what we can go at · each line says what it rests on", figures: figs,
+      sub: "red is what hurts us · green is what we can go at · each line says what it rests on", figures: figs, visuals: visuals,
       groups: [ { title: "How they score", ideas: K.pick(gOff, 5) }, { title: "How their possessions end", ideas: K.pick(gFin, 4) },
         { title: "Where they concede", ideas: K.pick(gDef, 5) }, { title: "Ball screen coverage", ideas: K.pick(gCov, 6) },
-        { title: "Quarters, last game, second chances", ideas: K.pick(gQ, 5) } ],
+        { title: "Quarters, last game, second chances", ideas: K.pick(gQ, 5) },
+        { title: "Who finishes their possessions", ideas: gWho.slice(0, 6) } ],
       empty: "Not enough tagged possessions to say anything yet." });
   }
 
@@ -1818,8 +1876,8 @@
     } catch (e) {}
 
     /* what the tables below say, before the tables */
-    try { var dashT = teamDash(D); if (dashT) root.appendChild(dashT); } catch (e) { }
-    try { root.appendChild(subAllBar()); } catch (e) { }
+    try { root.appendChild(tabBar(root)); } catch (e) { }
+    try { var dashT = teamDash(D); if (dashT) root.appendChild(tabOf(dashT, "over")); } catch (e) { }
 
     /* Said loudly and at the top: a category nobody taught the parser is a
        category that is not in a single number below it. */
@@ -1859,6 +1917,7 @@
     var rowAn = el("div", "sxp rst-sxp sxp-row fit-even sxp-rowAn"); root.appendChild(rowAn);
     var rowQ = el("div", "sxp rst-sxp sxp-row sxp-rowQ"); root.appendChild(rowQ);
     var rowB = el("div", "sxp rst-sxp sxp-row"); root.appendChild(rowB);
+    tabOf(rowA, "off def games"); tabOf(rowAn, "off games"); tabOf(rowQ, "games"); tabOf(rowB, "none");
 
     /* ------------------------------------------------- 01 game by game */
     var s1 = section(rowA, "02", "Game by game",
@@ -1869,7 +1928,8 @@
         : ""));
     /* a list of the games played is a record, not a ranking - nothing in it is "the
        important row", so the report puts nothing forward here */
-    var b1 = el("div", "sxp-blk"); b1.setAttribute("data-hl", "0"); s1.appendChild(b1);
+    tabOf(s1, "games");
+    var b1 = el("div", "sxp-blk sxp-card"); b1.setAttribute("data-hl", "0"); s1.appendChild(b1);
     var T1 = tableShell([{ t: "", rows: 2 },
       { t: "Their offense", span: 6, cls: "grpo" }, { t: "Their defense", span: 6, cls: "grpd" },
       { t: "Net", rows: 2, cls: "n cream" }]);
@@ -1904,12 +1964,13 @@
       "The single most useful split in the report, because it decides whether the game plan starts " +
       "with transition defense or with a set defense.");
     rowA.insertBefore(s2s, rowA.firstChild);
-    var b2a = sub(s2s, "Their offense", "Where their points come from, and whether they are better than average there.");
+    tabOf(s2s, "off def");
+    var b2a = tabOf(sub(s2s, "Their offense", "Where their points come from, and whether they are better than average there."), "off");
     edgeTable(b2a, D.court, "Court state", "PPP",
       [["efg", "eFG%"], ["p3r", "3PAr"], ["tov", "TOV%"]],
       S.ocPpp != null ? ("Open court " + f2(S.ocPpp) + " against a " + f2(S.ocRef) + " reference; half court " +
         f2(S.hcPpp) + " against " + f2(S.hcRef) + ".") : "");
-    var b2b = sub(s2s, "Their defense", "The same split on what they allow.");
+    var b2b = tabOf(sub(s2s, "Their defense", "The same split on what they allow."), "def");
     edgeTable(b2b, D.courtDef, "Court state", "PPP allowed",
       [["efg", "eFG%"], ["p3r", "3PAr"], ["tov", "TOV%"]],
       S.ocdPpp != null ? ("Transition defense " + f2(S.ocdPpp) + " against a " + f2(S.ocdRef) +
@@ -1920,7 +1981,7 @@
     if (D.quarters.length) {
       var s3 = section(rowQ, "04", "Quarter by quarter, game by game",
         "Split per game so one eleven-point quarter does not get averaged into a pattern that never happened.");
-      var b3 = el("div", "sxp-blk"); s3.appendChild(b3);
+      var b3 = el("div", "sxp-blk sxp-card"); s3.appendChild(b3);
       var qw = el("div", "sxp-qwrap fitgrid");
       M.games.forEach(function (g) {
         var rowsq = D.quarters.filter(function (x) { return x.game === g; });
@@ -1962,6 +2023,7 @@
     /* ------------------------------------------- 04 how they attack */
     var s4 = section(root, "05", "How they attack",
       "Origin, finish and playbook. Ordered by volume so the first row is always the one that matters most.");
+    tabOf(s4, "off");
     var b4a = sub(s4, "Possession mix by origin",
       "What share of their offense each origin is, and whether they are better or worse than the reference there.");
     edgeTable(b4a, D.mix, "Origin", "PPP",
@@ -2086,6 +2148,7 @@
        four factors next to it, and the two are read together or not at all */
     var sSC = section(rowAn, "03", "Second chance",
       "They crash the glass. The question is whether it pays.");
+    tabOf(sSC, "off");
     var b4e = sub(sSC, "", "They crash the glass. The question is whether it pays.");
     var stats = el("div", "sxp-stats");
     /* The tagging can say what share of its own misses this club takes back. What it
@@ -2116,11 +2179,12 @@
     var s5 = section(root, "06", "How they defend — where we attack",
       "The column here is what they allow, so a high number is a bad number for them — and the " +
       "colour already says so: green where they concede, gold where they hold.");
-    var b5a = sub(s5, "By situation", "The table the game plan comes out of.");
+    tabOf(s5, "def bs");
+    var b5a = tabOf(sub(s5, "By situation", "The table the game plan comes out of."), "def");
     edgeTable(b5a, D.defsit, "Situation", "PPP allowed", [["efg", "eFG%"], ["p3r", "3PAr"]],
       S.bsPpp != null ? ("The ball screen is " + S.bsFreq + "% of everything they defend and it is where " +
         "they leak: " + f2(S.bsPpp) + " against a " + f2(S.bsRef) + " reference.") : "");
-    var b5b = sub(s5, "Ball screen coverage", "What each coverage costs them.");
+    var b5b = tabOf(sub(s5, "Ball screen coverage", "What each coverage costs them."), "bs");
     edgeTable(b5b, D.coverage, "Coverage", "PPP allowed",
       [["efg", "eFG%"], ["p3r", "3PAr"], ["tov", "TOV%"],
        ["n4", "w/ 4", "p"], ["n5", "w/ 5", "p"]],
@@ -2294,8 +2358,8 @@
     }
 
     if (D.covquarter.length) {
-      var b5c = sub(s5, "Coverage by quarter",
-        "Whether the coverage they show early is the one they finish with. Darker is more.");
+      var b5c = tabOf(sub(s5, "Coverage by quarter",
+        "Whether the coverage they show early is the one they finish with. Darker is more."), "bs");
       var TC = tableShell([{ t: "Coverage" }, { t: "Poss", cls: "n" },
         { t: "w/ 4", cls: "n" }, { t: "w/ 5", cls: "n" },
         { t: "Q1", cls: "n" }, { t: "Q2", cls: "n" }, { t: "Q3", cls: "n" }, { t: "Q4", cls: "n" }]);
@@ -2318,8 +2382,8 @@
     }
 
     if (D.covxfinish.rows.length) {
-      var b5d = sub(s5, "Coverage × how the possession ended",
-        "What the opponent actually got out of each coverage. Darker is more.");
+      var b5d = tabOf(sub(s5, "Coverage × how the possession ended",
+        "What the opponent actually got out of each coverage. Darker is more."), "bs");
       var hd = [{ t: "Coverage" }, { t: "Poss", cls: "n" },
                 { t: "w/ 4", cls: "n" }, { t: "w/ 5", cls: "n" }];
       D.covxfinish.cols.forEach(function (c) { hd.push({ t: c, cls: "n rot" }); });
@@ -2338,12 +2402,12 @@
       b5d.appendChild(TX.wrap);
     }
 
-    var b5e = sub(s5, "What generates the shot against them", "The opponent action on the possessions they defend.");
+    var b5e = tabOf(sub(s5, "What generates the shot against them", "The opponent action on the possessions they defend."), "def");
     edgeTable(b5e, D.generate, "Opponent action", "PPP allowed", [["efg", "eFG%"], ["p3r", "3PAr"]],
       "This table leans on the weakest descriptor in the tagging — only " + M.tag.actD +
       "% of defensive clips carry an action — so read it as a direction, not a measurement.");
 
-    var b5f = sub(s5, "Where they force turnovers", "Their pressure, measured against the reference.");
+    var b5f = tabOf(sub(s5, "Where they force turnovers", "Their pressure, measured against the reference."), "def");
     var TT = tableShell([{ t: "Situation" }, { t: "Poss", cls: "n" }, { t: "TO", cls: "n" },
       { t: "Rate", cls: "n" }, { t: "Ref", cls: "n" }, { t: "vs ref", cls: "n cream" }]);
     D.forceto.forEach(function (r) {
@@ -2366,7 +2430,7 @@
       "here means their pressure is real.");
 
     /* drawn here only when no PLAYERS STATS slot claimed it */
-    if (!(opts && opts.skipPlayers)) playersBlock(root, D, "07");
+    if (!(opts && opts.skipPlayers)) { var sP = playersBlock(root, D, "07"); if (sP) tabOf(sP, "off"); }
     /* 07 "What this report cannot tell you" and the list of files read from
        Drive both lived here. Out, on request. The one caveat that changes how a
        number reads — the reference pools every file in the folder, this
@@ -2512,7 +2576,7 @@
           box.appendChild(el("div", "sxp-empty", "Those files carry no usable possessions."));
           return;
         }
-        render(box, R.D, R.used, { skipPlayers: !!document.querySelector(".scoutpre-players-slot") });
+        render(box, R.D, R.used, { skipPlayers: !!document.querySelector(".scoutpre-players-slot") || !!window.__preOneTable });
       });
     });
   }
@@ -2675,15 +2739,28 @@
       ".sxp-t tr.sxp-tot td{background:rgba(0,0,0,.04);font-weight:700}",
       /* a second heading inside one panel needs the air a panel boundary would have given it */
       ".sxp-sub2{margin-top:16px}",
-      ".sxp-fold-h{display:flex;align-items:center;gap:10px;cursor:pointer;margin:0;padding:7px 0}",
-      ".sxp-fold-h b{flex:none}",
-      ".sxp-fold-w{flex:1 1 auto;min-width:0;font:400 11.5px 'Inter',sans-serif;letter-spacing:0;text-transform:none;color:#8a93a2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
-      ".sxp-fold-b{margin-left:auto;flex:none;font:700 10.5px/1 'Oswald',sans-serif!important;letter-spacing:.12em!important;color:#141821!important;border:1.5px solid #cfd4dc!important;padding:5px 12px 5px 7px!important}",
-      ".sxp-blk.open > .sxp-fold-h .sxp-fold-b::before{transform:rotate(90deg)}",
-      ".sxp-blk.shut > :not(.sxp-fold-h){display:none!important}",
-      ".sxp-blk.shut{border-bottom:1px solid #e4e7ec}",
-      ".sxp-blk.open > .sxp-fold-h{margin-bottom:6px}",
-      ".sxp-allbar{display:flex;gap:8px;margin:0 0 10px}",
+      ".sxp-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px;padding:4px;border-radius:11px;background:rgba(20,24,33,.05)}",
+      ".sxp-tab{flex:1 1 auto;border:0;background:transparent;border-radius:8px;padding:8px 14px;cursor:pointer;font:700 11px 'Oswald',sans-serif;letter-spacing:.13em;text-transform:uppercase;color:#5b6472}",
+      ".sxp-tab:hover{background:rgba(20,24,33,.07);color:#141821}",
+      ".sxp-tab.on{background:#141821;color:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25)}",
+      ".sxp-card{border:1px solid var(--line,#e4e7ec);border-radius:11px;background:var(--panel,#fff);padding:10px 12px 10px!important}",
+      ".sxp-card > .sxp-sub:first-child{margin:0 0 6px;padding:0 0 7px;border-bottom:2px solid #141821;color:#141821;font-family:'Oswald',sans-serif;font-size:11.5px}",
+      ".sxp-card > .sxp-sub:first-child:before{content:none}",
+      ".sxp-card .sxp-scroll{border:0;border-radius:0;margin-top:4px}",
+      ".sxp[data-tab] > .sxp-sec,.sxp[data-tab] .sxp-row > .sxp-sec{border-top:0;margin-top:14px;padding-top:0}",
+      "@media (min-width:1100px){.sxp[data-tab] .sxp-sec{grid-template-columns:repeat(2,minmax(0,1fr))}",
+      ".sxp[data-tab] .sxp-sec > .sxp-sechead + .sxp-card:last-child{grid-column:1/-1}}",
+      "@media screen{",
+      "body:not(.prt) .sxp[data-tab='over'] [data-tabs]:not([data-tabs~='over']){display:none!important}",
+      "body:not(.prt) .sxp[data-tab='off'] [data-tabs]:not([data-tabs~='off']){display:none!important}",
+      "body:not(.prt) .sxp[data-tab='def'] [data-tabs]:not([data-tabs~='def']){display:none!important}",
+      "body:not(.prt) .sxp[data-tab='bs'] [data-tabs]:not([data-tabs~='bs']){display:none!important}",
+      "body:not(.prt) .sxp[data-tab='games'] [data-tabs]:not([data-tabs~='games']){display:none!important}",
+      "body:not(.prt) .sxp[data-tab='over'] .ts-analysis,body:not(.prt) .sxp[data-tab='off'] .ts-analysis{display:none!important}",
+      "body:not(.prt) .sxp[data-tab]:not([data-tab='all']) .sxp-row.sxp-rowA,body:not(.prt) .sxp[data-tab]:not([data-tab='all']) .sxp-row.sxp-rowAn{grid-template-columns:minmax(0,1fr)!important}",
+      "}",
+      "@media print{.sxp-tabs{display:none!important}}",
+      "body.prt .sxp-tabs{display:none!important}",
       ".sxp-clips{margin-top:8px}",
       ".sxp-clips>summary{cursor:pointer;font-size:12px;color:#5b6472;padding:4px 0}",
       ".sxp-clips .sxp-scroll{max-height:420px;overflow:auto}",
