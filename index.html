@@ -6354,6 +6354,7 @@ function loadPraFiles(after){
   }catch(e){}
 }
 
+const _tsTrgOpen={};
 function seasonGrid(kind){
   const {keys,map}=seasonMonths();
   const wrap=h("div",{class:"year-wrap"+_anSoftOnce("season:"+kind)});
@@ -6372,6 +6373,13 @@ function seasonGrid(kind){
   const wanted=[];
   const DXg=docIndex(), TXg=tagIndex();
   const grid=h("div",{class:"year-grid"});
+  /* THE TRAININGS BETWEEN TWO GAMES ARE ONE LINE UNTIL THEY ARE ASKED FOR. A month listed
+     its games and every training of it, row after row, and the games - what the list is
+     mostly read for - were lost among them. The trainings from one game to the next are
+     gathered under a heading that says how many there are and how many are closed; it
+     opens and closes on its own, remembers the choice, and the two buttons above the
+     list open or close them all. The order is the calendar's, as it was. */
+  const trgAll=[];
   keys.forEach(k=>{ const [yy,mm]=k.split("-"); const label=new Date(+yy,+mm-1,1).toLocaleDateString("en-GB",{month:"long",year:"numeric"});
     let items=map[k];
     items=items.filter(x=> x.type==="training" || ["BBL","CUP"].includes(x.g.competition));
@@ -6387,8 +6395,27 @@ function seasonGrid(kind){
       tot++; const c = x.type==="game" ? repStatCls(gameKey(x.g), slot) : praStatCls(x.date); if(c==="done"||c==="na") done++; });
     const col=h("div",{class:"year-month"+(isThisMonth(k)?" cur-month":"")},
       h("div",{class:"ym-head static"}, label, h("span",{class:"ym-cnt"+(done===tot?" all":"")}, done+"/"+tot)));
+    let curGrp=null;
+    const tgrp=x=>{
+      if(kind!=="teamscout") return col;
+      if(!curGrp){
+        const key="trg:"+x.date, body=h("div",{class:"ym-trg-b"}), cnt=h("span",{class:"ym-trg-n"},""), span=h("span",{class:"ym-trg-d"},"");
+        const head=h("button",{class:"ym-trg-h", type:"button"}, h("i",{class:"ym-trg-c"}), h("b",{},"Trainings"), cnt, span);
+        const boxT=h("div",{class:"ym-trg"}, head, body);
+        const G2={ key:key, n:0, done:0, first:x.date, last:x.date };
+        G2.paint=()=>{ boxT.classList.toggle("open", !!_tsTrgOpen[key]);
+          cnt.textContent=G2.n+" - "+G2.done+"/"+G2.n+" closed";
+          span.textContent=G2.first.slice(8)+"/"+G2.first.slice(5,7)+(G2.last!==G2.first? " - "+G2.last.slice(8)+"/"+G2.last.slice(5,7) : ""); };
+        G2.body=body;
+        head.addEventListener("click",()=>{ _tsTrgOpen[key]=!_tsTrgOpen[key]; G2.paint(); });
+        col.appendChild(boxT); curGrp=G2; trgAll.push(G2);
+      }
+      curGrp.n++; curGrp.last=x.date; const c=praStatCls(x.date); if(c==="done"||c==="na") curGrp.done++;
+      curGrp.paint();
+      return curGrp.body;
+    };
     items.forEach(x=>{
-      if(x.type==="game"){ const g=x.g; const key=gameKey(g); wanted.push(key);
+      if(x.type==="game"){ curGrp=null; const g=x.g; const key=gameKey(g); wanted.push(key);
         if(!playerMaySeeGame(key)) return;
         /* the file behind the row, so a game whose tagging or plan is in Drive says so
            here too and not only in the calendar */
@@ -6404,7 +6431,7 @@ function seasonGrid(kind){
           docDot(file, kind==="gameplan"? "Game plan" : "Post-game tagging")));
       } else {
         const sh=(DXg.day[x.date]||[])[0]||null, tg=(TXg.day[x.date]||[])[0]||null;
-        col.appendChild(h("div",{class:"ym-row training clk"+((sh||tg)?" has-doc":""), onclick:()=>{ state.ui.ts={mode:"training",date:x.date,idx:0}; renderTeamScout(); }},
+        tgrp(x).appendChild(h("div",{class:"ym-row training clk"+((sh||tg)?" has-doc":""), onclick:()=>{ state.ui.ts={mode:"training",date:x.date,idx:0}; renderTeamScout(); }},
           h("span",{class:"ym-st "+praStatCls(x.date), title:praStatSay(x.date)}),
           h("span",{class:"ym-date"}, x.date.slice(8)+"/"+x.date.slice(5,7)),
           h("span",{class:"ts-tr"},"Training"+(x.n>1?" \u00d7"+x.n:"")),
@@ -6420,6 +6447,13 @@ function seasonGrid(kind){
     wrap.appendChild(h("div",{class:"empty-state"}, isPlayerUser()
       ? "Nothing has been shared with you yet."
       : "Nothing scheduled yet."));
+  if(kind==="teamscout" && trgAll.length){
+    const all=on=>{ trgAll.forEach(G2=>{ _tsTrgOpen[G2.key]=on; G2.paint(); }); };
+    wrap.appendChild(h("div",{class:"ym-trg-bar"},
+      h("button",{class:"lg-fold-b ym-trg-all", type:"button", onclick:()=>all(true)},"Expand all"),
+      h("button",{class:"lg-fold-b ym-trg-all", type:"button", onclick:()=>all(false)},"Collapse all"),
+      h("span",{}, "trainings are folded between the games")));
+  }
   wrap.appendChild(grid);
   /* the keys are gathered before the filter runs, because the filter is the answer to
      this very fetch: ask only for what is already known and nothing would ever arrive */
@@ -10056,6 +10090,9 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
          for staff, all of them. playerBlockOk answers both without a second branch. */
       if(playerBlockOk("stats"))
         wrap.appendChild(_preSafe("ROSTER STATS", ()=>_preBlock("ROSTER STATS", _lgEmbed(tid0, [ _lgRoster ]))));
+      /* the same players with our tagging beside the league's line - staff only */
+      if(playerBlockOk("stats") && !PV)
+        wrap.appendChild(_preSafe("PLAYERS", ()=>_preBlock("PLAYERS - LEAGUE AND TAGGING ON ONE LINE", _preJoinedPlayers(tid0))));
       /* roster first, then the cards drawn from it, then the roles written over the video -
          one page, no second screen, no button to press to see them */
       if(playerBlockOk("positions"))
@@ -22457,6 +22494,176 @@ function _lgEmbedTag(L, tid){
   const t=(L.teams||[]).filter(x=>x.id===tid)[0];
   return h("span",{class:"lg-embtag"}, _lgCrest(L, tid), h("span",{}, (t&&t.name)||""));
 }
+/* THE CLUB BEING SHOWN, IN ONE CARD, ABOVE THE RESULTS.
+   The league page is a dozen panels about the club picked in "Showing", and to know how
+   that club is doing all twelve had to be read. This card reads them: where the club
+   stands and how it has been going, what it is among the best and the worst of the league
+   at, who carries it and who of its men is among the league's leaders, where it shoots
+   from and how well, the five it has started with most, the units that have played most
+   together, and what it does late in the clock. Everything is taken from what the panels
+   below already hold - nothing is fetched for it - so a panel that has not been read yet
+   is simply missing from the card. A rank is a rank among the clubs the league has
+   published numbers for; "most used five" is what has happened, not who starts next. */
+function _lgTeamDash(L){
+  const K=window.UIKit; if(!K) return null;
+  const tid=(L.noClub || !L.team)? "" : L.team;
+  if(!tid) return null;
+  const club=(L.teams||[]).filter(t=>String(t.id)===String(tid))[0]; if(!club) return null;
+  const f1=v=>v.toFixed(1), fP=v=>Math.round(100*v)+"%", ord=n=>n+(n%10===1&&n%100!==11? "st" : n%10===2&&n%100!==12? "nd" : n%10===3&&n%100!==13? "rd" : "th");
+  const figs=[], gForm=[], gGood=[], gBad=[], gMen=[], gShots=[], gUnits=[];
+  /* ---- standing and form */
+  const st=(L.standings||[]).filter(r=>String(r.teamId)===String(tid))[0];
+  const mine=(L.games||[]).filter(g=>String(g.homeId)===String(tid)||String(g.awayId)===String(tid));
+  const done=mine.filter(_lgDone).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const won=g=>(String(g.homeId)===String(tid))? g.hs>g.as : g.as>g.hs;
+  if(st) figs.push({ label:"Standing", value:ord(st.pos), note:st.w+"–"+st.l+(st.diff!=null? " · "+(st.diff>=0? "+" : "")+st.diff : ""), tone:"vol" });
+  if(done.length){
+    const last=done.slice(-5), w5=last.filter(won).length;
+    figs.push({ label:"Last "+last.length, value:w5+"–"+(last.length-w5), note:last.map(g=>won(g)? "W" : "L").join(" "), tone:w5>last.length/2? "good" : w5<last.length/2? "bad" : "neutral" });
+    const hm=done.filter(g=>String(g.homeId)===String(tid)), aw=done.filter(g=>String(g.awayId)===String(tid));
+    const rec=l=>l.filter(won).length+"–"+(l.length-l.filter(won).length);
+    if(hm.length && aw.length){
+      const hp=hm.filter(won).length/hm.length, ap=aw.filter(won).length/aw.length;
+      gForm.push({ text:"Home "+rec(hm)+" · away "+rec(aw), tone:"neutral", size:Math.min(1,Math.abs(hp-ap)/0.6)+0.2, n:done.length, solidN:8, unit:"games" });
+    }
+    let streak=1; for(let i=done.length-2;i>=0;i--){ if(won(done[i])===won(done[done.length-1])) streak++; else break; }
+    if(streak>=3) gForm.push({ text:(won(done[done.length-1])? "Won" : "Lost")+" the last "+streak, tone:won(done[done.length-1])? "good" : "bad", size:Math.min(1,streak/6), n:streak, solidN:4, unit:"games", weight:1.2 });
+    const mg=done.map(g=>(String(g.homeId)===String(tid))? g.hs-g.as : g.as-g.hs);
+    const close=mg.filter(m=>Math.abs(m)<=5);
+    if(close.length>=2) gForm.push({ text:"Games decided by five or fewer: "+close.filter(m=>m>0).length+"–"+close.filter(m=>m<0).length, tone:"neutral", size:0.5, n:close.length, solidN:5, unit:"games" });
+  }
+  const next=mine.filter(g=>!_lgDone(g) && g.date).sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(0,3);
+  if(next.length) gForm.push({ text:"Next: "+next.map(g=>{ const home=String(g.homeId)===String(tid); return (home? "vs " : "@ ")+_lgShort(home? g.away : g.home)+" "+g.date.slice(8,10)+"/"+g.date.slice(5,7); }).join(" · "), tone:"vol", size:0.4 });
+  /* ---- the four factors, as ranks among the clubs */
+  const F=(L.four||[]).filter(x=>x && x.teamId), me=F.filter(x=>String(x.teamId)===String(tid))[0];
+  if(me && F.length>=6){
+    figs.push({ label:"Net rating", value:(me.net>=0? "+" : "−")+Math.abs(me.net).toFixed(1), note:f1(me.ortg)+" scored · "+f1(me.drtg)+" conceded", tone:me.net>1? "good" : me.net<-1? "bad" : "neutral" });
+    const M=[ ["Offensive rating", x=>x.ortg, true, f1], ["Defensive rating", x=>x.drtg, false, f1], ["Pace", x=>x.pace, null, f1],
+      ["eFG%", x=>x.off.efg, true, fP], ["Turnover rate", x=>x.off.tov, false, fP], ["Offensive rebounding", x=>x.off.reb, true, fP], ["Free throw rate", x=>x.off.ftr, true, fP],
+      ["Opponents' eFG%", x=>x.def.efg, false, fP], ["Turnovers forced", x=>x.def.tov, true, fP], ["Defensive rebounding", x=>x.def.reb, true, fP], ["Opponents' free throw rate", x=>x.def.ftr, false, fP],
+      ["Threes as a share of shots", x=>(x.off.p3a+x.off.p2a)? x.off.p3a/(x.off.p3a+x.off.p2a) : null, null, fP],
+      ["3P%", x=>x.off.p3a? x.off.p3m/x.off.p3a : null, true, fP], ["Opponents' 3P%", x=>x.def.p3a? x.def.p3m/x.def.p3a : null, false, fP] ];
+    M.forEach(m=>{ const v=m[1](me); if(v==null || !isFinite(v)) return;
+      const all=F.map(m[1]).filter(x=>x!=null && isFinite(x)); if(all.length<6) return;
+      const better=m[2]===false? all.filter(x=>x<v).length : all.filter(x=>x>v).length, rank=better+1, n=all.length;
+      const item={ text:m[0]+": "+m[3](v)+" — "+ord(rank)+" of "+n, n:me.gp||null, solidN:6, unit:"games" };
+      if(m[2]==null){ if(rank<=3 || rank>=n-2) gForm.push(Object.assign(item, { text:m[0]+": "+m[3](v)+" — "+(rank<=3? "among the highest" : "among the lowest")+" ("+ord(rank)+" of "+n+")", tone:"vol", size:0.6 })); return; }
+      if(rank<=4) gGood.push(Object.assign(item, { tone:"good", size:1-(rank-1)/6 }));
+      else if(rank>=n-3) gBad.push(Object.assign(item, { tone:"bad", size:1-(n-rank)/6 }));
+    });
+  }
+  /* ---- the men */
+  const P=(L.players||{})[tid];
+  const pl=((P&&P.players)||[]).filter(p=>p && p.all && p.all.gp);
+  const nm=p=>_lgLastName(p.name||"")||("#"+p.num);
+  if(pl.length){
+    const per=(p,k)=>p.all[k]/p.all.gp, mins=p=>p.all.sec/60/p.all.gp;
+    const reg=pl.filter(p=>mins(p)>=10 && p.all.gp>=2);
+    const top=(k,lab,min)=>{ const s=reg.slice().sort((a,b)=>per(b,k)-per(a,k))[0]; if(s && per(s,k)>=min) gMen.push({ text:lab+": "+nm(s)+" "+f1(per(s,k))+" a game", tone:"vol", size:0.7, n:s.all.gp, solidN:6, unit:"games" }); };
+    top("pts","Leading scorer",8); top("ast","Main creator",3); top("reb","Leading rebounder",5);
+    const ts=p=>{ const a=(p.all.p2a||0)+(p.all.p3a||0)+0.44*(p.all.fta||0); return a? p.all.pts/(2*a) : null; };
+    const eff=reg.filter(p=>((p.all.p2a||0)+(p.all.p3a||0))/p.all.gp>=5 && ts(p)!=null).sort((a,b)=>ts(b)-ts(a))[0];
+    if(eff) gMen.push({ text:"Most efficient scorer: "+nm(eff)+", "+fP(ts(eff))+" true shooting", tone:"vol", size:0.6, n:Math.round((eff.all.p2a||0)+(eff.all.p3a||0)), solidN:60, unit:"shots" });
+    const tt=P.team_tot && P.team_tot.all;
+    if(tt && tt.fga){ const sh=reg.map(p=>({ p:p, s:((p.all.p2a||0)+(p.all.p3a||0))/tt.fga })).sort((a,b)=>b.s-a.s);
+      if(sh.length>=2 && sh[0].s>=0.2) gMen.push({ text:nm(sh[0].p)+" takes "+fP(sh[0].s)+" of their shots"+(sh[0].s+sh[1].s>=0.38? ", with "+nm(sh[1].p)+" "+fP(sh[0].s+sh[1].s) : ""), tone:"vol", size:Math.min(1,sh[0].s/0.3), n:tt.fga, solidN:300, unit:"shots", weight:1.1 }); }
+    /* who of them is among the league's leaders */
+    try{ const pool=_lgLeadPool(L).pool||[];
+      [["pts","points"],["reb","rebounds"],["ast","assists"],["stl","steals"]].forEach(c=>{
+        const val=x=>(c[0]==="reb"? (x.t.reb||((x.t.oreb||0)+(x.t.dreb||0))) : x.t[c[0]])/x.t.gp;
+        const sorted=pool.slice().sort((a,b)=>val(b)-val(a));
+        sorted.slice(0,10).forEach((x,i)=>{ if(String(x.tid)===String(tid)) gMen.push({ text:_lgLastName(x.name)+" is "+ord(i+1)+" in the league in "+c[1]+" ("+f1(val(x))+")", tone:"good", size:1-i/12, n:x.t.gp, solidN:6, unit:"games", weight:1.1 }); }); });
+      const pir=pool.slice().sort((a,b)=>b.m.pir/b.t.gp-a.m.pir/a.t.gp);
+      pir.slice(0,10).forEach((x,i)=>{ if(String(x.tid)===String(tid)) gMen.push({ text:_lgLastName(x.name)+" is "+ord(i+1)+" in the league in PIR ("+f1(x.m.pir/x.t.gp)+")", tone:"good", size:1-i/12, n:x.t.gp, solidN:6, unit:"games", weight:1.2 }); });
+    }catch(e){}
+    /* the five that has started most - what has happened, not a prediction */
+    const st5=pl.filter(p=>(p.all.s5||0)>0).sort((a,b)=>(b.all.s5||0)-(a.all.s5||0) || b.all.sec-a.all.sec).slice(0,5);
+    if(st5.length===5) gUnits.push({ text:"Most used starters so far: "+st5.map(p=>nm(p)+" ("+p.all.s5+")").join(" · "), tone:"vol", size:0.8, n:(P.games||0), solidN:6, unit:"games", weight:1.2 });
+    const deep=reg.filter(p=>mins(p)>=12).length;
+    gUnits.push({ text:deep+" players above twelve minutes a game", tone:"vol", size:0.4, n:(P.games||0), solidN:6, unit:"games" });
+  }
+  /* ---- where they shoot from */
+  try{ const sh=(P&&P.shots)||[];
+    if(sh.length>=60){
+      const z={}; sh.forEach(s=>{ const p=_lgShotXY(s, { x0:LG_SHOT_X0, scale:1500/280 }); let k=_lgZoneOf(p.x, p.y, !!s[2]);
+        k=(k==="rim")? "At the rim" : (k==="paint")? "In the paint" : /^mid/.test(k)? "Mid-range" : /^c3/.test(k)? "Corner three" : "Three above the break";
+        (z[k]=z[k]||{ a:0, m:0 }); z[k].a++; if(s[1]) z[k].m++; });
+      const zs=Object.keys(z).map(k=>({ k:k, a:z[k].a, m:z[k].m, pct:z[k].m/z[k].a, share:z[k].a/sh.length })).filter(x=>x.a>=15);
+      const most=zs.slice().sort((a,b)=>b.share-a.share)[0];
+      if(most) gShots.push({ text:fP(most.share)+" of their shots are "+most.k.toLowerCase()+" ("+fP(most.pct)+" made)", tone:"vol", size:most.share, n:most.a, solidN:80, unit:"shots" });
+      const val=x=>x.pct*(/hree/.test(x.k)? 3 : 2);
+      const best=zs.slice().sort((a,b)=>val(b)-val(a))[0], worst=zs.slice().sort((a,b)=>val(a)-val(b))[0];
+      if(best && worst && best!==worst){
+        gShots.push({ text:"Best return: "+best.k.toLowerCase()+", "+val(best).toFixed(2)+" points a shot ("+best.m+"/"+best.a+")", tone:"vol", size:0.7, n:best.a, solidN:60, unit:"shots" });
+        gShots.push({ text:"Worst return: "+worst.k.toLowerCase()+", "+val(worst).toFixed(2)+" points a shot ("+worst.m+"/"+worst.a+")", tone:"vol", size:0.6, n:worst.a, solidN:60, unit:"shots" });
+      }
+    } }catch(e){}
+  /* ---- units, on and off, late clock */
+  try{ const names=(P&&P.names)||{}; const who=id=>{ let s=""; try{ s=_lgWho(names[id])||""; }catch(e){} if(!s && typeof names[id]==="string") s=names[id]; return _lgLastName(String(s||""))||"?"; };
+    const fives=((P&&P.units)||[]).filter(u=>u.n===5 && u.offPoss+u.defPoss>=30 && u.net!=null).sort((a,b)=>(b.offPoss+b.defPoss)-(a.offPoss+a.defPoss));
+    if(fives[0]) gUnits.push({ text:"Five with most possessions: "+fives[0].ids.map(who).join(" · ")+" — net "+(fives[0].net>=0? "+" : "−")+Math.abs(fives[0].net).toFixed(1), tone:fives[0].net>3? "good" : fives[0].net<-3? "bad" : "neutral",
+      size:0.8, n:fives[0].offPoss+fives[0].defPoss, solidN:120, unit:"poss" });
+    const oo=((P&&P.onoff)||[]).filter(o=>o.onPoss>=120 && o.offPoss>=80 && o.onNet!=null && o.offNet!=null).map(o=>Object.assign({ d:o.onNet-o.offNet }, o)).sort((a,b)=>b.d-a.d);
+    if(oo[0] && oo[0].d>=8) gUnits.push({ text:"Better with "+who(oo[0].id)+" on the floor: "+(oo[0].d>=0? "+" : "")+oo[0].d.toFixed(1)+" per 100 against without him", tone:"vol", size:Math.min(1,oo[0].d/25), n:oo[0].onPoss, solidN:300, unit:"poss" });
+    const lo=oo[oo.length-1]; if(lo && lo!==oo[0] && lo.d<=-8) gUnits.push({ text:"Better with "+who(lo.id)+" off the floor: "+lo.d.toFixed(1)+" per 100 with him on", tone:"vol", size:Math.min(1,-lo.d/25), n:lo.onPoss, solidN:300, unit:"poss" });
+    const ck=P&&P.clock&&P.clock.team;
+    if(ck && ck[2] && ck[2].poss>=25){ const all=ck.reduce((a,b)=>({ poss:a.poss+b.poss, pts:a.pts+b.pts }), { poss:0, pts:0 });
+      const late=ck[2].pts/ck[2].poss, tot=all.poss? all.pts/all.poss : null;
+      if(tot!=null) gUnits.push({ text:"Late in the clock: "+late.toFixed(2)+" per possession ("+tot.toFixed(2)+" overall), "+Math.round(100*ck[2].poss/all.poss)+"% of their possessions", tone:late>=tot? "bad" : "good",
+        size:Math.min(1,Math.abs(late-tot)/0.3), n:ck[2].poss, solidN:80, unit:"poss" }); }
+  }catch(e){}
+  return K.summary({ cls:"lg-dash", title:club.name||"This club", sub:"read from the panels below · a rank is among the clubs with published numbers", figures:figs,
+    groups:[ { title:"How they are going", ideas:K.pick(gForm,5) }, { title:"Among the league's best at", ideas:K.pick(gGood,5) },
+      { title:"Among the league's worst at", ideas:K.pick(gBad,5) }, { title:"Who carries them", ideas:K.pick(gMen,7) },
+      { title:"Where they shoot from", ideas:K.pick(gShots,3) }, { title:"Starters, units, late clock", ideas:K.pick(gUnits,6) } ],
+    empty:"The league has not published enough about this club yet." });
+}
+/* ONE LINE A PLAYER, FROM BOTH SOURCES.
+   The league's box score had the opponent's players in one table and our own tagging had
+   them in another, further down, under names typed by hand - the same man twice, and no
+   way to read his minutes beside what he does with the ball. They are one table here. A
+   tagged player is matched to the roster by his number, which is the one thing both
+   sources write the same way; a tag whose number is on no roster line keeps its own row
+   and says so, rather than being attached to somebody by a similar name. The league's
+   figures are per game; the tagging's are over the games tagged. Both full tables are
+   still where they were. */
+function _preJoinedPlayers(tid){
+  const box=h("div",{class:"pjp sx"});
+  box.appendChild(h("div",{class:"ld"},"Reading the roster and the tagging…", h("span",{class:"ld-bar"})));
+  const API=window.LowenPostStats, SP=window.ScoutPre;
+  const draw=(T)=>{
+    const L=leagueState(), P=(L.players||{})[tid];
+    const men=((P&&P.players)||[]).filter(p=>p && p.all && p.all.gp);
+    const tag=(T&&T.rows)||[];
+    box.innerHTML="";
+    if(!men.length && !tag.length){ box.appendChild(h("div",{class:"lg-empty"},"Neither the league's numbers nor the tagging of this club are in yet.")); return; }
+    const numOf=s=>{ const m=/#\s*(\d+)/.exec(String(s||"")); return m? String(parseInt(m[1],10)) : ""; };
+    const byNum={}; tag.forEach(r=>{ const n=numOf(r.label); if(n && !byNum[n]) byNum[n]=r; });
+    const used={};
+    const dash="—";
+    const rate=(v)=>v==null? { v:dash, cls:"tr-none" } : { v:Number(v).toFixed(2), cls:"sx-cell "+(v<0.5?"s5":v<0.8?"s4":v<1.0?"s3":v<1.25?"s2":v<1.6?"s1":"s0") };
+    const vol=(p)=>(p==null||!isFinite(p))? { v:dash, cls:"tr-none" } : { v:Math.round(p)+"%", cls:"sx-vol "+(p<8?"b0":p<14?"b1":p<20?"b2":p<26?"b3":p<32?"b4":"b5") };
+    const roles=r=>{ const o=r.roles||{}; return Object.keys(o).filter(k=>o[k]>0).sort((a,b)=>o[b]-o[a]).slice(0,2).map(k=>k+" "+o[k]).join(" · ")||dash; };
+    const rows=men.slice().sort((a,b)=>b.all.sec/b.all.gp-a.all.sec/a.all.gp).map(p=>{
+      const t=p.all, gp=t.gp, tsa=(t.p2a||0)+(t.p3a||0)+0.44*(t.fta||0);
+      const r=byNum[String(parseInt(p.num,10))]||null; if(r) used[r.label]=1;
+      return [ "#"+p.num+" "+(p.name||""), gp, (t.sec/60/gp).toFixed(1), (t.pts/gp).toFixed(1),
+        tsa? Math.round(100*t.pts/(2*tsa))+"%" : dash, t.p3a? t.p3m+"/"+t.p3a : dash, (t.ast/gp).toFixed(1), (t.tov/gp).toFixed(1),
+        r? r.n : dash, r? vol(r.use) : { v:dash, cls:"tr-none" }, r? rate(r.ppp) : { v:dash, cls:"tr-none" },
+        r? r.efg+"%" : dash, r? r.tov+"%" : dash, r? roles(r) : dash ]; });
+    tag.filter(r=>!used[r.label]).forEach(r=>rows.push([ r.label+"  · not on the league roster by number", dash, dash, dash, dash, dash, dash, dash,
+      r.n, vol(r.use), rate(r.ppp), r.efg+"%", r.tov+"%", roles(r) ]));
+    const head=["Player","GP","Min","Pts","TS%","3P","Ast","TO","Tagged","Use","PPP","eFG","TO%","Mostly"];
+    if(API && API.table2) box.appendChild(API.table2(head, rows));
+    box.appendChild(h("div",{class:"gpo-note", style:"margin-top:6px"},
+      "Left of the line: the league, per game. Right: our tagging of "+((T&&T.games)? T.games+" game"+(T.games===1?"":"s") : "the games tagged")+
+      " — possessions he finished, his share of theirs, what they returned (red is what hurts us). "+
+      (tag.length? Object.keys(used).length+" of "+tag.length+" tagged players matched by number." : "No tagged players for this opponent yet.")));
+  };
+  const want=(SP && SP.playersOf && _scoutOpponent)? SP.playersOf(_scoutOpponent).catch(()=>null) : Promise.resolve(null);
+  want.then(T=>{ try{ draw(T); }catch(e){ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"},"This table could not be built: "+((e&&e.message)||e))); } });
+  return box;
+}
 function renderLeague(){
   const root=$("#viewLeague"); if(!root) return;
   const L=leagueState();
@@ -22481,6 +22688,8 @@ function renderLeague(){
       h("div",{class:"scout-placeholder"},"Press Sync. Without an API key you get clearly marked demo data so the layout can be checked; with the key the same screen fills with the real league.")));
     return;
   }
+  /* the club being shown, read from every panel below, before the first of them */
+  try{ const dash=_lgTeamDash(L); if(dash) root.appendChild(h("div",{style:"margin-top:14px"}, dash)); }catch(e){ try{ console.warn("league dash", e); }catch(_){} }
   root.appendChild(h("div",{style:"margin-top:14px"}, _lgResults(L)));
   root.appendChild(h("div",{class:"lg-grid"}, _lgStandings(L), _lgCalendar(L)));
   root.appendChild(h("div",{style:"margin-top:14px"}, _lgEuro(L)));
@@ -27818,6 +28027,27 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pbb-note-2 i{font-style:normal;font-size:10px;color:var(--ink-faint,#8a93a2);text-transform:uppercase;letter-spacing:.06em}
 @media (max-width:1100px){ .pbb-main{grid-template-columns:minmax(0,1fr)} .pbb-key{position:static}
   .pbb-r{grid-template-columns:24px 70px minmax(100px,1fr) 60px 46px;row-gap:3px} .pbb-c-call,.pbb-c-efg{display:none} .pbb-c-adj{grid-column:2 / -1} .pbb-h .pbb-c-adj{display:none} }
+
+/* post game / practice: the trainings between two games, folded */
+.ym-trg{margin:3px 0}
+.ym-trg-h{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;border:1.5px dashed var(--line-strong,#cfd4dc);border-radius:8px;
+  background:transparent;color:var(--ink,#141821);padding:5px 9px;cursor:pointer;font:inherit;font-size:12px;text-align:left}
+.ym-trg-h:hover{border-color:var(--accent,#c6a15b)}
+.ym-trg-h b{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase}
+.ym-trg-n{font:600 10px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.ym-trg-d{margin-left:auto;font:500 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+.ym-trg-c{flex:none;width:16px;height:16px;border-radius:50%;transition:transform .2s ease;
+  background:var(--accent,#c6a15b) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18'%3E%3Cpath d='M7 4.5l5 4.5-5 4.5' fill='none' stroke='%2314130b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/16px 16px no-repeat}
+.ym-trg.open .ym-trg-c{transform:rotate(90deg)}
+.ym-trg-b{display:none;padding:2px 0 2px 10px;border-left:2px solid var(--line,#e4e7ec);margin-left:8px}
+.ym-trg.open .ym-trg-b{display:block}
+.ym-trg-bar{display:flex;align-items:center;gap:8px;margin:0 0 10px}
+.ym-trg-bar span{font-size:11.5px;color:var(--ink-faint,#8a93a2)}
+.ym-trg-all{font:700 10.5px/1 'Oswald',sans-serif!important;letter-spacing:.12em!important;color:var(--ink,#141821)!important;border:1.5px solid var(--line-strong,#cfd4dc)!important;padding:6px 13px 6px 8px!important}
+.lg-dash{margin:0}
+.pjp{margin-top:6px}
+.pjp .sx-table td:first-child{text-align:left;font-weight:600}
+.pjp .sx-table th:nth-child(9),.pjp .sx-table td:nth-child(9){border-left:3px solid var(--ink,#141821)}
 
 /* THE FOLD: ONE WAY TO OPEN AND CLOSE, EVERYWHERE.
    A section of a report closed with a small minus sign in a circle, a league table opened

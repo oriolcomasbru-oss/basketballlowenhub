@@ -2781,6 +2781,13 @@
   /* what the written report's Playbook section reads: the computed sets for an
      opponent, grouped the same four ways the table below groups them */
   API.report = buildFor;
+  /* the tagged players of an opponent, for the table that sets them beside the league's line */
+  API.playersOf = function (opponent) {
+    return buildFor(opponent).then(function (R) {
+      if (!R.D) return { rows: [], why: R.why };
+      return { rows: R.D.players.rows, roles: R.D.players.roles, avg: R.D.say.selfPpp, games: R.D.meta.ngames };
+    });
+  };
   API.sets = function (opponent, band) {
     return buildFor(opponent).then(function (R) {
       if (!R.D) return { why: R.why, files: R.files, rows: [] };
