@@ -2683,7 +2683,7 @@
                 measured ? st.fb + " (" + pctF(100 * st.fb / st.poss) + ")" : "not tagged",
                 (measured ? st.ptRest : st.ptP) + " (" + pctF(100 * (measured ? st.ptRest : st.ptP) / st.poss) + ")",
                 { v: sh + "%", cls: "sx-vol " + volStep(sh) },
-                isFinite(oer) ? { v: f2(oer), cls: "sx-vol " + volStep(100 * Math.min(1.6, oer) / 1.6) }
+                isFinite(oer) ? { v: f2(oer), cls: "sx-cell " + pppStep(oer) }
                               : { v: "\u2014", cls: "" },
                 measured ? (sh >= 70 ? "Perfect" : sh >= 65 ? "Ok" : sh >= 60 ? "Regular" : "Below") : "floor only"];
             })));
@@ -3106,7 +3106,7 @@
           rest + " (" + pct0f(100 * rest / st.poss) + ")",
           { v: sh + "%", cls: "sx-vol " + volStep(sh) },
           isFinite(oer) ? { v: f2(oer),
-            cls: "sx-vol " + volStep(100 * Math.min(1.6, oer) / 1.6) } : { v: "—", cls: "tr-none" },
+            cls: "sx-cell " + pppStep(oer) } : { v: "—", cls: "tr-none" },
           opts.target
             ? (m ? (sh >= 70 ? "Perfect" : sh >= 65 ? "Ok" : sh >= 60 ? "Regular" : "Below") : "floor only")
             : { v: (v >= avg ? "+" : "−") + Math.round(Math.abs(v - avg)) + "%",
@@ -3193,7 +3193,7 @@
       var worse = (isFinite(p.s.tagPpp) && isFinite(p.s.backPpp))
         ? (p.s.tagPpp > p.s.backPpp ? "TAG" : "BACK") : "—";
       var cell = function (v) { return isFinite(v)
-        ? { v: f2(v), cls: "sx-vol " + volStep(100 * Math.min(1.5, v || 0) / 1.5) } : { v: "—", cls: "tr-none" }; };
+        ? { v: f2(v), cls: "sx-cell " + pppStepD(v) } : { v: "—", cls: "tr-none" }; };
       return [p.kind === "game" ? p.label : p.d, p.kind === "game" ? "Game" : "Training",
         p.s.tagN, p.s.tagP, cell(p.s.tagPpp), p.s.backN, p.s.backP, cell(p.s.backPpp), cell(p.s.allPpp), worse];
     });
@@ -3297,11 +3297,11 @@
         var e = p.s.m[k];
         if (!e) return { v: "—", cls: "tr-none" };
         var v = e.pts / e.n;
-        return { v: e.n + " · " + f2(v), cls: "sx-vol " + volStep(100 * Math.min(1.6, v) / 1.6) };
+        return { v: e.n + " · " + f2(v), cls: "sx-cell " + pppStep(v) };
       }));
       cells.push(t.n);
       cells.push(shareCellLike(totAll ? Math.round(100 * t.n / totAll) : 0));
-      cells.push(t.n >= 4 ? { v: f2(t.pts / t.n), cls: "sx-vol " + volStep(100 * Math.min(1.6, t.pts / t.n) / 1.6) }
+      cells.push(t.n >= 4 ? { v: f2(t.pts / t.n), cls: "sx-cell " + pppStep(t.pts / t.n) }
                           : { v: f2(t.pts / t.n), cls: "tr-thin" });
       return cells;
     }), { sort: false }));
@@ -3397,11 +3397,11 @@
         var v = c.pts / c.n;
         seq.push(v);
         cells.push({ v: c.n + " · " + f2(v),
-          cls: "sx-vol " + volStep(100 * Math.min(1.6, v) / 1.6) });
+          cls: "sx-cell " + pppStep(v) });
       });
       cells.push(r.n);
       cells.push(r.n >= MIN
-        ? { v: f2(ppp), cls: "sx-vol " + volStep(100 * Math.min(1.6, ppp) / 1.6) }
+        ? { v: f2(ppp), cls: "sx-cell " + pppStep(ppp) }
         : { v: f2(ppp), cls: "tr-thin" });
       /* the trend, over the nights it was run and no others */
       if (seq.length < MINGAMES) cells.push({ v: seq.length + " game" + (seq.length === 1 ? "" : "s"), cls: "tr-thin" });

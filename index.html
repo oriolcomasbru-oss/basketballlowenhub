@@ -8682,6 +8682,72 @@ document.addEventListener("keydown", e=>{
   e.preventDefault(); e.stopImmediatePropagation();
   if(k==="y" || e.shiftKey) Hh.redo(); else Hh.undo();
 }, true);
+/* THE PARTS EVERY REPORT IS BUILT FROM.
+   Post game, post practice, pre game, Trends and the league each grew their own way of
+   saying the same three things: here is the headline, here are the figures behind it,
+   here is what stands out. So they do not look like one tool. These are the shared
+   parts, used by all of them and reachable from the other scripts as window.UIKit.
+
+   A TONE is what a figure means, never how big it is:
+     good     better for us than the reference      green
+     bad      worse for us than the reference       red
+     vol      a volume, a count, a share            blue
+     neutral  no reference, or too little of it     plain
+   "Better for us" is decided where the figure is made - conceding fewer points per
+   possession is good, an opponent's high efficiency is bad - which is why a tone is
+   passed in and never guessed here from the size of a number. */
+const UI_TONES={ good:1, bad:1, vol:1, neutral:1 };
+function uiTone(t){ return UI_TONES[t]? t : "neutral"; }
+/* better or worse than a reference, for a figure where `hi` says which way is good;
+   inside `band` of the reference, or with too few `n`, it is neither */
+function uiToneOf(v, ref, hi, band, n, minN){
+  if(v==null || ref==null || !isFinite(v) || !isFinite(ref)) return "neutral";
+  if(n!=null && minN!=null && n<minN) return "neutral";
+  const d=v-ref;
+  if(Math.abs(d)<=(band||0)) return "neutral";
+  return ((d>0)===!!hi)? "good" : "bad";
+}
+/* WHICH THINGS ARE WORTH SAYING, AND IN WHAT ORDER.
+   A summary that always lists the same three figures is not a summary. Every candidate
+   comes with how far it is from its reference (size, 0 to 1), how much it rests on (n,
+   against the n that would make it solid) and how much it matters for the game (weight).
+   A big difference on four possessions does not outrank a clear one on forty; what rests
+   on too little is left out, not printed small. */
+function uiPick(list, max){
+  return (list||[]).filter(x=>x && x.text && !(x.minN!=null && x.n!=null && x.n<x.minN))
+    .map(x=>{ const conf=(x.n==null || !x.solidN)? 1 : Math.min(1, x.n/x.solidN);
+      return Object.assign({}, x, { w:(x.size==null? 0.5 : Math.max(0, Math.min(1, x.size)))*conf*(x.weight||1) }); })
+    .sort((a,b)=>b.w-a.w).slice(0, max||6);
+}
+/* A SUMMARY CARD: a title, a row of figures, and the few sentences that matter.
+   figures: [{ label, value, note, tone }]      ideas: [{ text, tone, n }] or groups of them:
+   groups: [{ title, ideas:[...] }] */
+function uiSummary(o){
+  o=o||{};
+  const card=h("div",{class:"ui-sum"+(o.cls? " "+o.cls : "")});
+  if(o.title || o.sub) card.appendChild(h("div",{class:"ui-sum-h"},
+    h("b",{}, o.title||""), o.sub? h("span",{}, o.sub) : null));
+  if((o.figures||[]).length){
+    card.appendChild(h("div",{class:"ui-figs"}, o.figures.map(f=>h("div",{class:"ui-fig "+uiTone(f.tone), title:f.title||""},
+      h("i",{}, f.label||""), h("b",{}, f.value==null? "—" : String(f.value)), f.note? h("span",{}, f.note) : null))));
+  }
+  const ideasOf=list=>h("ul",{class:"ui-ideas"}, (list||[]).map(x=>h("li",{class:uiTone(x.tone)},
+    h("span",{}, x.text), (x.n!=null)? h("em",{title:"what this rests on"}, String(x.n)+(x.unit? " "+x.unit : "")) : null)));
+  if((o.groups||[]).length){
+    card.appendChild(h("div",{class:"ui-groups"}, o.groups.filter(g=>g && (g.ideas||[]).length).map(g=>
+      h("div",{class:"ui-group"}, h("div",{class:"ui-group-h"}, g.title||""), ideasOf(g.ideas)))));
+  } else if((o.ideas||[]).length) card.appendChild(ideasOf(o.ideas));
+  if(o.empty && !(o.figures||[]).length && !(o.ideas||[]).length && !(o.groups||[]).some(g=>(g.ideas||[]).length))
+    card.appendChild(h("div",{class:"ui-sum-e"}, o.empty));
+  return card;
+}
+/* the key to the colours, the same sentence wherever a report uses them */
+function uiColourKey(){
+  return h("div",{class:"ui-key"},
+    h("span",{}, h("i",{class:"good"}), "better for us"), h("span",{}, h("i",{class:"bad"}), "worse for us"),
+    h("span",{}, h("i",{class:"vol"}), "volume, how often"), h("span",{}, h("i",{class:"neutral"}), "no reference, or too few"));
+}
+try{ window.UIKit={ tone:uiToneOf, pick:uiPick, summary:uiSummary, colourKey:uiColourKey }; }catch(e){}
 /* WHAT IS THE PAGE DOING WHEN IT FEELS SLOW.
    A page that is slow on one machine, with one report and one session, and fine on the
    bench, cannot be fixed by reading the code: every guess is as good as the next. This is
@@ -26826,6 +26892,42 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 .lgg{--lgh:#c6a15b;--lga:#4a86d8;position:relative;width:min(1080px,100%);background:var(--panel,#fff);color:var(--ink,#141821);border:1px solid var(--line,#e4e7ec);border-radius:16px;padding:18px 22px 22px;box-shadow:0 24px 60px rgba(0,0,0,.35)}
 .lgg-x{position:absolute;top:10px;right:12px;width:32px;height:32px;border-radius:50%;border:1px solid var(--line,#e4e7ec);background:transparent;color:var(--ink-soft,#5b6472);font-size:20px;line-height:1;cursor:pointer}
 .lgg-x:hover{background:var(--line,#e4e7ec);color:var(--ink,#141821)}
+/* THE SHARED PARTS OF A REPORT (see UIKit in the script) */
+.ui-sum{border:1px solid var(--line,#e4e7ec);border-radius:14px;background:var(--panel,#fff);padding:14px 18px 16px;margin:0 0 16px;
+  box-shadow:inset 0 4px 0 var(--accent,#c6a15b)}
+.ui-sum-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.ui-sum-h b{font:700 15px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase}
+.ui-sum-h span{font-size:11.5px;color:var(--ink-faint,#8a93a2)}
+.ui-figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin-bottom:12px}
+.ui-fig{display:flex;flex-direction:column;gap:1px;border-radius:9px;padding:8px 10px;background:var(--panel-2,#f4f5f7);border-left:4px solid transparent;min-width:0}
+.ui-fig i{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.ui-fig b{font:700 21px/1.15 'Inter',system-ui,sans-serif;font-variant-numeric:tabular-nums;color:var(--ink,#141821)}
+.ui-fig span{font-size:10.5px;color:var(--ink-soft,#5b6472);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ui-fig.good{border-left-color:#2f9e86;background:rgba(47,158,134,.10)}.ui-fig.good b{color:#17805a}
+.ui-fig.bad{border-left-color:#d8524e;background:rgba(216,82,78,.09)}.ui-fig.bad b{color:#c0403c}
+.ui-fig.vol{border-left-color:#4a86d8;background:rgba(74,134,216,.09)}.ui-fig.vol b{color:#2f6cc0}
+.ui-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:6px 22px}
+.ui-group-h{font:700 10px 'Oswald',sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);
+  border-bottom:1px solid var(--line,#e4e7ec);padding-bottom:3px;margin-bottom:4px}
+.ui-ideas{list-style:none;margin:0;padding:0}
+.ui-ideas li{display:flex;align-items:baseline;gap:8px;font-size:12.5px;line-height:1.35;padding:4px 0 4px 10px;margin:3px 0;border-left:3px solid var(--line-strong,#cfd4dc)}
+.ui-ideas li span{flex:1 1 auto;min-width:0}
+.ui-ideas li em{flex:none;font:500 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
+.ui-ideas li.good{border-left-color:#2f9e86}.ui-ideas li.bad{border-left-color:#d8524e}.ui-ideas li.vol{border-left-color:#4a86d8}
+.ui-sum-e{font-size:12px;color:var(--ink-faint,#8a93a2)}
+.ui-key{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:11px;color:var(--ink-soft,#5b6472);margin:0 0 10px}
+.ui-key span{display:inline-flex;align-items:center;gap:6px}
+.ui-key i{width:11px;height:11px;border-radius:3px;display:inline-block;box-shadow:inset 0 0 0 1px var(--line-strong,#cfd4dc)}
+.ui-key i.good{background:#2f9e86;box-shadow:none}.ui-key i.bad{background:#d8524e;box-shadow:none}.ui-key i.vol{background:#4a86d8;box-shadow:none}
+/* ONE TABLE. The tagging tables of the post game, those of the pre game and the game-by-game
+   matrices were three designs. Their headings and figures share one typography now; what
+   each cell means is still said by its own colour (green and red for a rate, blue for a
+   volume). */
+body .sx-table th,body .sxp-t th,body .trg-mx thead th{font:700 9.5px/1.2 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+body .sx-table td,body .sxp-t td,body .trg-mx td{font-size:12.5px;font-variant-numeric:tabular-nums}
+body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first-child{box-shadow:inset 3px 0 0 var(--accent,#c6a15b)}
+
 /* THE FOLD: ONE WAY TO OPEN AND CLOSE, EVERYWHERE.
    A section of a report closed with a small minus sign in a circle, a league table opened
    with a grey line of small capitals, and a table in the tagging opened with the
