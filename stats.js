@@ -2060,6 +2060,20 @@
     });
   }
 
+  /* THE SAME GAME, AS NUMBERS AND NOT AS A PAGE. The overview at the top of a post game
+     reads the tagging beside the league's play by play, so it needs the possessions and
+     not the tables drawn from them. Nothing is fetched twice: the folder list and the
+     file are the ones the Team stats block reads. Null when the game has no file yet. */
+  function gameModel(opponent, date) {
+    return listFolder("game").then(function (files) {
+      var f = findGameFile(files, opponent, date);
+      if (!f) return null;
+      return getRows(f.id).then(function (rows) {
+        return { model: buildGame(rows), name: f.name.replace(/\.csv$/i, "") };
+      });
+    });
+  }
+
   /* ==================================================================
      TRENDS & COMPARISON — every training and every game in one place.
      Season / month / week, and any two ranges side by side.
@@ -4768,6 +4782,7 @@
     /* published before boot: the written report can mount its block as soon as
        the file is parsed, without waiting for DOMContentLoaded */
     window.LowenPostStats = { mount: mountPostTeam, dropCache: dropCache,
+                              gameModel: gameModel, shotLine: shotLine, measured: measured, summarise: summarise,
                               datesWithFiles: datesWithFiles,
                               /* exposed so a report block can be rendered against a
                                  known file without driving the whole page */
