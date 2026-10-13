@@ -14609,6 +14609,8 @@ function renderTrends(){
   /* The older "Trends & comparison" panel used to sit under this one and drew the same
      paint-touch, reversal and PPP lines a second time. It is gone; the one thing in it
      that was not a repeat, the 70% measure, is section 06 of the dashboard. */
+  /* the reading of the whole season, from both sources, before any chart */
+  try{ root.appendChild(_trendsDashboard()); }catch(e){}
   root.appendChild(h("div",{class:"scout-panel"},
     h("div",{class:"scout-placeholder", "data-sx":"trends"},
       "Trends across every training and game.")));
@@ -14670,7 +14672,7 @@ const LG_SHOOT=[
    long, what was scored after a turnover and after an offensive rebound, and one line per
    player - and the sheet is let go. A game that has been played does not change, so its
    line is kept in this browser and only a new game is ever read again. */
-const TRG_VER=1, TRG_KEY="lowen.trg.v"+TRG_VER;
+const TRG_VER=3, TRG_KEY="lowen.trg.v"+TRG_VER;
 let _trgMemo=null;
 function _trgStore(){ try{ const o=JSON.parse(localStorage.getItem(TRG_KEY)||"{}"); return (o && typeof o==="object")? o : {}; }catch(e){ return {}; } }
 function _trgSave(o){ try{ localStorage.setItem(TRG_KEY, JSON.stringify(o)); }catch(e){} }
@@ -14713,12 +14715,69 @@ function _trgGame(x, j, tid){
   const rb={ u:0, t:0 }; let cur=null, cp=0;
   F.ev.forEach(e=>{ const me=(e.home===home)?"u":"t"; if(cur===me) cp+=e.v; else { cur=me; cp=e.v; } if(cp>rb[me]) rb[me]=cp; });
   const run=mine=>mine? rb.u : rb.t;
-  return { hs:x.hs, as:x.as, home:home, ok:!!F.ok,
+  /* WHO WAS ON THE FLOOR, AND THE STRETCHES THAT MOVED THE SCORE.
+     Our five at every moment: the five the feed names at the start of each period, moved
+     by every substitution of ours. A stretch is the part of the game where one side
+     outscored the other by the most - found on the sequence of baskets, then again on
+     what is left either side of it - and is kept when it is worth eight points or more.
+     Each is stored with the score before and after it and with every five of ours that
+     was on during it, so nothing has to be said about a five that was only on for part. */
+  const stints=[];
+  { const stq={}; (j.feed.starters||[]).forEach(s=>{ if(s.teamcode!==uc) return; const q=_lgGameElapsed(s.quarter,0).qi;
+      stq[q]=[1,2,3,4,5].map(n=>String(s["player_id"+n]||"")).filter(v=>v && v!=="0"); });
+    const A2=(j.feed.actions||[]).map((a,i)=>{ const e=_lgGameElapsed(a.quarter, a.time); return { a:a, t:e.t, qi:e.qi, i:i }; }).sort((p,q)=>(p.t-q.t)||(p.i-q.i));
+    let maxQ=3; A2.forEach(o=>{ if(o.qi>maxQ) maxQ=o.qi; });
+    let on=new Set();
+    for(let q=0;q<=maxQ;q++){
+      const base=q<4? q*600 : 2400+(q-4)*300, len=q<4? 600 : 300;
+      if(stq[q] && stq[q].length) on=new Set(stq[q]);
+      let cur=base;
+      A2.filter(o=>o.qi===q).forEach(o=>{ const a=o.a;
+        if(a.action!=="SUBST" || a.teamcode!==uc) return;
+        if(o.t>cur) stints.push({ t0:cur, t1:o.t, ids:Array.from(on) });
+        on.delete(String(a.player_id1)); const inn=String(a.player_id2||""); if(inn && inn!=="0") on.add(inn);
+        cur=Math.max(cur, o.t); });
+      if(base+len>cur) stints.push({ t0:cur, t1:base+len, ids:Array.from(on) });
+    }
+  }
+  const runs=[];
+  { const ev=F.ev, val=e=>((e.home===home)? e.v : -e.v);
+    /* A run is a stretch one side owns, not merely one it wins: every point of the other
+       side inside it is counted two and a half times against it while it is being found,
+       so it stops where the other side starts answering. Without that the "run" of a
+       game won by fifteen was most of the game. What is kept is worth eight real points. */
+    const find=(lo, hi, sg, acc)=>{
+      if(hi-lo<2) return;
+      let best=0, bi=-1, bj=-1, cur=0, ci=lo;
+      for(let i=lo;i<hi;i++){ const r=sg*val(ev[i]), v=r>0? r : 2.5*r; if(cur<=0){ cur=v; ci=i; } else cur+=v; if(cur>best){ best=cur; bi=ci; bj=i; } }
+      if(bi<0) return;
+      let real=0; for(let i=bi;i<=bj;i++) real+=sg*val(ev[i]);
+      if(real<8){ if(best<=0) return; find(lo, bi, sg, acc); find(bj+1, hi, sg, acc); return; }
+      acc.push({ i0:bi, i1:bj, net:real });
+      find(lo, bi, sg, acc); find(bj+1, hi, sg, acc);
+    };
+    [["u",1],["t",-1]].forEach(sd=>{ const acc=[]; find(0, ev.length, sd[1], acc);
+      acc.sort((a,b)=>b.net-a.net).slice(0,3).forEach(w=>{
+        const before=w.i0>0? ev[w.i0-1] : { t:0, h:0, a:0 }, after=ev[w.i1];
+        const t0=before.t, t1=after.t;
+        let pf=0, pa=0; for(let i=w.i0;i<=w.i1;i++){ if(ev[i].home===home) pf+=ev[i].v; else pa+=ev[i].v; }
+        const fm={}; stints.forEach(s=>{ const o=Math.min(s.t1,t1)-Math.max(s.t0,t0); if(o<=0 || s.ids.length!==5) return;
+          const k=s.ids.slice().sort().join(","); fm[k]=(fm[k]||0)+o; });
+        const fives=Object.keys(fm).map(k=>({ ids:k.split(","), sec:fm[k] })).sort((a,b)=>b.sec-a.sec);
+        runs.push({ sd:sd[0], t0:t0, t1:t1, sb:home? [before.h,before.a] : [before.a,before.h], se:home? [after.h,after.a] : [after.a,after.h],
+          pf:pf, pa:pa, fives:fives.slice(0,4), nf:fives.length }); }); });
+    runs.sort((a,b)=>a.t0-b.t0);
+  }
+  /* each of our players: where his points came from, and his index quarter by quarter */
+  const srcOf={}; (S.shots||[]).forEach(s=>{ if(!s.made || s.three) return; if(s.zone==="rim" || s.zone==="paint") srcOf[s.pid]=(srcOf[s.pid]||0)+2; });
+  const qPir={};
+  for(let q=0;q<4;q++){ try{ const o={}; o[q]=1; const mq=_lgGameModel(x, j, o); (home? mq.H : mq.A).pl.forEach(p=>{ (qPir[p.id]=qPir[p.id]||[null,null,null,null])[q]=p.pir; }); }catch(e){} }
+  return { hs:x.hs, as:x.as, home:home, ok:!!F.ok, runs:runs,
     us:side(S,"u"), them:side(O,"t"), seg:seg, ot:F.nq>4,
     lead:{ us:home?F.secH:F.secA, them:home?F.secA:F.secH, tie:F.secT, total:F.total,
            maxUs:home?F.maxH:F.maxA, maxThem:home?F.maxA:F.maxH, chg:F.changes, runUs:run(true), runThem:run(false) },
     pl:S.pl.map(p=>({ i:p.id, n:p.num, nm:p.name, st:p.st?1:0, s:p.sec, p:p.pts, r:p.reb, a:p.ast, t:p.tov,
-      pm:p.pm, pir:p.pir, fm:p.fgm, fa:p.fga, tm:p.p3m, ta:p.p3a })) };
+      pm:p.pm, pir:p.pir, fm:p.fgm, fa:p.fga, tm:p.p3m, ta:p.p3a, f1:p.ftm, pa:Math.min(srcOf[p.id]||0, 2*(p.fgm-p.p3m)), qp:qPir[p.id]||null })) };
 }
 function _trgRead(onProg){
   if(_trgMemo) return _trgMemo;
@@ -14753,7 +14812,13 @@ function _trgRead(onProg){
       const oppId=home? x.awayId : x.homeId, oppName=home? x.away : x.home;
       return Object.assign({ g:x, cup:!inLeague[x.id], opp:_lgShort(oppName)||String(oppName||""),
         code:String(tlc[oppId]||_lgShort(oppName)||"").replace(/[^A-Za-zÀ-ſ]/g,"").slice(0,3).toUpperCase() }, store[x.id]); });
-    return { tid:tid, games:out, missing:games.length-out.length };
+    /* the positions as the roster has them - never guessed from a height or a line */
+    const pos={};
+    try{ const ros=await fetch("/.netlify/functions/bbl?res=roster&id="+encodeURIComponent(tid)+"&season="+encodeURIComponent(L.season||"")).then(r=>r.ok? r.json() : null).catch(()=>null);
+      ((ros&&ros.players)||[]).forEach(p=>{ const s=String(p.pos||"").toUpperCase();
+        const lab=/POINT/.test(s)? "PG" : /SHOOTING/.test(s)? "SG" : /SMALL/.test(s)? "SF" : /POWER/.test(s)? "PF" : /CENT/.test(s)? "C" : /GUARD/.test(s)? "G" : /FORWARD/.test(s)? "F" : "";
+        if(lab){ pos[String(p.id)]=lab; if(p.pid) pos[String(p.pid)]=lab; } }); }catch(e){}
+    return { tid:tid, games:out, missing:games.length-out.length, pos:pos };
   })();
   _trgMemo=p;
   p.catch(()=>{ if(_trgMemo===p) _trgMemo=null; });
@@ -14766,6 +14831,169 @@ function _trgRead(onProg){
    the same thing broken into what makes it; when in a game the score moved; where the
    points came from; who was in front; the four factors and the shooting; and every player,
    game by game. */
+/* WHERE THE TEAM IS, AND WHERE IT IS HEADING - FROM EVERYTHING, NOT FROM TWO MEASURES.
+   The key ideas of Trends were read off the tagging alone, and mostly off paint touches
+   and ball reversals. This reads every game of ours twice - the league's play by play and
+   our own tagging of the same night, matched by its date - and says what is getting
+   better, what is getting worse, what holds, what repeats game after game, and what
+   moves together with a bad night. Each sentence carries how many games it rests on. A
+   change is the last games against the ones before, every rate added up before it is
+   divided; "moves with" is two averages set side by side, and is called an association
+   because that is all it is. With few games played it says little, on purpose. */
+function _trendsDashboard(){
+  const box=h("div",{class:"scout-panel trd sx"});
+  box.appendChild(h("div",{class:"ld"},"Reading the season, game by game…", h("span",{class:"ld-bar"})));
+  let R=null;
+  const draw=()=>{ if(!R) return; box.innerHTML="";
+    try{ box.appendChild(_trendsDashDraw(R, window.LowenTrendsData||null)); }
+    catch(e){ box.appendChild(h("div",{class:"lg-empty"},"The season dashboard could not be built: "+((e&&e.message)||e))); try{ console.warn("trends dash", e); }catch(_){} } };
+  _trgRead().then(r=>{ R=r; draw(); }).catch(()=>{ box.innerHTML=""; box.style.display="none"; });
+  const on=()=>{ if(!box.isConnected){ window.removeEventListener("lowen-trends", on); return; } draw(); };
+  window.addEventListener("lowen-trends", on);
+  return box;
+}
+function _trendsDashDraw(R, TD){
+  const K0=window.UIKit, API=window.LowenPostStats||{};
+  const G=R.games, N=G.length, out=h("div",{});
+  if(N<2){ out.appendChild(K0.summary({ title:"The season so far", empty:"Two finished games are needed before anything can be said about a trend." })); return out; }
+  const K=(N>=6)? 3 : (N>=4? 2 : 0);
+  const KEYS=Object.keys(G[0].us);
+  const tot=list=>{ const T={ us:{}, them:{}, n:list.length };
+    KEYS.forEach(k=>{ T.us[k]=list.reduce((a,g)=>a+(g.us[k]||0),0); T.them[k]=list.reduce((a,g)=>a+(g.them[k]||0),0); }); return T; };
+  const one=g=>tot([g]);
+  const ALL=tot(G), REC=K? tot(G.slice(-K)) : null, BEF=K? tot(G.slice(0,N-K)) : null;
+  const f0=v=>String(Math.round(v)), f1=v=>v.toFixed(1), f2=v=>v.toFixed(2), fP=v=>Math.round(v)+"%";
+  const u=T=>T.us, t=T=>T.them;
+  const MET=[
+    { n:"Offensive rating", of:T=>u(T).poss? 100*u(T).pts/u(T).poss : NaN, hi:true, f:f1, sc:10, w:1.3, main:1 },
+    { n:"Defensive rating", of:T=>t(T).poss? 100*t(T).pts/t(T).poss : NaN, hi:false, f:f1, sc:10, w:1.3, main:1 },
+    { n:"Our eFG", of:T=>u(T).fga? 100*(u(T).fgm+0.5*u(T).p3m)/u(T).fga : NaN, hi:true, f:fP, sc:5, main:1 },
+    { n:"Their eFG", of:T=>t(T).fga? 100*(t(T).fgm+0.5*t(T).p3m)/t(T).fga : NaN, hi:false, f:fP, sc:5 },
+    { n:"Our turnover rate", of:T=>{ const p=u(T).fga+0.44*u(T).fta+u(T).tov; return p? 100*u(T).tov/p : NaN; }, hi:false, f:fP, sc:3.5 },
+    { n:"Offensive rebound share", of:T=>(u(T).oreb+t(T).dreb)? 100*u(T).oreb/(u(T).oreb+t(T).dreb) : NaN, hi:true, f:fP, sc:6 },
+    { n:"Defensive rebound share", of:T=>(u(T).dreb+t(T).oreb)? 100*u(T).dreb/(u(T).dreb+t(T).oreb) : NaN, hi:true, f:fP, sc:6 },
+    { n:"Free throw rate", of:T=>u(T).fga? 100*u(T).fta/u(T).fga : NaN, hi:true, f:fP, sc:8 },
+    { n:"Points in the paint", of:T=>u(T).paint/T.n, hi:true, f:f1, sc:8 },
+    { n:"Their points in the paint", of:T=>t(T).paint/T.n, hi:false, f:f1, sc:8 },
+    { n:"Points off turnovers", of:T=>u(T).pot/T.n, hi:true, f:f1, sc:5 },
+    { n:"Their points off our turnovers", of:T=>t(T).pot/T.n, hi:false, f:f1, sc:5 },
+    { n:"Second chance points", of:T=>u(T).sc/T.n, hi:true, f:f1, sc:4 },
+    { n:"Their second chance points", of:T=>t(T).sc/T.n, hi:false, f:f1, sc:4 },
+    { n:"Bench points", of:T=>u(T).bench/T.n, hi:true, f:f1, sc:8 },
+    { n:"Assisted baskets", of:T=>u(T).fgm? 100*u(T).ast/u(T).fgm : NaN, hi:true, f:fP, sc:8 },
+    { n:"Threes as a share of our shots", of:T=>u(T).fga? 100*u(T).p3a/u(T).fga : NaN, hi:null, f:fP, sc:6 },
+    { n:"Fouls committed", of:T=>u(T).pf/T.n, hi:false, f:f1, sc:4 }
+  ];
+  const up=[], down=[], hold=[], rep=[];
+  if(K) MET.forEach(m=>{
+    const a=m.of(REC), b=m.of(BEF); if(!isFinite(a) || !isFinite(b)) return;
+    const z=Math.abs(a-b)/m.sc;
+    const txt=m.n+": "+m.f(b)+" → "+m.f(a);
+    if(m.hi==null){ if(z>=0.6) hold.push({ text:txt+" (neither good nor bad in itself)", tone:"vol", size:Math.min(1,z/2), n:K, solidN:4, unit:"games" }); return; }
+    if(z>=0.5) ((a>b)===m.hi? up : down).push({ text:txt, tone:((a>b)===m.hi)? "good" : "bad", size:Math.min(1,z/2), n:K, solidN:4, unit:"games", weight:m.w||1 });
+    else if(m.main && z<0.25) hold.push({ text:m.n+" holds at "+m.f(a), tone:"neutral", size:0.5, n:N, solidN:5, unit:"games" });
+  });
+  /* ---- our tagging of the same nights */
+  const day=d=>Math.round(new Date(d+"T12:00:00Z").getTime()/86400000);
+  const tg=(TD && TD.games)||[];
+  const tagOf=g=>tg.filter(x=>x.d===g.g.date)[0] || tg.filter(x=>x.d && Math.abs(day(x.d)-day(g.g.date))<=1)[0] || null;
+  const tagged=G.map(tagOf);
+  const nTag=tagged.filter(Boolean).length;
+  const pool=list=>{ const l=list.filter(Boolean).map(x=>x.s); return (l.length && API._t && API._t.addUp)? API._t.addUp(l) : null; };
+  let ptAll=null;
+  if(nTag && API.measured){
+    const sAll=pool(tagged); ptAll=sAll? API.measured(sAll,"pt") : null;
+    if(K){
+      const a=pool(tagged.slice(-K)), b=pool(tagged.slice(0,N-K));
+      if(a && b){
+        [["Paint touches","pt",8,true,fP],["Ball reversals","br",8,true,fP]].forEach(d=>{
+          const va=API.measured(a,d[1]), vb=API.measured(b,d[1]); if(!isFinite(va)||!isFinite(vb)) return;
+          const z=Math.abs(va-vb)/d[2]; if(z<0.5) return;
+          (va>vb? up : down).push({ text:d[0]+": "+d[4](vb)+" → "+d[4](va), tone:va>vb? "good" : "bad", size:Math.min(1,z/2), n:a.poss, solidN:120, unit:"poss" }); });
+        if(a.ppp!=null && b.ppp!=null && Math.abs(a.ppp-b.ppp)>=0.06)
+          (a.ppp>b.ppp? up : down).push({ text:"Tagged points per possession: "+f2(b.ppp)+" → "+f2(a.ppp), tone:a.ppp>b.ppp? "good" : "bad",
+            size:Math.min(1,Math.abs(a.ppp-b.ppp)/0.25), n:a.poss, solidN:120, unit:"poss" });
+      }
+    }
+    /* the sets that moved the most: their last games against the ones before, three runs a side at least */
+    ((TD && TD.sets)||[]).forEach(x=>{
+      const gs=Object.keys(x.per||{}).map(Number).sort((p,q)=>p-q); if(gs.length<3) return;
+      const k=Math.min(3, Math.floor(gs.length/2));
+      const sm=l=>{ let n=0,p=0; l.forEach(i=>{ n+=x.per[i].n; p+=x.per[i].pts; }); return { n:n, p:p }; };
+      const a=sm(gs.slice(-k)), b=sm(gs.slice(0,gs.length-k)); if(a.n<3 || b.n<3) return;
+      const d=a.p/a.n-b.p/b.n; if(Math.abs(d)<0.3) return;
+      (d>0? up : down).push({ text:"Set "+x.k+": "+f2(b.p/b.n)+" → "+f2(a.p/a.n)+" per possession", tone:d>0? "good" : "bad",
+        size:Math.min(1,Math.abs(d)/0.8), n:a.n+b.n, solidN:16, unit:"runs", weight:0.9 }); });
+  }
+  /* ---- the players whose index moved */
+  if(K){ const men={}; G.forEach((g,gi)=>(g.pl||[]).forEach(p=>{ (men[p.i]=men[p.i]||{ nm:p.nm, per:[] }).per[gi]=p; }));
+    Object.keys(men).forEach(id=>{ const e=men[id];
+      const a=e.per.slice(N-K).filter(Boolean), b=e.per.slice(0,N-K).filter(Boolean);
+      if(!a.length || b.length<2) return;
+      const mins=a.concat(b).reduce((s,p)=>s+p.s,0)/60/(a.length+b.length); if(mins<12) return;
+      const av=l=>l.reduce((s,p)=>s+p.pir,0)/l.length, d=av(a)-av(b); if(Math.abs(d)<4) return;
+      (d>0? up : down).push({ text:_lgLastName(e.nm)+": index "+f1(av(b))+" → "+f1(av(a)), tone:d>0? "good" : "bad",
+        size:Math.min(1,Math.abs(d)/10), n:a.length+b.length, solidN:6, unit:"games", weight:0.8 }); }); }
+  /* ---- what repeats, game after game */
+  const M5=Math.min(5,N), L5=G.slice(-M5);
+  if(M5>=3){
+    const cnt=f=>L5.filter(f).length;
+    const said=(c, bad, txt, w)=>{ if(c>=M5-1 && c>=3) rep.push({ text:txt+" in "+c+" of the last "+M5, tone:bad? "bad" : "good", size:c/M5, n:M5, solidN:5, unit:"games", weight:w||1 }); };
+    ["first","second","third","fourth"].forEach((nm,q)=>{
+      said(cnt(g=>((g.seg||[])[2*q]||0)+((g.seg||[])[2*q+1]||0)<0), true, "Lost the "+nm+" quarter", 1.2);
+      said(cnt(g=>((g.seg||[])[2*q]||0)+((g.seg||[])[2*q+1]||0)>0), false, "Won the "+nm+" quarter", 1.1); });
+    said(cnt(g=>[1,3,5,7].reduce((a,b)=>a+((g.seg||[])[b]||0),0)<0), true, "Lost the last five minutes of the quarters, added up", 1.1);
+    said(cnt(g=>g.them.fga && g.us.fga && (g.them.fgm+0.5*g.them.p3m)/g.them.fga > (g.us.fgm+0.5*g.us.p3m)/g.us.fga), true, "They shot better than us", 1.2);
+    said(cnt(g=>g.us.tov>g.them.tov), true, "More turnovers than the opponent");
+    said(cnt(g=>g.us.oreb<g.them.oreb), true, "Fewer offensive rebounds than the opponent");
+    said(cnt(g=>g.us.oreb>g.them.oreb), false, "More offensive rebounds than the opponent");
+    said(cnt(g=>g.them.sc>g.us.sc), true, "They scored more off second chances");
+    said(cnt(g=>g.them.pot>g.us.pot), true, "They scored more off turnovers");
+    said(cnt(g=>g.them.paint>g.us.paint), true, "They scored more in the paint");
+    said(cnt(g=>g.us.paint>g.them.paint), false, "We scored more in the paint");
+    said(cnt(g=>(g.lead.maxUs||0)>=10 && g.us.pts<g.them.pts), true, "Led by ten or more and lost", 1.4);
+  }
+  /* ---- what moves with a bad night: two averages side by side */
+  const assoc=(label, score, lowIsBad, defs)=>{
+    if(N<4) return null;
+    const ref=score(ALL), bad=G.filter(g=>lowIsBad? score(one(g))<ref : score(one(g))>ref), good=G.filter(g=>bad.indexOf(g)<0);
+    if(bad.length<2 || good.length<2) return null;
+    const A=tot(bad), B=tot(good);
+    const rows=defs.map(d=>{ const a=d.of(A, bad), b=d.of(B, good); return (isFinite(a)&&isFinite(b))? { n:d.n, a:a, b:b, f:d.f, z:Math.abs(a-b)/d.sc } : null; })
+      .filter(Boolean).filter(r=>r.z>=0.6).sort((x,y)=>y.z-x.z).slice(0,4);
+    if(!rows.length) return null;
+    return { text:"In the "+bad.length+" games "+label+": "+rows.map(r=>r.n+" "+r.f(r.a)+" ("+r.f(r.b)+" in the others)").join(" · "),
+      tone:"neutral", size:Math.min(1,rows[0].z/2), n:bad.length, solidN:4, unit:"games" };
+  };
+  const tagMeasure=(key)=>(T, list)=>{ const s=pool(list.map(tagOf)); return (s && API.measured)? API.measured(s,key) : NaN; };
+  const byName=n=>MET.filter(m=>m.n===n)[0];
+  const aOff=assoc("under our season offensive rating", T=>byName("Offensive rating").of(T), true, [
+    byName("Points in the paint"), byName("Our turnover rate"), byName("Assisted baskets"), byName("Threes as a share of our shots"),
+    byName("Free throw rate"), byName("Offensive rebound share"), byName("Bench points"),
+    { n:"paint touches", of:tagMeasure("pt"), f:fP, sc:8 }, { n:"ball reversals", of:tagMeasure("br"), f:fP, sc:8 } ]
+    .map(d=>({ n:d.n.charAt(0).toLowerCase()+d.n.slice(1), of:d.of, f:d.f, sc:d.sc })));
+  const aDef=assoc("over our season defensive rating", T=>byName("Defensive rating").of(T), false, [
+    byName("Their points in the paint"), byName("Their second chance points"), byName("Their points off our turnovers"),
+    byName("Fouls committed"), byName("Defensive rebound share"), byName("Their eFG") ]
+    .map(d=>({ n:d.n.charAt(0).toLowerCase()+d.n.slice(1), of:d.of, f:d.f, sc:d.sc })));
+  /* ---- the card */
+  const wins=G.filter(g=>g.us.pts>g.them.pts).length;
+  const o=byName("Offensive rating").of(ALL), d=byName("Defensive rating").of(ALL);
+  const figs=[ { label:"Record", value:wins+"–"+(N-wins), note:N+" games read", tone:"vol" },
+    { label:"Net rating", value:(o-d>=0? "+" : "−")+Math.abs(o-d).toFixed(1), note:f1(o)+" scored · "+f1(d)+" conceded", tone:K0.tone(o, d, true, 1.5) } ];
+  if(K){ const oa=byName("Offensive rating").of(REC), ob=byName("Offensive rating").of(BEF), da=byName("Defensive rating").of(REC), db=byName("Defensive rating").of(BEF);
+    figs.push({ label:"Offense, last "+K, value:f1(oa), note:f1(ob)+" before", tone:K0.tone(oa, ob, true, 4) });
+    figs.push({ label:"Defense, last "+K, value:f1(da), note:f1(db)+" before", tone:K0.tone(da, db, false, 4) }); }
+  if(ptAll!=null && isFinite(ptAll)) figs.push({ label:"Paint touches", value:fP(ptAll), note:"target 70, floor 60 · "+nTag+" tagged", tone:ptAll>=70? "good" : ptAll<60? "bad" : "neutral" });
+  out.appendChild(K0.summary({ title:"Where we are, and where it is heading",
+    sub:N+" games from the play by play"+(nTag? " · "+nTag+" of them tagged" : " · the tagging has not been read yet")+(K? " · the last "+K+" against the "+(N-K)+" before" : ""),
+    figures:figs,
+    groups:[ { title:"Getting better", ideas:K0.pick(up,6) }, { title:"Getting worse", ideas:K0.pick(down,6) },
+      { title:"Game after game", ideas:K0.pick(rep,6) }, { title:"Holding, or just different", ideas:K0.pick(hold,4) },
+      { title:"What moves with a bad night · an association, not a cause", ideas:[aOff, aDef].filter(Boolean) } ] }));
+  if(!K) out.appendChild(h("div",{class:"gpo-note"},"With "+N+" games there is no “last games against the ones before” yet; the trends start at four."));
+  return out;
+}
 function _lgFourTrend(){
   /* "sx" is where the chart palette is declared (--tl-1, --tl-2, --tl-grid, the marker
      ring). Without it the strokes resolve to nothing. */
@@ -15050,6 +15278,25 @@ function _lgFourTrend(){
           { n:"Net rating", t:"Offensive minus defensive rating", of:T=>rt(T).o-rt(T).d, fmt:sg, sf:sg1, hi:true },
           { n:"Pace", t:"Possessions per 40 minutes", of:pace, fmt:f0, sf:f1, hi:null } ]]
       ];
+      /* OUR OWN TAGGING OF THE SAME NIGHT, UNDER THE LEAGUE'S NUMBERS. The two were on
+         different halves of the page; a night the offensive rating fell can now be read
+         straight down to what the tagging says about it. A game is matched by its date. */
+      { const TD=window.LowenTrendsData, PS=window.LowenPostStats;
+        const tgs=(TD && TD.games)||[];
+        if(tgs.length && PS && PS.measured && PS._t && PS._t.addUp){
+          const dayN=d=>Math.round(new Date(d+"T12:00:00Z").getTime()/86400000);
+          const tagOf=g=>tgs.filter(x=>x.d===g.g.date)[0] || tgs.filter(x=>x.d && Math.abs(dayN(x.d)-dayN(g.g.date))<=1)[0] || null;
+          const poolS=list=>{ const l=list.map(tagOf).filter(Boolean).map(x=>x.s); return l.length? PS._t.addUp(l) : null; };
+          const m=(key)=>({ per:g=>{ const x=tagOf(g); return x? PS.measured(x.s,key) : NaN; }, pool:l=>{ const s2=poolS(l); return s2? PS.measured(s2,key) : NaN; } });
+          groups.push(["OUR TAGGING · THE SAME GAME", [
+            Object.assign({ n:"Paint touches", t:"The 70% measure, from our tagging", fmt:fP, hi:true }, m("pt")),
+            Object.assign({ n:"Ball reversals", t:"The same measure, counting a reversal", fmt:fP, hi:true }, m("br")),
+            { n:"Tagged points per possession", fmt:f2, hi:true, per:g=>{ const x=tagOf(g); return (x && x.s.poss)? x.s.pts/x.s.poss : NaN; },
+              pool:l=>{ const s2=poolS(l); return (s2 && s2.poss)? s2.pts/s2.poss : NaN; } },
+            { n:"Tagged possessions", fmt:f0, sf:f1, hi:null, per:g=>{ const x=tagOf(g); return x? x.s.poss : NaN; },
+              pool:l=>{ const xs=l.map(tagOf).filter(Boolean); return xs.length? xs.reduce((a,x)=>a+x.s.poss,0)/xs.length : NaN; } } ]]);
+        }
+      }
       const t=h("table",{class:"trg-mx"});
       const hd=h("tr",{}, h("th",{class:"trg-n"},""));
       G.forEach(g=>hd.appendChild(gameTh(g)));
@@ -15060,14 +15307,15 @@ function _lgFourTrend(){
       groups.forEach(gr=>{
         tb.appendChild(h("tr",{class:"trg-band"}, h("td",{colspan:String(N+2+(K?1:0))}, gr[0])));
         gr[1].forEach(d=>{
-          const sf=d.sf||d.fmt, vs=G.map(g=>d.of(one(g))), sea=d.of(ALL);
+          /* a line of our own tagging is read per game and pooled by its own rule */
+          const sf=d.sf||d.fmt, vs=G.map(g=>d.per? d.per(g) : d.of(one(g))), sea=d.per? d.pool(G) : d.of(ALL);
           const mx=Math.max.apply(null, vs.filter(isFinite).map(v=>Math.abs(v-sea)).concat([0]));
           const tr=h("tr",{}, h("td",{class:"trg-n", title:d.t||d.n}, d.n));
           vs.forEach((v,i)=>tr.appendChild(h("td",{class:"trg-c", style:tint(v-sea, mx, d.hi),
             title:what(G[i])+" · "+d.n+" "+(isFinite(v)? d.fmt(v) : "—")}, isFinite(v)? d.fmt(v) : "—")));
           tr.appendChild(h("td",{class:"trg-x"}, isFinite(sea)? sf(sea) : "—"));
           if(K){
-            const a=d.of(REC), b=d.of(BEF);
+            const a=d.per? d.pool(G.slice(-K)) : d.of(REC), b=d.per? d.pool(G.slice(0,N-K)) : d.of(BEF);
             const flat=!isFinite(a) || !isFinite(b) || sf(a)===sf(b);
             const good=(d.hi==null || flat)? null : ((a>b)===d.hi);
             tr.appendChild(h("td",{class:"trg-x trg-t"+(good===true? " up" : good===false? " dn" : ""),
@@ -15136,6 +15384,54 @@ function _lgFourTrend(){
         "The play by play of "+off.map(g=>g.opp).join(", ")+" does not add up to the official score, so "+(off.length===1? "its" : "their")+" stretches may be a basket out."));
     }
 
+    /* ------------------------------------------- 3b · the runs, and who was on the floor */
+    {
+      const nameOf={}; G.forEach(g=>(g.pl||[]).forEach(p=>{ nameOf[p.i]=_lgLastName(p.nm||"")||("#"+p.n); }));
+      const allRuns=[]; G.forEach(g=>(g.runs||[]).forEach(r=>allRuns.push({ g:g, r:r })));
+      if(allRuns.length){
+        const s=sec("THE RUNS · WHO WAS ON THE FLOOR",
+          "Every stretch worth eight points or more to one side. A five is named as the five of a run only when it played all of it; when we changed players during it, each five is listed with its share of the stretch.");
+        const t=h("table",{class:"trg-mx trg-runs"});
+        t.appendChild(h("thead",{}, h("tr",{}, h("th",{class:"trg-n"},""), h("th",{},"From"), h("th",{},"To"), h("th",{},"Score"),
+          h("th",{},"Run"), h("th",{},"Length"), h("th",{class:"trg-five"},"Our five"))));
+        const tb=h("tbody",{});
+        const mmss=sx=>Math.floor(sx/60)+":"+String(Math.round(sx%60)).padStart(2,"0");
+        const five=f=>f.ids.map(id=>nameOf[id]||"?").join(" · ");
+        allRuns.forEach(o=>{ const r=o.r, dur=Math.max(1, r.t1-r.t0), ours=r.sd==="u";
+          let cell;
+          if(r.nf===1) cell=h("td",{class:"trg-five"}, five(r.fives[0]));
+          else if(!r.nf) cell=h("td",{class:"trg-five trg-na"},"");
+          else cell=h("td",{class:"trg-five"}, h("em",{}, (r.nf-1)+" change"+(r.nf===2?"":"s")+" during it"),
+            r.fives.slice(0,3).map(f=>h("div",{}, h("b",{}, Math.round(100*f.sec/dur)+"%"), " "+five(f))));
+          tb.appendChild(h("tr",{class:ours? "run-u" : "run-t"}, gameTd(o.g),
+            h("td",{class:"trg-c"}, _lgGameClock(r.t0)), h("td",{class:"trg-c"}, _lgGameClock(r.t1)),
+            h("td",{class:"trg-c"}, r.sb[0]+"–"+r.sb[1]+" → "+r.se[0]+"–"+r.se[1]),
+            h("td",{class:"trg-c", style:"background:rgba("+(ours? "47,158,134" : "216,82,78")+","+(0.12+0.5*Math.min(1,(Math.abs(r.pf-r.pa))/16)).toFixed(2)+");font-weight:800"}, r.pf+"–"+r.pa),
+            h("td",{class:"trg-c"}, mmss(dur)), cell)); });
+        t.appendChild(tb);
+        s.appendChild(h("div",{class:"trg-scroll"}, t));
+        /* each player and the runs he played from start to end */
+        const whole={};
+        allRuns.forEach(o=>{ const r=o.r; if(!r.nf || r.nf>r.fives.length) return;
+          let ids=r.fives[0].ids.slice(); r.fives.slice(1).forEach(f=>{ ids=ids.filter(id=>f.ids.indexOf(id)>=0); });
+          ids.forEach(id=>{ const e=whole[id]||(whole[id]={ u:0, t:0, net:0 }); if(r.sd==="u") e.u++; else e.t++; e.net+=r.pf-r.pa; }); });
+        const ids=Object.keys(whole).sort((a,b)=>(whole[b].u-whole[b].t)-(whole[a].u-whole[a].t) || whole[b].net-whole[a].net);
+        if(ids.length){
+          const mxR=Math.max.apply(null, ids.map(id=>Math.max(whole[id].u, whole[id].t)).concat([1]));
+          const t2=h("table",{class:"trg-mx trg-runpl"});
+          t2.appendChild(h("thead",{}, h("tr",{}, h("th",{class:"trg-n"},"On the floor for the whole of…"), h("th",{},"Our runs"), h("th",{},"Their runs"), h("th",{},"Points in those stretches"))));
+          const tb2=h("tbody",{});
+          ids.forEach(id=>{ const e=whole[id];
+            tb2.appendChild(h("tr",{}, h("td",{class:"trg-n"}, nameOf[id]||"?"),
+              h("td",{class:"trg-c", style:tint(e.u, mxR, true)}, String(e.u)), h("td",{class:"trg-c", style:tint(e.t, mxR, false)}, String(e.t)),
+              h("td",{class:"trg-c "+(e.net>0? "up" : e.net<0? "dn" : "")}, sg(e.net)||"0"))); });
+          t2.appendChild(tb2);
+          s.appendChild(h("div",{class:"trg-sub", style:"margin-top:14px"},"Counted only when the player was on for all of the stretch — a run with a change in it is not given to the players who were on for part."));
+          s.appendChild(h("div",{class:"trg-scroll"}, t2));
+        }
+      }
+    }
+
     /* ---------------------------------------------------- 4 · where the points came from */
     {
       const s=sec("WHERE THE POINTS CAME FROM",
@@ -15161,6 +15457,50 @@ function _lgFourTrend(){
       box.appendChild(h("div",{class:"trg-src-r trg-tot"}, h("span",{class:"trg-gn"}, h("b",{},"Per game, all "+N)),
         bar(ALL.us, N, "Per game · us"), bar(ALL.them, N, "Per game · them")));
       s.appendChild(box);
+    }
+
+    /* ---------------------------------------------------- 4b · the points, by position */
+    {
+      const POS=R.pos||{};
+      const ORD=["PG","SG","SF","PF","C","G","F","—"];
+      const LBL={ PG:"Point guard (1)", SG:"Shooting guard (2)", SF:"Small forward (3)", PF:"Power forward (4)", C:"Center (5)", G:"Guard", F:"Forward", "—":"No position on the roster" };
+      const by={}, who={};
+      G.forEach((g,gi)=>(g.pl||[]).forEach(p=>{ const k=POS[String(p.i)]||"—";
+        const e=by[k]||(by[k]={ per:[], pa:0, mi:0, th:0, ft:0, pts:0 });
+        const th=3*(p.tm||0), ft=p.f1||0, pa=Math.min(p.pa||0, Math.max(0,p.p-th-ft)), mi=Math.max(0, p.p-th-ft-pa);
+        e.per[gi]=(e.per[gi]||0)+p.p; e.pa+=pa; e.mi+=mi; e.th+=th; e.ft+=ft; e.pts+=p.p;
+        (who[k]=who[k]||{})[_lgLastName(p.nm||"")]=1; }));
+      const keys=ORD.filter(k=>by[k] && by[k].pts>0);
+      if(keys.length>1){
+        const s=sec("THE POINTS, BY POSITION",
+          "Each player counts in the position the league's roster gives him, and in no other. The cell is the points of that position in that game; the bar is where they came from over all the games.");
+        const t=h("table",{class:"trg-mx trg-pos"});
+        const hd=h("tr",{}, h("th",{class:"trg-n"},""));
+        G.forEach(g=>hd.appendChild(gameTh(g)));
+        hd.appendChild(h("th",{class:"trg-x"},"Per game")); hd.appendChild(h("th",{class:"trg-x"},"Share")); hd.appendChild(h("th",{class:"trg-wide"},"From where"));
+        t.appendChild(h("thead",{}, hd));
+        const tb=h("tbody",{});
+        const totPts=keys.reduce((a,k)=>a+by[k].pts,0)||1;
+        const mxPos=Math.max.apply(null, keys.map(k=>by[k].pts).concat([1]));
+        keys.forEach(k=>{ const e=by[k];
+          const vals=G.map((g,gi)=>e.per[gi]||0), mx=Math.max.apply(null, vals.concat([1]));
+          const tr=h("tr",{}, h("td",{class:"trg-n", title:Object.keys(who[k]||{}).join(", ")}, LBL[k]||k, h("i",{class:"trg-pn"}, Object.keys(who[k]||{}).join(", "))));
+          vals.forEach((v,gi)=>{ const gp=G[gi].us.pts||1;
+            tr.appendChild(h("td",{class:"trg-c", style:"background:rgba(74,134,216,"+(0.05+0.42*v/mx).toFixed(2)+")", title:what(G[gi])+" · "+(LBL[k]||k)+" "+v+" points, "+Math.round(100*v/gp)+"% of ours"}, String(v))); });
+          tr.appendChild(h("td",{class:"trg-x"}, f1(e.pts/N)));
+          tr.appendChild(h("td",{class:"trg-x"}, Math.round(100*e.pts/totPts)+"%"));
+          const bar=h("span",{class:"trg-stack"});
+          [["Paint",e.pa,"pa"],["Mid-range",e.mi,"mi"],["Threes",e.th,"th"],["Free throws",e.ft,"ft"]].forEach(p=>{ if(p[1]<=0) return;
+            const w=100*p[1]/mxPos;
+            bar.appendChild(h("i",{class:"k-"+p[2], style:"width:"+w.toFixed(2)+"%", title:p[0]+" "+p[1]+" points, "+Math.round(100*p[1]/e.pts)+"% of this position's"}, w>=7? Math.round(100*p[1]/e.pts)+"%" : "")); });
+          tr.appendChild(h("td",{class:"trg-wide"}, bar));
+          tb.appendChild(tr); });
+        t.appendChild(tb);
+        s.appendChild(h("div",{class:"trg-leg"},
+          h("span",{}, h("i",{class:"k-pa"}),"Paint"), h("span",{}, h("i",{class:"k-mi"}),"Mid-range"),
+          h("span",{}, h("i",{class:"k-th"}),"Threes"), h("span",{}, h("i",{class:"k-ft"}),"Free throws")));
+        s.appendChild(h("div",{class:"trg-scroll"}, t));
+      }
     }
 
     /* ------------------------------------------------------------ 5 · who was in front */
@@ -15229,6 +15569,10 @@ function _lgFourTrend(){
         { k:"reb", n:"REB", get:p=>p.r, f:f0, sf:f1, hi:true },
         { k:"ast", n:"AST", get:p=>p.a, f:f0, sf:f1, hi:true },
         { k:"tov", n:"TOV", get:p=>p.t, f:f0, sf:f1, hi:false },
+        { k:"q1", n:"PIR Q1", get:p=>(p.qp && p.qp[0]!=null)? p.qp[0] : NaN, f:f0, sf:f1, hi:true },
+        { k:"q2", n:"PIR Q2", get:p=>(p.qp && p.qp[1]!=null)? p.qp[1] : NaN, f:f0, sf:f1, hi:true },
+        { k:"q3", n:"PIR Q3", get:p=>(p.qp && p.qp[2]!=null)? p.qp[2] : NaN, f:f0, sf:f1, hi:true },
+        { k:"q4", n:"PIR Q4", get:p=>(p.qp && p.qp[3]!=null)? p.qp[3] : NaN, f:f0, sf:f1, hi:true },
         { k:"efg", n:"eFG%", get:p=>p.fa? 100*(p.fm+0.5*p.tm)/p.fa : NaN, f:fP, hi:true,
           pool:l=>{ const a=l.reduce((x,p)=>x+p.fa,0); return a? 100*l.reduce((x,p)=>x+p.fm+0.5*p.tm,0)/a : NaN; } }
       ];
@@ -15325,6 +15669,10 @@ function _lgFourTrend(){
       +" · from the league's own box scores and play by play, nothing tagged by hand"));
   };
   load();
+  /* the tagging lands after the league: the block is drawn again with its lines in it */
+  const onTag=()=>{ if(!wrap.isConnected){ window.removeEventListener("lowen-trends", onTag); return; }
+    if(_trgMemo) _trgMemo.then(R=>{ try{ paint(R); }catch(e){} }).catch(()=>{}); };
+  window.addEventListener("lowen-trends", onTag);
   return wrap;
 }
 /* ===== Offense / Defense playbooks — fully editable, drag & drop ===== */
@@ -27206,6 +27554,28 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .lgg-sec.open > .lgg-h-fold .lgg-fold::before{transform:rotate(90deg)}
 .lgg-sec:not(.open) > .lgg-h-fold{margin-bottom:0}
 .lgg.inline .lgg-sec{border-top:1px solid var(--line,#e4e7ec);padding-top:10px}
+
+/* Trends: the sets at a glance */
+.tr-glance{margin-top:16px}
+.tr-gl-r{display:grid;grid-template-columns:minmax(120px,220px) minmax(90px,200px) 52px minmax(0,1fr);gap:10px;align-items:center;padding:3px 4px;border-bottom:1px solid var(--line,#eef0f3);font-size:12.5px}
+.tr-gl-k{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tr-gl-v{display:flex;align-items:center;gap:6px}
+.tr-gl-v i{display:block;height:8px;border-radius:4px;background:#4a86d8;flex:0 0 auto;max-width:calc(100% - 28px)}
+.tr-gl-v b{font:700 10.5px 'IBM Plex Mono',monospace}
+.tr-gl-p{text-align:center;border-radius:5px;padding:2px 0;font:800 11.5px 'IBM Plex Mono',monospace}
+.tr-gl-s{display:flex;align-items:center;gap:4px;min-height:22px}
+.tr-gl-s i{display:inline-block;border-radius:4px;flex:none}
+.tr-gl-s i.none{width:6px;height:6px;border-radius:50%;background:var(--line-strong,#cfd4dc)}
+/* Trends: the season dashboard, the runs and the points by position */
+.trd{margin-bottom:16px}
+.trg-runs td.trg-five,.trg-runs th.trg-five{text-align:left;white-space:normal;min-width:300px;font-size:11.5px}
+.trg-runs td.trg-five em{font-style:normal;font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);display:block}
+.trg-runs td.trg-five b{font:700 10px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.trg-runs tr.run-u td.trg-n{box-shadow:inset 3px 0 0 #2f9e86}.trg-runs tr.run-t td.trg-n{box-shadow:inset 3px 0 0 #d8524e}
+.trg-runpl{width:auto;min-width:420px}
+.trg-mx td.up{color:#1f8068;font-weight:700}.trg-mx td.dn{color:#c0403c;font-weight:700}
+.trg-pos .trg-wide{width:30%;min-width:220px}
+.trg-pos .trg-pn{display:block;font-style:normal;font-weight:400;font-size:9.5px;color:var(--ink-faint,#8a93a2);white-space:normal;max-width:210px}
 
 /* THE FOLD: ONE WAY TO OPEN AND CLOSE, EVERYWHERE.
    A section of a report closed with a small minus sign in a circle, a league table opened

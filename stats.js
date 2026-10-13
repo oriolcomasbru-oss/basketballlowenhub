@@ -3761,6 +3761,13 @@
     var tb = trTagBack(stage, live);
     var phases = trPhases(stage, games);
     var sets4 = trSets(setsHost, games);
+    /* the same games and sets, handed to the page: the season dashboard and the league's
+       game-by-game block read our tagging beside the play by play */
+    try {
+      window.LowenTrendsData = { games: games.map(function (g) { return { d: g.d, label: g.label, s: g.s, m: g.m }; }),
+                                 sets: sets4 || [] };
+      window.dispatchEvent(new Event("lowen-trends"));
+    } catch (e) { }
 
     var METRICS = [
       { name: "Paint touches \u2014 the 70% measure", get: function (s) { return measured(s, "pt"); },
@@ -3831,9 +3838,11 @@
     heading = heading.filter(function (x) { return Math.abs(x.rel) >= 0.04; })
       .sort(function (x, y) { return Math.abs(y.rel) - Math.abs(x.rel); }).slice(0, 3);
 
-    trHighlights(hl, bits);
+    /* the page's season dashboard says these now, from both sources; this is the fallback
+       for when it is not there */
+    if (!window.UIKit) trHighlights(hl, bits);
 
-    if (heading.length) {
+    if (heading.length && !window.UIKit) {
       var hsec = el("div", "tr-top");
       hsec.appendChild(el("div", "sx-h", "Where it is heading"));
       var hbox = el("div", "tr-chips");
@@ -3913,6 +3922,36 @@
         four.appendChild(col("Improved the most", upList, "good", move));
         four.appendChild(col("Dropped the most", downList, "bad", move));
         rsec.appendChild(four);
+        /* THE SETS AT A GLANCE: HOW OFTEN, HOW WELL, AND WHICH WAY. One line a set, the most
+           run first. The blue bar is how often it is called; the chip is what it returns, in
+           the colour of the rate; the squares are its games in order - bigger the more it
+           was run that night, coloured by what it returned - so a set that is fading or
+           coming on is seen without reading a table. */
+        var glance = sets4.slice().sort(function (a, b) { return b.n - a.n; }).slice(0, 14);
+        if (glance.length) {
+          var gbox = el("div", "tr-glance");
+          gbox.appendChild(el("div", "tr-rank-h", "Sets at a glance — volume, return, and game by game"));
+          var gMax = glance[0].n || 1;
+          glance.forEach(function (x) {
+            var row = el("div", "tr-gl-r");
+            row.appendChild(el("span", "tr-gl-k", x.k));
+            var vb = el("span", "tr-gl-v"); var vf = el("i"); vf.style.width = Math.max(4, Math.round(100 * x.n / gMax)) + "%";
+            vb.appendChild(vf); vb.appendChild(el("b", null, String(x.n))); row.appendChild(vb);
+            var pv = x.pts / x.n;
+            row.appendChild(el("span", "tr-gl-p sx-cell " + pppStep(pv), f2(pv)));
+            var sq = el("span", "tr-gl-s");
+            games.forEach(function (gm, gi) {
+              var c = x.per[gi], d = el("i", c ? ("sx-cell " + pppStep(c.pts / c.n)) : "none");
+              if (c) { var sz = Math.max(8, Math.min(20, 6 + 3 * c.n)); d.style.width = sz + "px"; d.style.height = sz + "px";
+                d.title = gm.label + " · " + c.n + " runs · " + f2(c.pts / c.n) + " per possession"; }
+              else d.title = gm.label + " · not run";
+              sq.appendChild(d);
+            });
+            row.appendChild(sq);
+            gbox.appendChild(row);
+          });
+          rsec.appendChild(gbox);
+        }
         rsec.appendChild(el("div", "sx-sub", "Ranked: sets run at least " + minRuns + " times, the bar is each set against the best one. " +
           "Moved: the last games a set was run in (up to three) against the ones before, at least " + minSide + " runs on each side."));
         hl.appendChild(rsec);
@@ -4798,7 +4837,7 @@
                                  inventing a second one */
                               chart: timelineChart, table2: table,
                               _t: { table: table, sortKey: sortKey, linfit: linfit,
-                                    renderTrends: renderTrendsDash, measured: measured,
+                                    renderTrends: renderTrendsDash, measured: measured, addUp: addUp,
                                     phaseOf: phaseOf,
                                     fitXY: fitXY, oerBands: oerBands,
                                     datedPractice: datedPractice, parseCsv: parseCsv,
