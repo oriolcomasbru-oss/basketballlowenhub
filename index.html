@@ -6624,33 +6624,48 @@ function gameCard(gameId, from){
    copies of each report are kept, in this browser only; the server keeps its own (see
    supabase/005_report_history.sql). "Versions" on the report bar lists both. */
 const _vault=(()=>{
+  /* THE COPIES ARE THE WRITTEN REPORT, AND THEIR LIST IS READ WITHOUT THEM.
+     The first version kept the old scouting sheet inside every copy - a page of markup
+     with the players' photographs embedded in it, megabytes of it on an older report -
+     and listing the copies read every one of them into memory whole. Opening a pre game
+     did both, and the tab ran out of memory. A copy is the report's data and nothing
+     else now, and what is listed is a small line about each copy, kept apart from it. */
   let dbp=null; const last={}, lastT={};
+  try{ indexedDB.deleteDatabase("lowen-vault"); }catch(e){}
   const open=()=>dbp||(dbp=new Promise((res,rej)=>{ try{
-    const rq=indexedDB.open("lowen-vault",1);
-    rq.onupgradeneeded=()=>{ const s=rq.result.createObjectStore("v",{keyPath:"id",autoIncrement:true}); s.createIndex("key","key"); };
+    const rq=indexedDB.open("lowen-vault2",1);
+    rq.onupgradeneeded=()=>{ const m=rq.result.createObjectStore("m",{keyPath:"id",autoIncrement:true}); m.createIndex("key","key");
+      rq.result.createObjectStore("b",{keyPath:"id"}); };
     rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }catch(e){ rej(e); } }));
   const list=async key=>{ try{ const db=await open();
     return await new Promise((res,rej)=>{ const out=[];
-      const rq=db.transaction("v").objectStore("v").index("key").openCursor(IDBKeyRange.only(key));
+      const rq=db.transaction("m").objectStore("m").index("key").openCursor(IDBKeyRange.only(key));
       rq.onsuccess=()=>{ const c=rq.result; if(c){ const v=c.value; out.push({ id:v.id, t:v.t, why:v.why, size:v.size }); c.continue(); }
         else res(out.sort((a,b)=>b.t-a.t)); };
       rq.onerror=()=>rej(rq.error); }); }catch(e){ return []; } };
   const get=async id=>{ try{ const db=await open();
-    return await new Promise((res,rej)=>{ const rq=db.transaction("v").objectStore("v").get(id);
+    return await new Promise((res,rej)=>{ const rq=db.transaction("b").objectStore("b").get(id);
       rq.onsuccess=()=>{ try{ res(rq.result? JSON.parse(rq.result.json) : null); }catch(e){ res(null); } }; rq.onerror=()=>rej(rq.error); }); }catch(e){ return null; } };
   const put=async (key, rep, why, force)=>{ try{
     if(!key || !rep) return;
     const now=Date.now();
     if(!force && lastT[key] && now-lastT[key]<180000) return;
-    const json=JSON.stringify({ data:rep.data||{}, html:rep.html||"" });
-    if(json.length<300 || last[key]===json) return;           /* nothing in it, or nothing new */
-    last[key]=json; lastT[key]=now;
+    const json=JSON.stringify({ data:rep.data||{} });
+    /* nothing in it, nothing new, or too big to be a written report */
+    if(json.length<300 || json.length>3000000) return;
+    let hsh=5381; for(let i=0;i<json.length;i++) hsh=((hsh<<5)+hsh+json.charCodeAt(i))|0;
+    const print=json.length+":"+hsh;
+    if(last[key]===print) return;
+    last[key]=print; lastT[key]=now;
     const db=await open();
-    await new Promise((res,rej)=>{ const tx=db.transaction("v","readwrite");
-      tx.objectStore("v").add({ key:key, t:now, why:why||"", size:json.length, json:json });
-      tx.oncomplete=res; tx.onerror=()=>rej(tx.error); });
+    const id=await new Promise((res,rej)=>{ const tx=db.transaction("m","readwrite");
+      const rq=tx.objectStore("m").add({ key:key, t:now, why:why||"", size:json.length });
+      rq.onsuccess=()=>res(rq.result); tx.onerror=()=>rej(tx.error); });
+    await new Promise((res,rej)=>{ const tx=db.transaction("b","readwrite");
+      tx.objectStore("b").put({ id:id, json:json }); tx.oncomplete=res; tx.onerror=()=>rej(tx.error); });
     const all=await list(key);
-    if(all.length>40){ const tx=db.transaction("v","readwrite"); all.slice(40).forEach(v=>tx.objectStore("v").delete(v.id)); }
+    if(all.length>40){ const tx=db.transaction(["m","b"],"readwrite");
+      all.slice(40).forEach(v=>{ tx.objectStore("m").delete(v.id); tx.objectStore("b").delete(v.id); }); }
   }catch(e){} };
   return { put:put, list:list, get:get };
 })();
@@ -6666,7 +6681,7 @@ async function _repVersions(key, rep, apply){
   try{ const r=await sbrpc("report_versions",{p_token:SB_TOKEN,p_key:key});
     if(r && r.ok) server=r.versions||[]; else serverErr=(r&&r.error)||""; }catch(e){ serverErr="off"; }
   const local=await _vault.list(key);
-  const nowSize=JSON.stringify({ data:rep.data||{}, html:rep.html||"" }).length;
+  const nowSize=JSON.stringify({ data:rep.data||{} }).length;
   const rows=server.map(v=>({ t:Date.parse(v.kept_at||v.saved_at)||0, where:"Server", note:"written by "+(v.saved_by||"?"), size:v.size||0,
       load:async ()=>{ const r=await sbrpc("report_version",{p_token:SB_TOKEN,p_id:v.id}); return (r&&r.ok&&r.version)? { data:r.version.data||{}, html:r.version.html } : null; } }))
     .concat(local.map(v=>({ t:v.t, where:"This browser", note:v.why||"", size:v.size, load:()=>_vault.get(v.id) })))
