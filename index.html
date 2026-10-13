@@ -9390,6 +9390,28 @@ let _fitRO=null;
    stylesheet already reflows everything while the window moves; the measured pass runs
    once, a moment after the last movement. */
 let _fitRszT=0, _fitRszAt=0;
+/* AND IT WAITS FOR THE TYPING TO STOP.
+   A line typed into a box makes the box, its card and its section a line taller, and each
+   of those was answered with the whole measuring pass - every table on the page, on every
+   new line, while the letters were still arriving. A new line made with Enter did the same
+   by a second route, as a node added to the page. While somebody is writing, the pass is
+   put off until they have stopped for a moment. */
+let _typeAt=0, _fitTypeT=0;
+function _fitTyping(){
+  if(Date.now()-_typeAt<900) return true;
+  const ae=document.activeElement;
+  return !!(ae && ae.isContentEditable && Date.now()-_typeAt<4000);
+}
+function _fitAfterTyping(){
+  clearTimeout(_fitTypeT);
+  _fitTypeT=setTimeout(()=>{ _fitTypeT=0; if(_fitTyping()) _fitAfterTyping(); else _fitAll(); }, 950);
+}
+try{
+  const typed=e=>{ const t=e.target;
+    if(t && (t.isContentEditable || /^(INPUT|TEXTAREA)$/.test(t.tagName||""))) _typeAt=Date.now(); };
+  document.addEventListener("keydown", typed, true);
+  document.addEventListener("input", typed, true);
+}catch(e){}
 function _fitResized(){
   _fitRszAt=Date.now();
   clearTimeout(_fitRszT);
@@ -9401,6 +9423,8 @@ function _fitWatch(){
     /* while the window is being dragged every watched block changes size on every frame:
        that is the resize, and it is answered once, when it stops */
     _fitRO=new ResizeObserver(()=>{ if(_fitBusy) return;
+      /* a box that grows a line because somebody is typing in it is not a new layout */
+      if(_fitTyping()){ _fitAfterTyping(); return; }
       if(_fitRszT || Date.now()-_fitRszAt<400) _fitResized(); else _fitAll(); });
   }
   document.querySelectorAll(FIT_SEL+", .presc-l").forEach(el=>{
@@ -9645,6 +9669,8 @@ try{
       const m=ms[i];
       if(!m.addedNodes || !m.addedNodes.length) continue;
       if(m.target && m.target.closest && m.target.closest("#fitlab")) continue;
+      /* a line break typed into a box is not a panel arriving */
+      if(m.target && (m.target.isContentEditable || (m.target.parentNode && m.target.parentNode.isContentEditable))) continue;
       for(let j=0;j<m.addedNodes.length;j++){
         const n=m.addedNodes[j];
         if(n.nodeType!==1) continue;
@@ -16782,7 +16808,9 @@ function _anStart(){
   const ws=document.getElementById("workspace");
   if(!ws) return;
   _anMo=new MutationObserver(recs=>{
-    for(let i=0;i<recs.length;i++){ const a=recs[i].addedNodes; if(!a) continue;
+    for(let i=0;i<recs.length;i++){ const a=recs[i].addedNodes; if(!a || !a.length) continue;
+      /* what is typed into a box does not arrive: it is written */
+      const tg=recs[i].target; if(tg && tg.isContentEditable) continue;
       for(let j=0;j<a.length;j++) if(a[j].nodeType===1) _anMark(a[j]); }
   });
   _anMo.observe(ws, { childList:true, subtree:true });
