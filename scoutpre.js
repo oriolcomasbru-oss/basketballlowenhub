@@ -999,6 +999,28 @@
       return a && a.poss >= 20 ? a.ppp : null;
     })();
     var bigTot = bigCols.map(function (b) { return cellFor(b[1]); });
+    /* WHO IS IN THOSE CLIPS. The split says "their 4" and "their 5" and names nobody,
+       because the tagging does not: the 4 is a category and the 5 is everything else.
+       What the clips do carry, on some of them, is a player tag - so for each side of
+       the split this lists the men tagged and how often, how many clips name nobody,
+       and every clip with its game, quarter and time, to be checked against the video. */
+    var clock = function (s) { s = Math.max(0, Math.round(Number(s) || 0));
+      var hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), ss = s % 60;
+      return (hh ? hh + ":" + (mm < 10 ? "0" : "") : "") + mm + ":" + (ss < 10 ? "0" : "") + ss; };
+    D.bigwho = bigCols.map(function (b) {
+      var v = b[1], m = {}, ks = [], tagged = 0;
+      v.forEach(function (c) { var ps = plOf(c); if (ps.length) tagged++;
+        ps.forEach(function (p) { if (!m[p]) { m[p] = []; ks.push(p); } m[p].push(c); }); });
+      ks.sort(function (x, y) { return m[y].length - m[x].length; });
+      return { key: b[0], n: v.length, tagged: tagged,
+        players: ks.map(function (p) { var a = agg(m[p]);
+          return { label: p.replace("|", " #"), n: m[p].length,
+                   poss: a ? r1(a.poss) : 0, ppp: a ? a.ppp : null, conf: conf(a ? a.poss : 0) }; }),
+        clips: v.map(function (c) { var a = agg([c]);
+          return { game: c[0].game, period: perOf(c) || "", at: clock(c[0].t0), cat: c[0].label || "",
+                   cov: covOf(c).join(", "), who: plOf(c).map(function (p) { return p.replace("|", " #"); }).join(", "),
+                   pts: a ? Math.round(a.ppp * a.poss * 10) / 10 : null }; }) };
+    });
     D.covbybig = {
       total: bigTot,
       totalRef: refPnrAll,
@@ -2046,6 +2068,60 @@
           + "was never in that coverage; a pale PPP means too few possessions to read as a rate.");
       }
 
+      /* who is tagged in those clips, and the clips themselves */
+      if (D.bigwho && D.bigwho.some(function (w) { return w.n; })) {
+        b5bb.appendChild(el("div", "sxp-sub sxp-sub2", "Who is in those clips"));
+        var TW = tableShell([{ t: "Split" }, { t: "Player tagged" }, { t: "Clips", cls: "n" },
+          { t: "Poss", cls: "n" }, { t: "PPP", cls: "n" }]);
+        D.bigwho.forEach(function (w) {
+          var name = w.key === "4" ? "Their 4" : "Their 5";
+          var head = el("tr", "sxp-tot");
+          head.appendChild(lbl(name));
+          head.appendChild(plain(w.tagged + " of " + w.n + " clips name a player"));
+          head.appendChild(plain(w.n)); head.appendChild(plain("")); head.appendChild(plain(""));
+          TW.body.appendChild(head);
+          w.players.forEach(function (p) {
+            var tr = el("tr");
+            tr.appendChild(lbl("")); tr.appendChild(plain(p.label));
+            tr.appendChild(plain(p.n)); tr.appendChild(plain(Math.round(p.poss)));
+            tr.appendChild(p.ppp == null ? plain("—", "muted") : pppCell(p.ppp, D.covbybig.totalRef, "D", p.conf));
+            TW.body.appendChild(tr);
+          });
+          if (!w.players.length) {
+            var none = el("tr"); none.appendChild(lbl(""));
+            none.appendChild(plain("no clip names a player", "muted"));
+            none.appendChild(plain("")); none.appendChild(plain("")); none.appendChild(plain(""));
+            TW.body.appendChild(none);
+          }
+        });
+        b5bb.appendChild(TW.wrap);
+        tnote(TW.wrap, "The tagging does not say which player is the 4 or the 5: “their 4” is "
+          + "every clip tagged “PnR 4” and “their 5” is every other ball screen. These are "
+          + "the players named on those clips, where one is named — the man the clip is about, "
+          + "who is not always the big in the screen. The list below is every clip, to check on video.");
+        var det = document.createElement("details");
+        det.className = "sxp-clips";
+        var sm = document.createElement("summary");
+        sm.textContent = "Every clip in the split — game, quarter and time in the video";
+        det.appendChild(sm);
+        var TV = tableShell([{ t: "Split" }, { t: "Game" }, { t: "Q", cls: "n" }, { t: "Time", cls: "n" },
+          { t: "Tagged as" }, { t: "Coverage" }, { t: "Player" }, { t: "Pts", cls: "n" }]);
+        D.bigwho.forEach(function (w) {
+          w.clips.forEach(function (c) {
+            var tr = el("tr");
+            tr.appendChild(lbl(w.key === "4" ? "Their 4" : "Their 5"));
+            tr.appendChild(plain(c.game || "")); tr.appendChild(plain(c.period || ""));
+            tr.appendChild(plain(c.at)); tr.appendChild(plain(c.cat));
+            tr.appendChild(plain(c.cov || "—", c.cov ? "" : "muted"));
+            tr.appendChild(plain(c.who || "—", c.who ? "" : "muted"));
+            tr.appendChild(plain(c.pts == null ? "" : c.pts));
+            TV.body.appendChild(tr);
+          });
+        });
+        det.appendChild(TV.wrap);
+        b5bb.appendChild(det);
+      }
+
       /* ---- and the same thing with the rival on the row ----
          Everything above is the season added up, and an average is exactly where a night
          somebody took one coverage apart disappears. One row per opponent: read across
@@ -2473,6 +2549,9 @@
       ".sxp-t tr.sxp-tot td{background:rgba(0,0,0,.04);font-weight:700}",
       /* a second heading inside one panel needs the air a panel boundary would have given it */
       ".sxp-sub2{margin-top:16px}",
+      ".sxp-clips{margin-top:8px}",
+      ".sxp-clips>summary{cursor:pointer;font-size:12px;color:#5b6472;padding:4px 0}",
+      ".sxp-clips .sxp-scroll{max-height:420px;overflow:auto}",
       ".sxp-c{text-align:right}",
       /* the possession count beside a rate: present, and clearly not the number */
       ".sxp-n2{margin-left:5px;font-size:9px;color:var(--ink-faint);font-variant-numeric:tabular-nums}",
