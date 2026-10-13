@@ -26823,6 +26823,18 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 .lgg{--lgh:#c6a15b;--lga:#4a86d8;position:relative;width:min(1080px,100%);background:var(--panel,#fff);color:var(--ink,#141821);border:1px solid var(--line,#e4e7ec);border-radius:16px;padding:18px 22px 22px;box-shadow:0 24px 60px rgba(0,0,0,.35)}
 .lgg-x{position:absolute;top:10px;right:12px;width:32px;height:32px;border-radius:50%;border:1px solid var(--line,#e4e7ec);background:transparent;color:var(--ink-soft,#5b6472);font-size:20px;line-height:1;cursor:pointer}
 .lgg-x:hover{background:var(--line,#e4e7ec);color:var(--ink,#141821)}
+/* ONE CLOSE BUTTON, AND ALL OF IT CLOSES.
+   The cross of a window sat in the corner with nothing saying it was on top: the header
+   row drawn after it - the crests, the score, a title - lay over part of it and took the
+   click, so only a sliver of the circle closed the window. Every close button in the app
+   is the same component now: above whatever shares its corner, forty pixels across, with
+   an invisible margin round it that also closes - a finger does not land on a 32-pixel
+   circle - and nothing inside it can take the press away from it. */
+.lgg-x,.pb-lb-x,.modal-close,.phx .modal-close,.ui-x{z-index:60;width:40px;height:40px;padding:0;line-height:1;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none}
+.lgg-x::after,.pb-lb-x::after,.modal-close::after,.ui-x::after{content:"";position:absolute;inset:-8px;border-radius:50%}
+.lgg-x > *,.pb-lb-x > *,.modal-close > *,.ui-x > *{pointer-events:none}
+.lgg-x:focus-visible,.pb-lb-x:focus-visible,.modal-close:focus-visible,.ui-x:focus-visible{outline:2px solid var(--accent,#c6a15b);outline-offset:2px}
 .lgg-meta{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);text-align:center;padding:0 40px}
 .lgg-top{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:18px;margin:12px 0 10px}
 .lgg-team{display:flex;align-items:center;gap:12px;font-family:'Oswald',sans-serif;font-size:19px;font-weight:500;color:var(--ink-soft,#5b6472);min-width:0}
