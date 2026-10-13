@@ -9487,6 +9487,8 @@ function _fitWatch(){
     /* while the window is being dragged every watched block changes size on every frame:
        that is the resize, and it is answered once, when it stops */
     _fitRO=new ResizeObserver(()=>{ if(_fitBusy) return;
+      /* a block the pass has just resized reports it on this very frame */
+      if(Date.now()-_fitDoneAt<120) return;
       /* a box that grows a line because somebody is typing in it is not a new layout */
       if(_fitTyping()){ _fitAfterTyping(); return; }
       if(_fitRszT || Date.now()-_fitRszAt<400) _fitResized(); else _fitAll(); });
@@ -9616,8 +9618,26 @@ function _sxpTwins(){
   });
 }
 let _fitQ=0, _fitBusy=false;
+/* THE PASS MUST NOT START ITSELF.
+   Measured on a real pre game: 276 passes in five seconds with nobody touching the page,
+   one on every frame, and in edit mode - where a pass costs a fifth of a second - four
+   frames a second and every click and key waiting its turn behind them. The pass moves
+   and adds nodes as it works, the watcher below took those for content arriving, and
+   asked for the pass again; the same through the size watcher, for a block the pass had
+   just resized.
+   Two things stop it. What the pass itself changed is thrown away before the watchers
+   are listened to again. And whatever asks, the pass does not run more than a few times
+   in a few seconds: past that it runs once more, later, and that is all. */
+let _fitMO=null, _fitTimes=[], _fitLateT=0, _fitDoneAt=0;
 function _fitAll(){
   if(_fitQ) return;
+  const now0=Date.now();
+  _fitTimes=_fitTimes.filter(t=>now0-t<6000);
+  if(_fitTimes.length>=4){
+    if(!_fitLateT) _fitLateT=setTimeout(()=>{ _fitLateT=0; _fitTimes=_fitTimes.slice(-3); _fitAll(); }, 2000);
+    return;
+  }
+  _fitTimes.push(now0);
   _fitQ=requestAnimationFrame(()=>{
     _fitQ=0; _fitBusy=true;
     try{
@@ -9638,13 +9658,17 @@ function _fitAll(){
     try{ _secAuto(); }catch(e){}
     try{ _fitWatch(); }catch(e){}
     try{ if(window.phxStyleStats) window.phxStyleStats(); }catch(e){}
+    /* what this pass moved and added is its own doing, not news */
+    try{ if(_fitMO) _fitMO.takeRecords(); }catch(e){}
+    _fitDoneAt=Date.now();
     _fitBusy=false;
     /* a block asked for the whole line while this pass was running: give it to it */
     if(_fitGrew){ _fitGrew=false; requestAnimationFrame(()=>{ try{ _fitAll(); }catch(e){} }); }
     /* A chart inserted this frame has not been laid out yet, so the height the small
        courts were measured against was the one before the browser did its work. One more
        pass on the next frame, with the real numbers. */
-    requestAnimationFrame(()=>{ try{ _prescFit(); }catch(e){} });
+    requestAnimationFrame(()=>{ _fitBusy=true; try{ _prescFit(); }catch(e){}
+      try{ if(_fitMO) _fitMO.takeRecords(); }catch(e){} _fitDoneAt=Date.now(); _fitBusy=false; });
   });
 }
 /* ---- a section opens when it is asked to -----------------------------------------
@@ -9727,7 +9751,7 @@ try{
   window.addEventListener("resize", _fitResized);
   /* only a change that could have put a panel on the page is worth a pass, and nothing
      the measuring room does counts as one */
-  new MutationObserver(ms=>{
+  _fitMO=new MutationObserver(ms=>{
     if(_fitBusy) return;
     for(let i=0;i<ms.length;i++){
       const m=ms[i];
@@ -9743,7 +9767,8 @@ try{
         if(n.closest && n.closest(FIT_SEL)){ _fitAll(); return; }
       }
     }
-  }).observe(document.documentElement, {childList:true, subtree:true});
+  });
+  _fitMO.observe(document.documentElement, {childList:true, subtree:true});
 }catch(e){}
 
 /* A SCREEN REBUILT UNDER A FINGER EATS THE CLICK.
