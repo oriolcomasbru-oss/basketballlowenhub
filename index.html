@@ -13583,6 +13583,32 @@ function _gpOppFive(opp, date){
   return p;
 }
 let _gpForPrint=false;
+/* A DEFENSE WRITTEN AS A LINE IS STILL THE DEFENSE STRIP.
+   On the bench sheet the defense of a quarter is one strip under the board. A plan read
+   from that sheet, or typed, often carries it as a general line - "DEFENSE = RED + LAST
+   / FELIPE = FIRST D = BITE" - with no colour painted on the rail: the strip under the
+   board came out empty and the box listed the defense as plain text, with no colour to
+   tie the two together. When no defense colour is painted in a quarter, the line named
+   DEFENSE is that quarter's strip: it is drawn under the board, end to end, in the
+   quarter's defense colour, and the box shows it as a band of the same colour. */
+function gpDefDerived(plan, q){
+  try{
+    const bar=(plan.defbar||{})[q]||[];
+    if(bar.some(v=>v)) return null;
+    const lines=String(((plan.gen||{})[q]||{}).def||"").split(/\n+/).map(x=>x.trim()).filter(Boolean);
+    const k=lines.findIndex(ln=>/^\s*def(en[sc]e|ensa)?\s*[=:]/i.test(ln));
+    if(k<0) return null;
+    const text=lines[k].replace(/^\s*def(en[sc]e|ensa)?\s*[=:]\s*/i,"").trim();
+    if(!text) return null;
+    /* the sheet often breaks the one sentence over two lines - "RED OR BLACK" and then
+       "FELIPE = FIRST D = BITE" under it: a line that follows and is not a rule of its
+       own (AFTER ..., FIRST ..., SECOND ..., SAFETY ...) is the rest of the sentence */
+    const used=[lines[k]]; let full=text;
+    const nx=lines[k+1];
+    if(nx && text.indexOf("=")<0 && !/^(after|first|second|safe|saft|ato|press|zone)/i.test(nx)){ full=text+" "+nx; used.push(nx); }
+    return { text:full, line:lines[k], lines:used, color:GP_DEFCOLORS[q==="Q1"? 0 : 1] };
+  }catch(e){ return null; }
+}
 /* the report being drawn: the game plan reads the opponent's cards out of it */
 let _scoutRep=null, _preVaultKey="";
 function renderPlanSection(sec, canEd, save, allSecs){
@@ -13667,6 +13693,13 @@ function renderPlanSection(sec, canEd, save, allSecs){
         td.addEventListener("click",()=>{ bars[c]=(v+1)%5; save(); redraw(); });
         tr.appendChild(td); }
     } else {
+      const dd=(side==="def")? gpDefDerived(plan, q) : null;
+      if(dd){
+        const td=h("td",{class:"gp2-rl", colspan:String(GP_COLS)}, dd.text);
+        td.style.background=dd.color;
+        tr.appendChild(td);
+        return tr;
+      }
       _gpSegs(bars).forEach(sg=>{
         const td=h("td",{class:"gp2-rl"+(sg.v===3?" ink":""), colspan:String(sg.len)});
         /* this quarter's share of the colour's text, not the sentence for both */
@@ -13890,9 +13923,12 @@ function renderPlanSection(sec, canEd, save, allSecs){
           });
         });
         lines.unshift.apply(lines, loose);
+        /* the defense line that is this quarter's strip is a band, not a general line */
+        const derived=(!canEd && side==="def")? gpDefDerived(plan, q) : null;
+        if(derived) derived.lines.forEach(dl=>{ const di=lines.indexOf(dl); if(di>=0) lines.splice(di,1); });
         /* a colour is a band in this quarter's box only when it is on this quarter's rail */
         const idx=[0,1,2,3].filter(i=> canEd || bar.some(v=>v===i+1));
-        if(!canEd && !lines.length && !idx.length) return;
+        if(!canEd && !lines.length && !idx.length && !derived) return;
         any=true;
         const grp=h("div",{class:"gp3-kgrp"}, h("div",{class:"gp3-kt"}, sd[1]));
         /* general: no colour, because it is not about who is on the floor */
@@ -13913,7 +13949,9 @@ function renderPlanSection(sec, canEd, save, allSecs){
            it, which on the staff's sheet is plain text and here was drawn as a coloured
            band beside the ones that really are tied to minutes. It is read as general, and
            goes first, where the sheet has it. The editor still shows it under its colour. */
-        const whole = canEd ? [] : idx.filter(i=>bar.every(v=>v===i+1) && gpLegQText(legs[i], q));
+        /* ...for the offense. The defense strip is asked for as a strip: its colour under the
+           board and the same colour in the box, so the two are read as one. */
+        const whole = (canEd || side==="def") ? [] : idx.filter(i=>bar.every(v=>v===i+1) && gpLegQText(legs[i], q));
         /* and a colour with nothing written for this quarter has nothing to say in the box */
         const bands = idx.filter(i=>whole.indexOf(i)<0 && (canEd || gpLegQText(legs[i], q)));
         if(!canEd && (lines.length || whole.length)){
@@ -13954,6 +13992,13 @@ function renderPlanSection(sec, canEd, save, allSecs){
           /* who is on the floor is no longer repeated here: the board is right beside it */
           grp.appendChild(item);
         });
+        if(derived){
+          const item=h("div",{class:"gp3-ki"});
+          item.style.borderColor=derived.color; item.style.backgroundColor=derived.color+"52";
+          item.appendChild(h("div",{class:"gp3-kl"}, h("span",{class:"gp3-ktag"}, "ALL "+GP_COLS+"′"),
+            h("span",{class:"gp3-ktext"}, derived.text)));
+          grp.appendChild(item);
+        }
         card.appendChild(grp);
       });
       /* how much is written in it, so the printed sheet can set a full box a size down */
