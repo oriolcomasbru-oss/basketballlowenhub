@@ -1481,13 +1481,37 @@
     root.appendChild(s);
     return s;
   }
+  /* EVERY BLOCK OF TABLES IS SHUT UNTIL IT IS ASKED FOR. The card at the top says what the
+     tables say; a table is where a reader goes to check one of its lines, not what he has
+     to scroll through to find them. Each block keeps one line saying what is in it, opens
+     and closes on its own heading, and remembers the choice for as long as the page is
+     open. Expand all and Collapse all are at the top of the tagging. */
+  var SUB_OPEN = {}, SUB_ALL = [];
   function sub(host, title, what) {
-    var b = el("div", "sxp-blk");
-    b.appendChild(el("div", "sxp-sub", title));
-    /* the sentence under a sub-heading goes to the hover with the rest of the prose */
-    if (what) try { b.title = String(what).replace(/\s+/g, " "); } catch (e) {}
+    var b = el("div", "sxp-blk sxp-fold");
+    var hd = el("div", "sxp-sub sxp-fold-h");
+    hd.appendChild(el("b", null, title));
+    if (what) hd.appendChild(el("span", "sxp-fold-w", String(what).replace(/\s+/g, " ")));
+    var pill = el("button", "lg-fold-b sxp-fold-b", "Show"); pill.type = "button";
+    hd.appendChild(pill);
+    var paint = function () { var o = !!SUB_OPEN[title];
+      b.classList.toggle("shut", !o); b.classList.toggle("open", o); pill.textContent = o ? "Hide" : "Show"; };
+    hd.addEventListener("click", function () { SUB_OPEN[title] = !SUB_OPEN[title]; paint();
+      try { window.dispatchEvent(new Event("resize")); } catch (e) {} });
+    b.appendChild(hd);
     host.appendChild(b);
+    SUB_ALL.push({ t: title, paint: paint, el: b });
+    paint();
     return b;
+  }
+  function subAllBar() {
+    var bar = el("div", "sxp-allbar");
+    var mk = function (txt, open) { var x = el("button", "lg-fold-b sxp-fold-b", txt); x.type = "button";
+      x.addEventListener("click", function () { SUB_ALL = SUB_ALL.filter(function (s) { return s.el.isConnected; });
+        SUB_ALL.forEach(function (s) { SUB_OPEN[s.t] = open; s.paint(); });
+        try { window.dispatchEvent(new Event("resize")); } catch (e) {} }); return x; };
+    bar.appendChild(mk("Expand all", true)); bar.appendChild(mk("Collapse all", false));
+    return bar;
   }
   /* the prose under a table moves to the hover; the page keeps the numbers */
   function tnote(host, txt) { try { host.title = String(txt || "").replace(/\s+/g, " "); } catch (e) {} }
@@ -1683,6 +1707,104 @@
     return s6;
   }
 
+  /* THE OPPONENT IN ONE CARD, BEFORE ANY TABLE.
+     Team stats was a dozen tables one after another and the reader had to find the game
+     plan in them. This is what those tables say, chosen from them: how they score and
+     where they are better than the league at it, how their possessions end, where they
+     concede, how they cover the ball screen - which coverage, how often, what it costs
+     them, whether it changes with the big in it, with the quarter and from one game to
+     the next - their second chances, and their quarters. A line is said when it is far
+     enough from the reference and rests on enough possessions; each carries its count.
+     "Red" is what hurts us and "green" what we can go at, whichever end it is. */
+  function teamDash(D) {
+    var K = (typeof window !== "undefined") && window.UIKit;
+    if (!K || !D) return null;
+    var f2n = function (v) { return (v == null || !isFinite(v)) ? "—" : Number(v).toFixed(2); };
+    var figs = [], PO = D.panelOff, PD = D.panelDef, RO = D.panelRefOff, RD = D.panelRefDef, S = D.say || {};
+    if (PO) figs.push({ label: "Their offense", value: f2n(PO.ppp), note: "per possession · league " + f2n(RO && RO.ppp),
+      tone: K.tone(PO.ppp, RO && RO.ppp, false, 0.04) });
+    if (PD) figs.push({ label: "Their defense", value: f2n(PD.ppp), note: "allowed · league " + f2n(RD && RD.ppp),
+      tone: K.tone(PD.ppp, RD && RD.ppp, true, 0.04) });
+    if (S.bsFreq != null) figs.push({ label: "Ball screens", value: S.bsFreq + "%", note: "of what they defend · " + f2n(S.bsPpp) + " allowed", tone: "vol" });
+    if (D.second) figs.push({ label: "Second chances", value: D.second.orb, note: "offensive rebounds · " + D.second.pts + " points off them", tone: "vol" });
+    if (D.meta) figs.push({ label: "Games tagged", value: D.meta.ngames, note: (D.meta.games || []).join(" · "), tone: "vol" });
+    /* a row of one of the report's own tables, as a sentence: `edge` is already "how good
+       this is for us", whichever side of the ball it is */
+    var line = function (rows, minPoss, text, weight) {
+      return (rows || []).filter(function (r) { return r && r.poss >= minPoss && r.ref != null && Math.abs(r.edge) >= 0.08; })
+        .map(function (r) { return { text: text(r), tone: r.edge > 0 ? "good" : "bad",
+          size: Math.min(1, Math.abs(r.edge) / 0.35) * (0.6 + 0.4 * Math.min(1, (r.freq || 10) / 25)),
+          n: Math.round(r.poss), solidN: 30, unit: "poss", weight: weight || 1 }; });
+    };
+    var gOff = line(D.mix, 10, function (r) { return r.label + ": " + f2n(r.ppp) + " per possession, " + (r.freq != null ? r.freq + "% of their offense" : "") + " (league " + f2n(r.ref) + ")"; })
+      .concat(line(D.court, 12, function (r) { return r.label + ": " + f2n(r.ppp) + " per possession (league " + f2n(r.ref) + ")"; }, 0.9));
+    var gFin = line(D.finish, 10, function (r) { return "Ends in " + r.label + ": " + f2n(r.ppp) + " per possession" + (r.freq != null ? ", " + r.freq + "% of the time" : ""); });
+    var gDef = line(D.defsit, 10, function (r) { return r.label + ": " + f2n(r.ppp) + " allowed per possession (league " + f2n(r.ref) + ")"; })
+      .concat(line(D.generate, 10, function (r) { return "Against " + r.label + ": " + f2n(r.ppp) + " allowed"; }, 0.8));
+    /* the ball screen: what each coverage costs, who is in it, and whether it moves */
+    var gCov = line(D.coverage, 8, function (r) { return r.label + ": " + (r.freq != null ? r.freq + "% of their ball screens, " : "") + f2n(r.ppp) + " allowed"; }, 1.3);
+    try {
+      var tot = D.covbybig && D.covbybig.total;
+      if (tot && tot[0] && tot[1] && tot[0].n >= 6 && tot[1].n >= 6 && tot[0].ppp != null && tot[1].ppp != null) {
+        var d45 = tot[0].ppp - tot[1].ppp;
+        if (Math.abs(d45) >= 0.12) gCov.push({ text: "Clips tagged “PnR 4” allow " + f2n(tot[0].ppp) + ", every other ball screen " + f2n(tot[1].ppp) + " — go at the " + (d45 > 0 ? "4" : "5"),
+          tone: "neutral", size: Math.min(1, Math.abs(d45) / 0.4), n: Math.round(Math.min(tot[0].poss, tot[1].poss)), solidN: 20, unit: "poss", weight: 1.2 });
+      }
+      (D.covbybig && D.covbybig.rows || []).forEach(function (r) {
+        var a = r.cells[0], b = r.cells[1];
+        if (a && b && a.share != null && b.share != null && a.n >= 3 && b.n >= 3 && Math.abs(a.share - b.share) >= 25)
+          gCov.push({ text: r.label + " is " + a.share + "% of what the 4 does and " + b.share + "% of what the 5 does", tone: "neutral",
+            size: Math.min(1, Math.abs(a.share - b.share) / 60), n: Math.round(a.poss + b.poss), solidN: 20, unit: "poss" });
+      });
+      (D.covquarter || []).forEach(function (r) {
+        var n = (r.Q1 || 0) + (r.Q2 || 0) + (r.Q3 || 0) + (r.Q4 || 0);
+        if (n >= 8 && (r.Q4 || 0) >= 0.5 * n) gCov.push({ text: r.label + " mostly in the fourth quarter: " + r.Q4 + " of " + n, tone: "neutral", size: r.Q4 / n, n: n, solidN: 14, unit: "clips" });
+        else if (n >= 8 && (r.Q1 || 0) >= 0.5 * n) gCov.push({ text: r.label + " mostly in the first quarter: " + r.Q1 + " of " + n, tone: "neutral", size: r.Q1 / n, n: n, solidN: 14, unit: "clips" });
+      });
+      var CG = D.covbygame;
+      if (CG && CG.rows && CG.rows.length >= 2) CG.keys.forEach(function (k, i) {
+        var per = CG.rows.map(function (g) { var c = g.cells[i]; var all = g.all && g.all.poss; return (c && c.n && all) ? { g: g.game, s: 100 * c.poss / all, p: c.poss } : null; }).filter(Boolean);
+        if (per.length < 2) return;
+        var hi = per.slice().sort(function (a, b) { return b.s - a.s; })[0], lo = per.slice().sort(function (a, b) { return a.s - b.s; })[0];
+        if (hi.s - lo.s >= 30) gCov.push({ text: k + " changes from game to game: " + Math.round(hi.s) + "% of the ball screens against " + hi.g + ", " + Math.round(lo.s) + "% against " + lo.g,
+          tone: "neutral", size: Math.min(1, (hi.s - lo.s) / 70), n: Math.round(hi.p + lo.p), solidN: 16, unit: "poss" });
+      });
+    } catch (e) { }
+    /* their quarters, added up over the games */
+    var gQ = [];
+    try {
+      var q = {}; (D.quarters || []).forEach(function (r) { var o = q[r.q] || (q[r.q] = { op: 0, opts: 0, dp: 0, dpts: 0 });
+        o.op += r.oPoss || 0; o.opts += (r.oPpp || 0) * (r.oPoss || 0); o.dp += r.dPoss || 0; o.dpts += (r.dPpp || 0) * (r.dPoss || 0); });
+      var qs = Object.keys(q).filter(function (k) { return q[k].op >= 12 && q[k].dp >= 12; })
+        .map(function (k) { return { q: k, o: q[k].opts / q[k].op, d: q[k].dpts / q[k].dp, n: q[k].op + q[k].dp }; });
+      if (qs.length >= 2) {
+        var bo = qs.slice().sort(function (a, b) { return b.o - a.o; })[0], wo = qs.slice().sort(function (a, b) { return a.o - b.o; })[0];
+        if (bo.o - wo.o >= 0.2) gQ.push({ text: "They score best in " + bo.q + " (" + f2n(bo.o) + ") and least in " + wo.q + " (" + f2n(wo.o) + ")", tone: "neutral",
+          size: Math.min(1, (bo.o - wo.o) / 0.5), n: Math.round(Math.min(bo.n, wo.n)), solidN: 40, unit: "poss" });
+        var bd = qs.slice().sort(function (a, b) { return b.d - a.d; })[0], wd = qs.slice().sort(function (a, b) { return a.d - b.d; })[0];
+        if (bd.d - wd.d >= 0.2) gQ.push({ text: "They concede most in " + bd.q + " (" + f2n(bd.d) + ") and least in " + wd.q + " (" + f2n(wd.d) + ")", tone: "good",
+          size: Math.min(1, (bd.d - wd.d) / 0.5), n: Math.round(Math.min(bd.n, wd.n)), solidN: 40, unit: "poss" });
+      }
+      var gg = (D.gamebygame || []).filter(function (r) { return !r.total; });
+      if (gg.length >= 2) { var last = gg[gg.length - 1], rest = gg.slice(0, -1);
+        var avg = function (k, w) { var n = 0, s = 0; rest.forEach(function (r) { n += r[w] || 0; s += (r[k] || 0) * (r[w] || 0); }); return n ? s / n : null; };
+        var ao = avg("oPpp", "oPoss"), ad = avg("dPpp", "dPoss");
+        if (ao != null && Math.abs(last.oPpp - ao) >= 0.12) gQ.push({ text: "Last game tagged (" + last.label + "): " + f2n(last.oPpp) + " scored per possession, " + f2n(ao) + " before",
+          tone: last.oPpp > ao ? "bad" : "good", size: Math.min(1, Math.abs(last.oPpp - ao) / 0.35), n: Math.round(last.oPoss), solidN: 60, unit: "poss" });
+        if (ad != null && Math.abs(last.dPpp - ad) >= 0.12) gQ.push({ text: "Last game tagged (" + last.label + "): " + f2n(last.dPpp) + " allowed per possession, " + f2n(ad) + " before",
+          tone: last.dPpp > ad ? "good" : "bad", size: Math.min(1, Math.abs(last.dPpp - ad) / 0.35), n: Math.round(last.dPoss), solidN: 60, unit: "poss" });
+      }
+      if (D.second && D.second.chains >= 6) gQ.push({ text: "Second chances: " + D.second.orb + " offensive rebounds, " + D.second.pts + " points — " + f2n(D.second.ppp) + " per second chance",
+        tone: D.second.ppp >= 1.1 ? "bad" : "neutral", size: Math.min(1, D.second.chains / 20), n: D.second.chains, solidN: 15, unit: "chances", weight: 1.1 });
+    } catch (e) { }
+    return K.summary({ title: "The opponent, from the tagging",
+      sub: "red is what hurts us · green is what we can go at · each line says what it rests on", figures: figs,
+      groups: [ { title: "How they score", ideas: K.pick(gOff, 5) }, { title: "How their possessions end", ideas: K.pick(gFin, 4) },
+        { title: "Where they concede", ideas: K.pick(gDef, 5) }, { title: "Ball screen coverage", ideas: K.pick(gCov, 6) },
+        { title: "Quarters, last game, second chances", ideas: K.pick(gQ, 5) } ],
+      empty: "Not enough tagged possessions to say anything yet." });
+  }
+
   function render(root, D, filesUsed, opts) {
     root.innerHTML = "";
     root.className = "sxp";
@@ -1694,6 +1816,10 @@
       root.title = "From the tagging of " + M.team + " · " + M.ngames + " game" +
         (M.ngames === 1 ? "" : "s") + " (" + M.games.join(" · ") + ")";
     } catch (e) {}
+
+    /* what the tables below say, before the tables */
+    try { var dashT = teamDash(D); if (dashT) root.appendChild(dashT); } catch (e) { }
+    try { root.appendChild(subAllBar()); } catch (e) { }
 
     /* Said loudly and at the top: a category nobody taught the parser is a
        category that is not in a single number below it. */
@@ -2549,6 +2675,15 @@
       ".sxp-t tr.sxp-tot td{background:rgba(0,0,0,.04);font-weight:700}",
       /* a second heading inside one panel needs the air a panel boundary would have given it */
       ".sxp-sub2{margin-top:16px}",
+      ".sxp-fold-h{display:flex;align-items:center;gap:10px;cursor:pointer;margin:0;padding:7px 0}",
+      ".sxp-fold-h b{flex:none}",
+      ".sxp-fold-w{flex:1 1 auto;min-width:0;font:400 11.5px 'Inter',sans-serif;letter-spacing:0;text-transform:none;color:#8a93a2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".sxp-fold-b{margin-left:auto;flex:none;font:700 10.5px/1 'Oswald',sans-serif!important;letter-spacing:.12em!important;color:#141821!important;border:1.5px solid #cfd4dc!important;padding:5px 12px 5px 7px!important}",
+      ".sxp-blk.open > .sxp-fold-h .sxp-fold-b::before{transform:rotate(90deg)}",
+      ".sxp-blk.shut > :not(.sxp-fold-h){display:none!important}",
+      ".sxp-blk.shut{border-bottom:1px solid #e4e7ec}",
+      ".sxp-blk.open > .sxp-fold-h{margin-bottom:6px}",
+      ".sxp-allbar{display:flex;gap:8px;margin:0 0 10px}",
       ".sxp-clips{margin-top:8px}",
       ".sxp-clips>summary{cursor:pointer;font-size:12px;color:#5b6472;padding:4px 0}",
       ".sxp-clips .sxp-scroll{max-height:420px;overflow:auto}",

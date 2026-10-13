@@ -10159,7 +10159,16 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
          we do about it on the right. Folding their sets away under the table put the
          evidence out of sight of the decision it belongs to, which is the one place it
          has to be. */
-      if(isDual && sec.dualLbl==="sets" && kind!=="postgame") block.appendChild(_pbTop(sec));
+      /* the pre game playbook is one board now (see renderPlaybookBoard); a table the staff
+         added to the section keeps its own card under it */
+      if(isDual && sec.dualLbl==="sets" && kind!=="postgame"){
+        block.appendChild(renderPlaybookBoard(sec, canEd, save, reRender));
+        (sec.items||[]).forEach((it,ii)=>{ if(it && it.kind==="table") grid.appendChild(renderTableCard(sec,it,ii,canEd,save,reRender,cctx)); });
+        if(grid.children.length) block.appendChild(grid);
+        if(canEd) block.appendChild(h("div",{class:"rs-add-cardrow"}, h("button",{class:"rs-add-card", onclick:()=>{ sec.items.push({t:"Table",kind:"table",table:{headers:["System","Poss","PPP"],rows:[["","",""]]}}); save(); reRender(); }},"+ table")));
+        wrap.appendChild(block);
+        return;
+      }
       if(isDual && (sec.items||[]).some(it=>it.kind!=="table")){
         const isPb2 = sec.dualLbl==="sets" && kind!=="postgame";
         grid.appendChild(h("div",{class:"rs-dualhead"+(canEd?" ed":"")+(isPb2?" pbx-4":"")},
@@ -12934,6 +12943,188 @@ function pbxDrag(row, key, targets, opts){
   };
   row.addEventListener("pointerup", end);
   row.addEventListener("pointercancel", end);
+}
+/* THE PLAYBOOK AS ONE BOARD.
+   It was four cards - transition, half court, sideline, baseline - each with the opponent's
+   sets on the left and, on the right, the sets the staff had picked written out a second
+   time with their call and their numbers, so every adjusted set was on the page twice and
+   the two copies sat at different heights. And a set could only be compared with the
+   others of its own card.
+   It is one table now. A set is on it once. Its adjustment is on the same line, to the
+   right, and is nothing but the adjustment. A key set is marked on its line and listed in
+   the column beside the table; a set can be a key set with no adjustment and have an
+   adjustment without being a key set. Every set of every kind can be sorted together, and
+   the kinds are a filter.
+
+   NOTHING STORED CHANGES SHAPE. An adjustment is still an entry of its area's own list
+   (pbSets, with the set's name and the rule), a renamed set is still in pbEdit, the notes
+   of each area are still its two texts, and the key sets are still the club's list. A
+   report written on the four cards opens here with everything it had.
+
+   WHAT A CODE SAYS. H is half court, T transition, S a sideline inbound, B a baseline
+   inbound, P a concept rather than a set; the number is the series and a letter after it
+   the variant, so H2A, H2B and H2C are three variants of H2. The code decides the kind
+   when there is one. Without a code, a name that is plainly transition (drag, fast break,
+   rim run, press break, trailer, transition) is transition; anything else keeps the kind
+   the tagging filed it under. A set tagged after a timeout is also listed under ATO. */
+const PB_KIND={ H:"Half court", T:"Transition", S:"SLOB", B:"BLOB", P:"Concepts" };
+const PB_KINDS=["Half court","Transition","SLOB","BLOB","Concepts"];
+function _pbClass(r){
+  const tok=String(r.label||"").trim().split(/\s+/)[0]||"";
+  let kind=null, fam="", variant="";
+  const m=/^([HTSB])(\d{1,2})([A-Z]?)$/.exec(tok);
+  if(m){ kind=PB_KIND[m[1]]; fam=m[1]+m[2]; variant=m[3]||""; }
+  else if(/^P[A-Z0-9]{1,3}$/.test(tok)){ kind="Concepts"; fam=tok; }
+  if(!kind){
+    if(/\b(drag|fast\s?break|rim\s?run(ner)?|press\s?break|trailer|transition)\b/i.test(String(r.label||""))) kind="Transition";
+    else kind=(r.band==="Open court")? "Transition" : (r.band==="SLOB"||r.band==="BLOB")? r.band : "Half court";
+  }
+  return { kind:kind, fam:fam, variant:variant, code:(m||fam)? tok : "", ato:/after\s*timeout/i.test(String(r.kind||"")) };
+}
+function renderPlaybookBoard(sec, canEd, save, reRender){
+  const areas=(sec.items||[]).filter(it=>it && it.kind!=="table");
+  areas.forEach(it=>{ if(it.us===undefined && it.v!==undefined) it.us=it.v;
+    it.pbSets=Array.isArray(it.pbSets)? it.pbSets : []; it.pbEdit=(it.pbEdit && typeof it.pbEdit==="object")? it.pbEdit : {}; });
+  const wrap=h("div",{class:"pbb"+(canEd? " ed" : "")});
+  const bar=h("div",{class:"pbb-bar"}), main=h("div",{class:"pbb-main"});
+  const tableBox=h("div",{class:"pbb-table"}), keyBox=h("div",{class:"pbb-key"});
+  main.appendChild(tableBox); main.appendChild(keyBox);
+  wrap.appendChild(bar); wrap.appendChild(main);
+  let ROWS=[], AVG=null, FILTER="All", ORDER="n", DESC=true, ONLY="";
+  const itemFor=r=>areas.filter(it=>pbxBand(it.t)===r.band)[0] || areas[0] || null;
+  const pickOf=k=>{ for(let i=0;i<areas.length;i++){ const j=areas[i].pbSets.findIndex(p=>p && p.k===k); if(j>=0) return { it:areas[i], p:areas[i].pbSets[j], j:j }; } return null; };
+  const nameOf=k=>{ for(let i=0;i<areas.length;i++){ if(areas[i].pbEdit[k]) return areas[i].pbEdit[k]; } return k; };
+  /* A REPORT WRITTEN ON THE OLD CARDS HAS EVERY SET IN ITS ADJUSTMENTS LIST, MOST OF THEM
+     EMPTY. An empty entry is a place to write, not an adjustment: only a set with
+     something written against it is marked and counted as adjusted. */
+  const hasAdj=k=>{ const o=pickOf(k); return !!(o && String(o.p.rule||"").replace(/<[^>]*>/g,"").replace(/&nbsp;/g," ").trim()); };
+  const keyOn=k=>{ try{ return _pbKeyRead(k); }catch(e){ return false; } };
+  const keyWrite=(k,on)=>{ _pbKeyWrite(k, on); try{ save(); }catch(e){} try{ persist(); }catch(e){} try{ _clubPush(_preClub()); }catch(e){} draw(); };
+  const COLS=[ ["code","Code",false, r=>(r.c.fam||"~")+" "+(r.c.variant||"")+" "+String(nameOf(r.label)).toLowerCase()],
+    ["name","Set",false, r=>String(nameOf(r.label)).toLowerCase()], ["call","Call",false, r=>String(r.call||"￿").toLowerCase()],
+    ["n","Use",true, r=>r.n], ["ppp","PPP",true, r=>r.ppp], ["efg","eFG",true, r=>r.efg] ];
+  const cmp=()=>{ const c=COLS.filter(x=>x[0]===ORDER)[0]||COLS[3], get=c[3];
+    return (a,b)=>{ const A=get(a), B=get(b); let d=(typeof A==="number" && typeof B==="number")? A-B : String(A).localeCompare(String(B), undefined, { numeric:true });
+      if(!d) d=b.n-a.n; return (c[2]? DESC : !DESC)? -d : d; }; };
+  const inFilter=r=>(FILTER==="All" || (FILTER==="ATO"? r.c.ato : r.c.kind===FILTER))
+    && (ONLY!=="adj" || hasAdj(r.label)) && (ONLY!=="key" || keyOn(r.label));
+  function draw(){
+    /* ---- the filters */
+    bar.innerHTML="";
+    const chip=(lab, on, fn, n)=>{ const b=h("button",{class:"pbb-chip"+(on? " on" : ""), type:"button"}, lab, n!=null? h("i",{}, String(n)) : null); b.addEventListener("click", fn); return b; };
+    const count=k=>ROWS.filter(r=>k==="All"? true : k==="ATO"? r.c.ato : r.c.kind===k).length;
+    ["All"].concat(PB_KINDS, ["ATO"]).forEach(k=>{ const n=count(k); if(k!=="All" && !n) return; bar.appendChild(chip(k, FILTER===k, ()=>{ FILTER=k; draw(); }, n)); });
+    bar.appendChild(h("span",{class:"pbb-sep"}));
+    bar.appendChild(chip("With an adjustment", ONLY==="adj", ()=>{ ONLY=(ONLY==="adj")? "" : "adj"; draw(); }, ROWS.filter(r=>hasAdj(r.label)).length));
+    bar.appendChild(chip("★ Key sets", ONLY==="key", ()=>{ ONLY=(ONLY==="key")? "" : "key"; draw(); }, ROWS.filter(r=>keyOn(r.label)).length));
+    /* ---- the table */
+    tableBox.innerHTML="";
+    if(!ROWS.length){ tableBox.appendChild(h("div",{class:"pbx-none"}, "Nothing tagged for this opponent yet.")); }
+    const head=h("div",{class:"pbb-r pbb-h"});
+    head.appendChild(h("span",{class:"pbb-star"},""));
+    COLS.forEach(c=>{ const on=ORDER===c[0];
+      const s=h("span",{class:"pbb-c-"+c[0]+" pbb-sort"+(on? " on" : ""), title:"Sort every set by "+c[1].toLowerCase()}, c[1], on? h("i",{}, (c[2]? DESC : !DESC)? "▾" : "▴") : null);
+      s.addEventListener("click",()=>{ if(ORDER===c[0]) DESC=!DESC; else { ORDER=c[0]; DESC=true; } draw(); });
+      head.appendChild(s); });
+    head.appendChild(h("span",{class:"pbb-c-adj"},"Our adjustment"));
+    tableBox.appendChild(head);
+    const shown=ROWS.filter(inFilter).sort(cmp());
+    if(ROWS.length && !shown.length) tableBox.appendChild(h("div",{class:"pbx-none"},"No set under this filter."));
+    let lastFam=null;
+    shown.forEach(r=>{
+      /* sorted by code, a series is introduced once, with what its variants add up to */
+      if(ORDER==="code" && r.c.fam && r.c.fam!==lastFam){
+        const fam=ROWS.filter(x=>x.c.fam===r.c.fam);
+        if(fam.length>1){ const n=fam.reduce((a,x)=>a+x.n,0), pts=fam.reduce((a,x)=>a+(x.ppp||0)*x.n,0);
+          tableBox.appendChild(h("div",{class:"pbb-fam"}, h("b",{}, r.c.fam), h("span",{}, r.c.kind+" · "+fam.length+" variants · "+n+" runs · "+(n? (pts/n).toFixed(2) : "—")+" per possession"))); }
+        lastFam=r.c.fam;
+      }
+      const pk=pickOf(r.label), key=keyOn(r.label);
+      const row=h("div",{class:"pbb-r"+(key? " key" : "")+(hasAdj(r.label)? " adj" : "")});
+      const star=h("button",{class:"pbb-star"+(key? " on" : ""), type:"button", title:key? "A key set — press to take it out" : "Mark as a key set"}, "★");
+      if(canEd) star.addEventListener("click",()=>keyWrite(r.label, !key)); else star.disabled=true;
+      row.appendChild(star);
+      row.appendChild(h("span",{class:"pbb-c-code"}, r.c.code? h("b",{}, r.c.code) : h("i",{},"—"), h("em",{}, r.c.kind+(r.c.ato? " · ATO" : ""))));
+      const nm=h("span",{class:"pbb-c-name"}, nameOf(r.label));
+      if(canEd){ nm.contentEditable="true"; nm.title="Rename this set for the report";
+        nm.addEventListener("blur",()=>{ const it=itemFor(r); if(!it) return; const v=nm.textContent.trim();
+          areas.forEach(a=>{ if(a!==it) delete a.pbEdit[r.label]; });
+          if(v && v!==r.label) it.pbEdit[r.label]=v; else delete it.pbEdit[r.label]; save(); }); }
+      row.appendChild(nm);
+      row.appendChild(r.call? h("span",{class:"pbb-c-call pbx-call"}, r.call) : h("span",{class:"pbb-c-call pbx-nocall"},"—"));
+      const mx=Math.max.apply(null, ROWS.map(x=>x.n).concat([1]));
+      row.appendChild(h("span",{class:"pbb-c-n", title:r.n+" runs"}, h("i",{style:"width:"+Math.max(4,Math.round(100*r.n/mx))+"%"}), h("b",{}, String(r.n))));
+      const pp=pbxPppChip(r.ppp, AVG, r.n); pp.classList.add("pbb-c-ppp"); row.appendChild(pp);
+      row.appendChild(h("span",{class:"pbb-c-efg"}, r.efg==null? "—" : r.efg+"%"));
+      /* the adjustment, and only the adjustment */
+      const cell=h("span",{class:"pbb-c-adj"});
+      if(pk && (canEd || hasAdj(r.label))){
+        const box=makeRichBox(canEd, pk.p.rule, html=>{ pk.p.rule=html; save(); row.classList.toggle("adj", hasAdj(r.label)); }, "What we do against it…", 0);
+        box.classList.add("pbb-rule"); cell.appendChild(box);
+        if(canEd){ const x=h("button",{class:"pbx-x pbb-rm", type:"button", title:"Remove this adjustment"},"✕");
+          x.addEventListener("click",()=>{ const now=pickOf(r.label); if(now){ now.it.pbSets.splice(now.j,1); save(); draw(); } }); cell.appendChild(x); }
+      } else if(canEd){
+        const add=h("button",{class:"pbb-add", type:"button"},"+ adjustment");
+        add.addEventListener("click",()=>{ const it=itemFor(r); if(!it) return; it.pbSets.push({ k:r.label, rule:"" }); save(); draw();
+          try{ const b=[...tableBox.querySelectorAll(".pbb-r")].filter(x=>x.__k===r.label)[0]; if(b) b.querySelector(".pbb-rule").focus(); }catch(e){} });
+        cell.appendChild(add);
+      }
+      row.appendChild(cell);
+      row.__k=r.label;
+      tableBox.appendChild(row);
+    });
+    /* an adjustment or a key set whose set the tagging no longer lists is still shown */
+    const known={}; ROWS.forEach(r=>{ known[r.label]=1; });
+    const orphans=[]; areas.forEach(it=>it.pbSets.forEach((p,j)=>{ if(p && p.k && !known[p.k]) orphans.push({ it:it, p:p, j:j }); }));
+    if(orphans.length){
+      tableBox.appendChild(h("div",{class:"pbb-fam"}, h("b",{},"Not in the tagging"), h("span",{},"adjustments written for a set the tagging does not list now — kept as they are")));
+      orphans.forEach(o=>{ const row=h("div",{class:"pbb-r adj orphan"}, h("span",{class:"pbb-star"},""), h("span",{class:"pbb-c-code"}, h("i",{},"—")),
+          h("span",{class:"pbb-c-name"}, nameOf(o.p.k)), h("span",{class:"pbb-c-call"},""), h("span",{class:"pbb-c-n"},""), h("span",{class:"pbb-c-ppp"},""), h("span",{class:"pbb-c-efg"},""));
+        const cell=h("span",{class:"pbb-c-adj"}); const box=makeRichBox(canEd, o.p.rule, html=>{ o.p.rule=html; save(); }, "", 0); box.classList.add("pbb-rule"); cell.appendChild(box);
+        row.appendChild(cell); tableBox.appendChild(row); });
+    }
+    drawKey();
+  }
+  function drawKey(){
+    keyBox.innerHTML="";
+    keyBox.appendChild(h("div",{class:"pbb-key-h"}, "★ Key sets"));
+    const picked=ROWS.filter(r=>keyOn(r.label)).sort(cmp());
+    if(!picked.length){ keyBox.appendChild(h("div",{class:"pbx-keyempty"}, canEd? "Press the star of a set to put it here" : "—")); return; }
+    picked.forEach(r=>{ const row=h("div",{class:"pbb-k"},
+        h("b",{}, r.c.code||""), h("span",{class:"nm"}, nameOf(r.label)),
+        r.call? h("span",{class:"pbx-call"}, r.call) : null,
+        h("span",{class:"n"}, String(r.n)), pbxPppChip(r.ppp, AVG, r.n),
+        hasAdj(r.label)? h("i",{class:"adj", title:"There is an adjustment for it"},"adj") : null);
+      if(canEd){ const x=h("button",{class:"pbx-x", type:"button", title:"Take it out of the key sets"},"✕"); x.addEventListener("click",()=>keyWrite(r.label,false)); row.appendChild(x); }
+      keyBox.appendChild(row); });
+  }
+  /* ---- the notes of each area, exactly as they were written */
+  const notes=h("div",{class:"pbb-notes"});
+  const anyNote=areas.some(it=>String(it.them||"").replace(/<[^>]*>/g,"").trim() || String(it.us||"").replace(/<[^>]*>/g,"").trim());
+  if(areas.length && (canEd || anyNote)){
+    const det=document.createElement("details"); det.open=!!anyNote;
+    const sm=document.createElement("summary"); sm.textContent="Notes by area — sets the tagging does not show, and general notes"; det.appendChild(sm);
+    areas.forEach(it=>{ det.appendChild(h("div",{class:"pbb-note"}, h("b",{}, it.t||""),
+      h("div",{class:"pbb-note-2"},
+        h("div",{}, h("i",{},"Their sets"), makeRichBox(canEd, it.them, html=>{ it.them=html; save(); }, "Sets the tagging never shows…", 3)),
+        h("div",{}, h("i",{},"Our notes"), makeRichBox(canEd, it.us, html=>{ it.us=html; save(); }, "Notes…", 3))))); });
+    notes.appendChild(det);
+  }
+  wrap.appendChild(notes);
+  tableBox.appendChild(h("div",{class:"pbx-load ld"},"Reading the tagging…", h("span",{class:"ld-bar"})));
+  drawKey();
+  try{ _clubPull(_preClub(), ()=>{ try{ if(ROWS.length) draw(); }catch(e){} }); }catch(e){}
+  if(_scoutOpponent && window.ScoutPre && window.ScoutPre.sets){
+    window.ScoutPre.sets(_scoutOpponent, null).then(res=>{
+      ROWS=(res.rows||[]).map(r=>Object.assign({}, r, { c:_pbClass(r) })); AVG=(res.avg!=null)? res.avg : null;
+      if(!ROWS.length){ tableBox.innerHTML=""; tableBox.appendChild(h("div",{class:"pbx-none"},
+        res.why==="nomatch"? "The tagging holds no games against this opponent." : res.why==="empty"? "No files in the pregame folder." : "Nothing tagged for this opponent yet."));
+        /* what the staff wrote is still shown, with nothing to hang it on */
+        ROWS=[]; draw(); return; }
+      draw();
+    }).catch(err=>{ tableBox.innerHTML=""; tableBox.appendChild(h("div",{class:"pbx-none"},"The tagging could not be read: "+((err&&err.message)||"error"))); ROWS=[]; draw(); });
+  } else { tableBox.innerHTML=""; draw(); }
+  return wrap;
 }
 function renderPlaybookCard(sec,it,ii,canEd,save,reRender,ctx,L){
   L=L||["THEIR SETS","OUR ADJUSTMENTS"];
@@ -27576,6 +27767,57 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .trg-mx td.up{color:#1f8068;font-weight:700}.trg-mx td.dn{color:#c0403c;font-weight:700}
 .trg-pos .trg-wide{width:30%;min-width:220px}
 .trg-pos .trg-pn{display:block;font-style:normal;font-weight:400;font-size:9.5px;color:var(--ink-faint,#8a93a2);white-space:normal;max-width:210px}
+
+/* the playbook as one board */
+.pbb{margin-top:4px}
+.pbb-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 10px}
+.pbb-chip{display:inline-flex;align-items:center;gap:6px;font:700 10.5px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;
+  border:1.5px solid var(--line-strong,#cfd4dc);background:var(--panel,#fff);color:var(--ink,#141821);border-radius:999px;padding:5px 12px;cursor:pointer}
+.pbb-chip i{font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
+.pbb-chip.on{background:var(--ink,#141821);color:#fff;border-color:var(--ink,#141821)}.pbb-chip.on i{color:rgba(255,255,255,.7)}
+.pbb-sep{width:1px;height:18px;background:var(--line-strong,#cfd4dc);margin:0 4px}
+.pbb-main{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:18px;align-items:start}
+.pbb-r{display:grid;grid-template-columns:26px 92px minmax(120px,1.1fr) minmax(56px,auto) 96px 52px 46px minmax(180px,1.3fr);gap:8px;align-items:center;
+  padding:5px 8px;border-bottom:1px solid var(--line,#eef0f3);font-size:12.5px;border-left:4px solid transparent}
+.pbb-h{position:sticky;top:0;z-index:2;background:var(--panel,#fff);border-bottom:2px solid var(--ink,#141821);
+  font:700 9.5px 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.pbb-sort{cursor:pointer;user-select:none}.pbb-sort.on{color:var(--ink,#141821)}.pbb-sort i{font-style:normal;margin-left:3px}
+.pbb-r.key{background:rgba(198,161,91,.20);border-left-color:#c6a15b}
+.pbb-r.adj{border-left-color:#2f9e86}
+.pbb-r.key.adj{border-left-color:#c6a15b;box-shadow:inset 4px 0 0 #2f9e86}
+.pbb-r.orphan{opacity:.8}
+.pbb-star{border:0;background:transparent;font-size:16px;line-height:1;color:var(--line-strong,#cfd4dc);cursor:pointer;padding:0;text-align:center}
+.pbb-star.on{color:#c6a15b}.pbb.ed .pbb-star:hover{color:#c6a15b}.pbb-star:disabled{cursor:default}
+.pbb-c-code{display:flex;flex-direction:column;min-width:0}
+.pbb-c-code b{font:700 12px 'IBM Plex Mono',monospace}.pbb-c-code i{font-style:normal;color:var(--ink-faint,#8a93a2)}
+.pbb-c-code em{font-style:normal;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pbb-c-name{font-weight:600;min-width:0;outline:none}
+.pbb.ed .pbb-c-name:focus{background:#fff;box-shadow:0 0 0 2px var(--gold-1,#d8b877);border-radius:4px}
+.pbb-c-n{display:flex;align-items:center;gap:6px}
+.pbb-c-n i{display:block;height:7px;border-radius:4px;background:#4a86d8;flex:0 0 auto;max-width:60px}
+.pbb-c-n b{font:700 11px 'IBM Plex Mono',monospace}
+.pbb-c-ppp{text-align:center}.pbb-c-efg{font:400 11.5px 'IBM Plex Mono',monospace;text-align:right;color:var(--ink-soft,#5b6472)}
+.pbb-c-adj{display:flex;align-items:flex-start;gap:6px;min-width:0}
+.pbb-rule{flex:1 1 auto;min-width:0;background:rgba(47,158,134,.10);border-radius:6px;padding:3px 8px!important;font-size:12.5px!important;min-height:24px!important}
+.pbb-add{border:1px dashed var(--line-strong,#cfd4dc);background:transparent;color:var(--ink-faint,#8a93a2);border-radius:6px;font-size:11px;padding:3px 9px;cursor:pointer;opacity:0;transition:opacity .12s}
+.pbb-r:hover .pbb-add,.pbb-add:focus{opacity:1}
+.pbb-rm{flex:none}
+.pbb-fam{display:flex;align-items:baseline;gap:10px;padding:9px 8px 3px;border-bottom:1px solid var(--line-strong,#cfd4dc)}
+.pbb-fam b{font:700 13px 'Oswald',sans-serif;letter-spacing:.08em}.pbb-fam span{font-size:11px;color:var(--ink-faint,#8a93a2)}
+.pbb-key{position:sticky;top:8px;border:1px solid rgba(198,161,91,.6);border-radius:12px;background:rgba(198,161,91,.10);padding:10px 12px}
+.pbb-key-h{font:700 12px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px;color:#7a5c12}
+.pbb-k{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 0;border-top:1px solid rgba(198,161,91,.35);font-size:12px}
+.pbb-k b{font:700 11px 'IBM Plex Mono',monospace}.pbb-k .nm{font-weight:700;flex:1 1 120px;min-width:0}
+.pbb-k .n{font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.pbb-k .adj{font:700 8.5px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;background:#2f9e86;color:#fff;border-radius:3px;padding:1px 4px}
+.pbb-notes{margin-top:14px}
+.pbb-notes details > summary{display:inline-flex;align-items:center;gap:8px;font:700 11px/1 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;
+  border:1.5px solid var(--line-strong,#cfd4dc);border-radius:8px;padding:6px 13px;cursor:pointer;list-style:none}
+.pbb-note{margin-top:10px}.pbb-note > b{font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase}
+.pbb-note-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px}
+.pbb-note-2 i{font-style:normal;font-size:10px;color:var(--ink-faint,#8a93a2);text-transform:uppercase;letter-spacing:.06em}
+@media (max-width:1100px){ .pbb-main{grid-template-columns:minmax(0,1fr)} .pbb-key{position:static}
+  .pbb-r{grid-template-columns:24px 70px minmax(100px,1fr) 60px 46px;row-gap:3px} .pbb-c-call,.pbb-c-efg{display:none} .pbb-c-adj{grid-column:2 / -1} .pbb-h .pbb-c-adj{display:none} }
 
 /* THE FOLD: ONE WAY TO OPEN AND CLOSE, EVERYWHERE.
    A section of a report closed with a small minus sign in a circle, a league table opened
