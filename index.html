@@ -14158,6 +14158,19 @@ function gpPrintFit(sheetEl){
   const area=$("#print-area"); if(!area || !sheetEl) return;
   area.innerHTML="";
   sheetEl.querySelectorAll("button, input").forEach(b=>b.remove());
+  /* THE STRIPS MUST SURVIVE A PRINTER THAT DROPS BACKGROUNDS. The defense strip under each
+     board is white lettering on a dark fill; a browser printing without background
+     graphics leaves white lettering on white paper, and the defense is simply not there.
+     On paper every strip is dark lettering on a pale tint of its own colour, with that
+     colour as a solid outline - so it reads with the fills, and without them. */
+  sheetEl.querySelectorAll(".gp2-railrow .gp2-rl").forEach(td=>{
+    const c=td.style.backgroundColor||td.style.background;
+    if(!c || c==="transparent") return;
+    td.style.background="color-mix(in srgb, "+c+" 28%, #fff)";
+    td.style.color="#14181f";
+    td.style.fontWeight="800";
+    td.style.border="2px solid "+c;
+  });
   /* THE PAGE IS A BOX OF EXACTLY ONE SHEET, AND THE PLAN IS SCALED INSIDE IT. The first
      version shrank the plan with "zoom" and trusted the printer to lay the result out on
      one page; it came out on three. A scaled drawing takes no room of its own, so the box
