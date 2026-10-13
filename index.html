@@ -13582,6 +13582,201 @@ function _gpOppFive(opp, date){
   p.catch(()=>{ delete _gpOppMemo[key]; });
   return p;
 }
+/* THE GAME, READ BACK TO THE BENCH WHILE IT IS BEING PLAYED.
+   The plan is what was meant to happen. Beside it, from the league's play by play of this
+   very game, is what is happening: quarter by quarter, our offense and our defense, each
+   as a line of figures and the few sentences a staff would say in a timeout - where the
+   points are coming from, what is being given away, who is hot, who is in foul trouble,
+   whether a team is in the bonus. It reads the feed again every half minute while the game
+   is on and needs nobody to press anything; when the game is over it stays, with a button
+   for each quarter and one for the whole game.
+   Every figure is counted from the actions of the period asked for, never taken from a
+   total that may not be final yet. Before the first action there is nothing to say and it
+   says so. */
+const _gpLiveMemo={};
+function _gpLiveExtras(feed, uc, sel){
+  const X={ sc:{ u:0, t:0 }, pot:{ u:0, t:0 }, last:{ u:0, t:0 }, lastT:0 };
+  const acts=(feed.actions||[]).map((a,i)=>{ const e=_lgGameElapsed(a.quarter, a.time); return { a:a, t:e.t, qi:e.qi, i:i }; })
+    .sort((p,q)=>(p.t-q.t)||(p.i-q.i));
+  if(!acts.length) return X;
+  X.lastT=acts[acts.length-1].t;
+  let second=null, offTO=null, lastQ=-1;
+  acts.forEach(o=>{
+    const a=o.a, c=a.teamcode, k=a.action;
+    if(o.qi!==lastQ){ second=null; offTO=null; lastQ=o.qi; }
+    if(c!=="A" && c!=="B") return;
+    const other=(c==="A")?"B":"A", shot=(k==="P2"||k==="P3"||k==="FT");
+    const reb=(k==="REB"||k==="TREB"), lost=(k==="TO"||k==="TTO"||(k==="FOUL" && a.info1==="O"));
+    if(shot || lost || (reb && a.info1!=="O")){ if(second===other) second=null; if(offTO===other) offTO=null; }
+    if(shot && a.result==="+"){
+      const v=(k==="P3")?3:(k==="P2")?2:1, me=(c===uc)?"u":"t";
+      if(!sel || sel[o.qi]){ if(second===c) X.sc[me]+=v; if(offTO===c) X.pot[me]+=v; }
+      if(o.t>X.lastT-180) X.last[me]+=v;
+    }
+    if(reb && a.info1==="O") second=c;
+    if(lost){ if(second===c) second=null; if(offTO===c) offTO=null; offTO=other; }
+  });
+  return X;
+}
+function _gpLiveIdeas(U, T, X, F, ctx){
+  const off=[], def=[];
+  const pc=(m,a)=>a? Math.round(100*m/a) : 0;
+  const nm=p=>_lgLastName(p.name||"")||("#"+p.num);
+  const them=p=>"#"+p.num+" "+_lgLastName(p.name||"");
+  const top=S=>S.pl.slice().sort((a,b)=>b.pts-a.pts)[0];
+  const uP=U.poss? U.pts/U.poss : null, tP=T.poss? T.pts/T.poss : null;
+  /* ---- our offense */
+  if(uP!=null && U.poss>=8){
+    if(uP>=1.15) off.push({ k:"good", t:"Scoring well: "+uP.toFixed(2)+" per possession" });
+    else if(uP<=0.85) off.push({ k:"bad", t:"Hard to score: "+uP.toFixed(2)+" per possession" });
+  }
+  if(U.tov>=ctx.toMany) off.push({ k:"bad", t:U.tov+" turnovers"+(X.pot.t? " — "+X.pot.t+" points off them for them" : "") });
+  if(U.p3a>=4){
+    const p=pc(U.p3m,U.p3a);
+    if(p>=45) off.push({ k:"good", t:"Threes falling: "+U.p3m+"/"+U.p3a });
+    else if(p<=20) off.push({ k:"bad", t:"Threes not falling: "+U.p3m+"/"+U.p3a+" — get to the paint and the line" });
+  }
+  if(U.pts>=8 && U.paint>=U.pts*0.5) off.push({ k:"good", t:"Paint is open: "+U.paint+" of our "+U.pts+" points" });
+  else if(U.fga>=10 && U.paint<=4) off.push({ k:"bad", t:"Only "+U.paint+" points in the paint" });
+  if(U.or>=3) off.push({ k:"good", t:U.or+" offensive rebounds"+(X.sc.u? " — "+X.sc.u+" second-chance points" : "") });
+  if(U.fta>=4 && U.ftm/U.fta<0.6) off.push({ k:"bad", t:"Free throws "+U.ftm+"/"+U.fta });
+  else if(U.fta<=1 && U.fga>=12) off.push({ k:"info", t:"Not getting to the line: "+U.fta+" free throw"+(U.fta===1?"":"s") });
+  if(U.fgm>=5){
+    if(U.ast>=U.fgm*0.7) off.push({ k:"good", t:"Ball is moving: "+U.ast+" assists on "+U.fgm+" baskets" });
+    else if(U.ast<=U.fgm*0.3) off.push({ k:"info", t:"Mostly one on one: "+U.ast+" assists on "+U.fgm+" baskets" });
+  }
+  const ut=top(U); if(ut && ut.pts>=ctx.hot) off.push({ k:"info", t:"Hot hand: "+nm(ut)+" "+ut.pts+" points ("+ut.fgm+"/"+ut.fga+")" });
+  if(ctx.live && ctx.theirFouls>=4) off.push({ k:"good", t:"They have "+ctx.theirFouls+" team fouls this quarter — attack, the next one is free throws" });
+  if(ctx.theirTrouble.length) off.push({ k:"info", t:"Their foul trouble: "+ctx.theirTrouble.map(p=>them(p)+" "+p.pf).join(", ")+" — go at "+(ctx.theirTrouble.length===1?"him":"them") });
+  /* ---- our defense */
+  if(tP!=null && T.poss>=8){
+    if(tP<=0.85) def.push({ k:"good", t:"Defense is holding: "+tP.toFixed(2)+" per possession" });
+    else if(tP>=1.15) def.push({ k:"bad", t:"They score "+tP.toFixed(2)+" per possession" });
+  }
+  if(T.p3a>=4){
+    const p=pc(T.p3m,T.p3a);
+    if(p>=45){ const sh=T.pl.slice().sort((a,b)=>b.p3m-a.p3m)[0];
+      def.push({ k:"bad", t:"Their threes: "+T.p3m+"/"+T.p3a+(sh && sh.p3m>=2? " — "+them(sh)+" "+sh.p3m+"/"+sh.p3a : "") }); }
+    else if(p<=20) def.push({ k:"good", t:"Their threes are not falling: "+T.p3m+"/"+T.p3a });
+  }
+  if(T.pts>=8 && T.paint>=T.pts*0.5) def.push({ k:"bad", t:"They live in the paint: "+T.paint+" of their "+T.pts+" points" });
+  if(T.or>=3) def.push({ k:"bad", t:"Giving up "+T.or+" offensive rebounds"+(X.sc.t? " — "+X.sc.t+" second-chance points" : "") });
+  if(T.tov>=ctx.toMany) def.push({ k:"good", t:"Forced "+T.tov+" turnovers"+(X.pot.u? " — "+X.pot.u+" points off them" : "") });
+  if(T.fta>=6) def.push({ k:"bad", t:"Sending them to the line: "+T.ftm+"/"+T.fta+" free throws" });
+  const tt=top(T); if(tt && tt.pts>=ctx.hot) def.push({ k:"info", t:"Stop "+them(tt)+": "+tt.pts+" points ("+tt.fgm+"/"+tt.fga+")" });
+  if(ctx.live && ctx.ourFouls>=4) def.push({ k:"bad", t:"We have "+ctx.ourFouls+" team fouls this quarter — the next one is free throws" });
+  if(ctx.ourTrouble.length) def.push({ k:"bad", t:"Foul trouble: "+ctx.ourTrouble.map(p=>nm(p)+" "+p.pf).join(", ") });
+  return { off:off.slice(0,6), def:def.slice(0,6) };
+}
+function _gpLiveBlock(){
+  const wrap=h("div",{class:"gp-live"});
+  const opp=_scoutOpponent||"", date=_scoutDate||"";
+  const stat=h("span",{class:"gp-live-st"},"");
+  wrap.appendChild(h("div",{class:"gp2-sec gp-live-h"}, "The game · from the play by play", stat));
+  const tabs=h("div",{class:"gp-live-tabs"}), body=h("div",{class:"gp-live-b"});
+  wrap.appendChild(tabs); wrap.appendChild(body);
+  let pick="auto", G=null, J=null, home=true, timer=0, lastN=-1, lastChange=Date.now(), over=false;
+  const say=t=>{ tabs.innerHTML=""; body.innerHTML=""; body.appendChild(h("div",{class:"gp3-ksn"}, t)); };
+  if(!opp || !date || _gamePlaceholder(opp)){ say("The summary of the game appears here once the opponent and the day are known."); return wrap; }
+  const today=(()=>{ try{ return todayISO(); }catch(e){ return ""; } })();
+  const draw=()=>{
+    const feed=J && J.feed;
+    const acts=(feed && feed.actions)||[];
+    if(!acts.length){
+      say(date>today? "The game has not been played yet. From the tip-off this fills in by itself, quarter by quarter."
+        : "No play by play for this game yet. It fills in by itself as the league publishes it.");
+      wrap.classList.add("empty"); return;
+    }
+    wrap.classList.remove("empty");
+    let maxQ=0; acts.forEach(a=>{ const q=_lgGameElapsed(a.quarter, a.time).qi; if(q>maxQ) maxQ=q; });
+    const live=!over && date===today;
+    const cur=(pick==="auto")? (live? maxQ : "g") : pick;
+    const qn=q=>q<4? "Q"+(q+1) : "OT"+(q-3);
+    tabs.innerHTML="";
+    for(let q=0;q<=maxQ;q++) tabs.appendChild(h("button",{class:"gp-live-tab"+(cur===q?" on":""), type:"button", onclick:()=>{ pick=q; draw(); }}, qn(q)));
+    tabs.appendChild(h("button",{class:"gp-live-tab"+(cur==="g"?" on":""), type:"button", onclick:()=>{ pick="g"; draw(); }}, "Game"));
+    const allSel={}; for(let q=0;q<=maxQ;q++) allSel[q]=1;
+    const sel=(cur==="g")? allSel : (()=>{ const o={}; o[cur]=1; return o; })();
+    const M=_lgGameModel(G, J, sel), MG=(cur==="g")? M : _lgGameModel(G, J, allSel);
+    const U=home?M.H:M.A, T=home?M.A:M.H, UG=home?MG.H:MG.A, TG=home?MG.A:MG.H;
+    const uc=home? M.hc : (M.hc==="A"?"B":"A");
+    const X=_gpLiveExtras(feed, uc, sel);
+    /* the fouls of the quarter being played, and who is carrying too many in the game */
+    const MQ=_lgGameModel(G, J, (()=>{ const o={}; o[maxQ]=1; return o; })());
+    const limit=maxQ>=3? 4 : (maxQ>=2? 4 : (maxQ>=1? 3 : 2));
+    const ctx={ live:live, hot:(cur==="g")? 12 : 6, toMany:(cur==="g")? 12 : 4,
+      ourFouls:(home?MQ.H:MQ.A).pf, theirFouls:(home?MQ.A:MQ.H).pf,
+      ourTrouble:live? UG.pl.filter(p=>p.pf>=limit).sort((a,b)=>b.pf-a.pf) : [],
+      theirTrouble:live? TG.pl.filter(p=>p.pf>=limit).sort((a,b)=>b.pf-a.pf) : [] };
+    const I=_gpLiveIdeas(U, T, X, M.flow, ctx);
+    body.innerHTML="";
+    const lead=UG.pts-TG.pts;
+    body.appendChild(h("div",{class:"gp-live-sc"},
+      h("b",{class:lead>0?"up":lead<0?"dn":""}, UG.pts+"–"+TG.pts),
+      h("span",{}, cur==="g"? "whole game" : qn(cur)+": "+U.pts+"–"+T.pts),
+      live? h("span",{class:"mo "+(X.last.u>X.last.t?"up":X.last.u<X.last.t?"dn":"")}, "last 3:00 → "+X.last.u+"–"+X.last.t) : null));
+    const line=(S, extra)=>{
+      const ppp=S.poss? (S.pts/S.poss).toFixed(2) : "—";
+      const cell=(k,v)=>h("span",{}, h("i",{},k), h("b",{},v));
+      return h("div",{class:"gp-live-fig"}, cell("PPP",ppp), cell("eFG", S.efg==null? "—" : Math.round(S.efg)+"%"),
+        cell("3P", S.p3m+"/"+S.p3a), cell("Paint", String(S.paint||0)), cell("FT", S.ftm+"/"+S.fta),
+        cell("TO", String(S.tov)), cell("OREB", String(S.or)), cell(extra[0], String(extra[1])));
+    };
+    const col=(title, cls, S, extra, ideas)=>h("div",{class:"gp-live-c "+cls},
+      h("div",{class:"gp-live-t"}, title),
+      line(S, extra),
+      ideas.length? h("ul",{class:"gp-live-i"}, ideas.map(x=>h("li",{class:x.k}, x.t)))
+        : h("div",{class:"gp3-ksn"},"Nothing stands out yet."));
+    body.appendChild(h("div",{class:"gp-live-2"},
+      col("Our offense", "off", U, ["2nd ch.", X.sc.u], I.off),
+      col("Our defense · their numbers", "def", T, ["2nd ch.", X.sc.t], I.def)));
+    stat.textContent=live? "live · updates every 30 s" : "final";
+    stat.className="gp-live-st"+(live?" on":"");
+  };
+  const read=async fresh=>{
+    try{
+      if(!G){
+        const all=await _lgAll();
+        const tm=((all&&all.teams)||[]).filter(t=>_lgOurs(t.name))[0];
+        const tid=tm? tm.id : "";
+        const day=d=>Math.round(new Date(d+"T12:00:00Z").getTime()/86400000);
+        const mine=((all&&all.games)||[]).concat((all&&all.cup)||[])
+          .filter(x=>tid && (String(x.homeId)===String(tid)||String(x.awayId)===String(tid)) && x.date);
+        G=mine.filter(x=>x.date===date)[0] || mine.filter(x=>Math.abs(day(x.date)-day(date))<=1)[0] || null;
+        if(!G){ say("This game is not in the league's calendar, so there is no play by play to read."); wrap.classList.add("empty"); return; }
+        home=String(G.homeId)===String(tid);
+        over=_lgDone(G) && date<today;
+      }
+      const keep=_gpLiveMemo[G.id];
+      if(keep && !fresh){ J=keep; draw(); }
+      if(!keep || fresh || !over){
+        const j=await fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(G.id)+((date>=today)? "&fresh=1" : ""))
+          .then(r=>r.ok? r.json() : null).catch(()=>null);
+        if(j && j.feed){ J=j; _gpLiveMemo[G.id]=j; }
+        const n=(J && J.feed && (J.feed.actions||[]).length)||0;
+        if(n!==lastN){ lastN=n; lastChange=Date.now(); }
+        /* the calendar already has the final score and the clock has run out: it is over */
+        try{ if(n && _lgDone(G)){ const la=J.feed.actions.map(a=>_lgGameElapsed(a.quarter,a.time)).sort((x,y)=>y.t-x.t)[0];
+          if(la && la.qi>=3 && la.t>=2400 && (la.t-2400)%300===0) over=true; } }catch(e){}
+        /* the game is over when the fourth quarter has run out and nothing has moved for a while */
+        if(n && Date.now()-lastChange>12*60000) over=true;
+        if(wrap.isConnected || !timer) draw();
+      }
+    }catch(e){ if(!J) say("The play by play could not be read."); }
+  };
+  if(_gpLiveMemo.__last && _gpLiveMemo.__last.key===opp+"|"+date){ G=_gpLiveMemo.__last.G; home=_gpLiveMemo.__last.home; over=_gpLiveMemo.__last.over; }
+  say("Reading the play by play…");
+  read(false).then(()=>{ if(G) _gpLiveMemo.__last={ key:opp+"|"+date, G:G, home:home, over:over }; });
+  /* while the game is on - the day of the game, until it has gone quiet - read it again */
+  if(date===today){
+    timer=setInterval(()=>{
+      if(!wrap.isConnected || over){ clearInterval(timer); timer=0; if(over && wrap.isConnected) draw(); return; }
+      if(document.visibilityState && document.visibilityState!=="visible") return;
+      read(true);
+    }, 30000);
+  }
+  return wrap;
+}
 let _gpForPrint=false;
 /* A DEFENSE WRITTEN AS A LINE IS STILL THE DEFENSE STRIP.
    On the bench sheet the defense of a quarter is one strip under the board. A plan read
@@ -14168,7 +14363,11 @@ function renderPlanSection(sec, canEd, save, allSecs){
     /* the key sets go under the minutes on the screen, where the eye already is for the
        matchups; on paper they keep their own place on the sheet */
     try{ const ks=keySetsBlock(); if(_gpForPrint) sheet.appendChild(ks);
-      else { const colb=mid.querySelector(".gp3-colb"); (colb||left).appendChild(ks); sheet.classList.add("ks-rail"); } }
+      else { const colb=mid.querySelector(".gp3-colb");
+        /* under the two boards: their playbook on one half, the game as it is played on the other */
+        const under=h("div",{class:"gp3-under"}, ks);
+        try{ under.appendChild(_gpLiveBlock()); }catch(e){ try{ console.warn("game plan live", e); }catch(_){} }
+        (colb||left).appendChild(under); sheet.classList.add("ks-rail"); } }
     catch(e){ try{ console.warn("game plan key sets", e); }catch(_){} }
     box.appendChild(sheet);
 
@@ -14202,6 +14401,8 @@ let _gpFitStyle=null;
 function gpPrintFit(sheetEl){
   const area=$("#print-area"); if(!area || !sheetEl) return;
   area.innerHTML="";
+  /* the sheet that goes to the bench is the plan: the running summary of the game stays on the screen */
+  sheetEl.querySelectorAll(".gp-live").forEach(n=>{ const u=n.parentNode; n.remove(); if(u && u.classList) u.classList.add("solo"); });
   sheetEl.querySelectorAll("button, input").forEach(b=>b.remove());
   /* THE STRIPS MUST SURVIVE A PRINTER THAT DROPS BACKGROUNDS. The defense strip under each
      board is white lettering on a dark fill; a browser printing without background
@@ -28774,6 +28975,35 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
   color:#7a5c12;background:rgba(198,161,91,.35);border-radius:3px;padding:1px 4px}
 .gp-opp .gp-ros-p .l2{padding-left:0;margin-top:1px}
 .gp-opp .gp-ros-p .l2 b{display:block;margin:0}
+/* under the boards: their playbook on one half, in two columns at most, and the game on the other */
+.gp3-under{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:22px;align-items:start;margin-top:14px}
+.gp3-under.solo{grid-template-columns:minmax(0,1fr)}
+.gp3-under > .gp3-ks{margin-top:0}
+.gp3-under:not(.solo) > .gp3-ks .gp3-ksb{column-width:auto!important;column-count:2;column-gap:18px}
+.gp-live{min-width:0;border-top:1px solid var(--line,#e6e8ec);padding-top:12px}
+.gp-live-h{display:flex;align-items:baseline;gap:10px}
+.gp-live-st{font:600 9.5px 'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.gp-live-st.on{color:#fff;background:#d8524e;border-radius:4px;padding:1px 6px}
+.gp-live-tabs{display:flex;flex-wrap:wrap;gap:4px;margin:2px 0 8px}
+.gp-live-tab{font:700 11px 'Oswald',sans-serif;letter-spacing:.08em;border:1px solid var(--line-strong,#cfd4dc);background:var(--panel,#fff);color:var(--ink,#141821);border-radius:6px;padding:4px 11px;cursor:pointer}
+.gp-live-tab.on{background:var(--ink,#141821);color:var(--panel,#fff);border-color:var(--ink,#141821)}
+.gp-live-sc{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.gp-live-sc b{font:700 24px 'Oswald',sans-serif;letter-spacing:.02em}
+.gp-live-sc b.up,.gp-live-sc .mo.up{color:#1f8068}.gp-live-sc b.dn,.gp-live-sc .mo.dn{color:#c0403c}
+.gp-live-sc span{font:600 11.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.gp-live-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.gp-live-c{min-width:0;border:1px solid var(--line,#e6e8ec);border-radius:8px;padding:8px 10px;border-top:3px solid #c6a15b}
+.gp-live-c.def{border-top-color:#2471a3}
+.gp-live-t{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;margin-bottom:5px}
+.gp-live-fig{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px 6px;margin-bottom:7px}
+.gp-live-fig span{display:flex;flex-direction:column;background:var(--panel-2,#f4f5f7);border-radius:5px;padding:3px 5px;min-width:0}
+.gp-live-fig i{font:500 8.5px 'IBM Plex Mono',monospace;font-style:normal;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.gp-live-fig b{font:700 13px 'Inter',system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.gp-live-i{list-style:none;margin:0;padding:0}
+.gp-live-i li{font-size:12px;line-height:1.3;padding:3px 0 3px 10px;border-left:3px solid var(--line-strong,#cfd4dc);margin:3px 0}
+.gp-live-i li.good{border-left-color:#2f9e86}.gp-live-i li.bad{border-left-color:#d8524e;font-weight:600}
+@media (max-width:1100px){ .gp3-under{grid-template-columns:minmax(0,1fr)} .gp-live-2{grid-template-columns:minmax(0,1fr)} }
+.gp-fit .gp3-under{grid-template-columns:minmax(0,1fr)!important}
 /* our minutes, in the rail under their roster */
 .gp2-rail > .gp-opp + .gp3-minw{margin-top:12px}
 /* their playbook under the two boards, in columns: name, call, how often, what it returns */
