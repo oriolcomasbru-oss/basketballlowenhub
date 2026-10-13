@@ -9717,7 +9717,9 @@ function _secAuto(){
           animT=setTimeout(()=>blk.classList.remove("sec-anim"), 460);
         } else { clearTimeout(animT); blk.classList.remove("sec-anim"); }
         body.style.display="";
-        tog.textContent=open? "−" : "+";
+        /* the state in a word, the chevron by the stylesheet (see THE FOLD) */
+        tog.textContent=open? "Hide" : "Show";
+        tog.setAttribute("aria-expanded", open? "true" : "false");
         blk.classList.toggle("sec-closed", !open);
       };
       const flip=()=>{
@@ -21360,7 +21362,8 @@ function _lgFold(L, key, label, build){
   let body=null;
   const paint=open=>{
     ico.textContent=open? "\u2212" : "+";
-    lab.textContent=(open? "Hide " : "Open ")+label;
+    lab.textContent=(open? "Hide " : "Show ")+label;
+    btn.setAttribute("aria-expanded", open? "true" : "false");
     wrap.classList.toggle("on", !!open);
     if(open){
       if(!body){
@@ -26823,6 +26826,44 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 .lgg{--lgh:#c6a15b;--lga:#4a86d8;position:relative;width:min(1080px,100%);background:var(--panel,#fff);color:var(--ink,#141821);border:1px solid var(--line,#e4e7ec);border-radius:16px;padding:18px 22px 22px;box-shadow:0 24px 60px rgba(0,0,0,.35)}
 .lgg-x{position:absolute;top:10px;right:12px;width:32px;height:32px;border-radius:50%;border:1px solid var(--line,#e4e7ec);background:transparent;color:var(--ink-soft,#5b6472);font-size:20px;line-height:1;cursor:pointer}
 .lgg-x:hover{background:var(--line,#e4e7ec);color:var(--ink,#141821)}
+/* THE FOLD: ONE WAY TO OPEN AND CLOSE, EVERYWHERE.
+   A section of a report closed with a small minus sign in a circle, a league table opened
+   with a grey line of small capitals, and a table in the tagging opened with the
+   browser's own little triangle. Three ways to say the same thing, none of them saying it
+   loudly enough to be seen as a control. There is one now: a pill with a gold chevron and
+   the word for what pressing it does - Show or Hide - the chevron pointing right when
+   shut and down when open. The whole heading of a report section opens and closes it. */
+.rs-sec-t,.lg-fold-b,.sx details > summary,.sxp details > summary,.lg-fftr details > summary,.sxp-clips > summary,.td-about > summary{
+  display:inline-flex;align-items:center;gap:8px;width:auto;height:auto;flex:none;min-height:30px;box-sizing:border-box;
+  font:700 11px/1 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;
+  border:1.5px solid var(--line-strong,#cfd4dc);border-radius:8px;padding:6px 13px 6px 8px;
+  background:var(--panel,#fff);color:var(--ink,#141821);cursor:pointer;list-style:none;user-select:none;
+  transition:border-color .15s ease,background-color .15s ease}
+.sx details > summary::-webkit-details-marker,.sxp details > summary::-webkit-details-marker,.lg-fftr details > summary::-webkit-details-marker{display:none}
+.rs-sec-t::before,.lg-fold-b::before,.sx details > summary::before,.sxp details > summary::before,.lg-fftr details > summary::before,.sxp-clips > summary::before,.td-about > summary::before{
+  content:"";flex:none;width:18px;height:18px;border-radius:50%;background:var(--accent,#c6a15b);
+  -webkit-mask:none;display:inline-block;
+  background-image:linear-gradient(#14130b,#14130b);background-color:var(--accent,#c6a15b);
+  clip-path:none}
+.rs-sec-t::before,.lg-fold-b::before,.sx details > summary::before,.sxp details > summary::before,.lg-fftr details > summary::before,.sxp-clips > summary::before,.td-about > summary::before{
+  background:var(--accent,#c6a15b) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18'%3E%3Cpath d='M7 4.5l5 4.5-5 4.5' fill='none' stroke='%2314130b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/18px 18px no-repeat;
+  transition:transform .2s ease}
+.rs-block:not(.sec-closed) > .rs-banner .rs-sec-t::before,.lg-fold.on > .lg-fold-b::before,
+.sx details[open] > summary::before,.sxp details[open] > summary::before,.lg-fftr details[open] > summary::before,.sxp-clips[open] > summary::before,.td-about[open] > summary::before{transform:rotate(90deg)}
+.rs-sec-t:hover,.lg-fold-b:hover,.sx details > summary:hover,.sxp details > summary:hover,.lg-fftr details > summary:hover{border-color:var(--accent,#c6a15b)}
+.lg-fold-b .lg-fold-i{display:none}
+.lg-fold > .lg-fold-b{font:700 11px/1 'Oswald',sans-serif;letter-spacing:.12em;padding:6px 13px 6px 8px;
+  border:1.5px solid var(--line-strong,#cfd4dc);color:var(--ink,#141821)}
+.lg-fold > .lg-fold-b:hover{border-color:var(--accent,#c6a15b)}
+.rs-sec-t{margin-left:12px}
+/* on the dark heading of a report section the pill is light on dark */
+.rs-banner-sec .rs-sec-t{background:transparent;color:#fff;border-color:rgba(255,255,255,.4)}
+.rs-banner-sec .rs-sec-t:hover{border-color:var(--accent,#c6a15b);color:#fff}
+/* a section that is shut says so: its heading stands alone, edged in gold */
+.rs-block.sec-closed > .rs-banner.rs-banner-sec{box-shadow:inset 4px 0 0 var(--accent,#c6a15b)}
+.rs-banner-fold:hover .rs-sec-t{border-color:var(--accent,#c6a15b)}
+@media print{ .rs-sec-t,.lg-fold-b{display:none!important} }
+
 /* ONE CLOSE BUTTON, AND ALL OF IT CLOSES.
    The cross of a window sat in the corner with nothing saying it was on top: the header
    row drawn after it - the crests, the score, a title - lay over part of it and took the
@@ -28144,10 +28185,7 @@ body.dark .rs-banner.rs-banner-sec{background:#0d1017}
 .rs-banner-fold{cursor:pointer}
 .rs-sec-n{margin-left:auto;font:700 9.5px/1 'IBM Plex Mono',ui-monospace,monospace;
   letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.55)}
-.rs-sec-t{margin-left:12px;width:24px;height:24px;flex:0 0 24px;border:1px solid rgba(255,255,255,.28);
-  background:rgba(255,255,255,.1);border-radius:6px;color:#fff;font:700 15px/1 ui-monospace,monospace;
-  cursor:pointer;display:flex;align-items:center;justify-content:center}
-.rs-sec-t:hover{border-color:var(--gold-1,#c9a227);color:var(--gold-1,#c9a227)}
+/* the toggle of a section is THE FOLD's pill - see there */
 .rs-block.sec-closed .rs-banner{margin-bottom:0}
 /* ---- the three places the app moved in one frame and now takes a few -------------
    Everything here is additive: nothing that was already animated changed, and every
