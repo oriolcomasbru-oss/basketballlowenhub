@@ -28726,6 +28726,17 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
    piece to a landscape A4 (see gpPrintFit) */
 .gp-fit{width:1400px;background:#fff;color:#141821;padding:0;transform-origin:0 0;position:absolute;left:0;top:0}
 .gp-fitpage{position:relative;width:280mm;height:193mm;overflow:hidden;background:#fff}
+/* THE PRINTED SHEET IS ALWAYS THE WIDE ARRANGEMENT. The plan's layout folds into a single
+   column when the window is narrower than a laptop screen - and to the stylesheet a sheet
+   of A4 is a window 1120 pixels wide. So the copy that was measured on the screen, two
+   columns across, was printed folded into one: three times as tall, and cut off by the
+   edge of the page. Inside the printed copy the wide arrangement is fixed, whatever the
+   width of the window or the paper. */
+.gp-fit .gp2-sheet.gp3-sheet{grid-template-columns:292px minmax(0,1fr)!important;grid-template-rows:auto!important;column-gap:22px!important;row-gap:0!important}
+.gp-fit .gp2-sheet > .gp2-rail{grid-column:1!important;grid-row:1!important}
+.gp-fit .gp2-sheet > .gp2-mid{grid-column:2!important;grid-row:1!important}
+.gp-fit .gp3-cols{grid-template-columns:minmax(0,1fr) 310px!important;column-gap:16px!important;row-gap:0!important}
+.gp-fit .gp3-cols.solo{grid-template-columns:minmax(0,1fr)!important}
 .gp-fit .gp2-foot,.gp-fit .gp-poolbar,.gp-fit .gp-sheetnote{display:none}
 body.gpfit-measure #print-area{display:block;position:fixed;left:-99999px;top:0;width:1400px}
 @media print{
