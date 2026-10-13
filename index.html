@@ -7798,7 +7798,20 @@ function renderReportCard(sec,it,ii,canEd,save,reRender,ctx){
     val.addEventListener("input",()=>{ it.v=val.innerHTML; save(); });
     wireRichBox(val);
     val.addEventListener("blur",()=>{ it.v=val.innerHTML; save(); });
-    if(window.ResizeObserver){ const ro=new ResizeObserver(()=>{ const hpx=Math.round(val.getBoundingClientRect().height); if(hpx>0 && Math.abs((it.h||0)-hpx)>4){ it.h=hpx; save(); } }); ro.observe(val); }
+    /* THE HEIGHT THAT IS KEPT IS THE ONE DRAGGED BY HAND. Every box changes height when the
+       window changes width, because its text wraps differently - and each of those was
+       taken for the staff resizing the box, written into the report and saved. In edit
+       mode a resize of the window was therefore a save of every box on the page, over and
+       over. A change that comes with a change of the window's width is not kept; one that
+       comes on its own is, a moment after it stops. */
+    if(window.ResizeObserver){ let ww=window.innerWidth, ht=0;
+      const ro=new ResizeObserver(()=>{
+        if(window.innerWidth!==ww || _fitRszT || Date.now()-_fitRszAt<600){ ww=window.innerWidth; clearTimeout(ht); return; }
+        clearTimeout(ht); ht=setTimeout(()=>{
+          if(!val.isConnected || window.innerWidth!==ww) return;
+          const hpx=Math.round(val.getBoundingClientRect().height);
+          if(hpx>0 && Math.abs((it.h||0)-hpx)>4){ it.h=hpx; save(); } }, 350); });
+      ro.observe(val); }
   }
   card.appendChild(head); card.appendChild(val);
   return card;
@@ -9370,10 +9383,25 @@ function _fitNoScroll(){
   });
 }
 let _fitRO=null;
+/* THE FITTING PASS WAITS FOR THE WINDOW TO STOP MOVING.
+   Fitting measures every table on the page, tightens it a step, measures again - a few
+   hundred forced layouts on a full report. It ran on every frame of a resize, so dragging
+   the edge of the window froze the page until the drag ended and the queue drained. The
+   stylesheet already reflows everything while the window moves; the measured pass runs
+   once, a moment after the last movement. */
+let _fitRszT=0, _fitRszAt=0;
+function _fitResized(){
+  _fitRszAt=Date.now();
+  clearTimeout(_fitRszT);
+  _fitRszT=setTimeout(()=>{ _fitRszT=0; _fitAll(); }, 220);
+}
 function _fitWatch(){
   if(!_fitRO){
     if(typeof ResizeObserver==="undefined") return;
-    _fitRO=new ResizeObserver(()=>{ if(!_fitBusy) _fitAll(); });
+    /* while the window is being dragged every watched block changes size on every frame:
+       that is the resize, and it is answered once, when it stops */
+    _fitRO=new ResizeObserver(()=>{ if(_fitBusy) return;
+      if(_fitRszT || Date.now()-_fitRszAt<400) _fitResized(); else _fitAll(); });
   }
   document.querySelectorAll(FIT_SEL+", .presc-l").forEach(el=>{
     if(el.__fitRO) return;
@@ -9608,7 +9636,7 @@ function _secAuto(){
   });
 }
 try{
-  window.addEventListener("resize", ()=>{ _fitAll(); });
+  window.addEventListener("resize", _fitResized);
   /* only a change that could have put a panel on the page is worth a pass, and nothing
      the measuring room does counts as one */
   new MutationObserver(ms=>{

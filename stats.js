@@ -2528,9 +2528,15 @@
     paint();
     var lastW = 0, rt = null;
     if (window.ResizeObserver) {
+      /* the first measure draws at once; after that a chart is redrawn when its box has
+         stopped changing, not on every frame of a window being dragged */
       new ResizeObserver(function () {
         var w = host.clientWidth || 0;
-        if (w && Math.abs(w - lastW) > 2) { lastW = w; paint(); }
+        if (!w || Math.abs(w - lastW) <= 2) return;
+        if (!lastW) { lastW = w; paint(); return; }
+        clearTimeout(rt);
+        rt = setTimeout(function () { var w2 = host.clientWidth || 0;
+          if (w2 && Math.abs(w2 - lastW) > 2) { lastW = w2; paint(); } }, 180);
       }).observe(host);
     } else {
       requestAnimationFrame(paint);
