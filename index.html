@@ -22977,8 +22977,15 @@ function printCurrentView(){
   /* the session sheet and the game plan sheet already have print paths of
      their own, both built for A4 */
   if(spec.sheet==="gp"){
-    const sh=document.querySelector("#viewGamePlan .gp2-sheet")||document.querySelector("#viewGamePlan .gp2");
-    if(sh) gpPrintSheet(sh); else toast("Open a game first");
+    /* THE PRINTER BUTTON AT THE TOP PRINTS THE SAME SHEET AS THE ONE ON THE PLAN. It still
+       went to the old print path - the screen's new arrangement pushed through sizes set
+       for an arrangement that no longer exists - and came out on three pages with the
+       offense and defense strips lost. Both buttons now print the one-page sheet. */
+    const own=document.querySelector("#viewGamePlan .gp2-print");
+    const sh=document.querySelector("#viewGamePlan .gp2-sheet");
+    if(own) own.click();
+    else if(sh) gpPrintFit(sh.cloneNode(true));
+    else toast("Open a game first");
     return;
   }
   if(spec.sheet){ printSession(); return; }
