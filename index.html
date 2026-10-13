@@ -2631,6 +2631,12 @@ body.prt.prt-textonly .rs-block-stats{display:none!important}
   font:inherit;font-weight:700;font-size:12px;color:var(--ink);cursor:pointer}
 .rep-tb:hover:not(:disabled){border-color:var(--ink-faint)}
 .rep-tb:disabled{opacity:.4;cursor:not-allowed}
+/* the measuring panel (Ctrl+Alt+P) */
+.perf-hud{position:fixed;left:10px;bottom:10px;z-index:100000;background:rgba(17,20,26,.94);color:#e8eaee;border-radius:10px;padding:8px 10px;max-width:440px;box-shadow:0 8px 24px rgba(0,0,0,.35);font:11px/1.35 'IBM Plex Mono',monospace}
+.perf-hud-h{display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:4px}
+.perf-hud-h button{margin-left:auto;font:inherit;background:#c6a15b;color:#14130b;border:0;border-radius:5px;padding:2px 8px;cursor:pointer}
+.perf-hud-h button+button{margin-left:0;background:#3a4150;color:#e8eaee}
+.perf-hud pre{margin:0;white-space:pre;max-height:46vh;overflow:auto}
 /* the copies of a report */
 .repv{min-width:min(620px,86vw)}
 .repv-list{max-height:52vh;overflow:auto;margin:8px 0}
@@ -8676,6 +8682,64 @@ document.addEventListener("keydown", e=>{
   e.preventDefault(); e.stopImmediatePropagation();
   if(k==="y" || e.shiftKey) Hh.redo(); else Hh.undo();
 }, true);
+/* WHAT IS THE PAGE DOING WHEN IT FEELS SLOW.
+   A page that is slow on one machine, with one report and one session, and fine on the
+   bench, cannot be fixed by reading the code: every guess is as good as the next. This is
+   the measurement, switched on by whoever sees the slowness - Ctrl+Alt+P, or ?perf in the
+   address - and off the same way. While it is on, the functions that redraw, measure, fit
+   and save are timed, the browser's own record of long tasks and slow clicks and keys is
+   kept, and a small panel shows the last five seconds. "Copy" puts the last minute on the
+   clipboard as text. It costs nothing while it is off: nothing is wrapped until asked. */
+let _perfOn=false, _perfBox=null, _perfT=0;
+const _perfLog=[], _perfAcc={};
+function _perfToggle(){
+  _perfOn=!_perfOn;
+  if(!_perfOn){ clearInterval(_perfT); if(_perfBox){ _perfBox.remove(); _perfBox=null; } return; }
+  ["_fitGrid","_fitNoScroll","_cwInit","_secAuto","_sxpTwins","_prescFit","_rrsBuild","renderScout","_preRefresh","_lgRerender",
+   "renderLeague","_anSweep","_anMark","persist","_prePhxBoard","_preCardsBlock","_preRolesBlock","_repWeight","applyView","_hlInit"]
+    .forEach(n=>{ try{ let o=(0,eval)(n); if(typeof o!=="function" || o.__perf) return;
+      window.__perfO=o;
+      const w=function(){ if(!_perfOn) return o.apply(this, arguments);
+        const t=performance.now();
+        try{ return o.apply(this, arguments); }
+        finally{ const a=_perfAcc[n]||(_perfAcc[n]={ n:0, ms:0 }); a.n++; a.ms+=performance.now()-t; } };
+      w.__perf=1; window.__perfW=w; (0,eval)(n+"=window.__perfW"); }catch(e){} });
+  try{ new PerformanceObserver(l=>{ if(!_perfOn) return; l.getEntries().forEach(e=>{
+      const a=_perfAcc["LONG TASK"]||(_perfAcc["LONG TASK"]={ n:0, ms:0 }); a.n++; a.ms+=e.duration; }); }).observe({ entryTypes:["longtask"] }); }catch(e){}
+  try{ new PerformanceObserver(l=>{ if(!_perfOn) return; l.getEntries().forEach(e=>{
+      if(e.duration<48) return;
+      const k="slow "+e.name; const a=_perfAcc[k]||(_perfAcc[k]={ n:0, ms:0 }); a.n++; a.ms+=e.duration; }); })
+    .observe({ type:"event", durationThreshold:48, buffered:false }); }catch(e){}
+  let frames=0, lastF=performance.now(), worst=0;
+  const raf=()=>{ if(!_perfOn) return; const n=performance.now(), d=n-lastF; lastF=n; frames++; if(d>worst) worst=d; requestAnimationFrame(raf); };
+  requestAnimationFrame(raf);
+  _perfBox=h("div",{class:"perf-hud"});
+  const body=h("pre",{});
+  const copy=h("button",{type:"button"},"Copy");
+  copy.onclick=()=>{ const txt=_perfLog.slice(-12).join("\n\n");
+    try{ navigator.clipboard.writeText(txt).then(()=>{ copy.textContent="Copied"; setTimeout(()=>{ copy.textContent="Copy"; }, 1500); }); }
+    catch(e){ const ta=h("textarea",{}); ta.value=txt; _perfBox.appendChild(ta); ta.select(); } };
+  const off=h("button",{type:"button"},"Off"); off.onclick=_perfToggle;
+  _perfBox.appendChild(h("div",{class:"perf-hud-h"}, "Measuring · last 5 s", copy, off));
+  _perfBox.appendChild(body);
+  document.body.appendChild(_perfBox);
+  _perfT=setInterval(()=>{
+    const rows=Object.keys(_perfAcc).map(k=>({ k:k, n:_perfAcc[k].n, ms:_perfAcc[k].ms })).filter(r=>r.n)
+      .sort((a,b)=>b.ms-a.ms);
+    Object.keys(_perfAcc).forEach(k=>{ _perfAcc[k].n=0; _perfAcc[k].ms=0; });
+    const head=new Date().toLocaleTimeString("en-GB")+"  view="+((state.ui&&state.ui.view)||"")+"  edit="+(EDIT_MODE?"on":"off")
+      +"  nodes="+document.getElementsByTagName("*").length+"  editable="+document.querySelectorAll("[contenteditable='true']").length
+      +"\nframes="+frames+" (of ~300)  worst frame="+Math.round(worst)+" ms";
+    frames=0; worst=0;
+    const txt=head+"\n"+(rows.length? rows.map(r=>(r.k+"                        ").slice(0,24)+String(r.n).padStart(5)+" x "+String(Math.round(r.ms)).padStart(6)+" ms").join("\n") : "nothing ran");
+    body.textContent=txt;
+    _perfLog.push(txt); if(_perfLog.length>40) _perfLog.shift();
+  }, 5000);
+}
+try{
+  document.addEventListener("keydown", e=>{ if(e.ctrlKey && e.altKey && String(e.key||"").toLowerCase()==="p"){ e.preventDefault(); _perfToggle(); } }, true);
+  if(/[?&]perf\b/.test(location.search)) setTimeout(_perfToggle, 1500);
+}catch(e){}
 function repSaveBadge(){ const el=h("span",{class:"rep-savestate "+_repSave.cls, title:"Click to save now", onclick:()=>{ if(_repRetry) _repRetry(); }}, _repSave.txt); return el; }
 
 /* Drawing a report asks the feeds for what it is missing, and some of those readers
