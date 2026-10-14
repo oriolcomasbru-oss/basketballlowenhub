@@ -13378,6 +13378,20 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
   const cmp=()=>{ const c=COLS.filter(x=>x[0]===ORDER)[0]||COLS[3], get=c[3];
     return (a,b)=>{ const A=get(a), B=get(b); let d=(typeof A==="number" && typeof B==="number")? A-B : String(A).localeCompare(String(B), undefined, { numeric:true });
       if(!d) d=b.n-a.n; return (c[2]? DESC : !DESC)? -d : d; }; };
+  /* A COLOUR A KIND, A SHADE A FAMILY. Half court blue, transition orange, SLOB green, BLOB
+     purple; inside each, the families from darkest to lightest in the order of their codes,
+     so H1, H2 and H3 read as three blues and their variants share one. A set without a code
+     keeps the pale tone of its kind. */
+  const PB_HUE={ "Half court":215, "Transition":26, "SLOB":152, "BLOB":282 };
+  const famColor=r=>{
+    const hu=PB_HUE[r.c.kind]; if(hu==null) return null;
+    const fams=[...new Set(ROWS.filter(x=>x.c.kind===r.c.kind && x.c.fam).map(x=>x.c.fam))].sort((a,b)=>a.localeCompare(b, undefined, { numeric:true }));
+    const i=fams.indexOf(r.c.fam);
+    if(i<0) return { bg:"hsl("+hu+",45%,90%)", fg:"hsl("+hu+",45%,28%)" };
+    const l=28+Math.round(38*i/Math.max(1, fams.length-1));
+    return { bg:"hsl("+hu+",62%,"+l+"%)", fg:l<52? "#fff" : "hsl("+hu+",55%,14%)" };
+  };
+  const paint=(el, r)=>{ const c=famColor(r); if(c && el){ el.style.background=c.bg; el.style.color=c.fg; } return el; };
   const inFilter=r=>(FILTER==="All" || (FILTER==="ATO"? r.c.ato : r.c.kind===FILTER))
     && (ONLY!=="adj" || hasAdj(r.label)) && (ONLY!=="key" || keyOn(r.label));
   function draw(){
@@ -13385,7 +13399,10 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
     bar.innerHTML="";
     const chip=(lab, on, fn, n)=>{ const b=h("button",{class:"pbb-chip"+(on? " on" : ""), type:"button"}, lab, n!=null? h("i",{}, String(n)) : null); b.addEventListener("click", fn); return b; };
     const count=k=>ROWS.filter(r=>k==="All"? true : k==="ATO"? r.c.ato : r.c.kind===k).length;
-    ["All"].concat(PB_KINDS, ["ATO"]).forEach(k=>{ const n=count(k); if(k!=="All" && !n) return; bar.appendChild(chip(k, FILTER===k, ()=>{ FILTER=k; draw(); }, n)); });
+    ["All"].concat(PB_KINDS, ["ATO"]).forEach(k=>{ const n=count(k); if(k!=="All" && !n) return; const b=chip(k, FILTER===k, ()=>{ FILTER=k; draw(); }, n);
+      /* each kind's chip carries its colour, so the filter is also the key to the table */
+      if(PB_HUE[k]!=null) b.style.setProperty("--kc", "hsl("+PB_HUE[k]+",62%,40%)");
+      bar.appendChild(b); });
     bar.appendChild(h("span",{class:"pbb-sep"}));
     bar.appendChild(chip("With an adjustment", ONLY==="adj", ()=>{ ONLY=(ONLY==="adj")? "" : "adj"; draw(); }, ROWS.filter(r=>hasAdj(r.label)).length));
     bar.appendChild(chip("★ Key sets", ONLY==="key", ()=>{ ONLY=(ONLY==="key")? "" : "key"; draw(); }, ROWS.filter(r=>keyOn(r.label)).length));
@@ -13408,7 +13425,7 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
       if(ORDER==="code" && r.c.fam && r.c.fam!==lastFam){
         const fam=ROWS.filter(x=>x.c.fam===r.c.fam);
         if(fam.length>1){ const n=fam.reduce((a,x)=>a+x.n,0), pts=fam.reduce((a,x)=>a+(x.ppp||0)*x.n,0);
-          tableBox.appendChild(h("div",{class:"pbb-fam"}, h("b",{}, r.c.fam), h("span",{}, r.c.kind+" · "+fam.length+" variants · "+n+" runs · "+(n? (pts/n).toFixed(2) : "—")+" per possession"))); }
+          tableBox.appendChild(h("div",{class:"pbb-fam"}, paint(h("b",{class:"pbb-famb"}, r.c.fam), r), h("span",{}, r.c.kind+" · "+fam.length+" variants · "+n+" runs · "+(n? (pts/n).toFixed(2) : "—")+" per possession"))); }
         lastFam=r.c.fam;
       }
       const pk=pickOf(r.label), key=keyOn(r.label);
@@ -13416,7 +13433,8 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
       const star=h("button",{class:"pbb-star"+(key? " on" : ""), type:"button", title:key? "A key set — press to take it out" : "Mark as a key set"}, "★");
       if(canEd) star.addEventListener("click",()=>keyWrite(r.label, !key)); else star.disabled=true;
       row.appendChild(star);
-      row.appendChild(h("span",{class:"pbb-c-code"}, r.c.code? h("b",{}, r.c.code) : h("i",{},"—"), h("em",{}, r.c.kind+(r.c.ato? " · ATO" : ""))));
+      row.appendChild(h("span",{class:"pbb-c-code"}, paint(r.c.code? h("b",{}, r.c.code) : h("i",{class:"nocode"},"—"), r), h("em",{}, r.c.kind+(r.c.ato? " · ATO" : ""))));
+      { const fc=famColor(r); if(fc) row.style.setProperty("--fam", fc.bg); }
       const nm=h("span",{class:"pbb-c-name"}, nameOf(r.label));
       if(canEd) _pbbRename(nm, r, itemFor, areas, save, drawKey);
       row.appendChild(nm);
@@ -13465,7 +13483,7 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
     picked.forEach(r=>{
       const nm=h("span",{class:"nm"}, nameOf(r.label));
       if(canEd) _pbbRename(nm, r, itemFor, areas, save, draw);
-      const top=h("div",{class:"pbb-k1"}, r.c.code? h("b",{}, r.c.code) : null, nm,
+      const top=h("div",{class:"pbb-k1"}, r.c.code? paint(h("b",{}, r.c.code), r) : null, nm,
         hasAdj(r.label)? h("i",{class:"adj", title:"There is an adjustment for it"},"adj") : null);
       if(canEd){ const x=h("button",{class:"pbx-x", type:"button", title:"Take it out of the key sets"},"✕"); x.addEventListener("click",()=>keyWrite(r.label,false)); top.appendChild(x); }
       const pp=pbxPppChip(r.ppp, AVG, r.n);
@@ -29245,7 +29263,13 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pbb-star{border:0;background:transparent;font-size:16px;line-height:1;color:var(--line-strong,#cfd4dc);cursor:pointer;padding:0;text-align:center}
 .pbb-star.on{color:#c6a15b}.pbb.ed .pbb-star:hover{color:#c6a15b}.pbb-star:disabled{cursor:default}
 .pbb-c-code{display:flex;flex-direction:column;min-width:0}
-.pbb-c-code b{font:700 12px 'IBM Plex Mono',monospace}.pbb-c-code i{font-style:normal;color:var(--ink-faint,#8a93a2)}
+.pbb-c-code b{font:700 12px 'IBM Plex Mono',monospace;align-self:flex-start;border-radius:5px;padding:1px 7px;min-width:34px;text-align:center}
+.pbb-c-code i{font-style:normal;color:var(--ink-faint,#8a93a2)}
+.pbb-c-code i.nocode{align-self:flex-start;border-radius:5px;padding:0 9px;font-weight:700}
+.pbb-r{box-shadow:inset 3px 0 0 var(--fam,transparent)}
+.pbb-famb{border-radius:5px;padding:1px 8px}
+.pbb-chip[style*="--kc"]{border-left:4px solid var(--kc)!important}
+.pbb-chip.on[style*="--kc"]{background:var(--kc)!important;border-color:var(--kc)!important;color:#fff!important}
 .pbb-c-code em{font-style:normal;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pbb-c-name{font-weight:600;min-width:0;outline:none}
 .pbb.ed .pbb-c-name:focus{background:#fff;box-shadow:0 0 0 2px var(--gold-1,#d8b877);border-radius:4px}
