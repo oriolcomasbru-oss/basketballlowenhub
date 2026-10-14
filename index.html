@@ -6399,13 +6399,16 @@ function seasonGrid(kind){
     const tgrp=x=>{
       if(kind!=="teamscout") return col;
       if(!curGrp){
-        const key="trg:"+x.date, body=h("div",{class:"ym-trg-b"}), cnt=h("span",{class:"ym-trg-n"},""), span=h("span",{class:"ym-trg-d"},"");
-        const head=h("button",{class:"ym-trg-h", type:"button"}, h("i",{class:"ym-trg-c"}), h("b",{},"Trainings"), cnt, span);
+        /* the folded group is one row of the list, the size and the green of a training
+           row: the days it covers, how many, and how many are closed */
+        const key="trg:"+x.date, body=h("div",{class:"ym-trg-b"}), cnt=h("span",{class:"ym-trg-n"},""), span=h("span",{class:"ym-date ym-trg-d"},""), st=h("span",{class:"ym-st"});
+        const head=h("button",{class:"ym-trg-h ym-row training clk", type:"button"}, st, span, h("b",{class:"ts-tr"},"Trainings"), cnt, h("i",{class:"ym-trg-c"}));
         const boxT=h("div",{class:"ym-trg"}, head, body);
         const G2={ key:key, n:0, done:0, first:x.date, last:x.date };
         G2.paint=()=>{ boxT.classList.toggle("open", !!_tsTrgOpen[key]);
-          cnt.textContent=G2.n+" - "+G2.done+"/"+G2.n+" closed";
-          span.textContent=G2.first.slice(8)+"/"+G2.first.slice(5,7)+(G2.last!==G2.first? " - "+G2.last.slice(8)+"/"+G2.last.slice(5,7) : ""); };
+          st.className="ym-st "+(G2.done===G2.n? "done" : "open");
+          cnt.textContent="×"+G2.n+" · "+G2.done+"/"+G2.n;
+          span.textContent=G2.first.slice(8)+"/"+G2.first.slice(5,7)+(G2.last!==G2.first? "–"+G2.last.slice(8)+"/"+G2.last.slice(5,7) : ""); };
         G2.body=body;
         head.addEventListener("click",()=>{ _tsTrgOpen[key]=!_tsTrgOpen[key]; G2.paint(); });
         col.appendChild(boxT); curGrp=G2; trgAll.push(G2);
@@ -10238,9 +10241,38 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
         h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"}, title)));
       try{ b.appendChild(build()); }catch(e){ b.appendChild(h("div",{class:"lg-empty"}, "This block could not be drawn: "+((e&&e.message)||e))); }
       wrap.appendChild(b); };
-    blk("GAME PERFORMANCE OVERVIEW", ()=>_postOverview(g));
-    blk("GAME STATS · FROM THE PLAY BY PLAY", ()=>_lgGameInline(g));
+    /* ONE BLOCK FOR THE GAME, READ THE WAY THE PRE GAME IS READ. The overview of both
+       sources first, then one tab per question: the game from the play by play, and each
+       part of our own tagging. The team stats section is drawn where it always was and
+       moved into this block, so what is stored and how it is built do not change. */
+    const uni=h("div",{class:"rs-block rs-block-auto pg-uni"},
+      h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"}, "THE GAME · PLAY BY PLAY AND TAGGING")));
+    const PT=[["ov","Overview"],["pbp","Game stats"],["pt","Paint touches"],["br","Ball reversals"],["eff","Efficiency"],["td","Transition D"],["def","What we concede"],["all","Everything"]];
+    const bar=h("div",{class:"sxp-tabs pg-tabs"});
+    const pane=(k, build)=>{ const p=h("div",{class:"pg-pane", "data-pane":k});
+      try{ p.appendChild(build()); }catch(e){ p.appendChild(h("div",{class:"lg-empty"}, "This block could not be drawn: "+((e&&e.message)||e))); }
+      return p; };
+    const pOv=pane("ov", ()=>_postOverview(g)), pPbp=pane("pbp", ()=>_lgGameInline(g)), pTs=h("div",{class:"pg-pane", "data-pane":"ts"});
+    const show=k=>{
+      window.__postCat=k; uni.dataset.tab=k;
+      bar.querySelectorAll(".sxp-tab").forEach(b=>b.classList.toggle("on", b.dataset.t===k));
+      const tsOn=(k!=="ov" && k!=="pbp");
+      pOv.classList.toggle("on", k==="ov"||k==="all"); pPbp.classList.toggle("on", k==="pbp"||k==="all"); pTs.classList.toggle("on", tsOn);
+      const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && tsOn) sp.__setCat(k);
+      try{ window.dispatchEvent(new Event("resize")); }catch(e){}
+    };
+    PT.forEach(t=>{ const b=h("button",{class:"sxp-tab", type:"button", onclick:()=>show(t[0])}, t[1]); b.dataset.t=t[0]; bar.appendChild(b); });
+    uni.appendChild(bar); uni.appendChild(pOv); uni.appendChild(pPbp); uni.appendChild(pTs);
+    uni.__ts=pTs;
+    /* the team stats arrive later, from the Drive: when they land, they open on the tab chosen */
+    try{ new MutationObserver(()=>{ const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && !sp.__synced){ sp.__synced=1; const k=uni.dataset.tab; if(k!=="ov" && k!=="pbp") sp.__setCat(k); } })
+      .observe(pTs, { childList:true, subtree:true }); }catch(e){}
+    wrap.appendChild(uni);
+    _postUni=uni;
+    const k0=window.__postCat && PT.some(t=>t[0]===window.__postCat)? window.__postCat : "ov";
+    show(k0);
   };
+  let _postUni=null;
   (playerBlockOk("written") ? secs : []).forEach((sec,si)=>{
     if(sec && sec.kind==="stats") addPostExtra();
     try{ _rsSection(sec,si); }
@@ -10287,6 +10319,13 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
     if(sec.kind==="stats"){
       block.classList.add("rs-block-stats");
       block.appendChild(renderStatsSection(sec, canEd, save));
+      /* the post game's team stats live inside the game block, under its tabs */
+      if(_postUni && _postUni.__ts && !_postUni.__tsTaken && kind==="postgame" && !canEd){
+        _postUni.__tsTaken=true; block.classList.add("pg-moved"); _postUni.__ts.appendChild(block); return;
+      }
+      /* the tagging's players table is the roster table's now: an empty PLAYERS STATS
+         section has nothing left to show */
+      if(kind==="pregame" && window.__preOneTable && !String(sec.raw||"").trim() && !canEd && /players/i.test(String(sec.title||""))){ return; }
       /* their season goes in front of the players, their league tables behind - both only
          for the section that is about them, never for our own */
 
@@ -13130,6 +13169,23 @@ function _pbClass(r){
   }
   return { kind:kind, fam:fam, variant:variant, code:(m||fam)? tok : "", ato:/after\s*timeout/i.test(String(r.kind||"")) };
 }
+/* A SET IS CALLED WHAT THE STAFF WANTS IT CALLED. The name is typed over the set's name,
+   in the table or in the key sets, and kept in pbEdit beside the tagging's own label;
+   the code, the call, the counts and the key-set mark all stay tied to that label, so
+   renaming never moves anything. Enter keeps it, Escape gives up, an empty name goes
+   back to the tagging's. */
+function _pbbRename(nm, r, itemFor, areas, save, after){
+  nm.contentEditable="true"; nm.spellcheck=false; nm.classList.add("pbb-ren");
+  nm.title="Click to rename · the code stays "+(r.c && r.c.code? r.c.code : r.label);
+  let was="";
+  nm.addEventListener("focus",()=>{ was=nm.textContent; });
+  nm.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); nm.blur(); } else if(e.key==="Escape"){ nm.textContent=was; nm.blur(); } });
+  nm.addEventListener("blur",()=>{ const it=itemFor(r); if(!it) return; const v=nm.textContent.replace(/\s+/g," ").trim();
+    if(v===was.trim()) return;
+    areas.forEach(a=>{ if(a!==it) delete a.pbEdit[r.label]; });
+    if(v && v!==r.label) it.pbEdit[r.label]=v; else { delete it.pbEdit[r.label]; nm.textContent=r.label; }
+    save(); try{ if(after) after(); }catch(e){} });
+}
 function renderPlaybookBoard(sec, canEd, save, reRender){
   const areas=(sec.items||[]).filter(it=>it && it.kind!=="table");
   areas.forEach(it=>{ if(it.us===undefined && it.v!==undefined) it.us=it.v;
@@ -13195,10 +13251,7 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
       row.appendChild(star);
       row.appendChild(h("span",{class:"pbb-c-code"}, r.c.code? h("b",{}, r.c.code) : h("i",{},"—"), h("em",{}, r.c.kind+(r.c.ato? " · ATO" : ""))));
       const nm=h("span",{class:"pbb-c-name"}, nameOf(r.label));
-      if(canEd){ nm.contentEditable="true"; nm.title="Rename this set for the report";
-        nm.addEventListener("blur",()=>{ const it=itemFor(r); if(!it) return; const v=nm.textContent.trim();
-          areas.forEach(a=>{ if(a!==it) delete a.pbEdit[r.label]; });
-          if(v && v!==r.label) it.pbEdit[r.label]=v; else delete it.pbEdit[r.label]; save(); }); }
+      if(canEd) _pbbRename(nm, r, itemFor, areas, save, drawKey);
       row.appendChild(nm);
       row.appendChild(r.call? h("span",{class:"pbb-c-call pbx-call"}, r.call) : h("span",{class:"pbb-c-call pbx-nocall"},"—"));
       const mx=Math.max.apply(null, ROWS.map(x=>x.n).concat([1]));
@@ -13239,12 +13292,19 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
     keyBox.appendChild(h("div",{class:"pbb-key-h"}, "★ Key sets"));
     const picked=ROWS.filter(r=>keyOn(r.label)).sort(cmp());
     if(!picked.length){ keyBox.appendChild(h("div",{class:"pbx-keyempty"}, canEd? "Press the star of a set to put it here" : "—")); return; }
-    picked.forEach(r=>{ const row=h("div",{class:"pbb-k"},
-        h("b",{}, r.c.code||""), h("span",{class:"nm"}, nameOf(r.label)),
-        r.call? h("span",{class:"pbx-call"}, r.call) : null,
-        h("span",{class:"n"}, String(r.n)), pbxPppChip(r.ppp, AVG, r.n),
+    /* one card a set, two lines with room in them: the code and the name the staff gave
+       it, then what they shout, how often they run it and what it returns */
+    const mxK=Math.max.apply(null, picked.map(x=>x.n).concat([1]));
+    picked.forEach(r=>{
+      const nm=h("span",{class:"nm"}, nameOf(r.label));
+      if(canEd) _pbbRename(nm, r, itemFor, areas, save, draw);
+      const top=h("div",{class:"pbb-k1"}, r.c.code? h("b",{}, r.c.code) : null, nm,
         hasAdj(r.label)? h("i",{class:"adj", title:"There is an adjustment for it"},"adj") : null);
-      if(canEd){ const x=h("button",{class:"pbx-x", type:"button", title:"Take it out of the key sets"},"✕"); x.addEventListener("click",()=>keyWrite(r.label,false)); row.appendChild(x); }
+      if(canEd){ const x=h("button",{class:"pbx-x", type:"button", title:"Take it out of the key sets"},"✕"); x.addEventListener("click",()=>keyWrite(r.label,false)); top.appendChild(x); }
+      const pp=pbxPppChip(r.ppp, AVG, r.n);
+      const row=h("div",{class:"pbb-k"}, top,
+        h("div",{class:"pbb-k2"}, r.call? h("span",{class:"pbx-call"}, r.call) : h("span",{class:"pbx-nocall"},"no call"),
+          h("span",{class:"n", title:r.n+" runs"}, h("i",{style:"width:"+Math.max(8,Math.round(100*r.n/mxK))+"%"}), h("b",{}, String(r.n))), pp));
       keyBox.appendChild(row); });
   }
   /* ---- the notes of each area, exactly as they were written */
@@ -23168,6 +23228,7 @@ function _preJoinedPlayers(tid){
   want.then(T=>{ try{ draw(T); }catch(e){ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"},"This table could not be built: "+((e&&e.message)||e))); } });
   return box;
 }
+let _lgClubOpen=false;
 function renderLeague(){
   const root=$("#viewLeague"); if(!root) return;
   const L=leagueState();
@@ -23193,19 +23254,39 @@ function renderLeague(){
     return;
   }
   /* the club being shown, read from every panel below, before the first of them */
-  try{ const dash=_lgTeamDash(L); if(dash) root.appendChild(h("div",{style:"margin-top:14px"}, dash)); }catch(e){ try{ console.warn("league dash", e); }catch(_){} }
-  root.appendChild(h("div",{style:"margin-top:14px"}, _lgResults(L)));
+  /* TWO LEVELS, LIKE THE REPORTS. The club chosen first, in one card that opens on demand;
+     then the league analysis, cut into the questions it answers, each under its own
+     heading. Every panel is the one it was - only where it sits and what it is under. */
+  const L1=(title, sub, tools)=>h("div",{class:"lg-l1"}, h("b",{}, title), sub? h("span",{}, sub) : null, tools? h("span",{class:"lg-l1-t"}, tools) : null);
+  const L2=title=>h("div",{class:"lg-l2"}, title);
+  const add=(el, top)=>{ try{ root.appendChild(top===false? el : h("div",{style:"margin-top:12px"}, el)); }catch(e){} };
+  try{
+    const dash=_lgTeamDash(L);
+    if(dash){
+      const open=!!_lgClubOpen;
+      const pill=h("button",{class:"lg-fold-b lg-l1-b", type:"button", onclick:()=>{ _lgClubOpen=!_lgClubOpen; holder.style.display=_lgClubOpen? "" : "none"; pill.textContent=_lgClubOpen? "Hide" : "Show"; }}, open? "Hide" : "Show");
+      const holder=h("div",{style:open? "" : "display:none"}, dash);
+      const club=(L.teams||[]).filter(t=>String(t.id)===String(L.team))[0];
+      root.appendChild(L1("The club", (club&&club.name)||"", pill));
+      root.appendChild(holder);
+    }
+  }catch(e){ try{ console.warn("league dash", e); }catch(_){} }
+  root.appendChild(L1("League analysis", "every club, from the league's feed"));
+  root.appendChild(L2("Results and the table"));
+  add(_lgResults(L), false);
   root.appendChild(h("div",{class:"lg-grid"}, _lgStandings(L), _lgCalendar(L)));
-  root.appendChild(h("div",{style:"margin-top:14px"}, _lgEuro(L)));
-  root.appendChild(h("div",{style:"margin-top:14px"}, _lgFour(L)));
-  root.appendChild(h("div",{style:"margin-top:14px"}, _lgLeaders(L)));
-  root.appendChild(h("div",{style:"margin-top:14px"}, _lgRoster(L)));
-  root.appendChild(h("div",{style:"margin-top:14px"}, _lgShots(L)));
-  root.appendChild(h("div",{style:"margin-top:14px"}, _lgRot(L)));
-  root.appendChild(h("div",{style:"margin-top:14px"}, _lgUnits(L)));
-  root.appendChild(h("div",{style:"margin-top:14px"}, _lgClock(L)));
-  root.appendChild(h("div",{style:"margin-top:14px"},
-    _lgFold(L,"diag","the reader \u2014 what loaded and what did not",()=>_lgDiag(L))));
+  add(_lgEuro(L));
+  root.appendChild(L2("How the teams play"));
+  add(_lgFour(L), false);
+  add(_lgLeaders(L));
+  root.appendChild(L2("Players and shots"));
+  add(_lgRoster(L), false);
+  add(_lgShots(L));
+  root.appendChild(L2("Rotations, units and the clock"));
+  add(_lgRot(L), false);
+  add(_lgUnits(L));
+  add(_lgClock(L));
+  add(_lgFold(L,"diag","the reader \u2014 what loaded and what did not",()=>_lgDiag(L)));
   if(!(L.four||[]).length && !_lgFourTried && !_lgFourBusy && !L.demo) syncFour(false);
 }
 
@@ -28509,7 +28590,7 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pbb-chip i{font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
 .pbb-chip.on{background:var(--ink,#141821);color:#fff;border-color:var(--ink,#141821)}.pbb-chip.on i{color:rgba(255,255,255,.7)}
 .pbb-sep{width:1px;height:18px;background:var(--line-strong,#cfd4dc);margin:0 4px}
-.pbb-main{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:18px;align-items:start}
+.pbb-main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
 .pbb-r{display:grid;grid-template-columns:26px 92px minmax(120px,1.1fr) minmax(56px,auto) 96px 52px 46px minmax(180px,1.3fr);gap:8px;align-items:center;
   padding:5px 8px;border-bottom:1px solid var(--line,#eef0f3);font-size:12.5px;border-left:4px solid transparent}
 .pbb-h{position:sticky;top:0;z-index:2;background:var(--panel,#fff);border-bottom:2px solid var(--ink,#141821);
@@ -28539,9 +28620,20 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pbb-fam b{font:700 13px 'Oswald',sans-serif;letter-spacing:.08em}.pbb-fam span{font-size:11px;color:var(--ink-faint,#8a93a2)}
 .pbb-key{position:sticky;top:8px;border:1px solid rgba(198,161,91,.6);border-radius:12px;background:rgba(198,161,91,.10);padding:10px 12px}
 .pbb-key-h{font:700 12px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px;color:#7a5c12}
-.pbb-k{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 0;border-top:1px solid rgba(198,161,91,.35);font-size:12px}
-.pbb-k b{font:700 11px 'IBM Plex Mono',monospace}.pbb-k .nm{font-weight:700;flex:1 1 120px;min-width:0}
-.pbb-k .n{font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.pbb-k{display:block;padding:7px 9px;margin:0 0 6px;border:1px solid rgba(198,161,91,.45);border-radius:9px;background:var(--panel,#fff);font-size:12px}
+.pbb-k1{display:flex;align-items:center;gap:7px;min-width:0}
+.pbb-k1 > b{flex:none;font:700 10.5px 'IBM Plex Mono',monospace;background:#141821;color:#fff;border-radius:4px;padding:1px 5px}
+.pbb-k .nm{font-weight:800;font-size:13px;flex:1 1 auto;min-width:0;overflow-wrap:anywhere;outline:none}
+.pbb-k1 .pbx-x{margin-left:auto;flex:none}
+.pbb-k2{display:flex;align-items:center;gap:8px;margin-top:5px;min-width:0}
+.pbb-k2 .pbx-call,.pbb-k2 .pbx-nocall{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pbb-k2 .pbx-nocall{font-size:11px;color:var(--ink-faint,#8a93a2)}
+.pbb-k .n{flex:none;display:flex;align-items:center;gap:5px;width:62px;font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.pbb-k .n i{display:block;height:6px;border-radius:3px;background:#4a86d8;max-width:36px}
+.pbb-ren{cursor:text;border-radius:4px}
+.pbb.ed .pbb-ren:hover{box-shadow:0 0 0 1px var(--line-strong,#cfd4dc);background:#fff}
+.pbb.ed .pbb-ren:focus{background:#fff;box-shadow:0 0 0 2px var(--gold-1,#d8b877)}
+.pbb.ed .pbb-ren:hover::after{content:" ✎";font-size:10px;color:var(--ink-faint,#8a93a2)}
 .pbb-k .adj{font:700 8.5px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;background:#2f9e86;color:#fff;border-radius:3px;padding:1px 4px}
 .pbb-notes{margin-top:14px}
 .pbb-notes details > summary{display:inline-flex;align-items:center;gap:8px;font:700 11px/1 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;
@@ -28636,12 +28728,15 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .ui-chip i{font-style:normal;color:var(--ink-soft,#5b6472)}.ui-chip b{font:800 13px 'Inter',sans-serif}.ui-chip em{font-style:normal;font-size:10px;color:var(--ink-faint,#8a93a2)}
 /* a training block in the season list reads like the rows around it, only quieter */
 .ym-trg{margin:0}
-.ym-trg-h{border:0;border-radius:0;padding:5px 8px;background:transparent;opacity:.72;font-size:12px;gap:7px;border-bottom:1px solid var(--line,#eef0f3)}
-.ym-trg-h:hover{opacity:1;border-color:var(--line,#eef0f3)}
-.ym-trg-h b{font:500 12px 'Inter',system-ui,sans-serif;letter-spacing:0;text-transform:none;color:var(--ink-soft,#5b6472)}
-.ym-trg-n{font-size:10px}
-.ym-trg-c{width:12px;height:12px;background-size:12px 12px;background-color:transparent;filter:grayscale(1);opacity:.6}
-.ym-trg-b{border-left:0;margin-left:0;padding-left:14px}
+/* the folded group is a training row: same height, same green, one line */
+.ym-trg-h.ym-row{display:flex;width:100%;box-sizing:border-box;border:0!important;border-radius:6px;background:#e3f4ea;color:var(--ink,#141821);
+  font:700 11px 'Inter',system-ui,sans-serif;padding:3px 6px;gap:6px;text-align:left;white-space:nowrap;opacity:1;cursor:pointer}
+body.dark .ym-trg-h.ym-row{background:#153223}
+.ym-trg-h.ym-row b{font:inherit;letter-spacing:0;text-transform:none;color:inherit}
+.ym-trg-h .ym-trg-d{margin-left:0;font:inherit;color:inherit}
+.ym-trg-h .ym-trg-n{font:600 10px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.ym-trg-h .ym-trg-c{margin-left:auto;width:12px;height:12px;background-size:12px 12px;background-color:transparent;opacity:.55}
+.ym-trg-b{border-left:0;margin-left:0;padding-left:12px}
 .ym-trg-bar{opacity:.85}
 
 /* THE FOLD: ONE WAY TO OPEN AND CLOSE, EVERYWHERE.
@@ -30848,6 +30943,26 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .gp3-under.solo{grid-template-columns:minmax(0,1fr)}
 .gp3-under > .gp3-ks{margin-top:0}
 .gp3-under:not(.solo) > .gp3-ks .gp3-ksb{column-width:auto!important;column-count:2;column-gap:18px}
+/* the league in two levels */
+.lg-l1{display:flex;align-items:center;gap:12px;margin:18px 0 10px;padding:9px 14px;border-radius:10px;background:#141821;color:#fff}
+.lg-l1 > b{font:700 15px 'Oswald',sans-serif;letter-spacing:.18em;text-transform:uppercase}
+.lg-l1 > span{font:400 12px 'Inter',system-ui,sans-serif;opacity:.7}
+.lg-l1 .lg-l1-t{margin-left:auto;opacity:1}
+.lg-l1 .lg-l1-b{background:#fff!important;color:#141821!important;border-color:#fff!important}
+.lg-l2{font:700 13px 'Oswald',sans-serif;letter-spacing:.15em;text-transform:uppercase;color:var(--ink,#141821);margin:20px 0 8px;padding-bottom:5px;border-bottom:2px solid var(--ink,#141821)}
+/* the post game in one block, with the pre game's tabs */
+.pg-uni .pg-pane{display:none}
+.pg-uni .pg-pane.on{display:block}
+.pg-uni .pg-tabs{margin:10px 0 12px}
+.pg-uni .sxp-tab{flex:1 1 auto;border:0;background:transparent;border-radius:8px;padding:8px 12px;cursor:pointer;font:700 11px 'Oswald',sans-serif;letter-spacing:.13em;text-transform:uppercase;color:#5b6472}
+.pg-uni .sxp-tab:hover{background:rgba(20,24,33,.07);color:#141821}
+.pg-uni .sxp-tab.on{background:#141821;color:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.pg-uni .pg-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:4px;border-radius:11px;background:rgba(20,24,33,.05)}
+.pg-uni .pg-moved{margin:0!important;padding:0!important;border:0!important;box-shadow:none!important;background:transparent!important}
+.pg-uni .pg-moved > .rs-banner,.pg-uni .sx-menu{display:none!important}
+.pg-uni[data-tab="all"] .pg-pane + .pg-pane.on{margin-top:18px}
+@media print{.pg-uni .pg-pane{display:block!important}.pg-uni .pg-tabs{display:none!important}}
+body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{display:none!important}
 /* the report's bar, folded */
 .scout-head .scout-min{order:99;margin-left:auto;flex:none;border:1px solid var(--line-strong,#cfd4dc);background:transparent;border-radius:6px;padding:3px 9px;cursor:pointer;
   font:700 9.5px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}

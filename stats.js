@@ -2032,7 +2032,8 @@
     })();
 
     /* ---------------------------------------------------------- the menu */
-    var cat = "pt";
+    /* the post game's own tab bar can choose the category from outside the block */
+    var cat = (typeof window !== "undefined" && window.__postCat && window.__postCat !== "ov" && window.__postCat !== "pbp") ? window.__postCat : "pt";
     function apply() {
       box.querySelectorAll(".sx-cat").forEach(function (g) {
         g.classList.toggle("hide", cat !== "all" && g.dataset.g !== cat);
@@ -2048,9 +2049,15 @@
           b.classList.add("on");
           apply();
         });
+        b.dataset.cat = t[0];
         menu.appendChild(b);
       });
     apply();
+    box.__setCat = function (c) {
+      cat = c;
+      menu.querySelectorAll(".sx-tab").forEach(function (x) { x.classList.toggle("on", x.dataset.cat === c); });
+      apply();
+    };
 
     box.appendChild(legend());
     var foot = el("div", "sx-foot");
