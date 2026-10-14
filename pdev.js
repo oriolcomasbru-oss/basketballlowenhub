@@ -61,6 +61,7 @@
   ];
   var MK = {}; M.forEach(function (m) { MK[m.k] = m; });
   var VIEWS = [
+    ["goals", "By his goals", null],
     ["over", "Overview", ["min", "pts", "ts", "ast", "reb", "pir", "net"]],
     ["shoot", "Shooting", ["fga", "fgp", "p3a", "p3p", "ftp", "ts", "efg"]],
     ["create", "Creation", ["ast", "tov", "astto", "usg", "pts", "ts"]],
@@ -278,16 +279,20 @@
   }
 
   /* ------------------------------------------------------------ state of the page */
-  var UI = { view: "over", mode: "pg", period: "all", open: null, sel: null };
-  try { var sv0 = JSON.parse(localStorage.getItem("lowen-pdev") || "{}"); if (sv0 && sv0.view) { UI.view = sv0.view; UI.mode = sv0.mode || "pg"; UI.period = sv0.period || "all"; } } catch (e) { }
-  function saveUI() { try { localStorage.setItem("lowen-pdev", JSON.stringify({ view: UI.view, mode: UI.mode, period: UI.period })); } catch (e) { } }
+  var UI = { view: "goals", mode: "pg", period: "3", open: null, sel: null };
+  try { var sv0 = JSON.parse(localStorage.getItem("lowen-pdev2") || "{}"); if (sv0 && sv0.view) { UI.view = sv0.view; UI.mode = sv0.mode || "pg"; UI.period = sv0.period || "3"; } } catch (e) { }
+  function saveUI() { try { localStorage.setItem("lowen-pdev2", JSON.stringify({ view: UI.view, mode: UI.mode, period: UI.period })); } catch (e) { } }
   var ROOT = null;
   function seg(opts, cur, on) { return el("div", { class: "pd-seg" }, opts.map(function (o) { return el("button", { type: "button", class: o[0] === cur ? "on" : "", onclick: function () { on(o[0]); saveUI(); draw(); } }, o[1]); })); }
   function windowOf(lines, period) { if (period === "all") return lines; var n = +period; return lines.slice(-n); }
   /* a trend is the window against the season, said only when the window can carry it */
+  /* the trend is the recent games against the games BEFORE them - his own season up to
+     then - so a change is not hidden inside an average that already contains it */
   function trend(m, lines, period, mode) {
-    var all = sum(lines), win = sum(windowOf(lines, period));
-    var v = value(m, period === "all" ? all : win, mode), base = value(m, all, mode);
+    var all = sum(lines), wl = windowOf(lines, period), win = sum(wl);
+    var prev = lines.slice(0, Math.max(0, lines.length - wl.length));
+    var v = value(m, period === "all" ? all : win, mode), base = value(m, (period === "all" || !prev.length) ? all : sum(prev), mode);
+    if (period !== "all" && !prev.length) base = null;
     var sm = small(m, period === "all" ? all : win);
     var d = (period === "all" || v == null || base == null) ? null : v - base;
     var th = m.pct ? 3 : (m.k === "ortg" || m.k === "drtg" || m.k === "net") ? 4 : Math.max(0.3, Math.abs(base || 0) * 0.12);
@@ -304,6 +309,7 @@
       el("div", { class: "pd-tools" }, seg(VIEWS.map(function (v) { return [v[0], v[1]]; }), UI.view, function (v) { UI.view = v; }),
         seg(PERIODS, UI.period, function (v) { UI.period = v; }), seg(MODES, UI.mode, function (v) { UI.mode = v; })));
     root.appendChild(head);
+    if (UI.view === "goals") return goalsView(root, P);
     var vw = VIEWS.filter(function (v) { return v[0] === UI.view; })[0] || VIEWS[0];
     var tbl = el("div", { class: "pd-tbl" });
     var cols = vw[2];
@@ -338,6 +344,57 @@
       "The little line is the three-game rolling value, the dashed one his season. On-floor measures are the team's, with him on - not his alone."));
   }
 
+  /* EVERY PLAYER BY WHAT HE IS WORKING ON. One card a man: his goals, and under each goal
+     only the measures that judge it - the value for the period, where it stands against
+     his season, and the line of it game by game. On top, how many of those measures are
+     going the right way and how many the wrong way, so the page reads in one sweep. */
+  function goalsView(root, P) {
+    var grid = el("div", { class: "pd-cards" });
+    var tile = function (m, lines) {
+      var t = trend(m, lines, UI.period, UI.mode);
+      var series = lines.map(function (x, i) { return value(m, sum(lines.slice(Math.max(0, i - 2), i + 1)), UI.mode); });
+      return { t: t, el: el("div", { class: "pd-tile " + t.tone + (t.small ? " sm" : ""), title: (m.note ? m.note + " · " : "") + (t.base != null ? "before " + fmt(m, t.base) : "") + (t.small ? " · small sample" : "") },
+        el("i", {}, m.l),
+        el("div", { class: "tv" }, el("b", {}, fmt(m, t.v)),
+          t.d != null ? el("em", {}, (t.tone === "up" ? "▲" : t.tone === "dn" ? "▼" : "▸") + " " + fmt(Object.assign({}, m, { sign: true }), t.d)) : null),
+        spark(series, { ref: t.base, tone: t.tone, w: 120, h: 28 })) };
+    };
+    var cardOf = function (p, dl) {
+      var r = rec(p.key), act = (r.goals || []).filter(function (g) { return g.status === "active"; }), lines = p.lines;
+      var c = el("button", { type: "button", class: "pd-pc" + (dl ? " dl" : ""), onclick: function () { UI.open = p.key; draw(); } });
+      var up = 0, dn = 0;
+      var body = el("div", { class: "pd-pcb" });
+      if (!lines.length) body.appendChild(el("div", { class: "pd-miss" }, p.missing ? "Not on the league roster - check the name." : dl ? "No stats yet - they arrive with the ProB feed." : "No games yet."));
+      else {
+        var groups = act.length ? act.map(function (g) { return { name: g.name, ks: g.metrics || [], rs: g.ratings || [] }; })
+          : [{ name: "No goal set yet · his season", ks: (r.metrics && r.metrics.length) ? r.metrics.slice(0, 4) : ["min", "pts", "ts", "pir"], rs: [] }];
+        groups.forEach(function (gr) {
+          var row = el("div", { class: "pd-tiles" });
+          gr.ks.forEach(function (k) { var m = MK[k]; if (!m) return; var x = tile(m, lines); row.appendChild(x.el);
+            if (act.length && !x.t.small) { if (x.t.tone === "up") up++; else if (x.t.tone === "dn") dn++; } });
+          gr.rs.forEach(function (rk) { var lab = (RATINGS.filter(function (x) { return x[0] === rk; })[0] || [rk, rk])[1];
+            var rr = (r.ratings || []).filter(function (x) { return x.k === rk; }), lr = rr[rr.length - 1];
+            row.appendChild(el("div", { class: "pd-tile staff" }, el("i", {}, lab + " · staff"), el("div", { class: "tv" }, el("b", {}, lr ? lr.v + "/5" : "—")), spark(rr.map(function (x) { return x.v; }), { w: 120, h: 28 }))); });
+          body.appendChild(el("div", { class: "pd-gr" }, el("div", { class: "pd-grn" }, gr.name), row)); });
+      }
+      var verdict = !lines.length || !act.length ? null : (up && !dn) ? ["up", "Improving"] : (dn && !up) ? ["dn", "Dropping"] : (up || dn) ? ["mix", "Mixed"] : ["", "Steady"];
+      c.appendChild(el("div", { class: "pd-pch" },
+        el("div", { class: "pl" }, el("u", {}, p.num ? "#" + p.num : ""), el("b", {}, p.nm),
+          el("span", {}, lines.length ? lines.length + " GP · " + (sum(lines).s / 60 / lines.length).toFixed(1) + " min" : "")),
+        verdict ? el("span", { class: "pd-vd " + verdict[0] }, verdict[1], (up || dn) ? el("i", {}, "▲" + up + " ▼" + dn) : null) : null));
+      c.appendChild(body);
+      return c;
+    };
+    P.main.forEach(function (p) { grid.appendChild(cardOf(p, false)); });
+    root.appendChild(grid);
+    root.appendChild(el("div", { class: "pd-foot" }, (UI.period === "all" ? "Season values. Choose last 10, 5 or 3 to see each measure against his season." :
+      "Last " + UI.period + " games against the games before them: green is better, red is worse, pale is a sample too small to judge. ") +
+      "The line is the three-game rolling value, the dashed line his season. Improving / dropping counts only his goal measures."));
+    var rest = el("div", { class: "pd-cards rest" });
+    P.dl.forEach(function (p) { rest.appendChild(cardOf(p, true)); });
+    root.appendChild(el("div", { class: "pd-sep" }, "Double licence and the rest of the roster"));
+    root.appendChild(rest);
+  }
   /* ------------------------------------------------------------ one player */
   function card(root, key) {
     var P = people(), all = P.main.concat(P.dl), p = all.filter(function (x) { return x.key === key; })[0];
@@ -380,9 +437,9 @@
       var marks = Object.keys(mk0).map(function (i) { return { i: +i, t: mk0[i].join(" · ") }; });
       var grid = el("div", { class: "pd-charts" });
       sel.forEach(function (k) { var m = MK[k]; if (!m) return;
-        var t = trend(m, lines, "5", UI.mode);
+        var t = trend(m, lines, "5", UI.mode), seas = value(m, sum(lines), UI.mode);
         grid.appendChild(el("div", { class: "pd-ch" },
-          el("div", { class: "pd-cht" }, el("b", {}, m.l), el("span", { class: t.tone + (t.small ? " sm" : "") }, "season " + fmt(m, t.base) + " · last 5 " + fmt(m, t.v) + (t.small ? " · small sample" : "")),
+          el("div", { class: "pd-cht" }, el("b", {}, m.l), el("span", { class: t.tone + (t.small ? " sm" : "") }, "season " + fmt(m, seas) + " · last 5 " + fmt(m, t.v) + (t.base != null ? " · before " + fmt(m, t.base) : "") + (t.small ? " · small sample" : "")),
             m.note ? el("i", { title: m.note }, "?") : null),
           chart(m, lines, UI.mode, marks))); });
       ex.appendChild(grid);
@@ -577,6 +634,26 @@
       ".pd-row .c b{font:700 13px 'IBM Plex Mono',monospace}.pd-row .c i{font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal}.pd-row .c small{font:600 8.5px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}",
       ".pd-row .c.up{background:rgba(47,158,134,.1)}.pd-row .c.up i{color:#17805a}.pd-row .c.dn{background:rgba(216,82,78,.09)}.pd-row .c.dn i{color:#c0403c}.pd-row .c.sm{opacity:.55}",
       ".pd-row .c.wide{flex-direction:row;flex-wrap:wrap;gap:6px}.pd-row .c.mm .c{border:1px solid var(--line,#eef0f3)}.pd-row .c.none{font-size:11.5px;color:var(--ink-faint,#8a93a2)}",
+      ".pd-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));gap:10px}",
+      ".pd-cards.rest{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}",
+      "@media (max-width:640px){.pd-cards{grid-template-columns:minmax(0,1fr)}}",
+      ".pd-pc{display:grid;gap:8px;text-align:left;border:1px solid var(--line,#e4e7ec);border-radius:12px;background:var(--panel,#fff);padding:10px 12px;cursor:pointer;font:inherit;color:var(--ink,#141821);min-width:0}",
+      ".pd-pc:hover{border-color:#c6a15b;box-shadow:0 2px 10px rgba(20,24,33,.08)}",
+      ".pd-pc.dl{opacity:.8}",
+      ".pd-pch{display:flex;align-items:center;gap:10px;padding-bottom:6px;border-bottom:2px solid var(--ink,#141821)}",
+      ".pd-pch .pl{display:flex;align-items:baseline;gap:7px;min-width:0;flex-wrap:wrap}.pd-pch .pl u{text-decoration:none;font:600 11px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}.pd-pch .pl b{font:700 17px 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase}.pd-pch .pl span{font:500 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}",
+      ".pd-vd{margin-left:auto;display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font:700 10.5px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;background:var(--panel-2,#f1f2f4);color:var(--ink-soft,#5b6472);white-space:nowrap}",
+      ".pd-vd i{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;letter-spacing:0}",
+      ".pd-vd.up{background:rgba(47,158,134,.16);color:#17805a}.pd-vd.dn{background:rgba(216,82,78,.14);color:#c0403c}.pd-vd.mix{background:rgba(217,165,33,.18);color:#8a6410}",
+      ".pd-pcb{display:grid;gap:8px}",
+      ".pd-grn{font:700 10px 'Oswald',sans-serif;letter-spacing:.13em;text-transform:uppercase;color:#7a5c12;margin-bottom:4px}",
+      ".pd-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:5px}",
+      ".pd-tile{display:grid;gap:1px;border-radius:8px;padding:5px 7px 3px;background:var(--panel-2,#f4f5f7);border-top:3px solid #cfd4dc;min-width:0}",
+      ".pd-tile.up{background:rgba(47,158,134,.09);border-top-color:#2f9e86}.pd-tile.dn{background:rgba(216,82,78,.08);border-top-color:#d8524e}.pd-tile.sm{opacity:.55}.pd-tile.staff{border-top-style:dashed;border-top-color:#c6a15b}",
+      ".pd-tile i{font:600 8.5px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint,#8a93a2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".pd-tile .tv{display:flex;align-items:baseline;gap:6px}.pd-tile .tv b{font:700 17px 'Oswald',sans-serif}.pd-tile .tv em{font:700 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}",
+      ".pd-tile.up .tv b,.pd-tile.up .tv em{color:#17805a}.pd-tile.dn .tv b,.pd-tile.dn .tv em{color:#c0403c}",
+      ".pd-tile svg{width:100%;height:28px}",
       ".pd-sep{font:700 11px 'Oswald',sans-serif;letter-spacing:.15em;text-transform:uppercase;margin:14px 0 4px;padding-bottom:4px;border-bottom:2px solid var(--ink,#141821)}",
       ".pd-foot{font-size:11.5px;color:var(--ink-soft,#5b6472);max-width:90ch}",
       ".pd-spark{display:block}.pd-spark .ln{fill:none;stroke:#8a93a2;stroke-width:1.6}.pd-spark .ln.up{stroke:#2f9e86}.pd-spark .ln.dn{stroke:#d8524e}.pd-spark .ref{stroke:#cfd4dc;stroke-dasharray:2 2}.pd-spark .mk{stroke:#c6a15b;stroke-width:1.5}.pd-spark .dot{fill:#5b6472}.pd-spark .dot.up{fill:#2f9e86}.pd-spark .dot.dn{fill:#d8524e}",
