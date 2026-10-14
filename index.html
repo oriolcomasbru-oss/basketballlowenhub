@@ -4984,6 +4984,8 @@ async function syncFromGoogle(silent){
   for(const [fn,label] of jobs){ try{ const n=await fn(); ok++; msgs.push(n+" "+label); }catch(e){} }
   persist();
   if(state.ui.view==="calendar") renderCal(); if(state.ui.view==="planification") renderPlan();
+  /* the dashboard reads the same sheets: drawn again once they are in */
+  if(state.ui.view==="dashboard") try{ renderDashboard(); }catch(e){}
   if(!silent){ toast(ok? ("Synced: "+msgs.join(" · ")) : "Sync blocked locally — works once hosted on Netlify"); }
 }
 
@@ -23454,6 +23456,12 @@ function _dashCards(el, n, skip){
   out.sort((a,b)=>(b.tone? 1 : 0)-(a.tone? 1 : 0));
   return out.slice(0, n||3);
 }
+/* a script the card depends on, waited for: the dashboard opens before the deferred ones */
+function _dashNeed(test, ms){
+  return new Promise(res=>{ const t0=Date.now();
+    const tick=()=>{ let ok=false; try{ ok=!!test(); }catch(e){} if(ok) return res(true); if(Date.now()-t0>(ms||20000)) return res(false); setTimeout(tick, 300); };
+    tick(); });
+}
 function _dashWait(el, sel, ms){
   return new Promise(res=>{ const t0=Date.now();
     const tick=()=>{ if(el.querySelector(sel)) return res(true); if(Date.now()-t0>ms) return res(false); setTimeout(tick, 400); };
@@ -23574,6 +23582,9 @@ function renderDashboard(){
         cR.__b.appendChild(h("div",{class:"dash-src"}, "Rotation of "+(5+benchN)+" · last "+R.n+" games · ? = missed the last one"));
       }).catch(()=>{ cR.__b.innerHTML=""; cR.__b.appendChild(h("div",{class:"dash-miss"},"The league's games could not be read.")); });
       /* the opponent card of Team stats, its figures and the three readings that weigh most */
+      /* the dashboard is the first screen, drawn before the tagging reader has arrived:
+         the card waits for it instead of saying it is not there */
+      _dashNeed(()=>window.ScoutPre && window.ScoutPre.teamDash && window.ScoutPre.sets && window.UIKit).then(()=>{
       const SP=window.ScoutPre;
       if(SP && SP.teamDash){
         SP.teamDash(g.opponent).then(el=>{ cT.__b.innerHTML="";
@@ -23599,6 +23610,7 @@ function renderDashboard(){
           r.ppp!=null? h("em",{class:r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : null))));
         if(rows.length>8) cK.__b.appendChild(h("div",{class:"dash-src"}, "+"+(rows.length-8)+" more in the pre game"));
       });
+      });
     },
     /* ---------------------------------------------------- last game, post game */
     post:()=>{
@@ -23616,7 +23628,8 @@ function renderDashboard(){
          readings that weigh most */
       const body=h("div",{}, loading("Reading the game overview…")); c.__b.appendChild(body);
       const sg={ date:g.date, opponent:g.opponent, home:g.venue!=="Away", competition:g.competition||"BBL" };
-      _dashOff(()=>_postOverview(sg), ".ui-fig, .ui-sum-e", 25000).then(host=>{ body.innerHTML="";
+      _dashNeed(()=>window.LowenPostStats && window.LowenPostStats.gameModel && window.LowenPostStats.table2 && window.UIKit)
+        .then(()=>_dashOff(()=>_postOverview(sg), ".ui-fig, .ui-sum-e, .lg-empty", 30000)).then(host=>{ body.innerHTML="";
         if(!host || !host.querySelector(".ui-fig")){ body.appendChild(h("div",{class:"dash-miss"},"Neither the play by play nor the tagging of this game is in yet.")); return; }
         const figs=[...host.querySelectorAll(".ui-fig")].filter(f=>!/score/i.test(((f.querySelector("i")||{}).textContent||""))).slice(0,4)
           .map(f=>({ k:((f.querySelector("i")||{}).textContent||""), v:((f.querySelector("b")||{}).textContent||""), n:((f.querySelector("span")||{}).textContent||""), tone:f.classList.contains("good")? "good" : f.classList.contains("bad")? "bad" : "" }));
@@ -23657,16 +23670,35 @@ function renderDashboard(){
       const cyc=cycleFor(T), days=cyc.days.slice(0,9);
       const kl=state.plan.kload||{}, mx=Math.max(1, ...days.map(d=>(kl[d]&&kl[d].avg)||0));
       const pf=state.plan.pf||{};
-      c.__b.appendChild(h("div",{class:"dash-week"}, days.map(d=>{
+      /* each day: what it is (game, goal), the Kinexon load, and the training itself - the
+         session built in Planning when there is one, otherwise the PF's proposal from
+         DB_PLANNING, morning and afternoon, with the minutes of each block */
+      c.__b.appendChild(h("div",{class:"dash-week dash-week2"}, days.map(d=>{
         const gm=(state.games||[]).filter(g=>g.date===d && isCycleGame(g))[0];
         const goal=dayGoalSummary(d).goal, gl=GOALS.filter(x=>x[0]===goal)[0];
         const load=kl[d]&&kl[d].avg, p=pf[d], flags=p? [].concat(p.am||[], p.pm||[]).join(" ").toUpperCase() : "";
         const tag=/NO CONTACT/.test(flags)? "no contact" : /LIVE/.test(flags)? "live" : "";
-        return h("div",{class:(gm? "game " : "")+(d===T? "today" : ""), title:(p? "PF: "+[].concat(p.am||[],p.pm||[]).join(" · ") : "")},
-          h("em",{}, new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short"})),
-          h("b",{}, gm? String(gm.opponent||"").slice(0,3).toUpperCase() : gl? gl[1].split(" ")[0] : "—"),
-          h("i",{style:(load && !gm)? "color:rgb("+loadRGB(load/mx)+")" : ""}, gm? "game" : load? String(Math.round(load)) : ""),
-          tag? h("u",{}, tag) : null); })));
+        const day=h("div",{class:(gm? "game " : "")+(d===T? "today" : "")},
+          h("em",{}, new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short", day:"2-digit", month:"2-digit"}).replace(",","")),
+          h("b",{}, gm? (gm.venue==="Away"? "@ " : "vs ")+_lgShort(gm.opponent||"") : gl? gl[1] : (p? "Training" : "—")),
+          h("i",{style:(load && !gm)? "color:rgb("+loadRGB(load/mx)+")" : ""}, gm? (gm.time||"game") : load? "load "+Math.round(load) : ""),
+          tag? h("u",{}, tag) : null);
+        if(!gm){
+          const lines=h("div",{class:"dash-wl"});
+          const built=(((state.plan.sessions||{})[d])||[]); const arr=Array.isArray(built)? built : [built];
+          const blocks=[]; arr.forEach(se=>((se&&se.blocks)||[]).forEach(b=>{ if(b && (b.title||"").trim()) blocks.push((b.min? b.min+"' " : "")+b.title); }));
+          if(blocks.length){ lines.appendChild(h("div",{class:"pf-band"},"Session")); blocks.forEach(t=>lines.appendChild(pfLineEl(t, null))); }
+          else if(p){
+            const hd=(p.am||[]).filter(pfIsHead); if(hd.length) lines.appendChild(h("div",{class:"dash-wh"}, hd.join(" · ")));
+            [["am","AM"],["pm","PM"]].forEach(pr=>{ const l=(p[pr[0]]||[]).filter(t=>!pfIsHead(t)); if(!l.length) return;
+              const mins=l.reduce((s,t)=>{ const sp=pfSplit(t); return s+(sp? sp.min : 0); },0);
+              lines.appendChild(h("div",{class:"pf-band"}, pr[1]+(mins? " · "+mins+"′" : "")));
+              l.forEach(t=>lines.appendChild(pfLineEl(t, null))); });
+          }
+          if(lines.children.length) day.appendChild(lines);
+        }
+        return day; })));
+      if(!Object.keys(pf).length) c.__b.appendChild(h("div",{class:"dash-src"},"The PF's weekly proposal (DB_PLANNING) has not been read on this device yet — Planning → ↻ PF reads it."));
       /* who is not fully available today, from the medical sheet */
       const av=(state.plan.avail||{})[T]||{}, sq=state.plan.squad||[];
       const lim=Object.keys(av).filter(k=>av[k]).map(k=>{ const p=sq.filter(s=>s.key===k)[0]; return { n:(p&&p.name)||k, c:av[k] }; });
@@ -31516,6 +31548,15 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-week b{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dash-week i{font:700 10px 'IBM Plex Mono',monospace;font-style:normal;min-height:12px}
 .dash-week u{text-decoration:none;font:700 8px 'IBM Plex Mono',monospace;text-transform:uppercase;color:#7a5cc0}
+.dash-week2{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));align-items:start}
+.dash-week2 > div{text-align:left;padding:6px 7px;gap:2px}
+.dash-week2 > div > b{white-space:normal;font-size:11px}
+.dash-wl{margin-top:4px;padding-top:4px;border-top:1px solid var(--line,#e4e7ec);display:grid;gap:1px}
+.dash-wl .pf-band{font:700 9px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);margin-top:3px}
+.dash-wl .pf-l{display:flex;gap:4px;font-size:10.5px;line-height:1.25;padding:0}
+.dash-wl .pf-l .pf-m{flex:none;font:700 9.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);min-width:22px}
+.dash-wl .pf-l.live .pf-t{font-weight:700;color:#c0403c}.dash-wl .pf-l.warn .pf-t{font-weight:700;color:#7a5cc0}
+.dash-wh{font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
 .dash-av{display:flex;flex-wrap:wrap;gap:4px}
 .dash-avp{display:inline-flex;align-items:baseline;gap:6px;border-radius:6px;padding:2px 8px;font-size:11.5px;font-weight:600;background:rgba(217,165,33,.14)}
 .dash-avp.out{background:rgba(216,82,78,.14)}
