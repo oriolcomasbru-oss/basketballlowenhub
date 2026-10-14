@@ -10196,7 +10196,8 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
     /* the staff asked for the roster table as it was: the league's line alone, with the
        tagging's own players table back in PLAYERS STATS. The joined columns stay in the
        code, switched off. */
-    _preTagOn=false;
+    /* ...and then asked for the joined table again: it is on */
+    _preTagOn=!!(tid0 && !PV && playerBlockOk("stats"));
     try{ window.__preOneTable=_preTagOn; }catch(e){}
     if(!tid0 && !_preSeasonDone){
       _preSeasonDone=true;
@@ -20528,6 +20529,14 @@ function _lgRoster(L){
   } else {
     box.appendChild(h("div",{class:"lg-scroll"}, tbl));
     box.appendChild(_lgColourKey(false));
+    /* when the tagging columns are not there, say why rather than leave a plain table */
+    if(_lgEmbedding && _preTagOn && !TG){
+      const K=_preTagKeep, why=K.busy? "Reading our tagging of this club from the Drive…"
+        : (K.opp && K.T===null)? "No tagging of this club found in the Drive folder — the tagging columns appear as soon as there is."
+        : (K.opp && K.T && !(K.T.rows||[]).length)? "The tagging of this club carries no player tags, so there are no tagging columns."
+        : "Reading our tagging of this club from the Drive…";
+      box.appendChild(h("div",{class:"gpo-note", style:"margin-top:6px"}, why));
+    }
   }
   _lgSetHelp(box, "The gold edge marks the five who play the most minutes. Dimmed rows average under "
     +"five minutes a game and are left out of the column comparison.");
@@ -20540,14 +20549,14 @@ let _preTagOn=false;
 const _preTagKeep={ opp:"", tid:"", T:null, busy:false };
 function _preTagRows(tid){
   try{
-    if(!_preTagOn || !_scoutOpponent || String(_preClub())!==String(tid)) return null;
+    if(!_preTagOn || !_scoutOpponent) return null;
     const SP=window.ScoutPre; if(!SP || !SP.playersOf) return null;
     const K=_preTagKeep;
     if(K.opp===_scoutOpponent && K.tid===String(tid)) return (K.T && (K.T.rows||[]).length)? K.T : null;
     if(K.busy===_scoutOpponent) return null;
     const opp=_scoutOpponent; K.busy=opp;
     SP.playersOf(opp).catch(()=>null).then(T=>{ K.busy=false; K.opp=opp; K.tid=String(tid); K.T=T||null;
-      if(T && (T.rows||[]).length){ _lgEmbeds=_lgEmbeds.filter(x=>x.el && document.body.contains(x.el)); _lgEmbeds.forEach(x=>{ try{ x.draw(); }catch(e){} }); } });
+      _lgEmbeds=_lgEmbeds.filter(x=>x.el && document.body.contains(x.el)); _lgEmbeds.forEach(x=>{ try{ x.draw(); }catch(e){} }); });
   }catch(e){}
   return null;
 }
