@@ -20550,8 +20550,14 @@ const _preTagKeep={ opp:"", tid:"", T:null, busy:false };
 function _preTagRows(tid){
   try{
     if(!_preTagOn || !_scoutOpponent) return null;
-    const SP=window.ScoutPre; if(!SP || !SP.playersOf) return null;
     const K=_preTagKeep;
+    const SP=window.ScoutPre;
+    /* the tagging reader is its own script and can arrive after the report is drawn: the
+       table is asked for again a moment later instead of staying without its columns */
+    if(!SP || !SP.playersOf){
+      if((K.wait=(K.wait||0)+1)<=40) setTimeout(()=>{ _lgEmbeds=_lgEmbeds.filter(x=>x.el && document.body.contains(x.el)); _lgEmbeds.forEach(x=>{ try{ x.draw(); }catch(e){} }); }, 750);
+      return null;
+    }
     if(K.opp===_scoutOpponent && K.tid===String(tid)) return (K.T && (K.T.rows||[]).length)? K.T : null;
     if(K.busy===_scoutOpponent) return null;
     const opp=_scoutOpponent; K.busy=opp;
