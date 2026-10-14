@@ -424,7 +424,18 @@
           t.d != null ? el("em", {}, (t.tone === "up" ? "▲" : t.tone === "dn" ? "▼" : "▸") + " " + fmt(Object.assign({}, m, { sign: true }), t.d)) : null),
         spark(series, { ref: t.base, tone: t.tone, w: 120, h: 28 })) };
     };
+    /* the players outside the programme: one small line each - who, how much he has played,
+       and three numbers - and the full page one tap away */
+    var mini = function (p) {
+      var lines = p.lines, S = sum(lines), g = lines.length;
+      var f = function (k) { var m = MK[k]; return el("span", {}, el("i", {}, m.l), el("b", {}, fmt(m, value(m, S, UI.mode)))); };
+      return el("button", { type: "button", class: "pd-mini", onclick: function () { UI.open = p.key; draw(); } },
+        el("u", {}, p.num ? "#" + p.num : ""), el("b", {}, p.nm),
+        g ? el("em", {}, g + " GP · " + (S.s / 60 / g).toFixed(1) + " min") : el("em", { class: "none" }, p.missing ? "not on the league roster" : "no stats yet"),
+        g ? el("span", { class: "st" }, f("pts"), f("reb"), f("pir")) : null);
+    };
     var cardOf = function (p, dl) {
+      if (dl) return mini(p);
       var r = rec(p.key), act = (r.goals || []).filter(function (g) { return g.status === "active"; }), lines = p.lines;
       var c = el("button", { type: "button", class: "pd-pc" + (dl ? " dl" : ""), onclick: function () { UI.open = p.key; draw(); } });
       var up = 0, dn = 0;
@@ -845,7 +856,12 @@
       ".pd-mx .c.seas{background:transparent;border:1px solid var(--line,#e4e7ec)}.pd-mx .c.tr{background:transparent}",
       ".pd-mx .mk{box-shadow:inset 3px 0 0 #c6a15b}",
       ".pd-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));gap:10px}",
-      ".pd-cards.rest{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}",
+      ".pd-cards.rest{grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:5px}",
+      ".pd-mini{display:flex;align-items:center;gap:7px;flex-wrap:wrap;text-align:left;border:1px solid var(--line,#e4e7ec);border-radius:8px;background:var(--panel,#fff);padding:5px 9px;cursor:pointer;font:inherit;color:var(--ink,#141821);min-width:0}",
+      ".pd-mini:hover{border-color:#c6a15b}",
+      ".pd-mini u{text-decoration:none;font:600 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}.pd-mini > b{font-size:12.5px}",
+      ".pd-mini em{font:500 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}",
+      ".pd-mini .st{margin-left:auto;display:flex;gap:8px}.pd-mini .st span{display:flex;flex-direction:column;align-items:flex-end}.pd-mini .st i{font:600 8px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}.pd-mini .st b{font:700 11.5px 'IBM Plex Mono',monospace}",
       "@media (max-width:640px){.pd-cards{grid-template-columns:minmax(0,1fr)}}",
       ".pd-pc{display:grid;gap:8px;text-align:left;border:1px solid var(--line,#e4e7ec);border-radius:12px;background:var(--panel,#fff);padding:10px 12px;cursor:pointer;font:inherit;color:var(--ink,#141821);min-width:0}",
       ".pd-pc:hover{border-color:#c6a15b;box-shadow:0 2px 10px rgba(20,24,33,.08)}",
