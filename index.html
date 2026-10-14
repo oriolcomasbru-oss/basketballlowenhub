@@ -13323,7 +13323,7 @@ function pbxDrag(row, key, targets, opts){
    rim run, press break, trailer, transition) is transition; anything else keeps the kind
    the tagging filed it under. A set tagged after a timeout is also listed under ATO. */
 const PB_KIND={ H:"Half court", T:"Transition", S:"SLOB", B:"BLOB", P:"Concepts" };
-const PB_KINDS=["Half court","Transition","SLOB","BLOB","Concepts"];
+const PB_KINDS=["Half court","Transition","SLOB","BLOB"];
 function _pbClass(r){
   const tok=String(r.label||"").trim().split(/\s+/)[0]||"";
   let kind=null, fam="", variant="";
@@ -13444,7 +13444,7 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
     });
     /* an adjustment or a key set whose set the tagging no longer lists is still shown */
     const known={}; ROWS.forEach(r=>{ known[r.label]=1; });
-    const orphans=[]; areas.forEach(it=>it.pbSets.forEach((p,j)=>{ if(p && p.k && !known[p.k]) orphans.push({ it:it, p:p, j:j }); }));
+    const orphans=[]; areas.forEach(it=>it.pbSets.forEach((p,j)=>{ if(p && p.k && !known[p.k] && _pbClass({ label:p.k }).kind!=="Concepts") orphans.push({ it:it, p:p, j:j }); }));
     if(orphans.length){
       tableBox.appendChild(h("div",{class:"pbb-fam"}, h("b",{},"Not in the tagging"), h("span",{},"adjustments written for a set the tagging does not list now — kept as they are")));
       orphans.forEach(o=>{ const row=h("div",{class:"pbb-r adj orphan"}, h("span",{class:"pbb-star"},""), h("span",{class:"pbb-c-code"}, h("i",{},"—")),
@@ -13492,7 +13492,7 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
   try{ _clubPull(_preClub(), ()=>{ try{ if(ROWS.length) draw(); }catch(e){} }); }catch(e){}
   if(_scoutOpponent && window.ScoutPre && window.ScoutPre.sets){
     window.ScoutPre.sets(_scoutOpponent, null).then(res=>{
-      ROWS=(res.rows||[]).map(r=>Object.assign({}, r, { c:_pbClass(r) })); AVG=(res.avg!=null)? res.avg : null;
+      ROWS=(res.rows||[]).map(r=>Object.assign({}, r, { c:_pbClass(r) })).filter(r=>r.c.kind!=="Concepts");  /* concepts are not sets: the staff keeps them out of the playbook */ AVG=(res.avg!=null)? res.avg : null;
       if(!ROWS.length){ tableBox.innerHTML=""; tableBox.appendChild(h("div",{class:"pbx-none"},
         res.why==="nomatch"? "The tagging holds no games against this opponent." : res.why==="empty"? "No files in the pregame folder." : "Nothing tagged for this opponent yet."));
         /* what the staff wrote is still shown, with nothing to hang it on */
@@ -15110,7 +15110,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
          and every one of them was listed a second time as "not in the tagging" */
       const low=s=>String(s||"").toLowerCase().replace(/\s+/g," ").trim();
       const seen={}; marked.forEach(r=>{ seen[low(r.label)]=1; });
-      const extra=stored().filter(l=>!seen[low(l)]);
+      const extra=stored().filter(l=>!seen[low(l)] && _pbClass({ label:l }).kind!=="Concepts");
       if(!marked.length && !extra.length){
         say("No key sets marked for this opponent yet — drag them into KEY SETS in the pre game playbook.");
         return;
@@ -15163,7 +15163,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
     draw();
     try{ if(tid) _clubPull(tid, ()=>{ try{ draw(); }catch(e){} }); }catch(e){}
     if(opp && window.ScoutPre && window.ScoutPre.sets){
-      window.ScoutPre.sets(opp, null).then(res=>{ ROWS=(res&&res.rows)||[]; draw(); })
+      window.ScoutPre.sets(opp, null).then(res=>{ ROWS=((res&&res.rows)||[]).filter(r=>_pbClass(r).kind!=="Concepts"); draw(); })
         .catch(()=>{ ROWS=[]; FAIL="The tagging could not be read, so the families and the calls are missing."; draw(); });
     } else { ROWS=[]; if(!opp) FAIL=""; draw(); }
     return wrap;
@@ -23674,7 +23674,7 @@ function renderDashboard(){
         const edits={}; ((rep && rep.data && rep.data.sections)||[]).forEach(s2=>((s2 && s2.items)||[]).forEach(it=>{ if(it && it.pbEdit && typeof it.pbEdit==="object") Object.assign(edits, it.pbEdit); }));
         const keepOpp=_scoutOpponent; let rows=[];
         try{ _scoutOpponent=g.opponent;
-          rows=((res && res.rows)||[]).filter(r=>{ try{ return _pbKeyRead(r.label); }catch(e){ return false; } }).sort((a,b)=>b.n-a.n);
+          rows=((res && res.rows)||[]).filter(r=>{ try{ return _pbClass(r).kind!=="Concepts" && _pbKeyRead(r.label); }catch(e){ return false; } }).sort((a,b)=>b.n-a.n);
         } finally { _scoutOpponent=keepOpp; }
         cK.__b.innerHTML="";
         if(!rows.length){ cK.__b.appendChild(h("div",{class:"dash-miss"}, (res && (res.rows||[]).length)? "No key sets starred in the pre game playbook yet." : "No tagging of this club yet, so no sets.")); return; }
