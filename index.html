@@ -14029,7 +14029,7 @@ function _gpOppFive(opp, date){
    our side, the five on the floor and what has happened since it came together.
    What the feed does not say is not guessed: the coverage, the defender and the set are
    not in it. */
-let _gpLivePick="auto";
+let _gpLivePick="auto", _gpLiveAll=false;
 function _gpDur(s){ s=Math.max(0,Math.round(s)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
 function _gpLiveWin(feed, uc, inWin, names){
   const mk=()=>({ pts:0, fgm:0, fga:0, p3m:0, p3a:0, ftm:0, fta:0, or:0, dr:0, tov:0, pf:0, ast:0, sc:0, pto:0, fast:0,
@@ -14248,6 +14248,7 @@ function _gpLiveBlock(){
       kpi("Net / 100", net==null? "—" : (net>=0? "+" : "−")+Math.abs(net).toFixed(0), net==null? "" : net>0?"up":net<0?"dn":""),
       kpi("Pace", pace==null? "—" : pace.toFixed(0)),
       kpi("Poss", Math.round(pos(u))+" · "+Math.round(pos(t)))));
+    const more=h("div",{class:"gp-lv-more"});
     /* ---- us against them, measure by measure: one line each, the longer bar has more */
     const f0=v=>String(Math.round(v)), f2=v=>v.toFixed(2), fp=v=>Math.round(v)+"%";
     const rows=[
@@ -14277,19 +14278,19 @@ function _gpLiveBlock(){
         h("span",{class:"bar r"}, h("i",{style:"width:"+(b? Math.max(4,Math.round(100*b/mx)) : 0)+"%"})),
         h("span",{class:"v"}, txt(b, r[6]))));
     });
-    body.appendChild(bf);
+    more.appendChild(bf);
     /* ---- how early in the possession the shot comes, and what it returns */
     const clkRow=(lab, S, inv)=>h("div",{class:"gp-ck-r"}, h("b",{}, lab),
       ["≤ 8 s","9–16 s","17 s +"].map((nm,i)=>{ const c=S.clk[i], v=c.n? c.pts/c.n : null;
         const g=v==null? "" : (v>=1.15? (inv?"bad":"good") : v<=0.8? (inv?"good":"bad") : "");
         return h("span",{class:"gp-ck-c "+g, title:nm+": "+c.pts+" points in "+c.n+" possessions"}, h("i",{}, nm), h("b",{}, v==null? "—" : v.toFixed(2)), h("em",{}, String(c.n))); }));
-    body.appendChild(h("div",{class:"gp-ck"}, h("div",{class:"gp-lv-l"},"Points per possession by how long we had the ball"),
+    more.appendChild(h("div",{class:"gp-ck"}, h("div",{class:"gp-lv-l"},"Points per possession by how long we had the ball"),
       clkRow("Us", u, false), clkRow("Them", t, true)));
     /* ---- who is scoring, and what the bench has to know right now */
     const menOf=(S, them)=>Object.keys(S.men).map(k=>S.men[k]).sort((a,b)=>b.pts-a.pts).slice(0,4)
       .map(m=>h("span",{class:"gp-lv-p"+(them? " them" : "")}, (them && m.num? "#"+m.num+" " : "")+(_lgLastName(m.name||"")||("#"+m.num)), h("b",{}, String(m.pts))));
     const pm=menOf(u,false), tm=menOf(t,true);
-    if(pm.length || tm.length) body.appendChild(h("div",{class:"gp-lv-2"},
+    if(pm.length || tm.length) more.appendChild(h("div",{class:"gp-lv-2"},
       h("div",{}, h("div",{class:"gp-lv-l"},"Our points"), h("div",{class:"gp-lv-ps"}, pm.length? pm : "—")),
       h("div",{}, h("div",{class:"gp-lv-l"},"Their points"), h("div",{class:"gp-lv-ps"}, tm.length? tm : "—"))));
     const al=[];
@@ -14301,6 +14302,45 @@ function _gpLiveBlock(){
     if(ourTrouble.length) al.push(["bad", "OUR FOULS", ourTrouble.map(p=>nm(p)+" "+p.pf).join(" · ")]);
     if(theirTrouble.length) al.push(["good", "THEIR FOULS", theirTrouble.map(p=>"#"+p.num+" "+nm(p)+" "+p.pf).join(" · ")]);
     if(al.length) body.appendChild(h("div",{class:"gp-lv-al"}, al.map(x=>h("span",{class:"gp-lv-a "+x[0]}, h("i",{}, x[1]), x[2]))));
+    /* WHAT IS DECIDING THIS STRETCH. Every measure is turned into the points it is worth to
+       one side or the other in the stretch shown - threes made, twos made, free throws, and
+       the points that came off turnovers, second chances and the break - and the ones worth
+       most are the cards, biggest first. Green is a stretch it is going our way, red theirs.
+       The rest of the numbers are one tap away. */
+    const C=[];
+    const card=(k, us, them, imp, note)=>C.push({ k:k, us:String(us), them:String(them), imp:imp, note:note||"" });
+    const p2u={ m:u.fgm-u.p3m, a:u.fga-u.p3a }, p2t={ m:t.fgm-t.p3m, a:t.fga-t.p3a };
+    const pr=(m,a)=>a? " ("+Math.round(100*m/a)+"%)" : "";
+    card("Threes", u.p3m+"/"+u.p3a, t.p3m+"/"+t.p3a, 3*(u.p3m-t.p3m), "points from three: "+3*u.p3m+" – "+3*t.p3m);
+    card("Twos", p2u.m+"/"+p2u.a, p2t.m+"/"+p2t.a, 2*(p2u.m-p2t.m), (p2u.a||p2t.a)? "made "+(p2u.a? Math.round(100*p2u.m/p2u.a) : 0)+"% – "+(p2t.a? Math.round(100*p2t.m/p2t.a) : 0)+"%" : "");
+    card("Free throws", u.ftm+"/"+u.fta, t.ftm+"/"+t.fta, u.ftm-t.ftm, "attempts "+u.fta+" – "+t.fta);
+    card("Turnovers", u.tov, t.tov, u.pto-t.pto, "points off turnovers "+u.pto+" – "+t.pto);
+    card("Offensive rebounds", u.or, t.or, u.sc-t.sc, "second-chance points "+u.sc+" – "+t.sc);
+    card("Transition", u.fast+" pts", t.fast+" pts", u.fast-t.fast, "within 8 s of a rebound or a steal");
+    if(cur!=="last") card("Paint", (U.paint||0)+" pts", (T.paint||0)+" pts", ((U.paint||0)-(T.paint||0))/2, "points in the paint");
+    const late=S=>S.clk[2].n? S.clk[2].pts/S.clk[2].n : null;
+    if(u.clk[2].n>=3 || t.clk[2].n>=3){ const a=late(u), b=late(t);
+      card("Late in the clock", a==null? "—" : a.toFixed(2), b==null? "—" : b.toFixed(2), ((a||0)*u.clk[2].n-(b||0)*t.clk[2].n)/2,
+        "per possession after 16 s · "+u.clk[2].n+" and "+t.clk[2].n+" possessions"); }
+    const topOf=S=>Object.keys(S.men).map(k=>S.men[k]).sort((a,b)=>b.pts-a.pts)[0];
+    const hu=topOf(u), ht=topOf(t), hot=(cur==="g")? 12 : (cur==="last")? 5 : 7;
+    if(ht && ht.pts>=hot) C.push({ k:"Their hot hand", one:(ht.num? "#"+ht.num+" " : "")+(_lgLastName(ht.name||"")||""), big:ht.pts+" pts", imp:-ht.pts*0.55, note:Math.round(100*ht.pts/Math.max(1,t.pts))+"% of their points" });
+    if(hu && hu.pts>=hot) C.push({ k:"Our hot hand", one:_lgLastName(hu.name||"")||("#"+hu.num), big:hu.pts+" pts", imp:hu.pts*0.5, note:Math.round(100*hu.pts/Math.max(1,u.pts))+"% of our points" });
+    const ranked=C.filter(c=>Math.abs(c.imp)>=1.5).sort((a,b)=>Math.abs(b.imp)-Math.abs(a.imp)).slice(0,6);
+    const fcs=h("div",{class:"gp-fcs"});
+    ranked.forEach(c=>{
+      const tone=c.imp>=1? "good" : c.imp<=-1? "bad" : "";
+      const imp=Math.round(c.imp);
+      fcs.appendChild(h("div",{class:"gp-fc "+tone},
+        h("div",{class:"k"}, c.k, (c.one==null && imp)? h("span",{class:"imp"}, (imp>0? "+" : "−")+Math.abs(imp)+" pts") : null),
+        c.one!=null? h("div",{class:"one"}, h("span",{}, c.one), h("b",{}, c.big))
+          : h("div",{class:"vs"}, h("span",{class:"u"}, h("i",{},"us"), h("b",{}, c.us)), h("span",{class:"t"}, h("i",{},"them"), h("b",{}, c.them))),
+        c.note? h("div",{class:"n"}, c.note) : null));
+    });
+    body.appendChild(ranked.length? fcs : h("div",{class:"gp3-ksn"},"Nothing is deciding this stretch yet."));
+    const tg=h("button",{class:"gp-lv-tg", type:"button", onclick:()=>{ _gpLiveAll=!_gpLiveAll; draw(); }}, _gpLiveAll? "▴ Fewer numbers" : "▾ All the numbers");
+    body.appendChild(tg);
+    if(_gpLiveAll) body.appendChild(more);
     stat.textContent=live? "live · updates every 30 s" : "final";
     stat.className="gp-live-st"+(live?" on":"");
   };
@@ -14958,17 +14998,23 @@ function renderPlanSection(sec, canEd, save, allSecs){
       const wrap4=h("div",{class:"gp4"});
       /* the rotation: one quarter in the space, or both */
       const qs=(UI.q==="both")? GP_HALF : [GP_HALF.indexOf(UI.q)>=0? UI.q : GP_HALF[0]];
-      const rot=h("div",{class:"gp2-mid gp4-rot"});
+      const rot=h("div",{class:"gp2-mid gp4-rot"+(qs.length===1? " one" : "")});
       qs.forEach(q=>{ const card=safe(()=>quarterCard(q)); rot.appendChild(h("div",{class:"gp3-qrow"+(card?"":" solo")}, quarterBoard(q), card)); });
-      wrap4.appendChild(sect("us rot", "Rotation", "offense above the board · defense below", seg(GP_HALF.map(q=>[q,q]).concat([["both","Both"]]), UI.q==="both"? "both" : qs[0], v=>{ UI.q=v; }), rot));
+      /* ONE SCREEN, THE SIZE OF A TABLET ON ITS SIDE. Our side and theirs on the left - the
+         rotation, then their roster beside our minutes, then their sets - and the game
+         being played down the whole right-hand side, where it can be read at any moment
+         without scrolling past the plan. */
+      const L4=h("div",{class:"gp4-left"}), R4=h("div",{class:"gp4-right"});
+      L4.appendChild(sect("us rot", "Rotation", "", seg(GP_HALF.map(q=>[q,q]).concat([["both","Both"]]), UI.q==="both"? "both" : qs[0], v=>{ UI.q=v; }), rot));
       const full=[["","Compact"],["1","Full"]];
-      const mins=sect("us", "Our minutes", "first half → mapped to the game", canEd? null : seg(full, UI.mins? "1" : "", v=>{ UI.mins=!!v; }), safe(()=>minutesBlock()));
-      const ros=sect("them", "Their roster", "starters in gold · minutes a game", seg(full, UI.roster? "1" : "", v=>{ UI.roster=!!v; }), safe(()=>oppFiveBlock()));
-      wrap4.appendChild(h("div",{class:"gp4-row"+((UI.mins||UI.roster||canEd)? " tall" : "")}, ros, mins));
+      const mins=sect("us", "Our minutes", "half → game", canEd? null : seg(full, UI.mins? "1" : "", v=>{ UI.mins=!!v; }), safe(()=>minutesBlock()));
+      const ros=sect("them", "Their roster", "starters in gold", seg(full, UI.roster? "1" : "", v=>{ UI.roster=!!v; }), safe(()=>oppFiveBlock()));
+      L4.appendChild(h("div",{class:"gp4-row"}, ros, mins));
+      L4.appendChild(sect("them", "Their key sets", "call · runs · PPP", null, safe(()=>keySetsBlock())));
       const lv=safe(()=>_gpLiveBlock());
-      wrap4.appendChild(h("div",{class:"gp4-row eq"},
-        sect("them", "Their key sets", "name · call · runs · points per possession", null, safe(()=>keySetsBlock())),
-        sect("live", "The game", "from the play by play", lv.__stat||null, lv)));
+      R4.appendChild(sect("live", "The game", "", lv.__stat||null, lv));
+      wrap4.classList.add("dash");
+      wrap4.appendChild(L4); wrap4.appendChild(R4);
       box.appendChild(wrap4);
       const foot4=h("div",{class:"gp2-foot"},
         h("span",{}, h("i",{class:"gp2-mark"}), "Yellow = the minute a sub comes in"));
@@ -30862,6 +30908,65 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .gp4-set em{font:800 10.5px 'IBM Plex Mono',monospace;font-style:normal;border-radius:10px;padding:1px 7px;background:var(--panel-2,#f1f2f4)}
 .gp4-set em.hi{background:#d8524e;color:#fff}.gp4-set em.lo{background:#2f9e86;color:#fff}
 @media(max-width:700px){.gp4-setg{grid-template-columns:minmax(0,1fr)}}
+/* one tablet screen: plan on the left, the game down the right */
+.gp4.dash{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(320px,1fr);gap:10px;align-items:start}
+.gp4 .gp3-ks{padding:0!important;border:0!important;margin:0!important}
+.gp4.dash .gp3-qrow{grid-template-columns:minmax(0,1fr) 214px!important}
+.gp4-left,.gp4-right{min-width:0}
+.gp4-right{position:sticky;top:6px}
+.gp4-right .gp4-sec{margin:0}
+.gp4-right .gp4-b{max-height:calc(100vh - 120px);overflow:auto}
+@media(max-width:980px){.gp4.dash{grid-template-columns:minmax(0,1fr)}.gp4-right{position:static}.gp4-right .gp4-b{max-height:none}}
+.gp4.dash .gp4-sec{margin-bottom:8px}
+.gp4.dash .gp4-b{padding:6px 9px 7px}
+.gp4.dash .gp4-h{min-height:26px;padding:3px 10px}
+.gp4.dash .gp4-h > b{font-size:11px}
+.gp4.dash .gp3-qrow{grid-template-columns:minmax(0,1fr) 236px;column-gap:10px}
+.gp4.dash .gp2-qh{margin-bottom:2px}
+.gp4.dash .gp2-qs{display:none}
+.gp4.dash .gp2-tbl td{height:21px!important;padding-top:0!important;padding-bottom:0!important}
+.gp4.dash .gp2-st,.gp4.dash .gp2-nm{font-size:9px!important;letter-spacing:0!important}
+.gp4.dash .gp2-rl{font-size:9px!important;height:18px!important}
+.gp4.dash .gp2-tick{font-size:8px!important;height:12px!important}
+.gp4.dash .gp3-qc{font-size:11px;padding:6px 8px!important}
+.gp4.dash .gp3-gl,.gp4.dash .gp3-kl{font-size:10.5px!important}
+.gp4.dash .gp4-pill{font-size:10.5px;padding:1px 6px}
+.gp4.dash .gp4-pos{padding:1px 0}
+.gp4.dash .gp4-setg{grid-template-columns:96px minmax(0,1fr);padding:3px 0}
+.gp4.dash .gp4-set{font-size:10.5px;padding:1px 3px 1px 8px}
+.gp4.dash .gp-opp{margin:0!important;padding:0!important}
+.gp4.dash .gp2-gap td{height:3px!important;padding:0!important}
+.gp4-rot.one .gp2-qh,.gp4-rot.one .gp3-qh{display:none!important}
+.gp4.dash .gp3-ki{padding:2px 6px!important;margin:2px 0!important}
+.gp4.dash .gp3-kt{margin:2px 0 1px!important}
+.gp4.dash .gp3-gen{margin:0 0 3px!important}
+.gp4.dash .gp3-gl{padding:0!important;line-height:1.3!important}
+.gp4.dash .gp4-setl span{display:none}
+.gp4.dash .gp4-setl{padding-top:1px}
+.gp4.dash .gp2-pos,.gp4.dash .gp2-lbl{font-size:9px!important;width:22px}
+/* the cards of what is deciding the stretch */
+.gp-fcs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:6px 0}
+.gp-fc{border-radius:9px;padding:6px 9px 6px;background:var(--panel-2,#f4f5f7);border-top:3px solid #b3b9c3;min-width:0}
+.gp-fc.good{background:rgba(47,158,134,.1);border-top-color:#2f9e86}
+.gp-fc.bad{background:rgba(216,82,78,.09);border-top-color:#d8524e}
+.gp-fc .k{display:flex;align-items:baseline;gap:6px;font:700 10px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink,#141821)}
+.gp-fc .imp{margin-left:auto;font:800 12px 'Inter',system-ui,sans-serif;letter-spacing:0}
+.gp-fc.good .imp{color:#17805a}.gp-fc.bad .imp{color:#c0403c}
+.gp-fc .vs{display:flex;gap:10px;margin-top:3px}
+.gp-fc .vs span{display:flex;flex-direction:column;min-width:0}
+.gp-fc .vs i{font:600 8.5px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint,#8a93a2)}
+.gp-fc .vs b{font:800 17px/1.1 'Inter',system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.gp-fc .vs .t b{color:var(--ink-soft,#5b6472);font-weight:700}
+.gp-fc .one{display:flex;align-items:baseline;gap:8px;margin-top:3px}
+.gp-fc .one span{font:700 13px 'Inter',system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.gp-fc .one b{margin-left:auto;font:800 17px 'Inter',system-ui,sans-serif}
+.gp-fc .n{font-size:10px;color:var(--ink-soft,#5b6472);margin-top:2px;line-height:1.25}
+.gp-lv-tg{border:0;background:transparent;cursor:pointer;font:700 10px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft,#5b6472);padding:4px 0}
+.gp-lv-tg:hover{color:var(--ink,#141821)}
+.gp-lv-more{margin-top:4px}
+.gp4.dash .gp-lv-top{margin-bottom:4px}
+.gp4.dash .gp-lv-top .sc{font-size:24px}
+.gp4.dash .gp-bf-r{grid-template-columns:44px minmax(0,1fr) 104px minmax(0,1fr) 44px}
 /* the game being played: us against them, drawn */
 .gp-lv-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
 .gp-lv-top .sc{font:700 28px/1 'Oswald',sans-serif}
