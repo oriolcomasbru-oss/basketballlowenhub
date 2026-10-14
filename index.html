@@ -10267,7 +10267,15 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
     const pane=(k, build)=>{ const p=h("div",{class:"pg-pane", "data-pane":k});
       try{ p.appendChild(build()); }catch(e){ p.appendChild(h("div",{class:"lg-empty"}, "This block could not be drawn: "+((e&&e.message)||e))); }
       return p; };
-    const pOv=pane("ov", ()=>_postOverview(g)), pPbp=pane("pbp", ()=>_lgGameInline(g)), pTs=h("div",{class:"pg-pane", "data-pane":"ts"});
+    /* the staff's own reading of the game, above the automatic one: a few lines, written
+       by whoever closes the report, kept in the report like everything else in it */
+    const mainPoints=()=>{ rep.data=rep.data||{};
+      const has=String(rep.data.postMain||"").replace(/<[^>]*>/g,"").trim();
+      if(!canEd && !has) return null;
+      return h("div",{class:"pg-main"}, h("div",{class:"pg-main-h"},"Main points of the game"),
+        makeRichBox(canEd, rep.data.postMain||"", html=>{ rep.data.postMain=html; save(); }, "The three or four things this game was about…", 3)); };
+    const pOv=pane("ov", ()=>{ const w=h("div",{}); const mp=mainPoints(); if(mp) w.appendChild(mp); w.appendChild(_postOverview(g)); return w; }),
+      pPbp=pane("pbp", ()=>_lgGameInline(g)), pTs=h("div",{class:"pg-pane", "data-pane":"ts"});
     const show=k=>{
       window.__postCat=k; uni.dataset.tab=k;
       bar.querySelectorAll(".sxp-tab").forEach(b=>b.classList.toggle("on", b.dataset.t===k));
@@ -18513,12 +18521,12 @@ function _postOverviewDraw(sg, P, Tg, API, K){
   const tagQ={ "1Q":0, "2Q":1, "3Q":2, "4Q":3, "OT":4 };
   const cand=[], figs=[];
   /* ---- the play by play, whole and by quarter */
-  let home=true, U=null, T=null, Q=[];
+  let home=true, U=null, T=null, Q=[], MF=null;
   if(P){
     home=_lgOurs(P.G.home);
     let maxQ=3; P.j.feed.actions.forEach(a=>{ const q=_lgGameElapsed(a.quarter,0).qi; if(q>maxQ) maxQ=q; });
     const all={}; for(let q=0;q<=maxQ;q++) all[q]=1;
-    const M=_lgGameModel(P.G, P.j, all); U=home?M.H:M.A; T=home?M.A:M.H;
+    const M=_lgGameModel(P.G, P.j, all); U=home?M.H:M.A; T=home?M.A:M.H; MF=M;
     for(let q=0;q<=maxQ;q++){ const o={}; o[q]=1; const m=_lgGameModel(P.G, P.j, o);
       Q[Math.min(q,4)]={ u:home?m.H:m.A, t:home?m.A:m.H }; }
   }
@@ -18649,6 +18657,27 @@ function _postOverviewDraw(sg, P, Tg, API, K){
   if(dq.length>=2){ const hi=dq.slice().sort((a,b)=>b.dppp-a.dppp)[0], lo=dq.slice().sort((a,b)=>a.dppp-b.dppp)[0];
     if(hi!==lo && hi.dppp-lo.dppp>=0.3) gDef.push({ text:"Defense from "+f2(lo.dppp)+" in "+QN[lo.q]+" to "+f2(hi.dppp)+" in "+QN[hi.q]+" conceded per possession",
       tone:"neutral", size:Math.min(1,(hi.dppp-lo.dppp)/0.7), n:Math.min(hi.dn,lo.dn), solidN:10, unit:"poss" }); }
+  /* ---- what the Game Stats block reads from the play by play and the overview did not:
+     who was in front and for how long, the runs, where the points came from, the free
+     throws, and the men who decided it. Each is a comparison of the two sides, said only
+     when the gap is big enough to matter. */
+  const gPbp=[];
+  if(MF && U && T){
+    try{
+      const F=MF.flow, tot=F.total||2400;
+      const sU=home? F.secH : F.secA, sT=home? F.secA : F.secH;
+      gPbp.push({ k:"Time in front", v:Math.round(100*sU/tot)+"%", text:"behind "+Math.round(100*sT/tot)+"% · "+F.changes+" lead change"+(F.changes===1?"":"s"),
+        tone:sU>sT? "good" : sU<sT? "bad" : "neutral", size:Math.min(1,Math.abs(sU-sT)/tot+0.3), weight:1.1 });
+      (F.runs||[]).slice(0,2).forEach(r=>{ const ours=(r.home===home);
+        gPbp.push({ k:(ours? "Our" : "Their")+" run", v:ours? r.pts+"–0" : "0–"+r.pts, text:_lgGameClock(r.t0)+" to "+_lgGameClock(r.t1), tone:ours? "good" : "bad", size:Math.min(1,r.pts/14), weight:1.2 }); });
+      [["Second chance points", U.sc, T.sc, 5],["Points off turnovers", U.pto, T.pto, 5],["Fast points, 7 s after winning the ball", U.fast, T.fast, 5],
+       ["Points in the paint", U.paint, T.paint, 8],["Bench points", U.bench, T.bench, 8],["Free throws made", U.ftm, T.ftm, 5]].forEach(x=>{
+        const d=(x[1]||0)-(x[2]||0); if(Math.abs(d)>=x[3]) gPbp.push({ k:x[0], v:(x[1]||0)+" – "+(x[2]||0), text:"us – them", tone:d>0? "good" : "bad", size:Math.min(1,Math.abs(d)/(2.5*x[3])), weight:1 }); });
+      const best=U.pl.slice().sort((a,b)=>b.pir-a.pir)[0], top=T.pl.slice().sort((a,b)=>b.pts-a.pts)[0];
+      if(best) gPbp.push({ k:"Our best", v:_lgLastName(best.name)||("#"+best.num), text:best.pts+" pts · PIR "+best.pir, tone:"good", size:Math.min(1,best.pir/30), weight:0.9 });
+      if(top && top.pts>=15) gPbp.push({ k:"Their top scorer", v:"#"+top.num+" "+(_lgLastName(top.name)||""), text:top.pts+" pts · "+top.fgm+"/"+top.fga+" FG", tone:"bad", size:Math.min(1,top.pts/30), weight:0.9 });
+    }catch(e){}
+  }
   /* ---- the card */
   const src=[P? "play by play" : null, model? "tagging: "+(Tg.name||"") : null].filter(Boolean).join(" · ");
   /* the game as charts: the margin of each quarter, the paint-touch measure of each, and
@@ -18665,7 +18694,7 @@ function _postOverviewDraw(sg, P, Tg, API, K){
       parts:concepts.slice().sort((a,b)=>b.n-a.n).slice(0,7).map(c=>({ label:c.k, share:c.n/dposs.length, value:f2(c.ppp), tone:(c.n>=4 && dAll!=null)? (c.ppp-dAll<=-0.15? "good" : c.ppp-dAll>=0.15? "bad" : "neutral") : "neutral" })) }));
   }catch(e){}
   out.appendChild(K.summary({ title:"Game performance overview", sub:src||"", figures:figs, visuals:visuals,
-    groups:[ { title:"By quarter", ideas:K.pick(gQ,4) }, { title:"Paint touches · ball reversals", ideas:K.pick(gPT,4) },
+    groups:[ { title:"The game · play by play", ideas:K.pick(gPbp,6) }, { title:"By quarter", ideas:K.pick(gQ,4) }, { title:"Paint touches · ball reversals", ideas:K.pick(gPT,4) },
              { title:"Sets", ideas:K.pick(gSets,6) }, { title:"Phases", ideas:K.pick(gPh,4) }, { title:"Defense", ideas:K.pick(gDef,5) } ],
     empty:"Neither the play by play nor the tagging of this game is in yet." }));
   if(!P) out.appendChild(h("div",{class:"gpo-note"},"The league's play by play of this game was not found, so the official half of this overview is missing."));
@@ -23516,51 +23545,84 @@ function renderDashboard(){
     /* ---------------------------------------------------- next game, pre game */
     pre:()=>{
       const x=G.next;
-      const c=card("them", "Next game · Pre game", x? ()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:x.g.id } }) : ()=>_dashOpen("oppscout"));
+      const c=card("them wide", "Next game · Pre game", x? ()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:x.g.id } }) : ()=>_dashOpen("oppscout"), "Open the pre game");
       if(!x){ c.__b.appendChild(h("div",{class:"dash-miss"},"No game left in the calendar.")); return; }
       const g=x.g, st=h("span",{}, pill(["wait","…"]));
+      const L=leagueState(), tid=_lgTeamIdByName(L, g.opponent);
+      /* their last game, from the league */
+      let lastTxt="";
+      try{ const lg=(L.games||[]).concat(L.cup||[]).filter(y=>tid && (String(y.homeId)===String(tid)||String(y.awayId)===String(tid)) && _lgDone(y))
+          .sort((a,b)=>String(a.date).localeCompare(String(b.date))).pop();
+        if(lg){ const home=String(lg.homeId)===String(tid), us=home? lg.hs : lg.as, th=home? lg.as : lg.hs;
+          lastTxt="Their last game: "+(us>th? "W " : "L ")+us+"–"+th+(home? " vs " : " @ ")+_lgShort(home? lg.away : lg.home)+" · "+lg.date.slice(8)+"/"+lg.date.slice(5,7); } }catch(e){}
       c.__b.appendChild(h("div",{class:"dash-hero"}, crest(g),
-        h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent), h("span",{}, _dashFmt(g.date)+(g.time? " · "+g.time : "")+" · "+(g.competition||""))), st));
-      const body=h("div",{}, loading("Reading the pre game report…")); c.__b.appendChild(body);
+        h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent),
+          h("span",{}, _dashFmt(g.date)+(g.time? " · "+g.time : "")+" · "+(g.competition||"")), lastTxt? h("span",{class:"dash-last"}, lastTxt) : null), st));
       let ph=false; try{ ph=_gamePlaceholder(g.opponent); }catch(e){}
-      if(ph){ st.innerHTML=""; st.appendChild(pill(["pend","Pending"])); body.innerHTML=""; body.appendChild(h("div",{class:"dash-miss"},"The opponent is not known yet — the card fills in once the calendar names it.")); return; }
-      _dashRep(g).then(rep=>{
+      if(ph){ st.innerHTML=""; st.appendChild(pill(["pend","Pending"])); c.__b.appendChild(h("div",{class:"dash-miss"},"The opponent is not known yet — the card fills in once the calendar names it.")); return; }
+      const sub=(title)=>{ const b=h("div",{class:"dash-sub"}, h("h4",{}, title)); const body=h("div",{}, loading()); b.appendChild(body); b.__b=body; return b; };
+      const cR=sub("Their roster · rotation"), cT=sub("Team stats · from our tagging"), cK=sub("Key sets");
+      c.__b.appendChild(h("div",{class:"dash-3"}, cR, cT, cK));
+      /* the roster and how they rotate: who started, how long each plays, from their last games */
+      _gpOppFive(g.opponent, g.date).then(R=>{ cR.__b.innerHTML="";
+        if(!R){ cR.__b.appendChild(h("div",{class:"dash-miss"},"No games of theirs in the league feed yet.")); return; }
+        const POS=["PG","SG","SF","PF","C"];
+        R.five.forEach((e,i)=>{ const row=[e].concat(R.bench[i]||[]);
+          cR.__b.appendChild(h("div",{class:"dash-pos"}, h("b",{}, POS[i]), h("div",{class:"dash-pills"}, row.map((p,j)=>h("span",{class:"dash-pp"+(j===0? " start" : ""), title:(j===0? "Started "+p.st+" of "+R.n : "Off the bench")+" · "+p.gp+" games"},
+            p.num? h("u",{}, "#"+p.num) : null, _lgLastName(p.name||""), (!p.last)? h("em",{},"?") : null, h("i",{}, Math.round(p.min)+"′")))))); });
+        const benchN=R.bench.reduce((n,b)=>n+b.length,0);
+        cR.__b.appendChild(h("div",{class:"dash-src"}, "Rotation of "+(5+benchN)+" · last "+R.n+" games · ? = missed the last one"));
+      }).catch(()=>{ cR.__b.innerHTML=""; cR.__b.appendChild(h("div",{class:"dash-miss"},"The league's games could not be read.")); });
+      /* the opponent card of Team stats, its figures and the three readings that weigh most */
+      const SP=window.ScoutPre;
+      if(SP && SP.teamDash){
+        SP.teamDash(g.opponent).then(el=>{ cT.__b.innerHTML="";
+          if(!el){ cT.__b.appendChild(h("div",{class:"dash-miss"},"No tagging of this club in the Drive folder yet.")); return; }
+          const figs=[...el.querySelectorAll(".ui-fig")].slice(0,4).map(f=>({ k:((f.querySelector("i")||{}).textContent||""), v:((f.querySelector("b")||{}).textContent||""), n:((f.querySelector("span")||{}).textContent||""), tone:f.classList.contains("good")? "good" : f.classList.contains("bad")? "bad" : "" }));
+          cT.__b.appendChild(h("div",{class:"dash-figs four"}, figs.map(f=>h("div",{class:"dash-fig "+f.tone}, h("i",{}, f.k), h("b",{}, f.v), h("span",{}, f.n)))));
+          cT.__b.appendChild(ideas(_dashCards(el, 3), "Nothing in the tagging stands out yet."));
+        }).catch(()=>{ cT.__b.innerHTML=""; cT.__b.appendChild(h("div",{class:"dash-miss"},"The tagging could not be read from the Drive.")); });
+      } else { cT.__b.innerHTML=""; cT.__b.appendChild(h("div",{class:"dash-miss"},"The tagging reader has not loaded.")); }
+      /* the sets the staff starred in the pre game playbook, with the names it gave them */
+      Promise.all([ (SP && SP.sets)? SP.sets(g.opponent, null).catch(()=>null) : Promise.resolve(null), _dashRep(g) ]).then(([res, rep])=>{
         const s=_dashStatus(rep, false); st.innerHTML=""; st.appendChild(pill(s));
-        if(s[0]!=="ready" && toNext!=null && toNext<=3) { alerts.push({ tone:s[0]==="pend"? "bad" : "warn", text:"Pre game "+g.opponent+": "+s[1].toLowerCase(), go:()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } }) }); paintAtt(); }
-        const keys=_dashKeys(rep, false);
-        if(keys.length){ body.innerHTML=""; body.appendChild(ideas(keys)); return; }
-        /* nothing written yet: the club card of League, marked as the league's */
-        const L=leagueState(), tid=_lgTeamIdByName(L, g.opponent);
-        const el=tid? _dashClubDash(tid) : null;
-        const auto=el? _dashCards(el, 3, /how they are going/i).map(o=>Object.assign(o,{ src:"league · "+o.src })) : [];
-        body.innerHTML="";
-        body.appendChild(ideas(auto, "Nothing written in the pre game yet, and the league has nothing on this club."));
-        body.appendChild(h("div",{class:"dash-src"}, auto.length? "No keys written in the Game Summary yet — these come from the league" : ""));
+        if(s[0]!=="ready" && toNext!=null && toNext<=3){ alerts.push({ tone:s[0]==="pend"? "bad" : "warn", text:"Pre game "+g.opponent+": "+s[1].toLowerCase(), go:()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } }) }); paintAtt(); }
+        try{ if(tid) _clubPull(tid, ()=>{}); }catch(e){}
+        const edits={}; ((rep && rep.data && rep.data.sections)||[]).forEach(s2=>((s2 && s2.items)||[]).forEach(it=>{ if(it && it.pbEdit && typeof it.pbEdit==="object") Object.assign(edits, it.pbEdit); }));
+        const rows=((res && res.rows)||[]).filter(r=>{ try{ return _pbKeyRead(r.label); }catch(e){ return false; } }).sort((a,b)=>b.n-a.n);
+        cK.__b.innerHTML="";
+        if(!rows.length){ cK.__b.appendChild(h("div",{class:"dash-miss"}, (res && (res.rows||[]).length)? "No key sets starred in the pre game playbook yet." : "No tagging of this club yet, so no sets.")); return; }
+        const mx=Math.max(1, ...rows.map(r=>r.n||0));
+        cK.__b.appendChild(h("div",{class:"dash-sets"}, rows.slice(0,8).map(r=>h("div",{class:"dash-set"},
+          h("b",{}, edits[r.label]||r.label), r.call? h("q",{}, r.call) : h("span",{class:"nc"},"no call"),
+          h("span",{class:"vol"}, h("i",{style:"width:"+Math.max(8,Math.round(100*(r.n||0)/mx))+"%"})), h("u",{}, String(r.n||0)),
+          r.ppp!=null? h("em",{class:r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : null))));
+        if(rows.length>8) cK.__b.appendChild(h("div",{class:"dash-src"}, "+"+(rows.length-8)+" more in the pre game"));
       });
     },
     /* ---------------------------------------------------- last game, post game */
     post:()=>{
       const x=G.last;
-      const c=card("", "Last game · Post game", x? ()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:x.g.id } }) : ()=>_dashOpen("teamscout"));
+      const c=card("small", "Last game · Post game", x? ()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:x.g.id } }) : ()=>_dashOpen("teamscout"), "Open the post game");
       if(!x){ c.__b.appendChild(h("div",{class:"dash-miss"},"No game played yet this season.")); return; }
       const g=x.g, r=x.res, st=h("span",{}, pill(["wait","…"]));
       c.__b.appendChild(h("div",{class:"dash-hero"}, crest(g),
-        h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent), h("span",{}, _dashFmt(g.date)+" · "+(g.competition||"")+(r && r.ot? " · after overtime" : ""))),
+        h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent), h("span",{}, _dashFmt(g.date)+" · "+(g.competition||"")+(r && r.ot? " · OT" : ""))),
         r? h("span",{class:"dash-score "+(r.won? "good" : "bad")}, r.us+"–"+r.them) : h("span",{class:"dash-score"}, g.result||"")));
       c.__b.appendChild(h("div",{}, st));
-      const body=h("div",{}, loading("Reading the post game report…")); c.__b.appendChild(body);
-      _dashRep(g).then(rep=>{
-        const s=_dashStatus(rep, true); st.innerHTML=""; st.appendChild(pill(s));
-        if(s[0]!=="ready"){ alerts.push({ tone:"bad", text:"Post game "+g.opponent+" not finished", go:()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:g.id } }) }); paintAtt(); }
-        const keys=_dashKeys(rep, true);
-        if(keys.length){ body.innerHTML=""; body.appendChild(ideas(keys)); return; }
-        const sg={ date:g.date, opponent:g.opponent, home:g.venue!=="Away", competition:g.competition||"BBL" };
-        _dashOff(()=>_postOverview(sg), ".ui-card", 25000).then(host=>{
-          const auto=host? _dashCards(host, 3).map(o=>Object.assign(o,{ src:"game overview · "+o.src })) : [];
-          body.innerHTML="";
-          body.appendChild(ideas(auto, "No conclusions written yet, and the play by play of this game is not in."));
-          if(auto.length) body.appendChild(h("div",{class:"dash-src"},"No conclusions written in the Game Summary yet — these come from the game overview"));
-        });
+      _dashRep(g).then(rep=>{ const s=_dashStatus(rep, true); st.innerHTML=""; st.appendChild(pill(s));
+        if(s[0]!=="ready"){ alerts.push({ tone:"bad", text:"Post game "+g.opponent+" not finished", go:()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:g.id } }) }); paintAtt(); } });
+      /* the Game performance overview of the post game, its figures, its quarters and the
+         readings that weigh most */
+      const body=h("div",{}, loading("Reading the game overview…")); c.__b.appendChild(body);
+      const sg={ date:g.date, opponent:g.opponent, home:g.venue!=="Away", competition:g.competition||"BBL" };
+      _dashOff(()=>_postOverview(sg), ".ui-fig, .ui-sum-e", 25000).then(host=>{ body.innerHTML="";
+        if(!host || !host.querySelector(".ui-fig")){ body.appendChild(h("div",{class:"dash-miss"},"Neither the play by play nor the tagging of this game is in yet.")); return; }
+        const figs=[...host.querySelectorAll(".ui-fig")].filter(f=>!/score/i.test(((f.querySelector("i")||{}).textContent||""))).slice(0,4)
+          .map(f=>({ k:((f.querySelector("i")||{}).textContent||""), v:((f.querySelector("b")||{}).textContent||""), n:((f.querySelector("span")||{}).textContent||""), tone:f.classList.contains("good")? "good" : f.classList.contains("bad")? "bad" : "" }));
+        body.appendChild(h("div",{class:"dash-figs two"}, figs.map(f=>h("div",{class:"dash-fig "+f.tone}, h("i",{}, f.k), h("b",{}, f.v), h("span",{}, f.n)))));
+        const qs=host.querySelector(".ui-strip"); if(qs) body.appendChild(qs.cloneNode(true));
+        body.appendChild(ideas(_dashCards(host, 3), "Nothing in the overview stands out."));
       });
     },
     /* ---------------------------------------------------- where we stand */
@@ -23591,7 +23653,7 @@ function renderDashboard(){
     },
     /* ---------------------------------------------------- the week and the body */
     week:()=>{
-      const c=card("small", "Week · Physical", ()=>_dashOpen("planification",{ planTab:"cycle" }));
+      const c=card("wide", "Week · Physical", ()=>_dashOpen("planification",{ planTab:"cycle" }));
       const cyc=cycleFor(T), days=cyc.days.slice(0,9);
       const kl=state.plan.kload||{}, mx=Math.max(1, ...days.map(d=>(kl[d]&&kl[d].avg)||0));
       const pf=state.plan.pf||{};
@@ -31374,7 +31436,36 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;align-items:stretch}
 .dash-card{grid-column:span 3;border:1px solid var(--line,#e4e7ec);border-radius:12px;background:var(--panel,#fff);overflow:hidden;display:flex;flex-direction:column;min-width:0}
 .dash-card.small{grid-column:span 2}
-.dash-card.work{grid-column:span 6}
+.dash-card.work,.dash-card.wide{grid-column:span 6}
+.dash-last{font:600 11px 'Inter',system-ui,sans-serif!important;color:var(--ink,#141821)!important;margin-top:1px}
+.dash-3{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr);gap:14px}
+.dash-sub{min-width:0;display:grid;gap:7px;align-content:start}
+.dash-sub + .dash-sub{border-left:1px solid var(--line,#e4e7ec);padding-left:14px}
+.dash-sub h4{margin:0;font:700 10.5px 'Oswald',sans-serif;letter-spacing:.15em;text-transform:uppercase;color:var(--ink,#141821);padding-bottom:4px;border-bottom:2px solid var(--ink,#141821)}
+.dash-pos{display:grid;grid-template-columns:24px minmax(0,1fr);gap:6px;align-items:center;padding:1px 0}
+.dash-pos > b{font:700 11px 'Oswald',sans-serif}
+.dash-pills{display:flex;flex-wrap:wrap;gap:4px;min-width:0}
+.dash-pp{display:inline-flex;align-items:baseline;gap:4px;border:1px solid var(--line,#e4e7ec);border-radius:6px;padding:1px 6px;font-size:11.5px;white-space:nowrap;background:var(--panel,#fff)}
+.dash-pp.start{background:rgba(198,161,91,.2);border-color:rgba(198,161,91,.6);font-weight:800}
+.dash-pp u{text-decoration:none;font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+.dash-pp i{font:700 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}
+.dash-pp em{font-style:normal;font-weight:800;color:#d8524e}
+.dash-figs.four{grid-template-columns:repeat(2,minmax(0,1fr))}
+.dash-figs.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.dash-sets{display:grid;gap:4px}
+.dash-set{display:flex;align-items:center;gap:7px;border:1px solid var(--line,#e4e7ec);border-radius:8px;padding:3px 4px 3px 9px;font-size:12px;min-width:0}
+.dash-set > b{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
+.dash-set q{quotes:"“" "”";font-style:italic;font-weight:600;color:#8a6829;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
+.dash-set .nc{flex:1 1 auto;font-size:10.5px;color:var(--ink-faint,#8a93a2)}
+.dash-set .vol{flex:none;width:30px;height:5px;border-radius:3px;background:rgba(20,24,33,.1);overflow:hidden}
+.dash-set .vol i{display:block;height:100%;background:#4a86d8}
+.dash-set u{flex:none;text-decoration:none;font:700 10px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);min-width:16px;text-align:right}
+.dash-set em{flex:none;font:800 10.5px 'IBM Plex Mono',monospace;font-style:normal;border-radius:10px;padding:1px 7px;background:var(--panel-2,#f1f2f4)}
+.dash-set em.hi{background:#d8524e;color:#fff}.dash-set em.lo{background:#2f9e86;color:#fff}
+@media (max-width:1000px){ .dash-3{grid-template-columns:minmax(0,1fr)} .dash-sub + .dash-sub{border-left:0;padding-left:0;border-top:1px solid var(--line,#e4e7ec);padding-top:10px} }
+/* the staff's main points over the post game overview */
+.pg-main{border:1px solid rgba(198,161,91,.55);background:rgba(198,161,91,.08);border-radius:11px;padding:10px 12px;margin:0 0 12px}
+.pg-main-h{font:700 11.5px 'Oswald',sans-serif;letter-spacing:.15em;text-transform:uppercase;margin-bottom:6px;color:#7a5c12}
 .dash-ch{display:flex;align-items:center;gap:10px;background:#141821;color:#fff;padding:6px 12px;min-height:32px}
 .dash-card.them .dash-ch{background:#8a2f2b}
 .dash-ch h3{margin:0;font:700 12px 'Oswald',sans-serif;letter-spacing:.17em;text-transform:uppercase}

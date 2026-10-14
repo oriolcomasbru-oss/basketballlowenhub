@@ -2865,6 +2865,10 @@
       return { rows: R.D.players.rows, roles: R.D.players.roles, avg: R.D.say.selfPpp, games: R.D.meta.ngames };
     });
   };
+  /* the opponent's summary card on its own, for a page that wants it without the tables */
+  API.teamDash = function (opponent) {
+    return buildFor(opponent).then(function (R) { return (R && R.D) ? teamDash(R.D) : null; });
+  };
   API.sets = function (opponent, band) {
     return buildFor(opponent).then(function (R) {
       if (!R.D) return { why: R.why, files: R.files, rows: [] };
