@@ -23469,7 +23469,7 @@ function _preJoinedPlayers(tid){
    with the reports so everybody reads the same one. */
 var DASHES={
   Ramon:{ name:"Ramón", role:"Head coach", cards:["pre","post","league","trends","week"] },
-  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["work","pre","post","trends","league","week"] }
+  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["quick","coming","work","week"] }
 };
 var _dashLanded=false;
 function _dashFor(u){ return (u && DASHES[u])? u : null; }
@@ -23867,6 +23867,74 @@ function renderDashboard(){
       if(lim.length){ c.__b.appendChild(h("div",{class:"dash-av"}, lim.map(x=>h("span",{class:"dash-avp "+x.c}, x.n, h("b",{}, AV_LABEL[x.c]||x.c)))));
         alerts.push({ tone:lim.some(x=>x.c==="out")? "bad" : "warn", text:lim.length+" player"+(lim.length===1?"":"s")+" not fully available", go:()=>_dashOpen("planification",{ planTab:"cycle" }) }); paintAtt(); }
       c.__b.appendChild(_scNoteBox(cyc));
+    },
+    /* ---------------------------------------------------- the four reports one tap away */
+    quick:()=>{
+      const c=card("wide quick", "Quick access", null);
+      const row=h("div",{class:"dash-quick"}); c.__b.appendChild(row);
+      const tile=(lbl, x, view, ui, extra)=>{
+        if(!x){ row.appendChild(h("div",{class:"dash-q off"}, h("i",{}, lbl), h("b",{},"—"))); return; }
+        const g=x.g, r=x.res, st=h("span",{}, pill(["wait","…"]));
+        const t=h("button",{type:"button", class:"dash-q", onclick:()=>_dashOpen(view, ui(g))},
+          h("i",{}, lbl), h("div",{class:"dash-qh"}, crest(g), h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent),
+            h("span",{}, _dashFmt(g.date)+" · "+(g.competition||"")))),
+          h("div",{class:"dash-qf"}, r? h("span",{class:"dash-qs "+(r.won? "good" : "bad")}, r.us+"–"+r.them) : null, st, extra||null));
+        row.appendChild(t);
+        _dashRep(g).then(rep=>{ st.innerHTML=""; st.appendChild(pill(_dashStatus(rep, view==="teamscout"))); });
+      };
+      tile("Last post game", G.last, "teamscout", g=>({ ts:{ mode:"game", gameId:g.id } }));
+      const up=G.upcoming;
+      tile("Current pre game", up[0], "oppscout", g=>({ os:{ mode:"game", gameId:g.id } }),
+        up[0]? h("button",{type:"button", class:"dash-gp", onclick:e=>{ e.stopPropagation(); _dashOpen("gameplan",{ gp:{ mode:"game", gameId:up[0].g.id } }); }},"Game plan ›") : null);
+      tile("Next pre game", up[1], "oppscout", g=>({ os:{ mode:"game", gameId:g.id } }));
+      tile("After that", up[2], "oppscout", g=>({ os:{ mode:"game", gameId:g.id } }));
+    },
+    /* ---------------------------------------------------- what is coming, and what is ready */
+    coming:()=>{
+      const c=card("wide", "What is coming", ()=>_dashOpen("oppscout"), "All pre games");
+      const list=G.upcoming.slice(0,6);
+      if(!list.length){ c.__b.appendChild(h("div",{class:"dash-miss"},"No games left in the calendar.")); return; }
+      const L=leagueState();
+      const tbl=h("div",{class:"dash-coming"}); c.__b.appendChild(tbl);
+      tbl.appendChild(h("div",{class:"dash-cr hd"}, h("span",{},"Game"), h("span",{},"Their form"), h("span",{},"Tagging"), h("span",{},"Pre game"), h("span",{},"Key sets"), h("span",{},"Game plan")));
+      const chip=(cls, txt, title)=>h("span",{class:"dash-ck "+cls, title:title||""}, txt);
+      list.forEach(x=>{
+        const g=x.g, dd=dayDelta(g.date);
+        let ph=false; try{ ph=_gamePlaceholder(g.opponent); }catch(e){}
+        const tid=ph? "" : _lgTeamIdByName(L, g.opponent);
+        /* their last five and where they stand, from the league */
+        let form=h("span",{class:"dash-ck none"},"—");
+        try{ if(tid){
+          const mine=(L.games||[]).concat(L.cup||[]).filter(y=>(String(y.homeId)===String(tid)||String(y.awayId)===String(tid)) && _lgDone(y)).sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(-5);
+          const st=(L.standings||[]).filter(r=>String(r.teamId)===String(tid))[0];
+          form=h("span",{class:"dash-form"}, st? h("b",{}, st.pos+"º") : null, mine.map(y=>{ const home=String(y.homeId)===String(tid), w=home? y.hs>y.as : y.as>y.hs;
+            return h("i",{class:w? "w" : "l", title:y.date+" "+y.home+" "+y.hs+"–"+y.as+" "+y.away}, w? "W" : "L"); })); } }catch(e){}
+        const cT=h("span",{}, chip("wait","…")), cP=h("span",{}, chip("wait","…")), cK=h("span",{}, chip("wait","…")), cG=h("span",{}, chip("wait","…"));
+        const row=h("div",{class:"dash-cr"},
+          h("button",{type:"button", class:"dash-cg", onclick:()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } })},
+            crest(g), h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent),
+              h("span",{}, _dashFmt(g.date)+" · "+(g.competition||"")+" · "+(dd===0? "today" : dd===1? "tomorrow" : "in "+dd+" days")))),
+          form, cT, cP, cK, cG);
+        tbl.appendChild(row);
+        if(ph){ [cT,cP,cK,cG].forEach(z=>{ z.innerHTML=""; z.appendChild(chip("none","opponent not known")); }); return; }
+        /* the report: its status, and whether a game plan has been written in it */
+        _dashRep(g).then(rep=>{
+          const s=_dashStatus(rep, false); cP.innerHTML=""; cP.appendChild(chip(s[0], s[1]));
+          let gp=null; try{ const ps=((rep && rep.data && rep.data.sections)||[]).filter(z=>z && z.kind==="plan")[0]; gp=(ps && ps.plan)? !gpPlanEmpty(ps.plan) : false; }catch(e){ gp=false; }
+          const gpDone=rep && repDone(rep, "plan");
+          cG.innerHTML=""; cG.appendChild(gpDone? chip("ready","Ready") : gp? chip("prep","Started") : chip("pend","Not started"));
+        });
+        /* our tagging of them: how many of their games are in the Drive folder */
+        _dashNeed(()=>window.ScoutPre && window.ScoutPre.playersOf).then(()=>window.ScoutPre.playersOf(g.opponent)).then(T=>{
+          const n=(T && T.games)||0; cT.innerHTML=""; cT.appendChild(n? chip(n>=3? "ready" : "prep", n+" game"+(n===1?"":"s"), "Games of theirs tagged in the Drive folder") : chip("pend","none"));
+        }).catch(()=>{ cT.innerHTML=""; cT.appendChild(chip("pend","not read")); });
+        /* the key sets starred for them, from the club's copy on the server */
+        new Promise(res2=>{ try{ if(!tid || _clubPulled[tid]) return res2(); _clubPull(tid, null, res2); setTimeout(res2, 8000); }catch(e){ res2(); } }).then(()=>{
+          let n=0; try{ n=tid? _clubKeyLabels(leagueState(), tid).filter(l=>_pbClass({ label:l }).kind!=="Concepts").length : 0; }catch(e){}
+          cK.innerHTML=""; cK.appendChild(n? chip("ready", n+" starred") : chip("pend","none"));
+        });
+      });
+      c.__b.appendChild(h("div",{class:"dash-src"},"Tagging: their games in the Drive folder · Pre game and Game plan: as marked in the report · Key sets: starred in the pre game playbook"));
     },
     /* ---------------------------------------------------- what is owed (analysis) */
     work:()=>{
@@ -31637,6 +31705,35 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-card{grid-column:span 3;border:1px solid var(--line,#e4e7ec);border-radius:12px;background:var(--panel,#fff);overflow:hidden;display:flex;flex-direction:column;min-width:0}
 .dash-card.small{grid-column:span 2}
 .dash-card.work,.dash-card.wide{grid-column:span 6}
+.dash-quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+@media (max-width:1000px){ .dash-quick{grid-template-columns:repeat(2,minmax(0,1fr))} }
+.dash-q{display:grid;gap:6px;text-align:left;border:1px solid var(--line,#e4e7ec);border-radius:10px;background:var(--panel,#fff);padding:8px 10px;cursor:pointer;font:inherit;color:var(--ink,#141821);min-width:0}
+.dash-q:hover{border-color:#c6a15b;box-shadow:0 2px 8px rgba(20,24,33,.08)}
+.dash-q.off{cursor:default;opacity:.6}
+.dash-q > i{font:700 9.5px 'Oswald',sans-serif;font-style:normal;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.dash-qh{display:flex;align-items:center;gap:8px;min-width:0}
+.dash-qh img,.dash-qh .opp{width:28px!important;height:28px!important;flex:none}
+.dash-qh .dash-who2 b{font-size:14px}
+.dash-qf{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.dash-qs{font:700 16px 'Oswald',sans-serif}.dash-qs.good{color:#17805a}.dash-qs.bad{color:#c0403c}
+.dash-gp{margin-left:auto;border:1px solid var(--line-strong,#cfd4dc);background:transparent;border-radius:6px;padding:2px 8px;font:600 10.5px 'IBM Plex Mono',monospace;cursor:pointer;color:var(--ink,#141821)}
+.dash-coming{display:grid;gap:3px;overflow-x:auto}
+.dash-cr{display:grid;grid-template-columns:minmax(220px,2.2fr) minmax(120px,1.2fr) repeat(4,minmax(86px,1fr));gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line,#eef0f3)}
+.dash-cr.hd span{font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-faint,#8a93a2)}
+.dash-cg{display:flex;align-items:center;gap:8px;border:0;background:transparent;padding:0;cursor:pointer;text-align:left;font:inherit;color:var(--ink,#141821);min-width:0}
+.dash-cg img,.dash-cg .opp{width:28px!important;height:28px!important;flex:none}
+.dash-cg .dash-who2 b{font-size:14px}
+.dash-cg:hover .dash-who2 b{text-decoration:underline}
+.dash-form{display:flex;align-items:center;gap:3px}
+.dash-form b{font:700 11px 'Oswald',sans-serif;margin-right:4px}
+.dash-form i{font:700 9px 'IBM Plex Mono',monospace;font-style:normal;width:16px;height:16px;border-radius:4px;display:grid;place-items:center;color:#fff}
+.dash-form i.w{background:#2f9e86}.dash-form i.l{background:#d8524e}
+.dash-ck{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:2px 9px;font:700 10px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.dash-ck::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.dash-ck.ready{background:rgba(47,158,134,.16);color:#17805a}
+.dash-ck.prep{background:rgba(217,165,33,.18);color:#8a6410}
+.dash-ck.pend{background:rgba(216,82,78,.14);color:#c0403c}
+.dash-ck.wait,.dash-ck.none{background:var(--panel-2,#f1f2f4);color:var(--ink-faint,#8a93a2)}
 .dash-last{font:600 11px 'Inter',system-ui,sans-serif!important;color:var(--ink,#141821)!important;margin-top:1px}
 .dash-3{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr);gap:14px}
 .dash-sub{min-width:0;display:grid;gap:7px;align-content:start}
