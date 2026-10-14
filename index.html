@@ -12283,6 +12283,42 @@ function _prePhxRoles(R, canEd, save){
   return host;
 }
 /* ---- the board ---------------------------------------------------------------- */
+/* A SIGNING, WRITTEN IN ONCE. Chemnitz signed Ryan Mikesell (#33 at Heidelberg in 2025/26)
+   before the feed carried him. His card is drafted from his own league line of that season
+   by the same function as every card, with what the staff said about him on top of it, and
+   put at the 3. Each seed runs once per report - the stamp in the report remembers it - so
+   moving or deleting the card is never undone the next time the report is opened. */
+const PRE_CARD_SEEDS=[
+  { stamp:"mikesell-2026-10", club:/chemnitz/i, pid:"2003030", name:/mikesell/i, team:"488", season:"2025", pos:"SF",
+    tag:"PASSING WING · SPOT-UP SHOOTER",
+    ideas:["Catch & shoot spot-up", "Can put it on the floor: PnR and 1x1", "Passes well for a 3"] }
+];
+function _preSeedCards(L, tid, C, rep, canEd, redraw, repaint){
+  const club=(L.teams||[]).filter(t=>String(t.id)===String(tid))[0]; if(!club || !rep) return;
+  rep.data=rep.data||{}; const done=rep.data.cardSeeds=Array.isArray(rep.data.cardSeeds)? rep.data.cardSeeds : [];
+  PRE_CARD_SEEDS.forEach(S=>{
+    if(!S.club.test(club.name||"") || done.indexOf(S.stamp)>=0) return;
+    const all=[].concat(...PRE_CARD_POS.map(k=>C.pos[k]||[]), C.bin||[]);
+    if(all.some(c=>c && (String(c.pid||"")===S.pid || S.name.test(String(c.name||""))))){ done.push(S.stamp); return; }
+    fetch("/.netlify/functions/bbl?res=roster&id="+S.team+"&season="+S.season).then(r=>r.ok? r.json() : null).then(j=>{
+      const rows=(j && j.players)||[], p=rows.filter(x=>String(x.pid||x.id||"")===S.pid)[0];
+      if(!p || done.indexOf(S.stamp)>=0) return;
+      const withLine=rows.filter(x=>_preLine(x)), base=withLine.length? withLine : rows;
+      const per=(x,k)=>{ const a=_preLine(x); return (a&&a.gp)? (a[k]||0)/a.gp : 0; };
+      const ctx={ teamFga: base.reduce((t,x)=>{ const a=_preLine(x); return t+((a&&a.p2a)||0)+((a&&a.p3a)||0); },0),
+        rank:(x,k)=>base.filter(y=>per(y,k)>per(x,k)).length+1 };
+      const c=_preCardOf(Object.assign({}, p, { pos:S.pos }), ctx);
+      const sl=S.season+"/"+String((+S.season+1)%100).padStart(2,"0");
+      c.pos=S.pos; c.guessed=false; c.badge="NEW"; c.tag=S.tag; c.ideas=S.ideas.slice();
+      c.from={ season:S.season, club:"MLP Academics Heidelberg" };
+      c.meta=[c.meta, sl+" with Heidelberg"].filter(Boolean).join(" · ");
+      if(c.min) c.min=c.min+" ("+sl+")";
+      (C.pos[S.pos]=C.pos[S.pos]||[]).push(c);
+      done.push(S.stamp);
+      if(canEd) redraw(); else repaint();
+    }).catch(()=>{});
+  });
+}
 function _preCardsBlock(L, tid, rep, canEd, save){
   const blk=h("div",{class:"rs-block rs-block-lg"});
   const ban=h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"},"ROSTER POSITIONS"));
@@ -12328,6 +12364,8 @@ function _preCardsBlock(L, tid, rep, canEd, save){
   }
   C.pos=C.pos||{};
   PRE_CARD_POS.forEach(k=>{ C.pos[k]=C.pos[k]||[]; });
+  /* cards the staff asked for that the feed does not have yet, installed once (see below) */
+  setTimeout(()=>{ try{ _preSeedCards(L, tid, C, rep, canEd, redraw, ()=>paintCards()); }catch(e){} }, 0);
   /* the scouting sheet's own cards when its script is on the page, which is every pre-game
      screen; the plain board below is the fallback for anywhere it is not */
   if(typeof window.PHX_cardHTML==="function"){
