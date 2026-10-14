@@ -11523,6 +11523,74 @@ function _preRoleColsSet(box, n){
   }, 120); });
 })();
 let _preLgForCards=null, _preTidForCards="";
+/* EVERY MAN IN THE LEAGUE, THIS SEASON AND THE LAST. A club signs a player in the middle
+   of a week and its roster in the feed does not have him yet - but the league does: his
+   season with another club, or last season's. The rosters of every club for both seasons
+   are read once (the server keeps them for hours), searched by name or number, and the
+   card is drafted from his own line by the same function that drafts every other card,
+   against the numbers of the team he played them for. The card says where they come
+   from. Nothing is guessed: a man the league has never had is not found. */
+const _preFindCache={};
+function _preFindSeason(season){
+  if(_preFindCache[season]) return _preFindCache[season];
+  const p=(async ()=>{
+    const L=leagueState();
+    let teams=(String(season)===String(L.season||"") && (L.teams||[]).length)? L.teams : null;
+    if(!teams){ const j=await fetch("/.netlify/functions/bbl?res=all&season="+encodeURIComponent(season)).then(r=>r.ok? r.json() : null).catch(()=>null);
+      teams=(j && j.teams)||[]; }
+    const out=[]; let i=0;
+    const one=async t=>{ const j=await fetch("/.netlify/functions/bbl?res=roster&id="+encodeURIComponent(t.id)+"&season="+encodeURIComponent(season)).then(r=>r.ok? r.json() : null).catch(()=>null);
+      ((j && j.players)||[]).forEach(p=>out.push({ p:p, team:t, rows:j.players, season:String(season) })); };
+    const work=async ()=>{ while(i<teams.length){ const t=teams[i++]; await one(t); } };
+    await Promise.all([work(),work(),work(),work(),work(),work()]);
+    return out;
+  })();
+  _preFindCache[season]=p; p.then(r=>{ if(!r.length) delete _preFindCache[season]; });
+  return p;
+}
+function _preFindBox(pos, C, redraw){
+  const L=leagueState(), cur=String(L.season||new Date().getFullYear()), prev=String((+cur)-1);
+  const box=h("div",{class:"pf-find"});
+  const inp=h("input",{class:"pf-in", id:"pfFind"+pos, placeholder:"Name or number, e.g. Mikesell"});
+  const out=h("div",{class:"pf-res"});
+  box.appendChild(inp); box.appendChild(out);
+  const sl=s=>s+"/"+String((+s+1)%100).padStart(2,"0");
+  let T=0;
+  const run=async ()=>{
+    const q=_lgNorm(inp.value||""), qn=String(inp.value||"").trim();
+    if(q.length<3 && !/^\d{1,2}$/.test(qn)){ out.innerHTML=""; return; }
+    out.innerHTML=""; out.appendChild(h("div",{class:"pf-ld"},"Searching the league, "+sl(cur)+" and "+sl(prev)+"…"));
+    const all=[].concat(await _preFindSeason(cur), await _preFindSeason(prev));
+    const toks=q.split(/\s+/).filter(Boolean);
+    const hit=all.filter(x=>{ const n=_lgNorm(x.p.name||((x.p.first||"")+" "+(x.p.last||"")));
+      return /^\d{1,2}$/.test(qn)? String(x.p.num||"")===qn : toks.every(t=>n.indexOf(t)>=0); })
+      .sort((a,b)=>(+b.season)-(+a.season)).slice(0,12);
+    out.innerHTML="";
+    if(!hit.length){ out.appendChild(h("div",{class:"pf-ld"},"Nobody by that name in the league in "+sl(cur)+" or "+sl(prev)+".")); return; }
+    hit.forEach(x=>{ const a=_preLine(x.p), gp=(a&&a.gp)||0;
+      out.appendChild(h("button",{type:"button", class:"pf-hit", onclick:()=>{
+        const rows=x.rows||[], withLine=rows.filter(r=>_preLine(r)), base=withLine.length? withLine : rows;
+        const per=(r,k)=>{ const l=_preLine(r); return (l&&l.gp)? (l[k]||0)/l.gp : 0; };
+        const ctx={ teamFga: base.reduce((t,r)=>{ const l=_preLine(r); return t+((l&&l.p2a)||0)+((l&&l.p3a)||0); },0),
+          rank:(r,k)=>base.filter(y=>per(y,k)>per(r,k)).length+1 };
+        const c=_preCardOf(Object.assign({}, x.p, { pos:pos }), ctx);
+        c.pos=pos; c.guessed=false; c.badge="NEW";
+        c.from={ season:x.season, club:x.team.name||"" };
+        c.meta=[c.meta, (a&&gp)? sl(x.season)+" with "+_lgShort(x.team.name||"")+(x.season!==cur? "" : " (this season)") : "no games in "+sl(x.season)].filter(Boolean).join(" · ");
+        if(c.min) c.min=c.min+" ("+sl(x.season)+")";
+        (C.pos[pos]=C.pos[pos]||[]).push(c);
+        try{ toast(c.name+" added to "+pos+", with his "+sl(x.season)+" numbers"); }catch(e){}
+        redraw(); }},
+        h("b",{}, (x.p.num? "#"+x.p.num+" " : "")+(x.p.name||"")),
+        h("span",{}, _lgShort(x.team.name||"")+" · "+sl(x.season)),
+        h("em",{}, gp? gp+" GP · "+(a.pts/gp).toFixed(1)+" pts · "+(a.sec/60/gp).toFixed(1)+" min" : "no games")));
+    });
+  };
+  inp.addEventListener("input",()=>{ clearTimeout(T); T=setTimeout(run, 350); });
+  inp.addEventListener("keydown",e=>{ if(e.key==="Escape") box.remove(); });
+  setTimeout(()=>{ try{ inp.focus(); }catch(e){} }, 30);
+  return box;
+}
 function _prePhxBoard(L, C, canEd, redraw){
   const mk=window.PHX_cardHTML;
   if(typeof mk!=="function") return null;
@@ -11557,6 +11625,11 @@ function _prePhxBoard(L, C, canEd, redraw){
         redraw();
       }},"+ Add player");
       col.appendChild(add);
+      /* a signing the club's roster does not carry yet: found in the league, this season or
+         the last, and drafted with his real numbers from there */
+      col.appendChild(h("button",{class:"add-card-btn add-card-lg", type:"button", onclick:e=>{
+        const b=e.currentTarget; if(b.nextSibling && b.nextSibling.classList && b.nextSibling.classList.contains("pf-find")){ b.nextSibling.remove(); return; }
+        b.after(_preFindBox(pos, C, redraw)); }},"+ From the league"));
       col.addEventListener("dragover",e=>{ if(!drag.from) return; e.preventDefault(); col.classList.add("pos-col-over"); });
       col.addEventListener("dragleave",()=>col.classList.remove("pos-col-over"));
       col.addEventListener("drop",e=>{
@@ -31274,6 +31347,16 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .gp3-under.solo{grid-template-columns:minmax(0,1fr)}
 .gp3-under > .gp3-ks{margin-top:0}
 .gp3-under:not(.solo) > .gp3-ks .gp3-ksb{column-width:auto!important;column-count:2;column-gap:18px}
+/* a player found in the league, for a card */
+.add-card-lg{margin-top:4px}
+.pf-find{border:1px solid var(--line-strong,#cfd4dc);border-radius:9px;background:var(--panel,#fff);padding:6px;margin-top:4px;display:grid;gap:5px}
+.pf-in{width:100%;border:1px solid var(--line-strong,#cfd4dc);border-radius:6px;padding:5px 8px;font:inherit;font-size:12.5px;background:var(--panel,#fff);color:var(--ink,#141821)}
+.pf-res{display:grid;gap:3px;max-height:260px;overflow:auto}
+.pf-ld{font-size:11.5px;color:var(--ink-faint,#8a93a2);padding:2px 4px}
+.pf-hit{display:grid;gap:1px;text-align:left;border:1px solid var(--line,#e4e7ec);border-radius:7px;background:var(--panel-2,#f4f5f7);padding:5px 8px;cursor:pointer;font:inherit;color:var(--ink,#141821)}
+.pf-hit:hover{border-color:#c6a15b}
+.pf-hit b{font-size:12.5px}.pf-hit span{font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.pf-hit em{font-style:normal;font-size:11px;color:var(--ink-faint,#8a93a2)}
 /* DASHBOARDS: one screen a person, five or six cards, a tap to the full report */
 .dash{max-width:1320px;margin:0 auto;padding:14px 4px 30px;display:grid;gap:12px}
 .dash-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:2px 2px 10px;border-bottom:2px solid var(--ink,#141821)}
