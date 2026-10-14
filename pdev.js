@@ -184,17 +184,28 @@
       if (found) used[norm(found.nm)] = 1;
       if (rr) used["r" + norm(rr.name)] = 1;
       return { key: norm(def.nm), nm: def.nm, league: nm, num: (found && found.num) || (rr && rr.num) || "", id: found && found.id, pos: rr ? (rr.pos || "") : "",
+        who: rr || (found ? { id: found.id, n: found.num } : null),
         lines: found ? found.lines.slice().sort(function (a, b) { return String(a.d).localeCompare(String(b.d)); }) : [], missing: !found && !rr && def.missing };
     };
     var main = MAIN.map(pick);
     var dl = DL.map(pick);
     /* anyone else who has played minutes for us goes with the rest of the roster, below */
     Object.keys(byName).forEach(function (k) { if (used[k]) return; var e = byName[k];
-      dl.push({ key: norm(e.nm), nm: e.nm, league: e.nm, num: e.num, id: e.id, pos: "", other: true, lines: e.lines.slice().sort(function (a, b) { return String(a.d).localeCompare(String(b.d)); }) }); used[k] = 1; });
+      dl.push({ key: norm(e.nm), nm: e.nm, league: e.nm, num: e.num, id: e.id, pos: "", other: true, who: { id: e.id, n: e.num }, lines: e.lines.slice().sort(function (a, b) { return String(a.d).localeCompare(String(b.d)); }) }); used[k] = 1; });
     ros.forEach(function (x) { var n = x.name || ""; if (used["r" + norm(n)] || used[norm(n)]) return;
       if (main.concat(dl).some(function (p) { return norm(p.league) === norm(n); })) return;
-      dl.push({ key: norm(n), nm: n, league: n, num: x.num || "", pos: x.pos || "", lines: [], other: true }); });
+      dl.push({ key: norm(n), nm: n, league: n, num: x.num || "", pos: x.pos || "", lines: [], other: true, who: x }); });
     return { main: main, dl: dl };
+  }
+  /* his portrait and the opponents' crests, from the league through the app's own image
+     proxy; a number or three letters stand in when the league has no picture */
+  function face(p, cls) {
+    try { if (typeof _lgFace === "function") return _lgFace(leagueState(), p.who || (p.id ? { id: p.id, n: p.num } : { n: p.num }), "pd-f " + (cls || "")); } catch (e) { }
+    return null;
+  }
+  function crest(name) {
+    try { if (typeof _lgCrestName === "function") return _lgCrestName(name, "pd-cr"); } catch (e) { }
+    return null;
   }
   function rec(key) {
     var P = D.doc.players[key];
@@ -327,7 +338,7 @@
       var r = rec(p.key), act = (r.goals || []).filter(function (g) { return g.status === "active"; });
       var lines = p.lines, gp = lines.length;
       var tr = el("button", { type: "button", class: "pd-row" + (dl ? " dl" : "") + (cols ? "" : " mine"), onclick: function () { UI.open = p.key; draw(); } },
-        el("span", { class: "pl" }, el("u", {}, p.num ? "#" + p.num : ""), el("b", {}, p.nm), el("i", {}, gp ? gp + " GP · " + (sum(lines).s / 60 / gp).toFixed(1) + " min" : (p.missing ? "not on the league roster" : dl ? "no stats yet (ProB)" : "no games yet"))),
+        el("span", { class: "pl" }, face(p, "sm"), el("u", {}, p.num ? "#" + p.num : ""), el("b", {}, p.nm), el("i", {}, gp ? gp + " GP · " + (sum(lines).s / 60 / gp).toFixed(1) + " min" : (p.missing ? "not on the league roster" : dl ? "no stats yet (ProB)" : "no games yet"))),
         el("span", { class: "wk" }, act.length ? act.map(function (g) { return el("em", {}, g.name); }) : el("i", {}, dl ? "" : "—")));
       var ks = cols || (r.metrics && r.metrics.length ? r.metrics : ["min", "pts", "ts", "pir"]);
       if (!gp) { tr.appendChild(el("span", { class: "c wide none" }, dl ? "Stats arrive with the ProB feed" : "—")); return tr; }
@@ -364,13 +375,13 @@
     var t = el("div", { class: "pd-mx", style: "grid-template-columns:minmax(150px,1.6fr) repeat(" + games.length + ",minmax(44px,1fr)) minmax(56px,.9fr) minmax(90px,1.1fr)" });
     t.appendChild(el("span", { class: "hd l" }, opts.head || ""));
     games.forEach(function (g, i) { t.appendChild(el("span", { class: "hd g" + (opts.mark === i ? " mk" : ""), title: g.d + " " + (g.home ? "vs " : "@ ") + g.opp + (g.us != null ? " " + g.us + "–" + g.them : "") },
-      el("b", {}, g.code || ddmm(g.d)), el("i", { class: g.us != null ? (g.us > g.them ? "w" : "l") : "" }, ddmm(g.d)))); });
+      crest(g.opp), el("b", {}, g.code || ddmm(g.d)), el("i", { class: g.us != null ? (g.us > g.them ? "w" : "l") : "" }, ddmm(g.d)))); });
     t.appendChild(el("span", { class: "hd" }, "Season")); t.appendChild(el("span", { class: "hd" }, "Trend"));
     rows.forEach(function (r) {
-      if (r.group) { t.appendChild(el("span", { class: "grp", style: "grid-column:1/-1" }, r.group)); return; }
+      if (r.group) { t.appendChild(el("span", { class: "grp", style: "grid-column:1/-1" }, r.p ? face(r.p, "sm") : null, r.group)); return; }
       var m = r.m, byD = {}; r.lines.forEach(function (x) { byD[x.d] = x; });
       var seas = value(m, sum(r.lines), UI.mode);
-      t.appendChild(el("span", { class: "l", title: m.note || "" }, el("b", {}, r.label), r.sub ? el("i", {}, r.sub) : null));
+      t.appendChild(el("span", { class: "l" + (r.p ? " f" : ""), title: m.note || "" }, r.p ? face(r.p, "xs") : null, el("b", {}, r.label), r.sub ? el("i", {}, r.sub) : null));
       games.forEach(function (g, i) { var x = byD[g.d];
         if (!x) { t.appendChild(el("span", { class: "c dnp" + (opts.mark === i ? " mk" : "") }, "·")); return; }
         var S = sum([x]), v = value(m, S, UI.mode), sm = small(m, S) && m.t === "rate";
@@ -401,10 +412,10 @@
       P.main.forEach(function (p) { if (!p.lines.length) return; var r = rec(p.key), act = (r.goals || []).filter(function (g) { return g.status === "active"; });
         var ks = []; act.forEach(function (g) { (g.metrics || []).forEach(function (k) { if (MK[k] && ks.indexOf(k) < 0) ks.push(k); }); });
         if (!ks.length) return;
-        rows.push({ group: (p.num ? "#" + p.num + " " : "") + p.nm + " · " + act.map(function (g) { return g.name; }).join(" · ") });
+        rows.push({ p: p, group: (p.num ? "#" + p.num + " " : "") + p.nm + " · " + act.map(function (g) { return g.name; }).join(" · ") });
         ks.forEach(function (k) { rows.push({ label: MK[k].l, m: MK[k], lines: p.lines }); }); });
     } else {
-      P.main.concat(P.dl).forEach(function (p) { if (!p.lines.length) return; rows.push({ label: (p.num ? "#" + p.num + " " : "") + p.nm, m: MK[cur], lines: p.lines }); });
+      P.main.concat(P.dl).forEach(function (p) { if (!p.lines.length) return; rows.push({ p: p, label: (p.num ? "#" + p.num + " " : "") + p.nm, m: MK[cur], lines: p.lines }); });
     }
     box.appendChild(matrix(rows, games, { head: cur === "goals" ? "Player · measure" : MK[cur].l }));
     root.appendChild(box);
@@ -430,7 +441,7 @@
       var lines = p.lines, S = sum(lines), g = lines.length;
       var f = function (k) { var m = MK[k]; return el("span", {}, el("i", {}, m.l), el("b", {}, fmt(m, value(m, S, UI.mode)))); };
       return el("button", { type: "button", class: "pd-mini", onclick: function () { UI.open = p.key; draw(); } },
-        el("u", {}, p.num ? "#" + p.num : ""), el("b", {}, p.nm),
+        face(p, "sm"), el("u", {}, p.num ? "#" + p.num : ""), el("b", {}, p.nm),
         g ? el("em", {}, g + " GP · " + (S.s / 60 / g).toFixed(1) + " min") : el("em", { class: "none" }, p.missing ? "not on the league roster" : "no stats yet"),
         g ? el("span", { class: "st" }, f("pts"), f("reb"), f("pir")) : null);
     };
@@ -451,7 +462,7 @@
           body.appendChild(el("div", { class: "pd-gr" }, el("div", { class: "pd-grn" }, gr.name), row)); });
       }
       var verdict = !lines.length || !act.length ? null : (up && !dn) ? ["up", "Improving"] : (dn && !up) ? ["dn", "Dropping"] : (up || dn) ? ["mix", "Mixed"] : ["", "Steady"];
-      c.appendChild(el("div", { class: "pd-pch" },
+      c.appendChild(el("div", { class: "pd-pch" }, face(p, "md"),
         el("div", { class: "pl" }, el("u", {}, p.num ? "#" + p.num : ""), el("b", {}, p.nm),
           el("span", {}, lines.length ? lines.length + " GP · " + (sum(lines).s / 60 / lines.length).toFixed(1) + " min" : "")),
         verdict ? el("span", { class: "pd-vd " + verdict[0] }, verdict[1], (up || dn) ? el("i", {}, "▲" + up + " ▼" + dn) : null) : null));
@@ -500,6 +511,7 @@
     var V = verdictOf(allT);
     root.appendChild(el("div", { class: "pd-head" },
       el("button", { type: "button", class: "btn", onclick: function () { UI.open = null; draw(); } }, "‹ All players"),
+      face(p, "lg"),
       el("div", { class: "pd-title" }, el("b", {}, (p.num ? "#" + p.num + " " : "") + p.nm),
         el("span", {}, [p.pos, lines.length ? lines.length + " games · " + (S.s / 60 / Math.max(1, lines.length)).toFixed(1) + " min a game" : "no games yet"].filter(Boolean).join(" · "))),
       act.length && lines.length ? el("span", { class: "pd-big " + V.v[0] }, V.v[1], (V.up || V.dn) ? el("i", {}, "▲ " + V.up + "   ▼ " + V.dn) : null) : null,
@@ -586,6 +598,7 @@
     var S = sum(lines);
     root.appendChild(el("div", { class: "pd-head" },
       el("button", { type: "button", class: "btn", onclick: function () { UI.open = null; draw(); } }, "‹ All players"),
+      face(p, "lg"),
       el("div", { class: "pd-title" }, el("b", {}, (p.num ? "#" + p.num + " " : "") + p.nm), el("span", {}, [p.pos, lines.length ? lines.length + " games · " + (S.s / 60 / Math.max(1, lines.length)).toFixed(1) + " min a game" : "no games yet"].filter(Boolean).join(" · "))),
       el("div", { class: "pd-tools" }, seg(MODES, UI.mode, function (v) { UI.mode = v; }))));
     /* ---- the goals that are on now, each with what its measures say since it began */
@@ -770,7 +783,7 @@
     ["Game", "Min", "Pts", "Reb", "Ast", "TO", "Stl", "FG", "3P", "FT", "PIR", "+/-", "Net on"].forEach(function (x) { t.appendChild(el("span", { class: "hd" }, x)); });
     lines.slice().reverse().forEach(function (x) { var l = x.l, on = l.on;
       var net = on && on.uposs && on.tposs ? 100 * on.up / on.uposs - 100 * on.tp / on.tposs : null;
-      t.appendChild(el("span", { class: "g" }, ddmm(x.d) + " " + (x.home ? "vs " : "@ ") + x.opp + (x.us != null ? " · " + (x.us > x.them ? "W " : "L ") + x.us + "–" + x.them : "")));
+      t.appendChild(el("span", { class: "g" }, crest(x.opp), ddmm(x.d) + " " + (x.home ? "vs " : "@ ") + x.opp + (x.us != null ? " · " + (x.us > x.them ? "W " : "L ") + x.us + "–" + x.them : "")));
       [(l.s / 60).toFixed(0), l.p, (l.or || 0) + (l.dr || 0) || l.r, l.a, l.t, l.stl == null ? "—" : l.stl, l.fm + "/" + l.fa, l.tm + "/" + l.ta, (l.f1 || 0) + "/" + (l.fta == null ? "?" : l.fta), l.pir,
         (l.pm > 0 ? "+" : "") + l.pm, net == null ? "—" : (net > 0 ? "+" : "") + Math.round(net)].forEach(function (v, i) {
         t.appendChild(el("span", { class: i === 9 ? (l.pir >= 15 ? "up" : l.pir <= 0 ? "dn" : "") : i === 11 ? (net > 0 ? "up" : net < 0 ? "dn" : "") : "" }, String(v))); }); });
@@ -855,6 +868,16 @@
       ".pd-mx .c.sm{opacity:.45}.pd-mx .c.dnp{background:transparent;color:var(--ink-faint,#cfd4dc)}",
       ".pd-mx .c.seas{background:transparent;border:1px solid var(--line,#e4e7ec)}.pd-mx .c.tr{background:transparent}",
       ".pd-mx .mk{box-shadow:inset 3px 0 0 #c6a15b}",
+      /* portraits and crests */
+      ".lg-bdg.face.pd-f{flex:none;border:1px solid var(--line,#e4e7ec)}",
+      ".lg-bdg.face.pd-f.xs{width:20px;height:20px}.lg-bdg.face.pd-f.sm{width:24px;height:24px}.lg-bdg.face.pd-f.md{width:40px;height:40px}.lg-bdg.face.pd-f.lg{width:60px;height:60px;border-width:2px;border-color:#c6a15b}",
+      ".lg-bdg.face.pd-f.md .lg-bdg-m{font-size:13px}.lg-bdg.face.pd-f.lg .lg-bdg-m{font-size:18px}",
+      ".lg-bdg.crest.pd-cr{width:18px;height:18px;flex:none}",
+      ".pd-mx .hd.g .pd-cr{margin-bottom:2px}",
+      ".pd-mx .l.f{flex-direction:row;align-items:center;justify-content:flex-start;gap:6px}",
+      ".pd-mx .grp{display:flex;align-items:center;gap:7px}",
+      ".pd-row .pl{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:8px;align-items:center}.pd-row .pl > .pd-f{grid-row:1 / span 3}.pd-row .pl > :not(.pd-f){grid-column:2}",
+      ".pd-log2 > .g{display:flex;align-items:center;gap:5px}",
       ".pd-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));gap:10px}",
       ".pd-cards.rest{grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:5px}",
       ".pd-mini{display:flex;align-items:center;gap:7px;flex-wrap:wrap;text-align:left;border:1px solid var(--line,#e4e7ec);border-radius:8px;background:var(--panel,#fff);padding:5px 9px;cursor:pointer;font:inherit;color:var(--ink,#141821);min-width:0}",

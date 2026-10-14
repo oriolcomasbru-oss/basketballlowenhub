@@ -5546,9 +5546,13 @@ function ensurePerms(){
   state.creds=state.creds||{}; USERS.forEach(u=>{ if(state.creds[u]===undefined) state.creds[u]=""; });
   state.sessionsLog=Array.isArray(state.sessionsLog)?state.sessionsLog:[];
 }
+/* PLAYER DEVELOPMENT is a closed room: these people see it, nobody else does, and only
+   the admin writes in it. Fixed here so no permission row can open it wider. */
+const PDEV_WHO=["Oriol","Ramon","Keith","Liviu","Pedro","Nils","Joan Marc","Marc Ribas"];
 function canView(sect){
   /* a dashboard is a person's, not a section with permissions: whoever has one sees it */
   if(sect==="dashboard") return !!currentUser && !isPlayerUser() && _dashList(currentUser).length>0;
+  if(sect==="playerdev") return !!currentUser && !isPlayerUser() && PDEV_WHO.indexOf(currentUser)>=0;
   if(!currentUser) return true;
   if(sectHidden(sect)) return false;
   if(isPlayerUser()) return PLAYER_VIEW.sects.indexOf(sect)>=0;
@@ -5807,6 +5811,7 @@ async function savePlayerView(sects, blocks){
 /* The admin always edits. Without this a missing permission row from the server
    leaves the owner of the app looking at a read-only page with no way to fix it. */
 function canEdit(sect){ if(!currentUser) return false; if(isPlayerUser() || isReader()) return false; if(isAdmin()) return true;
+  if(sect==="playerdev") return false;
   const p=state.perms&&state.perms[currentUser]; return p?!!(p.edit&&p.edit[sect]):false; }
 function phxPark(){ try{ var p=document.getElementById("phxRoot"), park=document.getElementById("phxPark"); if(p&&park&&p.parentElement!==park){ park.appendChild(p); p.style.display="none"; } }catch(e){} }
 function phxHideSub(){ var s=document.getElementById("preSubmenu"); var phx=document.getElementById("phxRoot"); var ctr=s?s.querySelector(".controls"):null; if(ctr&&phx){ phx.appendChild(ctr); } if(s){ s.style.display="none"; } phxPark(); }
