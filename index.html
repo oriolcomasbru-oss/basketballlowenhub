@@ -10193,7 +10193,10 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
     const tid0=_preClub();
     /* the staff's roster table carries the tagging, so the tagging's own players table is
        not drawn a second time further down */
-    _preTagOn=!!(tid0 && !PV && playerBlockOk("stats"));
+    /* the staff asked for the roster table as it was: the league's line alone, with the
+       tagging's own players table back in PLAYERS STATS. The joined columns stay in the
+       code, switched off. */
+    _preTagOn=false;
     try{ window.__preOneTable=_preTagOn; }catch(e){}
     if(!tid0 && !_preSeasonDone){
       _preSeasonDone=true;
