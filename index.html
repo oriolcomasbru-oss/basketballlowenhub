@@ -4894,6 +4894,22 @@ function _pfBand(txt){
   if(/TARDE|AFTERNOON|EVENING|^PM$/.test(T)) return "pm";
   return null;
 }
+/* one day of the PF's plan as the lines the Planning boxes already draw: "20' strength",
+   "8' 3x3+1p (hc +1fc)", with LIVE kept in the text so it is marked as live */
+const PF_PRE=[["indi","Individual"],["prev","Prevention"],["str","Strength"],["video","Video"],["extras","Extras"]];
+function _pfFromJson(o){
+  const am=[], pm=[];
+  if(!o) return { am:am, pm:pm };
+  if(o.off) return { am:["OFF"], pm:pm };
+  String(o.txtAM||"").split(/\n+/).map(s=>s.trim()).filter(Boolean).forEach(s=>am.push(s));
+  const pre=o.pre||{}; PF_PRE.forEach(k=>{ if(+pre[k[0]]) am.push((+pre[k[0]])+"' "+k[1]); });
+  (o.tp||[]).forEach(b=>((b&&b.ideas)||[]).forEach(x=>{ if(!x || /^water$/i.test(String(x[1]||"").trim())) return;
+    const fmt=String(x[2]||"").trim(), kind=String(x[4]||"").trim();
+    am.push((x[0]? x[0]+"' " : "")+String(x[1]||"").trim()+(fmt && !/^live$/i.test(fmt)? " ("+fmt+")" : "")+(/^live$/i.test(kind) && !/live/i.test(String(x[1]||""))? " LIVE" : "")); }));
+  (o.sh||[]).forEach(b=>((b&&b.ideas)||[]).forEach(x=>{ if(x && x[1]) am.push((x[0]? x[0]+"' " : "")+String(x[1]).trim()); }));
+  String(o.txtPM||"").split(/\n+/).map(s=>s.trim()).filter(Boolean).forEach(s=>pm.push(s));
+  return { am:am, pm:pm };
+}
 async function syncPfWeekly(){
   let rows = null;
   const url = (state.connections && state.connections.pfweekly) || PUBCSV.pfweekly;
@@ -4903,6 +4919,21 @@ async function syncPfWeekly(){
     try{ rows = await fetchSheet(id, PF_TAB); }catch(e){}
     if(!rows || rows.length < 2) rows = await fetchSheet(id);
   }
+  /* THE WEEKLY PLAN AS THE PF'S OWN TOOL SAVES IT. The tab that is published is not a grid
+     of days: it is one row a day, its date and the whole day as JSON - the MD, the type of
+     day, the start time, the objectives, the minutes of each part before practice, and the
+     team practice block by block (minutes, drill, format, physical focus, LIVE). That is
+     read as it is; the grid reading below is kept for a sheet laid out the old way. */
+  { const hi=rows.findIndex(r=>(r||[]).some(c=>String(c||"").trim()==="PLANI_JSON"));
+    if(hi>=0){
+      const hr=rows[hi], cd=hr.findIndex(c=>String(c||"").trim()==="PLANI_DATE"), cj=hr.findIndex(c=>String(c||"").trim()==="PLANI_JSON");
+      const P={}, J={}; let m=0;
+      for(let i=hi+1;i<rows.length;i++){ const r=rows[i]||[]; const iso=_isoAny(String(r[cd]||"").trim()); if(!iso) continue;
+        let o=null; try{ o=JSON.parse(String(r[cj]||"")); }catch(e){ o=null; } if(!o) continue;
+        J[iso]=o; P[iso]=_pfFromJson(o); m++; }
+      if(m){ state.plan.pf=P; state.plan.pfj=J; state.plan.pfAt=Date.now(); }
+      return m;
+    } }
   const out = {}; let cols = null, band = "am", yr = new Date().getFullYear(), n = 0;
   for(let i = 0; i < rows.length; i++){
     const r = rows[i] || [];
@@ -23651,7 +23682,34 @@ function renderDashboard(){
       const all=[...el.querySelectorAll(".ui-rank")].map(r=>{ const m=/(\d+)\/(\d+)/.exec(((r.querySelector("em")||{}).textContent||"")); return { r:r, d:m? Math.abs(+m[1]-(+m[2]+1)/2) : 0, good:r.classList.contains("good"), bad:r.classList.contains("bad") }; });
       const gs=all.filter(x=>x.good).sort((a,b)=>b.d-a.d), bs=all.filter(x=>x.bad).sort((a,b)=>b.d-a.d);
       const rows=[gs[0], bs[0], (gs[1]&&(!bs[1]||gs[1].d>=bs[1].d))? gs[1] : bs[1]].filter(Boolean).concat(gs.slice(2), bs.slice(2)).slice(0,3);
-      if(rows.length){ const box=h("div",{class:"dash-ranks"}); rows.forEach(x=>box.appendChild(x.r.cloneNode(true))); c.__b.appendChild(box); }
+      if(rows.length){ const box=h("div",{class:"dash-ranks"}); box.prepend(h("h4",{class:"dash-h4"},"Where we stand · rank among the 18")); rows.forEach(x=>box.appendChild(x.r.cloneNode(true))); c.__b.appendChild(box); }
+      /* where we are going: the season against the last three games, beside the league's
+         average, from the play by play of every game we played */
+      const ev=h("div",{}, loading("Reading our games…")); c.__b.appendChild(ev);
+      _trgRead().then(R=>{ ev.innerHTML="";
+        const G=((R && R.games)||[]).filter(x=>x && x.us && x.them);
+        if(G.length<4){ ev.appendChild(h("div",{class:"dash-miss"},"Four games are needed to compare the last three with the season.")); return; }
+        const sum=(list, side)=>{ const o={}; list.forEach(x=>Object.keys(x[side]).forEach(k=>{ o[k]=(o[k]||0)+(+x[side][k]||0); })); return o; };
+        const S={ u:sum(G,"us"), t:sum(G,"them") }, R3={ u:sum(G.slice(-3),"us"), t:sum(G.slice(-3),"them") };
+        const ortg=o=>o.poss? 100*o.pts/o.poss : null, efg=o=>o.fga? 100*(o.fgm+0.5*o.p3m)/o.fga : null;
+        const tov=o=>{ const p=(o.fga||0)+0.44*(o.fta||0)+(o.tov||0); return p? 100*o.tov/p : null; };
+        const orb=(a,b)=>(a.oreb+b.dreb)? 100*a.oreb/(a.oreb+b.dreb) : null;
+        const F=(L.four||[]).filter(x=>x && x.ortg!=null), avg=f=>{ const v=F.map(f).filter(x=>x!=null && isFinite(x)); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; };
+        const f1=v=>v==null? "—" : v.toFixed(1), fP=v=>v==null? "—" : Math.round(v)+"%";
+        const M=[ ["Offensive rating", ortg(S.u), ortg(R3.u), avg(x=>x.ortg), f1, true, 2],
+          ["Defensive rating", ortg(S.t), ortg(R3.t), avg(x=>x.drtg), f1, false, 2],
+          ["eFG%", efg(S.u), efg(R3.u), avg(x=>x.off && 100*x.off.efg), fP, true, 1.5],
+          ["Turnover rate", tov(S.u), tov(R3.u), avg(x=>x.off && 100*x.off.tov), fP, false, 1.5],
+          ["Off. rebounding", orb(S.u,S.t), orb(R3.u,R3.t), avg(x=>x.off && 100*x.off.reb), fP, true, 2] ];
+        const tn=(a,b,hi,th)=>(a==null||b==null||Math.abs(a-b)<th)? "" : ((a>b)===hi? "good" : "bad");
+        const t=h("div",{class:"dash-tgt"}, h("span",{class:"hd"},""), h("span",{class:"hd"},"Season"), h("span",{class:"hd"},"Last 3"), h("span",{class:"hd"},"League"));
+        M.forEach(m=>{ t.appendChild(h("span",{class:"k"}, m[0]));
+          t.appendChild(h("b",{class:tn(m[1],m[3],m[5],m[6])}, m[4](m[1])));
+          t.appendChild(h("b",{class:tn(m[2],m[1],m[5],m[6])}, m[4](m[2])));
+          t.appendChild(h("b",{class:"lg"}, m[4](m[3]))); });
+        ev.appendChild(h("div",{class:"dash-sub"}, h("h4",{},"How we are going · "+G.length+" games"), t));
+        ev.appendChild(h("div",{class:"dash-src"},"Season coloured against the league's average; last 3 against our own season"));
+      }).catch(()=>{ ev.innerHTML=""; ev.appendChild(h("div",{class:"dash-miss"},"Our games could not be read from the league.")); });
     },
     /* ---------------------------------------------------- where we are heading */
     trends:()=>{
@@ -23663,6 +23721,39 @@ function renderDashboard(){
         const strip=host.querySelector(".ui-strip"); if(strip) body.appendChild(strip.cloneNode(true));
         body.appendChild(ideas(_dashCards(host, 3, /what moves with|holding/i), "Nothing has moved enough to call it a trend."));
       });
+      /* how our own measures are going, from our tagging of every game: the last game, the
+         last three and the season, side by side - paint touches and reversals on the
+         measure the reports use, transition defense as TAG and BACK, and the sets */
+      const tg=h("div",{class:"dash-tg"}, loading("Reading our tagging of the season…")); c.__b.appendChild(tg);
+      _dashNeed(()=>window.LowenPostStats && window.LowenPostStats.seasonGames).then(()=>window.LowenPostStats.seasonGames()).then(list=>{
+        tg.innerHTML=""; const API=window.LowenPostStats;
+        if(!list || !list.length){ tg.appendChild(h("div",{class:"dash-miss"},"No tagged games in the Drive folder yet.")); return; }
+        const last=list.slice(-1), l3=list.slice(-3), all=list;
+        const pt=(L,k)=>{ const s=API.addUp(L.map(x=>x.s)); return s? API.measured(s,k) : null; };
+        const tb=(L,k)=>{ let n=0,p=0; L.forEach(x=>{ const t=x.m && x.m.trans && x.m.trans[k]; if(t){ n+=t.n||0; p+=t.pts||0; } }); return n? { v:p/n, n:n } : null; };
+        const hc=L=>{ let n=0,p=0; L.forEach(x=>(x.m.poss||[]).forEach(q=>{ if(q.phase==="Half court"){ n++; p+=q.pts||0; } })); return n? p/n : null; };
+        const f0=v=>v==null? "—" : Math.round(v)+"%", f2=v=>v==null? "—" : Number(v).toFixed(2);
+        const tone=(a,b,hi,th)=>(a==null||b==null)? "" : (Math.abs(a-b)<th? "" : ((a>b)===hi? "good" : "bad"));
+        const rows=[
+          ["Paint touches", pt(last,"pt"), pt(l3,"pt"), pt(all,"pt"), f0, true, 3, "target 70%"],
+          ["Ball reversals", pt(last,"br"), pt(l3,"br"), pt(all,"br"), f0, true, 3, ""],
+          ["TAG conceded", (tb(last,"tag")||{}).v, (tb(l3,"tag")||{}).v, (tb(all,"tag")||{}).v, f2, false, 0.08, "per possession"],
+          ["BACK conceded", (tb(last,"back")||{}).v, (tb(l3,"back")||{}).v, (tb(all,"back")||{}).v, f2, false, 0.08, "per possession"],
+          ["Half court sets", hc(last), hc(l3), hc(all), f2, true, 0.05, "points per possession"]
+        ];
+        const t=h("div",{class:"dash-tgt"}, h("span",{class:"hd"},""), h("span",{class:"hd"}, last[0].label.slice(0,10)), h("span",{class:"hd"},"Last 3"), h("span",{class:"hd"},"Season"));
+        rows.forEach(r=>{ t.appendChild(h("span",{class:"k", title:r[7]}, r[0]));
+          t.appendChild(h("b",{class:tone(r[1],r[3],r[5],r[6])}, r[4](r[1])));
+          t.appendChild(h("b",{class:tone(r[2],r[3],r[5],r[6])}, r[4](r[2])));
+          t.appendChild(h("b",{}, r[4](r[3]))); });
+        tg.appendChild(h("div",{class:"dash-sub"}, h("h4",{},"Our tagging · "+list.length+" games"), t));
+        /* the best and the worst of the called sets over the season, on at least six runs */
+        const S={}; all.forEach(x=>(x.m.poss||[]).forEach(q=>{ if(q.phase!=="Half court") return; const k=String(q.first||"").trim(); if(!k) return; (S[k]=S[k]||{ n:0, p:0 }); S[k].n++; S[k].p+=q.pts||0; }));
+        const ss=Object.keys(S).map(k=>({ k:k, n:S[k].n, v:S[k].p/S[k].n })).filter(x=>x.n>=6).sort((a,b)=>b.v-a.v);
+        if(ss.length>=2){ const pick=[ss[0], ss[1], ss[ss.length-2], ss[ss.length-1]].filter((x,i,a)=>x && a.indexOf(x)===i);
+          tg.appendChild(h("div",{class:"dash-sets"}, pick.map(x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" runs"),
+            h("em",{class:x.v>=1.1? "lo" : x.v<=0.85? "hi" : ""}, x.v.toFixed(2)))))); }
+      }).catch(()=>{ tg.innerHTML=""; tg.appendChild(h("div",{class:"dash-miss"},"Our tagging could not be read from the Drive.")); });
     },
     /* ---------------------------------------------------- the week and the body */
     week:()=>{
@@ -23683,6 +23774,15 @@ function renderDashboard(){
           h("b",{}, gm? (gm.venue==="Away"? "@ " : "vs ")+_lgShort(gm.opponent||"") : gl? gl[1] : (p? "Training" : "—")),
           h("i",{style:(load && !gm)? "color:rgb("+loadRGB(load/mx)+")" : ""}, gm? (gm.time||"game") : load? "load "+Math.round(load) : ""),
           tag? h("u",{}, tag) : null);
+        /* what the PF's plan says the day is: MD, kind of day, start, objectives, minutes */
+        const pj=(state.plan.pfj||{})[d];
+        if(pj && !gm){
+          const tm=(pj.tp||[]).reduce((s,b)=>s+(+((b&&b.min)||0)),0);
+          const st=(pj.sh_ && pj.sm_)? pj.sh_+":"+pj.sm_ : "";
+          day.appendChild(h("div",{class:"dash-wh"}, (pj.off? ["OFF", pj.md||""] : [pj.md||"", (pj.type && pj.type!=="—")? pj.type : "", st]).filter(Boolean).join(" · ")));
+          const ob=(pj.obj||[]).filter(x=>x && x!=="none");
+          if(ob.length || tm) day.appendChild(h("div",{class:"dash-wo"}, ob.map(x=>h("span",{}, x)), tm? h("span",{class:"tm"}, "team "+tm+"′"+(pj.teamTarget? " / "+pj.teamTarget+"′" : "")) : null));
+        }
         if(!gm){
           const lines=h("div",{class:"dash-wl"});
           const built=(((state.plan.sessions||{})[d])||[]); const arr=Array.isArray(built)? built : [built];
@@ -31557,6 +31657,18 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-wl .pf-l .pf-m{flex:none;font:700 9.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);min-width:22px}
 .dash-wl .pf-l.live .pf-t{font-weight:700;color:#c0403c}.dash-wl .pf-l.warn .pf-t{font-weight:700;color:#7a5cc0}
 .dash-wh{font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+.dash-wo{display:flex;flex-wrap:wrap;gap:3px}
+.dash-wo span{font:700 8.5px 'IBM Plex Mono',monospace;text-transform:uppercase;border-radius:4px;padding:1px 5px;background:rgba(74,134,216,.14);color:#2f6cc0}
+.dash-wo span.tm{background:rgba(20,24,33,.07);color:var(--ink-soft,#5b6472)}
+.dash-tgt{display:grid;grid-template-columns:minmax(0,1.4fr) repeat(3,minmax(0,1fr));gap:3px 8px;align-items:center;font-size:12px}
+.dash-tgt .hd{font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint,#8a93a2);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-tgt .hd:first-child{text-align:left}
+.dash-tgt .k{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-tgt b{font:700 12px 'IBM Plex Mono',monospace;text-align:right;border-radius:5px;padding:1px 5px}
+.dash-tgt b.good{background:rgba(47,158,134,.16);color:#17805a}.dash-tgt b.bad{background:rgba(216,82,78,.14);color:#c0403c}
+.dash-tgt b.lg{color:var(--ink-faint,#8a93a2);font-weight:600}
+.dash-tg{display:grid;gap:8px}
+.dash-h4{margin:0 0 4px;font:700 10.5px 'Oswald',sans-serif;letter-spacing:.15em;text-transform:uppercase;padding-bottom:4px;border-bottom:2px solid var(--ink,#141821)}
 .dash-av{display:flex;flex-wrap:wrap;gap:4px}
 .dash-avp{display:inline-flex;align-items:baseline;gap:6px;border-radius:6px;padding:2px 8px;font-size:11.5px;font-weight:600;background:rgba(217,165,33,.14)}
 .dash-avp.out{background:rgba(216,82,78,.14)}

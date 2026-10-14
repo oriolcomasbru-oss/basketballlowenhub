@@ -4420,6 +4420,27 @@
   }
   /* "2026-09-19 G7 BBL TRIER.csv" is a column heading nobody can read. The opponent is
      the last words of it, and that is the whole name a coach needs on a chart. */
+  /* every tagged game of the season as numbers, for a page that wants the trend without the
+     Trends screen: the same files, the same reading, kept once per visit */
+  var _seasonGamesP = null;
+  function seasonGames() {
+    if (_seasonGamesP) return _seasonGamesP;
+    _seasonGamesP = listFolder("game").then(function (files) {
+      var assigned = assignGames(files || []);
+      var gf = (files || []).map(function (f) {
+        var g = assigned[f.id] || datedGame(f);
+        return { f: f, d: g.d, opp: g.opp };
+      }).filter(function (x) { return !!x.d; }).sort(function (a, b) { return a.d < b.d ? -1 : a.d > b.d ? 1 : 0; });
+      return Promise.all(gf.map(function (x) {
+        return getRows(x.f.id).then(function (rows) {
+          var m = buildGame(rows);
+          return { d: x.d, label: x.opp ? String(x.opp).toUpperCase().slice(0, 18) : shortGame(x.f.name), m: m, s: summarise(m) };
+        }, function () { return null; });
+      })).then(function (l) { return l.filter(Boolean); });
+    });
+    _seasonGamesP.catch(function () { _seasonGamesP = null; });
+    return _seasonGamesP;
+  }
   function shortGame(name) {
     var t = String(name).replace(/\.csv$/i, "")
       .replace(/^[0-9a-f]{6,}-/i, "")
@@ -4951,6 +4972,7 @@
        the file is parsed, without waiting for DOMContentLoaded */
     window.LowenPostStats = { mount: mountPostTeam, dropCache: dropCache,
                               gameModel: gameModel, shotLine: shotLine, measured: measured, summarise: summarise,
+                              seasonGames: seasonGames, addUp: addUp,
                               datesWithFiles: datesWithFiles,
                               /* exposed so a report block can be rendered against a
                                  known file without driving the whole page */
