@@ -23504,7 +23504,7 @@ function _preJoinedPlayers(tid){
    with the reports so everybody reads the same one. */
 var DASHES={
   Ramon:{ name:"Ramón", role:"Head coach", cards:["pre","post","players","league","trends","week","month"] },
-  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["quick","coming","work","week"] },
+  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["quick","coming","week","month"] },
   Fabienne:{ name:"Fabienne", role:"Media · articles", cards:["fquick","us","rivals"] }
 };
 var _dashLanded=false;
@@ -23962,7 +23962,15 @@ function renderDashboard(){
             cellEl.appendChild(h("button",{type:"button", class:"dash-dg "+(r? (r.won? "w" : "l") : ""), title:(g.competition||"")+" · "+g.opponent,
               onclick:()=>{ if(g.date<T) _dashOpen("teamscout",{ ts:{ mode:"game", gameId:g.id } }); else _dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } }); }},
               h("i",{}, (g.venue==="Away"? "@" : "vs")+" "+_lgShort(g.opponent||"")), h("u",{}, r? r.us+"–"+r.them : (g.time||g.competition||"")))); });
-          if(trains) cellEl.appendChild(h("span",{class:"dash-dt"}, pj && pj.md? pj.md : "Training"));
+          if(trains){
+            /* the training as the PF planned it: MD, kind of day, start and team minutes */
+            const tm=pj? (pj.tp||[]).reduce((s,b)=>s+(+((b&&b.min)||0)),0) : 0;
+            const ob=pj? (pj.obj||[]).filter(x=>x && x!=="none") : [];
+            cellEl.appendChild(h("span",{class:"dash-dt", title:pj? [pj.md, pj.type, (pj.sh_&&pj.sm_)? pj.sh_+":"+pj.sm_ : "", tm? "team "+tm+"′" : "", ob.join(", ")].filter(Boolean).join(" · ") : "Training"},
+              pj && pj.md? pj.md : "Training"));
+            if(pj && ((pj.type && pj.type!=="—") || tm)) cellEl.appendChild(h("span",{class:"dash-dx"}, [pj.type && pj.type!=="—"? pj.type : "", (pj.sh_&&pj.sm_)? pj.sh_+":"+pj.sm_ : "", tm? tm+"′" : ""].filter(Boolean).join(" · ")));
+            if(ob.length) cellEl.appendChild(h("span",{class:"dash-dx ob"}, ob.join(" · ")));
+          }
           grid.appendChild(cellEl);
         }
         box.appendChild(grid);
@@ -32018,6 +32026,8 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-dg.w{background:#2f9e86}.dash-dg.l{background:#d8524e}
 .dash-dg i{font:700 10.5px 'Oswald',sans-serif;font-style:normal;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dash-dg u{text-decoration:none;font:600 9.5px 'IBM Plex Mono',monospace;opacity:.9}
+.dash-dx{font:500 9px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);line-height:1.2}
+.dash-dx.ob{color:#2f6cc0;text-transform:uppercase}
 .dash-dt{font:600 9px 'IBM Plex Mono',monospace;color:#17805a;background:rgba(47,158,134,.12);border-radius:4px;padding:1px 4px;align-self:flex-start}
 .dash-quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .dash-ptab{display:grid;grid-template-columns:minmax(70px,1.3fr) repeat(4,minmax(0,1fr));gap:3px 6px;align-items:center;font-size:12px}
