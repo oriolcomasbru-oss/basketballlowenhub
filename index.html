@@ -23589,7 +23589,7 @@ function _dashClubReady(tid){
   const L=leagueState();
   if(!tid || (L.players||{})[tid]) return Promise.resolve(true);
   try{ syncPlayers(tid, false); }catch(e){}
-  return _dashNeed(()=>(leagueState().players||{})[tid], 15000);
+  return _dashNeed(()=>(leagueState().players||{})[tid], 30000);
 }
 function _dashClubDash(tid){
   const L=leagueState(); if(!tid) return null;
@@ -23926,18 +23926,36 @@ function renderDashboard(){
       const body=h("div",{}, loading("Reading the season…")); c.__b.appendChild(body);
       _dashClubReady(our).then(()=>{ body.innerHTML="";
         const el=_dashClubDash(our);
-        /* the season, game by game, as results a reader can quote */
         const mine=(L.games||[]).concat(L.cup||[]).filter(y=>(String(y.homeId)===String(our)||String(y.awayId)===String(our)) && _lgDone(y)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
         const res=h("div",{class:"dash-results"}, mine.slice(-8).map(y=>{ const home=String(y.homeId)===String(our), us=home? y.hs : y.as, th=home? y.as : y.hs;
           return h("div",{class:"dash-res "+(us>th? "w" : "l")}, h("b",{}, (us>th? "W " : "L ")+us+"–"+th), h("span",{}, (home? "vs " : "@ ")+_lgShort(home? y.away : y.home)), h("em",{}, y.date.slice(8)+"/"+y.date.slice(5,7))); }));
         const figs=el? [...el.querySelectorAll(".ui-fig")].slice(0,3).map(f=>({ k:((f.querySelector("i")||{}).textContent||""), v:((f.querySelector("b")||{}).textContent||""), n:((f.querySelector("span")||{}).textContent||""), tone:f.classList.contains("good")? "good" : f.classList.contains("bad")? "bad" : "" })) : [];
         const left=h("div",{class:"dash-sub"}, h("h4",{},"Where we are"), h("div",{class:"dash-figs"}, figs.map(f=>h("div",{class:"dash-fig "+f.tone}, h("i",{}, f.k), h("b",{}, f.v), h("span",{}, f.n)))),
           h("h4",{},"Results"), res);
-        /* who is carrying the team, and where they rank in the league: the lines an article quotes */
-        const men=el? _dashCards(el, 6, /how they are going|where they shoot|starters/i) : [];
-        const mid=h("div",{class:"dash-sub"}, h("h4",{},"Our players · in the league"), ideas(men, "The league has not published our players' numbers yet."));
-        const rk=el? [...el.querySelectorAll(".ui-rank")].map(r=>{ const m=/(\d+)\/(\d+)/.exec(((r.querySelector("em")||{}).textContent||"")); return { r:r, rank:m? +m[1] : 99 }; }).sort((a,b)=>a.rank-b.rank).slice(0,4) : [];
-        const right=h("div",{class:"dash-sub"}, h("h4",{},"Where we are among the best"), rk.length? h("div",{class:"dash-ranks"}, rk.map(x=>x.r.cloneNode(true))) : h("div",{class:"dash-miss"},"No league comparison yet."));
+        /* our players against every player of the league: each figure with its place among
+           all of them, so a sentence can say "fourth in the league in scoring" */
+        const mid=h("div",{class:"dash-sub"}, h("h4",{},"Our players · rank among the league's players"));
+        try{
+          const P=_lgLeadPool(L).pool||[], N=P.length;
+          const val=(x,k)=>{ const t=x.t; return k==="pir"? x.m.pir/t.gp : k==="reb"? (t.reb||((t.oreb||0)+(t.dreb||0)))/t.gp : (t[k]||0)/t.gp; };
+          const rk=(x,k)=>1+P.filter(y=>val(y,k)>val(x,k)).length;
+          const ours=P.filter(x=>String(x.tid)===String(our)).sort((a,b)=>val(b,"pts")-val(a,"pts")).slice(0,7);
+          if(ours.length){
+            const t=h("div",{class:"dash-ptab"}, h("span",{class:"hd"},"Player"), ...["Pts","Reb","Ast","PIR"].map(x=>h("span",{class:"hd"}, x)));
+            const cell=(x,k)=>{ const r=rk(x,k); return h("span",{class:"c"+(r<=10? " top" : r<=30? " good" : "")}, h("b",{}, val(x,k).toFixed(1)), h("i",{}, r+"º")); };
+            ours.forEach(x=>{ t.appendChild(h("span",{class:"n"}, _lgLastName(x.name)||x.name)); ["pts","reb","ast","pir"].forEach(k=>t.appendChild(cell(x,k))); });
+            mid.appendChild(t);
+            mid.appendChild(h("div",{class:"dash-src"},"Per game · º = place among the "+N+" players of the league with enough games and minutes · gold = top 10"));
+          } else mid.appendChild(h("div",{class:"dash-miss"},"The league has not published our players' numbers yet."));
+        }catch(e){ mid.appendChild(h("div",{class:"dash-miss"},"The league's players could not be read.")); }
+        /* the club against the other clubs: what we do best and what we do worst */
+        const right=h("div",{class:"dash-sub"});
+        const rk=el? [...el.querySelectorAll(".ui-rank")].map(r=>{ const m=/(\d+)\/(\d+)/.exec(((r.querySelector("em")||{}).textContent||"")); return { r:r, rank:m? +m[1] : 99, of:m? +m[2] : 18 }; }).filter(x=>!x.r.classList.contains("vol")) : [];
+        if(rk.length){
+          const best=rk.slice().sort((a,b)=>a.rank-b.rank).slice(0,4), worst=rk.slice().sort((a,b)=>b.rank-a.rank).filter(x=>best.indexOf(x)<0).slice(0,4);
+          right.appendChild(h("h4",{},"Our best · among the clubs")); right.appendChild(h("div",{class:"dash-ranks"}, best.map(x=>x.r.cloneNode(true))));
+          right.appendChild(h("h4",{class:"bad"},"Our worst · among the clubs")); right.appendChild(h("div",{class:"dash-ranks"}, worst.map(x=>x.r.cloneNode(true))));
+        } else right.appendChild(h("div",{class:"dash-miss"},"No league comparison yet."));
         body.appendChild(h("div",{class:"dash-3"}, left, mid, right));
       });
     },
@@ -23948,26 +23966,49 @@ function renderDashboard(){
       const list=G.upcoming.filter(x=>{ try{ return !_gamePlaceholder(x.g.opponent); }catch(e){ return true; } }).slice(0,3);
       if(!list.length){ c.__b.appendChild(h("div",{class:"dash-miss"},"No known opponent in the calendar yet.")); return; }
       const wrap=h("div",{class:"dash-3"}); c.__b.appendChild(wrap);
+      const ord=n=>n+(n%10===1&&n%100!==11? "st" : n%10===2&&n%100!==12? "nd" : n%10===3&&n%100!==13? "rd" : "th");
+      /* how a club plays, said in words from where it ranks among the clubs */
+      const style=el=>{
+        const rows=[...el.querySelectorAll(".ui-rank")].map(r=>{ const m=/(\d+)\/(\d+)/.exec(((r.querySelector("em")||{}).textContent||""));
+          return { k:((r.querySelector(".k")||{}).textContent||""), v:((r.querySelector("b")||{}).textContent||""), rank:m? +m[1] : 0, of:m? +m[2] : 18 }; }).filter(x=>x.rank);
+        const out=[], top=x=>x.rank<=4, low=x=>x.rank>=x.of-3;
+        const say=(x, hi, lo, tone)=>{ if(top(x)) out.push({ text:hi+" — "+x.v+", "+ord(x.rank)+" of "+x.of, tone:tone? "bad" : "", d:x.of }); else if(low(x)) out.push({ text:lo+" — "+x.v+", "+ord(x.rank)+" of "+x.of, tone:tone? "good" : "", d:x.of }); };
+        rows.forEach(x=>{
+          if(/^Pace/.test(x.k)) say(x, "Play fast", "Play slow", false);
+          else if(/^Threes as a share/.test(x.k)) say(x, "Shoot a lot of threes", "Few threes", false);
+          else if(/^Offensive rating/.test(x.k)) say(x, "One of the best offenses", "Struggle to score", true);
+          else if(/^Defensive rating/.test(x.k)) say(x, "One of the best defenses", "Concede a lot", true);
+          else if(/^Offensive rebounding/.test(x.k)) say(x, "Crash the offensive glass", "Few second chances", true);
+          else if(/^Turnovers forced/.test(x.k)) say(x, "Force many turnovers", "Force few turnovers", true);
+          else if(/^Turnover rate/.test(x.k)){ if(x.rank<=4) out.push({ text:"Take care of the ball — "+x.v+", "+ord(x.rank)+" of "+x.of, tone:"bad" }); else if(x.rank>=x.of-3) out.push({ text:"Lose the ball a lot — "+x.v+", "+ord(x.rank)+" of "+x.of, tone:"good" }); }
+          else if(/^3P%/.test(x.k)) say(x, "Shoot threes well", "Shoot threes poorly", true);
+        });
+        return out.slice(0,4);
+      };
       list.forEach(x=>{
         const g=x.g, tid=_lgTeamIdByName(L, g.opponent), dd=dayDelta(g.date);
-        const box=h("div",{class:"dash-sub"}, h("h4",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent+" · "+_dashFmt(g.date)+" · "+(dd===0? "today" : dd===1? "tomorrow" : "in "+dd+" days")));
-        const body=h("div",{}, loading()); box.appendChild(body); wrap.appendChild(box);
+        const box=h("div",{class:"dash-sub"},
+          h("h4",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent+" · "+_dashFmt(g.date)+" · "+(dd===0? "today" : dd===1? "tomorrow" : "in "+dd+" days")));
+        const body=h("div",{}, loading()); box.appendChild(body);
+        box.appendChild(h("button",{type:"button", class:"dash-open", onclick:()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } })},"Open the pre game ›"));
+        wrap.appendChild(box);
         if(!tid){ body.innerHTML=""; body.appendChild(h("div",{class:"dash-miss"},"This club is not in the league feed.")); return; }
         _dashClubReady(tid).then(()=>{ body.innerHTML="";
           const st=(L.standings||[]).filter(r=>String(r.teamId)===String(tid))[0];
           const theirs=(L.games||[]).concat(L.cup||[]).filter(y=>(String(y.homeId)===String(tid)||String(y.awayId)===String(tid)) && _lgDone(y)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
-          const last=theirs.slice(-5);
-          body.appendChild(h("div",{class:"dash-form"}, st? h("b",{}, st.pos+"º · "+st.w+"–"+st.l) : null, last.map(y=>{ const home=String(y.homeId)===String(tid), w=home? y.hs>y.as : y.as>y.hs;
+          body.appendChild(h("div",{class:"dash-form"}, st? h("b",{}, st.pos+"º · "+st.w+"–"+st.l) : null, theirs.slice(-5).map(y=>{ const home=String(y.homeId)===String(tid), w=home? y.hs>y.as : y.as>y.hs;
             return h("i",{class:w? "w" : "l", title:y.date+" "+y.home+" "+y.hs+"–"+y.as+" "+y.away}, w? "W" : "L"); })));
           const ly=theirs[theirs.length-1];
           if(ly){ const home=String(ly.homeId)===String(tid), a=home? ly.hs : ly.as, b=home? ly.as : ly.hs;
             body.appendChild(h("div",{class:"dash-src"}, "Last game: "+(a>b? "W " : "L ")+a+"–"+b+(home? " vs " : " @ ")+_lgShort(home? ly.away : ly.home)+" · "+ly.date.slice(8)+"/"+ly.date.slice(5,7))); }
-          /* the two of us this season, when we have met */
-          const h2h=theirs.filter(y=>our && (String(y.homeId)===String(our)||String(y.awayId)===String(our)));
-          h2h.forEach(y=>{ const home=String(y.homeId)===String(our), a=home? y.hs : y.as, b=home? y.as : y.hs;
+          theirs.filter(y=>our && (String(y.homeId)===String(our)||String(y.awayId)===String(our))).forEach(y=>{ const home=String(y.homeId)===String(our), a=home? y.hs : y.as, b=home? y.as : y.hs;
             body.appendChild(h("div",{class:"dash-src"}, "Against us: "+(a>b? "we won " : "we lost ")+a+"–"+b+" · "+y.date.slice(8)+"/"+y.date.slice(5,7))); });
           const el=_dashClubDash(tid);
-          body.appendChild(ideas(el? _dashCards(el, 4, /how they are going|starters/i) : [], "The league has not published this club's numbers yet."));
+          const how=el? style(el) : [];
+          body.appendChild(h("div",{class:"dash-h5"},"How they play"));
+          body.appendChild(ideas(how, "Nothing stands out in their numbers against the league."));
+          body.appendChild(h("div",{class:"dash-h5"},"Their main players"));
+          body.appendChild(ideas(el? _dashCards(el, 3, /how they are going|starters|where they shoot/i).map(o=>Object.assign(o,{ src:"" })) : [], "The league has not published this club's numbers yet."));
         });
       });
     },
@@ -31809,6 +31850,19 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-card.small{grid-column:span 2}
 .dash-card.work,.dash-card.wide{grid-column:span 6}
 .dash-quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.dash-ptab{display:grid;grid-template-columns:minmax(70px,1.3fr) repeat(4,minmax(0,1fr));gap:3px 6px;align-items:center;font-size:12px}
+.dash-ptab .hd{font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint,#8a93a2);text-align:right}
+.dash-ptab .hd:first-child{text-align:left}
+.dash-ptab .n{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-ptab .c{display:flex;flex-direction:column;align-items:flex-end;border-radius:6px;padding:1px 5px;line-height:1.1}
+.dash-ptab .c b{font:700 12px 'IBM Plex Mono',monospace}
+.dash-ptab .c i{font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
+.dash-ptab .c.top{background:rgba(198,161,91,.22)}.dash-ptab .c.top i{color:#7a5c12}
+.dash-ptab .c.good{background:rgba(47,158,134,.1)}
+.dash-sub h4.bad{border-bottom-color:#d8524e;color:#c0403c}
+.dash-h5{font:700 9.5px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft,#5b6472);margin-top:4px}
+.dash-open{justify-self:start;border:1px solid #8a2f2b;background:transparent;color:#8a2f2b;border-radius:6px;padding:3px 10px;font:700 10.5px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;margin-top:4px}
+.dash-open:hover{background:#8a2f2b;color:#fff}
 .dash-results{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:4px}
 .dash-res{display:grid;border-radius:7px;padding:4px 8px;border-left:3px solid #d8524e;background:rgba(216,82,78,.07)}
 .dash-res.w{border-left-color:#2f9e86;background:rgba(47,158,134,.08)}
