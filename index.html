@@ -20643,6 +20643,8 @@ function _lgRoster(L){
   const tgUsed=TG? (TG.roles||[]).filter(r=>tgRows.some(p=>p.roles && p.roles[r]>0)) : [];
   const tgNum=s=>{ const m=/#\s*(\d+)/.exec(String(s||"")); return m? String(parseInt(m[1],10)) : ""; };
   const tgBy={}; tgRows.forEach(r=>{ const n=tgNum(r.label); if(n && !tgBy[n]) tgBy[n]=r; });
+  /* and by surname, for a tag whose number is not the one the roster carries */
+  const tgNm=s=>_lgNorm(String(s||"").replace(/\s*#\s*\d+\s*$/,"").trim().split(/\s+/).pop()||""); const tgByName={}; tgRows.forEach(r=>{ const k=tgNm(r.label); if(k && !tgByName[k]) tgByName[k]=r; });
   const tgSeen={};
   let tgMax=1; tgRows.forEach(p=>tgUsed.forEach(r=>{ tgMax=Math.max(tgMax, p.roles[r]||0); }));
   const tgCells=(tr, r)=>{
@@ -20697,7 +20699,7 @@ function _lgRoster(L){
       }
       tr.appendChild(td);
     });
-    if(TG){ const r=tgBy[String(parseInt(p.num,10))]||null; if(r) tgSeen[r.label]=1; tgCells(tr, r); }
+    if(TG){ let r=tgBy[String(parseInt(p.num,10))]||null; if(!r){ const k=tgNm(_lgLastName(p.name||"")); const c2=k? tgByName[k] : null; if(c2 && !tgSeen[c2.label]) r=c2; } if(r) tgSeen[r.label]=1; tgCells(tr, r); }
     tbl.appendChild(tr);
   });
   /* a tagged name whose number is on no roster line keeps a row of its own and says so,
@@ -20749,9 +20751,12 @@ function _lgRoster(L){
     box.appendChild(_lgColourKey(false));
     /* when the tagging columns are not there, say why rather than leave a plain table */
     if(TG && TG.empty){
-      const st=_preTagState(), why=st==="busy"? "Reading our tagging of this club from the Drive…"
-        : st==="err"? "Our tagging could not be read from the Drive — reload the page to try again."
-        : "No player tags for this club in our tagging yet — the columns fill in as soon as there are.";
+      const st=_preTagState(), e=_preTagKeep.by[_scoutOpponent||""]||{};
+      const why=st==="busy"? "Reading our tagging of this club from the Drive…"
+        : st==="err"? "Our tagging could not be read from the Drive ("+(e.msg||"no answer")+") — trying again in a moment."
+        : e.why==="nomatch"? "No file in the Drive scouting folder matches “"+(_scoutOpponent||"")+"” — the tagging columns fill in once its games are there."
+        : e.why==="empty"? "The Drive scouting folder is empty."
+        : "The tagging of this club has no player names with a number (“Name 12”), so it cannot be put on the roster lines.";
       box.appendChild(h("div",{class:"gpo-note", style:"margin-top:6px"}, why));
     }
   }
@@ -20783,8 +20788,13 @@ function _preTagRows(tid){
     if(!SP || !SP.playersOf){ if((K.wait=(K.wait||0)+1)<=60) setTimeout(again, 750); return null; }
     const e=K.by[opp];
     if(e) return (!e.busy && e.T && (e.T.rows||[]).length)? e.T : null;
-    const ent=K.by[opp]={ busy:true, T:null, err:false };
-    SP.playersOf(opp).then(T=>{ ent.T=T||null; }, ()=>{ ent.err=true; }).then(()=>{ ent.busy=false; again(); });
+    const ent=K.by[opp]={ busy:true, T:null, err:false, msg:"" };
+    SP.playersOf(opp).then(T=>{ ent.T=T||null; ent.why=(T && T.why)||""; },
+      e=>{ ent.err=true; ent.msg=String((e && e.message)||e||"");
+        /* a read that failed - a slow Drive, a dropped request - is tried again, it is not
+           remembered as the answer for this opponent for the rest of the visit */
+        setTimeout(()=>{ if(K.by[opp]===ent) delete K.by[opp]; again(); }, 15000); })
+      .then(()=>{ ent.busy=false; again(); });
   }catch(e){}
   return null;
 }
