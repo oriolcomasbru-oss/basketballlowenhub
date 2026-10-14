@@ -2716,6 +2716,7 @@ body.prt.prt-textonly .rs-block-stats{display:none!important}
           <button class="tb-tab" data-view="oppscout">Pre game</button>
           <button class="tb-tab" data-view="gameplan">Game plan</button>
           <button class="tb-tab" data-view="playbook">Playbook</button>
+          <button class="tb-tab" data-view="playerdev">Player development</button>
         </div>
       </div>
       <div class="tb-right">
@@ -5515,12 +5516,12 @@ const SECT_KEYS=["league","planification","teamscout","trends","oppscout","gamep
    is untouched, so bringing one back is deleting its name from this line. What this list
    does is keep anyone from LANDING on one: not from a saved view, not from a tab, not
    from the first-screen fallback. */
-const SECT_HIDDEN=["playerdev","playerdb","rooster","prob"];
+const SECT_HIDDEN=["playerdb","rooster","prob"];
 function sectHidden(k){ return SECT_HIDDEN.indexOf(k)>=0; }
 /* The sections that are still being built. A user may see the tab and the notice; going
    past the notice is a permission of its own, WIP_KEY, so a half-finished screen is not
    something the staff can wander into and take for finished work. */
-const WIP_SECTS=["playerdev","playerdb","prob"];
+const WIP_SECTS=["playerdb","prob"];
 const WIP_KEY="wip";
 const SECT_LABELS={dashboard:"Dashboard",planification:"Planning",calendar:"Calendar",league:"League",teamscout:"Post game/practice",oppscout:"Pre game",gameplan:"Game plan",playbook:"Playbook",playerdev:"Player development",playerdb:"Player database",rooster:"Rooster",prob:"PROB",trends:"Trends"};
 function defaultPerms(){
@@ -6207,6 +6208,11 @@ function renderProb(){
 }
 function renderPlayerDev(){
   const root=$("#viewPlayerDev"); root.innerHTML="";
+  /* the section itself lives in pdev.js; this is only the door, and the old placeholder
+     below if the module has not arrived */
+  if(window.PDev){ window.PDev.render(root); return; }
+  { let n=0; const t=setInterval(()=>{ if(window.PDev || ++n>40){ clearInterval(t); if(window.PDev && state.ui.view==="playerdev") window.PDev.render(root); } }, 250); }
+  root.appendChild(h("div",{class:"ld"},"Loading player development…", h("span",{class:"ld-bar"}))); return;
   if(!gateOk.playerdev){ renderGate(root,"Player development — under construction",()=>{gateOk.playerdev=true;renderPlayerDev();}); return; }
   const CATS=[["scoring","Scoring"],["shooting","Shooting %"],["playmaking","Playmaking"],["rebounding","Rebounding"],["defense","Defense"],["hustle","Hustle"],["advanced","Advanced"]];
   const sel=state.ui.pdStats||(state.ui.pdStats={});
@@ -15546,7 +15552,7 @@ const LG_SHOOT=[
    long, what was scored after a turnover and after an offensive rebound, and one line per
    player - and the sheet is let go. A game that has been played does not change, so its
    line is kept in this browser and only a new game is ever read again. */
-const TRG_VER=3, TRG_KEY="lowen.trg.v"+TRG_VER;
+const TRG_VER=4, TRG_KEY="lowen.trg.v"+TRG_VER;
 let _trgMemo=null;
 function _trgStore(){ try{ const o=JSON.parse(localStorage.getItem(TRG_KEY)||"{}"); return (o && typeof o==="object")? o : {}; }catch(e){ return {}; } }
 function _trgSave(o){ try{ localStorage.setItem(TRG_KEY, JSON.stringify(o)); }catch(e){} }
@@ -15642,6 +15648,36 @@ function _trgGame(x, j, tid){
           pf:pf, pa:pa, fives:fives.slice(0,4), nf:fives.length }); }); });
     runs.sort((a,b)=>a.t0-b.t0);
   }
+  /* WHAT THE TEAM DID WHILE EACH OF OURS WAS ON THE FLOOR. The same five the stints follow -
+     the five the feed names at the start of a period, moved by every substitution - and for
+     every action, the men on the floor are credited with it: our points and theirs, the
+     shots, free throws, turnovers and rebounds of both sides. From those, possessions on the
+     floor (FGA - OREB + TOV + 0.44 FTA) and the rebounds there were to take. Nothing here is
+     a judgement on the man: it is what happened around him. */
+  const onc={};
+  try{
+    const stq={}; (j.feed.starters||[]).forEach(s=>{ if(s.teamcode!==uc) return; const q=_lgGameElapsed(s.quarter,0).qi;
+      stq[q]=[1,2,3,4,5].map(n=>String(s["player_id"+n]||"")).filter(v=>v && v!=="0"); });
+    const A3=(j.feed.actions||[]).map((a,i)=>{ const e=_lgGameElapsed(a.quarter, a.time); return { a:a, t:e.t, qi:e.qi, i:i }; }).sort((p,q)=>(p.t-q.t)||(p.i-q.i));
+    let on=new Set(), lastQ=-1;
+    const Z=()=>({ uf:0, ufa:0, uta:0, uto:0, uor:0, udr:0, up:0, tf:0, tfa:0, tta:0, tto:0, tor:0, tdr:0, tp:0 });
+    A3.forEach(o=>{ const a=o.a;
+      if(o.qi!==lastQ){ lastQ=o.qi; if(stq[o.qi] && stq[o.qi].length) on=new Set(stq[o.qi]); }
+      const c=a.teamcode, k=a.action; if(c!=="A" && c!=="B") return;
+      if(k==="SUBST"){ if(c===uc){ on.delete(String(a.player_id1)); const inn=String(a.player_id2||""); if(inn && inn!=="0") on.add(inn); } return; }
+      const me=(c===uc)? "u" : "t";
+      const add=f=>on.forEach(id=>{ const z=onc[id]||(onc[id]=Z()); z[me+f]++; });
+      const pts=v=>on.forEach(id=>{ const z=onc[id]||(onc[id]=Z()); z[me+"p"]+=v; });
+      if(k==="P2"||k==="P3"){ add("fa"); if(a.result==="+") pts(k==="P3"? 3 : 2); }
+      else if(k==="FT"){ add("ta"); if(a.result==="+") pts(1); }
+      else if(k==="REB"||k==="TREB"){ add(a.info1==="O"? "or" : "dr"); }
+      else if(k==="TO"||k==="TTO"||(k==="FOUL" && a.info1==="O")){ add("to"); }
+    });
+  }catch(e){}
+  const oc=id=>{ const z=onc[id]; if(!z) return null;
+    const r2=v=>Math.round(v*10)/10;
+    return { up:z.up, tp:z.tp, uposs:r2(z.ufa-z.uor+z.uto+0.44*z.uta), tposs:r2(z.tfa-z.tor+z.tto+0.44*z.tta),
+      uor:z.uor, udr:z.udr, tor:z.tor, tdr:z.tdr }; };
   /* each of our players: where his points came from, and his index quarter by quarter */
   const srcOf={}; (S.shots||[]).forEach(s=>{ if(!s.made || s.three) return; if(s.zone==="rim" || s.zone==="paint") srcOf[s.pid]=(srcOf[s.pid]||0)+2; });
   const qPir={};
@@ -15651,7 +15687,9 @@ function _trgGame(x, j, tid){
     lead:{ us:home?F.secH:F.secA, them:home?F.secA:F.secH, tie:F.secT, total:F.total,
            maxUs:home?F.maxH:F.maxA, maxThem:home?F.maxA:F.maxH, chg:F.changes, runUs:run(true), runThem:run(false) },
     pl:S.pl.map(p=>({ i:p.id, n:p.num, nm:p.name, st:p.st?1:0, s:p.sec, p:p.pts, r:p.reb, a:p.ast, t:p.tov,
-      pm:p.pm, pir:p.pir, fm:p.fgm, fa:p.fga, tm:p.p3m, ta:p.p3a, f1:p.ftm, pa:Math.min(srcOf[p.id]||0, 2*(p.fgm-p.p3m)), qp:qPir[p.id]||null })) };
+      pm:p.pm, pir:p.pir, fm:p.fgm, fa:p.fga, tm:p.p3m, ta:p.p3a, f1:p.ftm, pa:Math.min(srcOf[p.id]||0, 2*(p.fgm-p.p3m)), qp:qPir[p.id]||null,
+      /* v4: the rest of his line, and the team around him while he was on */
+      fta:p.fta, or:p.or, dr:p.dr, stl:p.stl, blk:p.blk, pf:p.pf, fd:p.fd, ba:p.ba||0, on:oc(p.id) })) };
 }
 function _trgRead(onProg){
   if(_trgMemo) return _trgMemo;
@@ -35795,5 +35833,6 @@ body.edit-mode .phx.phx .card > .closeout-add{display:block;grid-column:1/-1}
 
 <script defer src="/stats.js"></script>
 <script defer src="/scoutpre.js"></script>
+<script defer src="/pdev.js"></script>
 </body>
 </html>
