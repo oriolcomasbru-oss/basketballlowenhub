@@ -23626,12 +23626,18 @@ function renderDashboard(){
         }).catch(()=>{ cT.__b.innerHTML=""; cT.__b.appendChild(h("div",{class:"dash-miss"},"The tagging could not be read from the Drive.")); });
       } else { cT.__b.innerHTML=""; cT.__b.appendChild(h("div",{class:"dash-miss"},"The tagging reader has not loaded.")); }
       /* the sets the staff starred in the pre game playbook, with the names it gave them */
-      Promise.all([ (SP && SP.sets)? SP.sets(g.opponent, null).catch(()=>null) : Promise.resolve(null), _dashRep(g) ]).then(([res, rep])=>{
+      Promise.all([ (SP && SP.sets)? SP.sets(g.opponent, null).catch(()=>null) : Promise.resolve(null), _dashRep(g) ]).then(async ([res, rep])=>{
         const s=_dashStatus(rep, false); st.innerHTML=""; st.appendChild(pill(s));
         if(s[0]!=="ready" && toNext!=null && toNext<=3){ alerts.push({ tone:s[0]==="pend"? "bad" : "warn", text:"Pre game "+g.opponent+": "+s[1].toLowerCase(), go:()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } }) }); paintAtt(); }
-        try{ if(tid) _clubPull(tid, ()=>{}); }catch(e){}
+        /* The stars are kept per club on the server and read under the club of the report
+           that is open - and on the dashboard no report is open. So the club's copy is
+           pulled first, and the stars are read with this game's opponent in place. */
+        await new Promise(res2=>{ try{ if(!tid || _clubPulled[tid]) return res2(); _clubPull(tid, null, res2); setTimeout(res2, 8000); }catch(e){ res2(); } });
         const edits={}; ((rep && rep.data && rep.data.sections)||[]).forEach(s2=>((s2 && s2.items)||[]).forEach(it=>{ if(it && it.pbEdit && typeof it.pbEdit==="object") Object.assign(edits, it.pbEdit); }));
-        const rows=((res && res.rows)||[]).filter(r=>{ try{ return _pbKeyRead(r.label); }catch(e){ return false; } }).sort((a,b)=>b.n-a.n);
+        const keepOpp=_scoutOpponent; let rows=[];
+        try{ _scoutOpponent=g.opponent;
+          rows=((res && res.rows)||[]).filter(r=>{ try{ return _pbKeyRead(r.label); }catch(e){ return false; } }).sort((a,b)=>b.n-a.n);
+        } finally { _scoutOpponent=keepOpp; }
         cK.__b.innerHTML="";
         if(!rows.length){ cK.__b.appendChild(h("div",{class:"dash-miss"}, (res && (res.rows||[]).length)? "No key sets starred in the pre game playbook yet." : "No tagging of this club yet, so no sets.")); return; }
         const mx=Math.max(1, ...rows.map(r=>r.n||0));
