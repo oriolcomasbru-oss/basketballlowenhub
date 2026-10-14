@@ -2708,6 +2708,7 @@ body.prt.prt-textonly .rs-block-stats{display:none!important}
           <span class="tb-nav-l" id="navBtnLabel">Menu</span>
         </button>
         <div class="tb-tabs">
+          <button class="tb-tab" data-view="dashboard">Dashboard</button>
           <button class="tb-tab" data-view="league">League</button>
           <button class="tb-tab" data-view="planification">Planning</button>
           <button class="tb-tab" data-view="teamscout">Post game/practice</button>
@@ -2824,6 +2825,7 @@ body.prt.prt-textonly .rs-block-stats{display:none!important}
       </div><!-- /viewRooster -->
       <div id="viewPlan" class="view" style="display:none"></div>
       <div id="viewCal" class="view" style="display:none"></div>
+      <div id="viewDash" class="view" style="display:none"></div>
       <div id="viewLeague" class="view" style="display:none"></div>
       <div id="viewTeamScout" class="view" style="display:none"></div>
       <div id="viewOppScout" class="view" style="display:none"></div>
@@ -3484,6 +3486,7 @@ function applyView(v){
   $("#viewPlan").style.display   = v==="planification" ? "" : "none";
   $("#viewCal").style.display    = v==="calendar" ? "" : "none";
   { const lg=$("#viewLeague"); if(lg) lg.style.display = v==="league" ? "" : "none"; }
+  { const db=$("#viewDash"); if(db) db.style.display = v==="dashboard" ? "" : "none"; }
   $("#viewTeamScout").style.display = v==="teamscout" ? "" : "none";
   $("#viewOppScout").style.display  = v==="oppscout" ? "" : "none";
   { const gp=$("#viewGamePlan"); if(gp) gp.style.display = v==="gameplan" ? "" : "none"; }
@@ -3501,12 +3504,13 @@ function applyView(v){
   const rosterView = v==="rooster"; const canEdRoster = rosterView && canEdit("rooster");
   ["#undoBtn","#redoBtn","#addBtn","#importRosterBtn","#saveVerBtn","#collapseAllBtn","#charBtn"].forEach(id=>{ const el=$(id); if(el) el.style.display = canEdRoster ? "" : "none"; });
   const rs=$("#rosterSettings"); if(rs) rs.style.display = canEdRoster ? "" : "none";
-  const roMap={rooster:"#viewRooster",planification:"#viewPlan",calendar:"#viewCal",league:"#viewLeague",teamscout:"#viewTeamScout",oppscout:"#viewOppScout",gameplan:"#viewGamePlan",playbook:"#viewPlaybook",playerdev:"#viewPlayerDev",playerdb:"#viewPlayerDB",trends:"#viewTrends",prob:"#viewProb"};
+  const roMap={dashboard:"#viewDash",rooster:"#viewRooster",planification:"#viewPlan",calendar:"#viewCal",league:"#viewLeague",teamscout:"#viewTeamScout",oppscout:"#viewOppScout",gameplan:"#viewGamePlan",playbook:"#viewPlaybook",playerdev:"#viewPlayerDev",playerdb:"#viewPlayerDB",trends:"#viewTrends",prob:"#viewProb"};
   const roEl=$(roMap[v]); if(roEl) roEl.classList.toggle("readonly", v!=="playbook" && !!currentUser && !canEdit(v));
   const b=$("#viewBack"), f=$("#viewFwd"); if(b) b.disabled = viewIdx<=0; if(f) f.disabled = viewIdx>=viewHist.length-1;
   tbFade();
   if(v==="planification") renderPlan();
   if(v==="league") renderLeague();
+  if(v==="dashboard") renderDashboard();
   if(v==="teamscout") renderTeamScout();
   if(v==="oppscout") renderOppScout();
   if(v==="gameplan") renderGamePlan();
@@ -3893,6 +3897,8 @@ function cycleView(){
     h("label",{class:"jump-lbl"},"Jump to ", jump),
     (canEdit("planification") ? (()=>{ const b=h("button",{class:"btn"+(EDIT_MODE?" primary":"")}, EDIT_MODE?"✓ Done editing":"✎ Edit");
        b.onclick=()=>{ setEditMode(!EDIT_MODE); renderPlan(); }; return b; })() : null)));
+  /* the S&C note of this cycle - the same one the dashboards read */
+  try{ wrap.appendChild(h("div",{class:"sc-note-wrap"}, h("b",{class:"sc-note-h"},"S&C note · this cycle"), _scNoteBox(cyc))); }catch(e){}
   const kloadC=state.plan.kload||{}; let cycMax=0;
   cyc.days.forEach(d=>{ const k=kloadC[d]; const l=(k&&k.avg)?k.avg:(sessionsFor(d).reduce((a,x)=>a+(Number(x.teamLoad)||0),0)); if(l>cycMax) cycMax=l; });
   /* the layout is identical either way: the boxes keep their size and only stop
@@ -5483,7 +5489,7 @@ function sectHidden(k){ return SECT_HIDDEN.indexOf(k)>=0; }
    something the staff can wander into and take for finished work. */
 const WIP_SECTS=["playerdev","playerdb","prob"];
 const WIP_KEY="wip";
-const SECT_LABELS={planification:"Planning",calendar:"Calendar",league:"League",teamscout:"Post game/practice",oppscout:"Pre game",gameplan:"Game plan",playbook:"Playbook",playerdev:"Player development",playerdb:"Player database",rooster:"Rooster",prob:"PROB",trends:"Trends"};
+const SECT_LABELS={dashboard:"Dashboard",planification:"Planning",calendar:"Calendar",league:"League",teamscout:"Post game/practice",oppscout:"Pre game",gameplan:"Game plan",playbook:"Playbook",playerdev:"Player development",playerdb:"Player database",rooster:"Rooster",prob:"PROB",trends:"Trends"};
 function defaultPerms(){
   const all={},none={}; SECT_KEYS.forEach(k=>{all[k]=true;none[k]=false;});
   const mk=(vw,ed)=>({view:Object.assign({},vw),edit:Object.assign({},ed)});
@@ -5506,7 +5512,10 @@ function ensurePerms(){
   state.creds=state.creds||{}; USERS.forEach(u=>{ if(state.creds[u]===undefined) state.creds[u]=""; });
   state.sessionsLog=Array.isArray(state.sessionsLog)?state.sessionsLog:[];
 }
-function canView(sect){ if(!currentUser) return true;
+function canView(sect){
+  /* a dashboard is a person's, not a section with permissions: whoever has one sees it */
+  if(sect==="dashboard") return !!currentUser && !isPlayerUser() && _dashList(currentUser).length>0;
+  if(!currentUser) return true;
   if(sectHidden(sect)) return false;
   if(isPlayerUser()) return PLAYER_VIEW.sects.indexOf(sect)>=0;
   const p=state.perms&&state.perms[currentUser];
@@ -5762,6 +5771,8 @@ function applyPerms(){
   document.querySelectorAll(".tb-tab[data-view]").forEach(b=>{ b.style.display = canView(b.dataset.view)?"":"none"; });
   const ab=$("#adminBtn"); if(ab) ab.style.display=isAdmin()?"":"none";
   const bg=$("#backupGroup"); if(bg) bg.style.display=canBackup()?"":"none";
+  /* whoever has a dashboard opens the app on it, once per visit */
+  if(currentUser && !_dashLanded){ _dashLanded=true; if(canView("dashboard") && state.ui.view!=="dashboard"){ setView("dashboard"); return; } }
   if(currentUser && !canView(state.ui.view)){ const first=SECT_KEYS.find(k=>canView(k)); if(first){ setView(first); return; } }
   phxHideSub(); applyView(state.ui.view); syncPrintBtn();
   /* the league feed starts loading with the app, whatever view opened */
@@ -20420,7 +20431,11 @@ function _lgRoster(L){
   /* ONE TABLE A PLAYER. Inside a pre game report the same line carries what our own
      tagging says about him: how much he finishes, what it returns, and where his
      possessions end. Matched by shirt number, the one thing both sources write alike. */
-  const TG=_lgEmbedding? _preTagRows(tid) : null;
+  /* in a staff pre game the table always has the shape with our tagging, whatever the
+     opponent: the columns are there, filled when the tagging is, a dash and a line
+     saying why when it is not */
+  const TGr=_lgEmbedding? _preTagRows(tid) : null;
+  const TG=TGr || ((_lgEmbedding && _preTagOn)? { rows:[], roles:[], games:0, avg:null, empty:true } : null);
   const tgRows=(TG&&TG.rows)||[];
   const tgUsed=TG? (TG.roles||[]).filter(r=>tgRows.some(p=>p.roles && p.roles[r]>0)) : [];
   const tgNum=s=>{ const m=/#\s*(\d+)/.exec(String(s||"")); return m? String(parseInt(m[1],10)) : ""; };
@@ -20446,7 +20461,7 @@ function _lgRoster(L){
     "Hand Off":"HO", "Pick & Pop":"Pop", "Post Up":"Post", "Drive & Drop Off":"Drop", "Duck In":"Duck", "Pass & Chase":"P&C", "Back Pick":"Back pk" };
   const tbl=h("table",{class:"lg-tbl lg-rost"+(TG? " lg-rost-one" : "")});
   if(TG) tbl.appendChild(h("tr",{class:"lg-tbl-g"}, h("th",{colspan:"3"}), h("th",{colspan:String(cols.length), class:"g-lg"}, "League · "+(per? "per game" : "totals")),
-    h("th",{colspan:"6", class:"g-tg grp"}, "Our tagging · "+(TG.games||"")+" game"+(TG.games===1? "" : "s")),
+    h("th",{colspan:"6", class:"g-tg grp"}, TG.empty? "Our tagging · "+(_preTagState()==="busy"? "reading…" : "none yet") : "Our tagging · "+(TG.games||"")+" game"+(TG.games===1? "" : "s")),
     tgUsed.length? h("th",{colspan:String(tgUsed.length), class:"g-en grp"}, "Where his possessions end") : null));
   const hr=h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Player"), h("th",{},"GP"));
   cols.forEach(c=>{
@@ -20530,11 +20545,10 @@ function _lgRoster(L){
     box.appendChild(h("div",{class:"lg-scroll"}, tbl));
     box.appendChild(_lgColourKey(false));
     /* when the tagging columns are not there, say why rather than leave a plain table */
-    if(_lgEmbedding && _preTagOn && !TG){
-      const K=_preTagKeep, why=K.busy? "Reading our tagging of this club from the Drive…"
-        : (K.opp && K.T===null)? "No tagging of this club found in the Drive folder — the tagging columns appear as soon as there is."
-        : (K.opp && K.T && !(K.T.rows||[]).length)? "The tagging of this club carries no player tags, so there are no tagging columns."
-        : "Reading our tagging of this club from the Drive…";
+    if(TG && TG.empty){
+      const st=_preTagState(), why=st==="busy"? "Reading our tagging of this club from the Drive…"
+        : st==="err"? "Our tagging could not be read from the Drive — reload the page to try again."
+        : "No player tags for this club in our tagging yet — the columns fill in as soon as there are.";
       box.appendChild(h("div",{class:"gpo-note", style:"margin-top:6px"}, why));
     }
   }
@@ -20546,23 +20560,28 @@ function _lgRoster(L){
    each player's line. Asked for once per opponent; the table is redrawn when it lands.
    null = not a staff pre game, or nothing tagged - the roster table is then just itself. */
 let _preTagOn=false;
-const _preTagKeep={ opp:"", tid:"", T:null, busy:false };
+const _preTagKeep={ by:{}, wait:0 };
+/* the state of our tagging for the opponent of the report: "busy", "none" (no file or no
+   player tags), or the rows. Kept per opponent, so moving between reports never shows one
+   club's tagging on another club's table and never waits on a read made for another. */
+function _preTagState(){
+  const o=_scoutOpponent||""; const e=_preTagKeep.by[o];
+  if(!e) return "busy";
+  if(e.busy) return "busy";
+  return (e.T && (e.T.rows||[]).length)? "ok" : (e.err? "err" : "none");
+}
 function _preTagRows(tid){
   try{
     if(!_preTagOn || !_scoutOpponent) return null;
-    const K=_preTagKeep;
+    const K=_preTagKeep, opp=_scoutOpponent;
     const SP=window.ScoutPre;
-    /* the tagging reader is its own script and can arrive after the report is drawn: the
-       table is asked for again a moment later instead of staying without its columns */
-    if(!SP || !SP.playersOf){
-      if((K.wait=(K.wait||0)+1)<=40) setTimeout(()=>{ _lgEmbeds=_lgEmbeds.filter(x=>x.el && document.body.contains(x.el)); _lgEmbeds.forEach(x=>{ try{ x.draw(); }catch(e){} }); }, 750);
-      return null;
-    }
-    if(K.opp===_scoutOpponent && K.tid===String(tid)) return (K.T && (K.T.rows||[]).length)? K.T : null;
-    if(K.busy===_scoutOpponent) return null;
-    const opp=_scoutOpponent; K.busy=opp;
-    SP.playersOf(opp).catch(()=>null).then(T=>{ K.busy=false; K.opp=opp; K.tid=String(tid); K.T=T||null;
-      _lgEmbeds=_lgEmbeds.filter(x=>x.el && document.body.contains(x.el)); _lgEmbeds.forEach(x=>{ try{ x.draw(); }catch(e){} }); });
+    const again=()=>{ _lgEmbeds=_lgEmbeds.filter(x=>x.el && document.body.contains(x.el)); _lgEmbeds.forEach(x=>{ try{ x.draw(); }catch(e){} }); };
+    /* the tagging reader is its own script and can arrive after the report is drawn */
+    if(!SP || !SP.playersOf){ if((K.wait=(K.wait||0)+1)<=60) setTimeout(again, 750); return null; }
+    const e=K.by[opp];
+    if(e) return (!e.busy && e.T && (e.T.rows||[]).length)? e.T : null;
+    const ent=K.by[opp]={ busy:true, T:null, err:false };
+    SP.playersOf(opp).then(T=>{ ent.T=T||null; }, ()=>{ ent.err=true; }).then(()=>{ ent.busy=false; again(); });
   }catch(e){}
   return null;
 }
@@ -23245,6 +23264,300 @@ function _preJoinedPlayers(tid){
   const want=(SP && SP.playersOf && _scoutOpponent)? SP.playersOf(_scoutOpponent).catch(()=>null) : Promise.resolve(null);
   want.then(T=>{ try{ draw(T); }catch(e){ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"},"This table could not be built: "+((e&&e.message)||e))); } });
   return box;
+}
+/* ============================================================== DASHBOARDS
+   THE FIRST SCREEN OF A MEMBER OF STAFF. One page a person, made of cards that each
+   answer one question - what is coming, what happened, where we stand, where we are
+   heading, what the week holds - in three lines and a tap to the full report.
+   Nothing here is computed twice: every card reads what another screen already builds
+   (the calendar, the reports and the status the staff marked on them, the club card of
+   League, the Trends dashboard, the game overview, Planning and its sheets). Where the
+   staff wrote something, it goes first; where nothing is written, the screen's own
+   automatic reading is used and says so; where there is nothing, the card says what is
+   missing. The only thing that is new is the S&C note of the cycle, kept on the server
+   with the reports so everybody reads the same one. */
+var DASHES={
+  Ramon:{ name:"Ramón", role:"Head coach", cards:["pre","post","league","trends","week"] },
+  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["work","pre","post","trends","league","week"] }
+};
+var _dashLanded=false;
+function _dashFor(u){ return (u && DASHES[u])? u : null; }
+/* who may open which: Oriol all of them, everybody else their own */
+function _dashList(u){ if(!u) return []; if(u==="Oriol") return Object.keys(DASHES); return DASHES[u]? [u] : []; }
+const _dashMemo={ rep:{}, auto:{} };
+function _dashTxt(html){ return String(html||"").replace(/<\s*(br|\/p|\/li|\/div)[^>]*>/gi,"\n").replace(/<[^>]*>/g," ").replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/[ \t]+/g," "); }
+function _dashLines(html){ return _dashTxt(html).split(/\n+/).map(x=>x.replace(/^[\s•\-–·*\d.)]+/,"").trim()).filter(x=>x.length>3); }
+function _dashGames(){
+  const T=todayISO(), L=leagueState();
+  const our=((L.teams||[]).filter(t=>_lgOurs(t.name))[0]||{}).id;
+  const day=d=>Math.round(new Date(d+"T12:00:00Z").getTime()/86400000);
+  const lgOf=g=>{ if(!our) return null;
+    const c=(L.games||[]).filter(x=>(String(x.homeId)===String(our)||String(x.awayId)===String(our)) && x.date && Math.abs(day(x.date)-day(g.date))<=1);
+    return c.filter(x=>x.date===g.date)[0]||c[0]||null; };
+  const list=(state.games||[]).filter(g=>g && g.date && isCycleGame(g)).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)))
+    .map(g=>{ const lg=lgOf(g); const done=lg? _lgDone(lg) : g.date<T;
+      let res=null; if(lg && _lgDone(lg)){ const home=String(lg.homeId)===String(our); const us=home? lg.hs : lg.as, th=home? lg.as : lg.hs; res={ us:us, them:th, won:us>th, ot:(lg.quarters||[]).length>4 }; }
+      return { g:g, lg:lg, done:done, res:res }; });
+  const past=list.filter(x=>x.done), next=list.filter(x=>!x.done);
+  return { last:past[past.length-1]||null, past:past, next:next[0]||null, upcoming:next };
+}
+async function _dashRep(g){
+  const key=gameKey(g);
+  if(_dashMemo.rep[key]) return _dashMemo.rep[key];
+  const p=(async ()=>{ if(!SB_TOKEN) return null;
+    try{ const r=await sbrpc("get_report",{p_token:SB_TOKEN,p_key:key}); return (r && r.ok && r.report)? r.report : null; }catch(e){ return null; } })();
+  _dashMemo.rep[key]=p; p.then(r=>{ if(!r) delete _dashMemo.rep[key]; });
+  return p;
+}
+/* what the staff wrote in a report: content alone never makes it ready */
+function _dashWritten(rep, post){
+  const secs=(rep && rep.data && (post? rep.data.postSections : rep.data.sections))||[];
+  let n=0;
+  secs.forEach(s=>{ if(!s || s.kind==="stats" || s.kind==="plan") return;
+    (s.items||[]).forEach(it=>{ if(it && it.kind!=="table") n+=_dashTxt(it.v).trim().length+_dashTxt(it.them).trim().length+_dashTxt(it.us).trim().length; }); });
+  return n>=30;
+}
+function _dashStatus(rep, post){
+  if(rep && repDone(rep, post? "post" : "pre")) return post? ["ready","Completed"] : ["ready","Ready"];
+  if(!post && rep && _dashWritten(rep, false)) return ["prep","In preparation"];
+  return ["pend","Pending"];
+}
+/* the Game Summary's keys, first line of each block, in the order a coach reads them */
+function _dashKeys(rep, post){
+  const secs=(rep && rep.data && (post? rep.data.postSections : rep.data.sections))||[];
+  const sum=secs.filter(s=>s && (s.role==="summary" || String(s.title||"").trim()==="Game Summary"))[0];
+  if(!sum) return [];
+  const items=sum.items||[], order=post? [0,1] : [0,1,4];
+  const per=order.map(i=>items[i]? { t:items[i].t||"", l:_dashLines(items[i].v) } : { t:"", l:[] });
+  const out=[];
+  for(let round=0; round<3 && out.length<3; round++) per.forEach(p=>{ if(out.length<3 && p.l[round]) out.push({ text:p.l[round], src:p.t||"Game Summary", tone:"" }); });
+  return out;
+}
+/* a summary another screen built, read back as lines: label, figure, note, colour */
+function _dashCards(el, n, skip){
+  const out=[];
+  el.querySelectorAll(".ui-group").forEach(gp=>{
+    const gt=((gp.querySelector(".ui-group-h b")||{}).textContent||"");
+    if(skip && skip.test(gt)) return;
+    gp.querySelectorAll(".ui-card").forEach(c=>{
+      const k=((c.querySelector(".ui-card-k")||{}).textContent||"").trim();
+      const v=((c.querySelector(".ui-card-v")||{}).textContent||"").replace(/\s+/g," ").trim();
+      const t=((c.querySelector(".ui-card-t")||{}).textContent||"").trim();
+      const tone=c.classList.contains("good")? "good" : c.classList.contains("bad")? "bad" : "";
+      const text=[k, v].filter(Boolean).join(" · ")+(t? " — "+t : "");
+      if(text) out.push({ text:text, src:gt, tone:tone });
+    });
+  });
+  /* the coloured ones first: they are the ones that say something */
+  out.sort((a,b)=>(b.tone? 1 : 0)-(a.tone? 1 : 0));
+  return out.slice(0, n||3);
+}
+function _dashWait(el, sel, ms){
+  return new Promise(res=>{ const t0=Date.now();
+    const tick=()=>{ if(el.querySelector(sel)) return res(true); if(Date.now()-t0>ms) return res(false); setTimeout(tick, 400); };
+    tick(); });
+}
+/* a screen's own summary, built off the page and read back */
+function _dashOff(build, sel, ms){
+  const host=h("div",{class:"dash-off", "aria-hidden":"true"});
+  document.body.appendChild(host);
+  let el=null; try{ el=build(); if(el) host.appendChild(el); }catch(e){}
+  return _dashWait(host, sel, ms||20000).then(ok=>{ const keep=host; setTimeout(()=>{ try{ keep.remove(); }catch(e){} }, 50); return ok? host : null; });
+}
+function _dashClubDash(tid){
+  const L=leagueState(); if(!tid) return null;
+  const keep=[L.team, L.noClub]; L.team=tid; L.noClub=false;
+  let el=null; try{ el=_lgTeamDash(L); }catch(e){ el=null; } finally{ L.team=keep[0]; L.noClub=keep[1]; }
+  return el;
+}
+/* ---- the S&C note of a cycle: three lines from the physical coach, on the server */
+function _dashScKey(cyc){ return "scnote:"+cyc.start; }
+async function _dashScGet(cyc){ const d=await _clubDocGet(_dashScKey(cyc)); return (d && Array.isArray(d.lines))? d : null; }
+/* the note itself, read and written in one box - on the dashboard and at the top of the
+   game-to-game cycle in Planning, where the physical coach works. Three lines at most;
+   the app never writes one of its own. */
+function _scNoteBox(cyc){
+  const note=h("div",{class:"sc-note"}, h("div",{class:"dash-ld"},"Reading the S&C note…"));
+  const mayEd=canEdit("planification");
+  const fmt=d=>(d && d.at)? String(d.at).slice(5,10).split("-").reverse().join("/") : "";
+  const drawNote=(d)=>{ note.innerHTML="";
+    const lines=((d && d.lines)||[]).filter(x=>String(x||"").trim());
+    if(lines.length) note.appendChild(h("ul",{class:"dash-ideas"}, lines.map((l,i)=>h("li",{}, h("i",{}, String(i+1)),
+      h("span",{}, l, h("small",{}, "S&C note"+(d.by? " · "+d.by : "")+(fmt(d)? " · "+fmt(d) : "")))))));
+    else note.appendChild(h("div",{class:"dash-miss"},"No note from the S&C coach for this cycle yet."));
+    if(mayEd){ const b=h("button",{type:"button", class:"dash-edit"}, lines.length? "Edit the S&C note" : "Write the S&C note"); b.onclick=()=>editNote(d); note.appendChild(b); } };
+  const editNote=(d)=>{ note.innerHTML="";
+    const ins=[0,1,2].map(i=>{ const x=h("input",{class:"dash-in", id:"scNote"+i, placeholder:"Line "+(i+1)+" — load, recovery or training need"}); x.value=((d&&d.lines)||[])[i]||""; return x; });
+    const save=h("button",{type:"button", class:"btn primary sm"},"Save"), cancel=h("button",{type:"button", class:"btn sm"},"Cancel");
+    save.onclick=async ()=>{ save.disabled=true;
+      const nd={ lines:ins.map(x=>x.value.trim()).filter(Boolean), by:currentUser||"", at:new Date().toISOString(), cycle:cyc.start+"|"+cyc.end };
+      const ok=await _clubDocPut(_dashScKey(cyc), nd);
+      if(ok){ toast("S&C note saved"); drawNote(nd); } else { save.disabled=false; toast("Not saved — check the connection"); } };
+    cancel.onclick=()=>drawNote(d);
+    ins.forEach(x=>note.appendChild(x)); note.appendChild(h("div",{class:"dash-btns"}, save, cancel)); ins[0].focus(); };
+  _dashScGet(cyc).then(drawNote).catch(()=>drawNote(null));
+  return note;
+}
+function _dashOpen(view, ui){ try{ if(ui) Object.assign(state.ui, ui); persist(); }catch(e){} setView(view); }
+function _dashGreeting(){ const hr=new Date().getHours(); return hr<12? "Good morning" : hr<19? "Good afternoon" : "Good evening"; }
+function _dashFmt(iso){ return new Date(iso+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short", day:"2-digit", month:"2-digit"}).replace(",",""); }
+
+function renderDashboard(){
+  const root=$("#viewDash"); if(!root) return;
+  root.innerHTML="";
+  /* a report marked finished elsewhere is read again, never remembered from before */
+  _dashMemo.rep={};
+  const mine=_dashList(currentUser);
+  if(!mine.length){ root.appendChild(h("div",{class:"lg-empty"},"There is no dashboard for this account yet.")); return; }
+  let who=state.ui.dash; if(mine.indexOf(who)<0) who=_dashFor(currentUser)||mine[0];
+  const D=DASHES[who], G=_dashGames(), T=todayISO();
+  const page=h("div",{class:"dash"});
+  /* ---- the line at the top: who, when, what is next */
+  const toNext=G.next? dayDelta(G.next.g.date) : null;
+  const head=h("div",{class:"dash-top"},
+    h("div",{class:"dash-hi"}, h("b",{}, _dashGreeting()+", "+D.name), h("span",{}, D.role)),
+    h("span",{class:"dash-day"}, _dashFmt(T)+(G.next? " · "+(toNext===0? "game day" : toNext===1? "1 day to "+G.next.g.opponent : toNext+" days to "+G.next.g.opponent) : "")));
+  if(mine.length>1) head.appendChild(h("div",{class:"dash-who"}, mine.map(k=>h("button",{type:"button", class:k===who? "on" : "", onclick:()=>{ state.ui.dash=k; persist(); renderDashboard(); }}, DASHES[k].name))));
+  page.appendChild(head);
+  const att=h("div",{class:"dash-att"}); page.appendChild(att);
+  const alerts=[];
+  const paintAtt=()=>{ att.innerHTML=""; alerts.forEach(a=>att.appendChild(h("button",{type:"button", class:"dash-a "+a.tone, onclick:a.go||null}, a.text))); att.style.display=alerts.length? "" : "none"; };
+  paintAtt();
+  const grid=h("div",{class:"dash-grid"}); page.appendChild(grid);
+  root.appendChild(page);
+
+  /* ---- the parts of a card */
+  const card=(cls, title, go, goLbl)=>{ const b=h("div",{class:"dash-cb"});
+    const c=h("article",{class:"dash-card "+cls},
+      h("div",{class:"dash-ch"}, h("h3",{}, title), go? h("button",{type:"button", class:"dash-go", onclick:go}, (goLbl||"Open")+" ›") : null), b);
+    c.__b=b; grid.appendChild(c); return c; };
+  const pill=(st)=>h("span",{class:"dash-pill "+st[0]}, st[1]);
+  const ideas=(list, empty)=>{
+    if(!list || !list.length) return h("div",{class:"dash-miss"}, empty);
+    return h("ul",{class:"dash-ideas"}, list.map((x,i)=>h("li",{class:x.tone||""}, h("i",{}, String(i+1)), h("span",{}, x.text, x.src? h("small",{}, x.src) : null))));
+  };
+  const loading=t=>h("div",{class:"dash-ld"}, t||"Reading…");
+  const crest=g=>{ try{ return _lgOppCrest(g, "opp big")||h("span",{class:"dash-crest"}, String(g.opponent||"?").slice(0,3).toUpperCase()); }catch(e){ return null; } };
+
+  const builders={
+    /* ---------------------------------------------------- next game, pre game */
+    pre:()=>{
+      const x=G.next;
+      const c=card("them", "Next game · Pre game", x? ()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:x.g.id } }) : ()=>_dashOpen("oppscout"));
+      if(!x){ c.__b.appendChild(h("div",{class:"dash-miss"},"No game left in the calendar.")); return; }
+      const g=x.g, st=h("span",{}, pill(["wait","…"]));
+      c.__b.appendChild(h("div",{class:"dash-hero"}, crest(g),
+        h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent), h("span",{}, _dashFmt(g.date)+(g.time? " · "+g.time : "")+" · "+(g.competition||""))), st));
+      const body=h("div",{}, loading("Reading the pre game report…")); c.__b.appendChild(body);
+      let ph=false; try{ ph=_gamePlaceholder(g.opponent); }catch(e){}
+      if(ph){ st.innerHTML=""; st.appendChild(pill(["pend","Pending"])); body.innerHTML=""; body.appendChild(h("div",{class:"dash-miss"},"The opponent is not known yet — the card fills in once the calendar names it.")); return; }
+      _dashRep(g).then(rep=>{
+        const s=_dashStatus(rep, false); st.innerHTML=""; st.appendChild(pill(s));
+        if(s[0]!=="ready" && toNext!=null && toNext<=3) { alerts.push({ tone:s[0]==="pend"? "bad" : "warn", text:"Pre game "+g.opponent+": "+s[1].toLowerCase(), go:()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } }) }); paintAtt(); }
+        const keys=_dashKeys(rep, false);
+        if(keys.length){ body.innerHTML=""; body.appendChild(ideas(keys)); return; }
+        /* nothing written yet: the club card of League, marked as the league's */
+        const L=leagueState(), tid=_lgTeamIdByName(L, g.opponent);
+        const el=tid? _dashClubDash(tid) : null;
+        const auto=el? _dashCards(el, 3, /how they are going/i).map(o=>Object.assign(o,{ src:"league · "+o.src })) : [];
+        body.innerHTML="";
+        body.appendChild(ideas(auto, "Nothing written in the pre game yet, and the league has nothing on this club."));
+        body.appendChild(h("div",{class:"dash-src"}, auto.length? "No keys written in the Game Summary yet — these come from the league" : ""));
+      });
+    },
+    /* ---------------------------------------------------- last game, post game */
+    post:()=>{
+      const x=G.last;
+      const c=card("", "Last game · Post game", x? ()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:x.g.id } }) : ()=>_dashOpen("teamscout"));
+      if(!x){ c.__b.appendChild(h("div",{class:"dash-miss"},"No game played yet this season.")); return; }
+      const g=x.g, r=x.res, st=h("span",{}, pill(["wait","…"]));
+      c.__b.appendChild(h("div",{class:"dash-hero"}, crest(g),
+        h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent), h("span",{}, _dashFmt(g.date)+" · "+(g.competition||"")+(r && r.ot? " · after overtime" : ""))),
+        r? h("span",{class:"dash-score "+(r.won? "good" : "bad")}, r.us+"–"+r.them) : h("span",{class:"dash-score"}, g.result||"")));
+      c.__b.appendChild(h("div",{}, st));
+      const body=h("div",{}, loading("Reading the post game report…")); c.__b.appendChild(body);
+      _dashRep(g).then(rep=>{
+        const s=_dashStatus(rep, true); st.innerHTML=""; st.appendChild(pill(s));
+        if(s[0]!=="ready"){ alerts.push({ tone:"bad", text:"Post game "+g.opponent+" not finished", go:()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:g.id } }) }); paintAtt(); }
+        const keys=_dashKeys(rep, true);
+        if(keys.length){ body.innerHTML=""; body.appendChild(ideas(keys)); return; }
+        const sg={ date:g.date, opponent:g.opponent, home:g.venue!=="Away", competition:g.competition||"BBL" };
+        _dashOff(()=>_postOverview(sg), ".ui-card", 25000).then(host=>{
+          const auto=host? _dashCards(host, 3).map(o=>Object.assign(o,{ src:"game overview · "+o.src })) : [];
+          body.innerHTML="";
+          body.appendChild(ideas(auto, "No conclusions written yet, and the play by play of this game is not in."));
+          if(auto.length) body.appendChild(h("div",{class:"dash-src"},"No conclusions written in the Game Summary yet — these come from the game overview"));
+        });
+      });
+    },
+    /* ---------------------------------------------------- where we stand */
+    league:()=>{
+      const c=card("small", "League", ()=>_dashOpen("league"));
+      const L=leagueState(), our=((L.teams||[]).filter(t=>_lgOurs(t.name))[0]||{}).id;
+      const el=our? _dashClubDash(our) : null;
+      if(!el){ c.__b.appendChild(h("div",{class:"dash-miss"},"The league has not loaded yet — open League once to read it.")); return; }
+      const figs=[...el.querySelectorAll(".ui-fig")].slice(0,3).map(f=>({ k:((f.querySelector("i")||{}).textContent||""), v:((f.querySelector("b")||{}).textContent||""), n:((f.querySelector("span")||{}).textContent||""), tone:f.classList.contains("good")? "good" : f.classList.contains("bad")? "bad" : "" }));
+      c.__b.appendChild(h("div",{class:"dash-figs"}, figs.map(f=>h("div",{class:"dash-fig "+f.tone}, h("i",{}, f.k), h("b",{}, f.v), h("span",{}, f.n)))));
+      /* the three measures where our rank is furthest from the middle of the league */
+      /* the strongest and the weakest both: two of one and one of the other */
+      const all=[...el.querySelectorAll(".ui-rank")].map(r=>{ const m=/(\d+)\/(\d+)/.exec(((r.querySelector("em")||{}).textContent||"")); return { r:r, d:m? Math.abs(+m[1]-(+m[2]+1)/2) : 0, good:r.classList.contains("good"), bad:r.classList.contains("bad") }; });
+      const gs=all.filter(x=>x.good).sort((a,b)=>b.d-a.d), bs=all.filter(x=>x.bad).sort((a,b)=>b.d-a.d);
+      const rows=[gs[0], bs[0], (gs[1]&&(!bs[1]||gs[1].d>=bs[1].d))? gs[1] : bs[1]].filter(Boolean).concat(gs.slice(2), bs.slice(2)).slice(0,3);
+      if(rows.length){ const box=h("div",{class:"dash-ranks"}); rows.forEach(x=>box.appendChild(x.r.cloneNode(true))); c.__b.appendChild(box); }
+    },
+    /* ---------------------------------------------------- where we are heading */
+    trends:()=>{
+      const c=card("small", "Team trends", ()=>_dashOpen("trends"));
+      const body=h("div",{}, loading("Reading the season…")); c.__b.appendChild(body);
+      _dashOff(()=>_trendsDashboard(), ".ui-card", 25000).then(host=>{
+        body.innerHTML="";
+        if(!host){ body.appendChild(h("div",{class:"dash-miss"},"Two finished games are needed before there is a trend.")); return; }
+        const strip=host.querySelector(".ui-strip"); if(strip) body.appendChild(strip.cloneNode(true));
+        body.appendChild(ideas(_dashCards(host, 3, /what moves with|holding/i), "Nothing has moved enough to call it a trend."));
+      });
+    },
+    /* ---------------------------------------------------- the week and the body */
+    week:()=>{
+      const c=card("small", "Week · Physical", ()=>_dashOpen("planification",{ planTab:"cycle" }));
+      const cyc=cycleFor(T), days=cyc.days.slice(0,9);
+      const kl=state.plan.kload||{}, mx=Math.max(1, ...days.map(d=>(kl[d]&&kl[d].avg)||0));
+      const pf=state.plan.pf||{};
+      c.__b.appendChild(h("div",{class:"dash-week"}, days.map(d=>{
+        const gm=(state.games||[]).filter(g=>g.date===d && isCycleGame(g))[0];
+        const goal=dayGoalSummary(d).goal, gl=GOALS.filter(x=>x[0]===goal)[0];
+        const load=kl[d]&&kl[d].avg, p=pf[d], flags=p? [].concat(p.am||[], p.pm||[]).join(" ").toUpperCase() : "";
+        const tag=/NO CONTACT/.test(flags)? "no contact" : /LIVE/.test(flags)? "live" : "";
+        return h("div",{class:(gm? "game " : "")+(d===T? "today" : ""), title:(p? "PF: "+[].concat(p.am||[],p.pm||[]).join(" · ") : "")},
+          h("em",{}, new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short"})),
+          h("b",{}, gm? String(gm.opponent||"").slice(0,3).toUpperCase() : gl? gl[1].split(" ")[0] : "—"),
+          h("i",{style:(load && !gm)? "color:rgb("+loadRGB(load/mx)+")" : ""}, gm? "game" : load? String(Math.round(load)) : ""),
+          tag? h("u",{}, tag) : null); })));
+      /* who is not fully available today, from the medical sheet */
+      const av=(state.plan.avail||{})[T]||{}, sq=state.plan.squad||[];
+      const lim=Object.keys(av).filter(k=>av[k]).map(k=>{ const p=sq.filter(s=>s.key===k)[0]; return { n:(p&&p.name)||k, c:av[k] }; });
+      if(lim.length){ c.__b.appendChild(h("div",{class:"dash-av"}, lim.map(x=>h("span",{class:"dash-avp "+x.c}, x.n, h("b",{}, AV_LABEL[x.c]||x.c)))));
+        alerts.push({ tone:lim.some(x=>x.c==="out")? "bad" : "warn", text:lim.length+" player"+(lim.length===1?"":"s")+" not fully available", go:()=>_dashOpen("planification",{ planTab:"cycle" }) }); paintAtt(); }
+      c.__b.appendChild(_scNoteBox(cyc));
+    },
+    /* ---------------------------------------------------- what is owed (analysis) */
+    work:()=>{
+      const c=card("work", "Staff work", null);
+      const items=[];
+      const list=h("div",{class:"dash-work"}, loading("Checking the reports…")); c.__b.appendChild(list);
+      const recent=G.past.slice(-5), soon=G.upcoming.slice(0,2);
+      const keys=recent.concat(soon).map(x=>gameKey(x.g));
+      const draw=()=>{ list.innerHTML=""; items.length=0;
+        recent.slice().reverse().forEach(x=>{ const s=repStatCls(gameKey(x.g),"post"); if(s==="open") items.push({ tone:"bad", k:"Post game", t:x.g.opponent+" · "+_dashFmt(x.g.date), go:()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:x.g.id } }) }); });
+        soon.forEach(x=>{ const s=repStatCls(gameKey(x.g),"pre"); if(s==="open") items.push({ tone:"warn", k:"Pre game", t:x.g.opponent+" · "+_dashFmt(x.g.date), go:()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:x.g.id } }) }); });
+        const cyc=cycleFor(T); cyc.days.filter(d=>d<=T).concat(cycleFor(addDays(cyc.start,-1)).days.filter(d=>d<cyc.start)).forEach(d=>{
+          if(praStatCls(d)==="open") items.push({ tone:"warn", k:"Training", t:_dashFmt(d)+" · five on five without a tagging export", go:()=>_dashOpen("teamscout",{ ts:{ mode:"training", date:d, idx:0 } }) }); });
+        if(!items.length){ list.appendChild(h("div",{class:"dash-miss ok"},"Nothing owed: every recent report is marked finished.")); return; }
+        items.forEach(i=>list.appendChild(h("button",{type:"button", class:"dash-wi "+i.tone, onclick:i.go}, h("b",{}, i.k), h("span",{}, i.t), h("em",{},"›")))); };
+      try{ loadRepStats(keys, draw); }catch(e){}
+      if(keys.every(k=>k in _repStat)) draw(); else setTimeout(()=>{ if(list.querySelector(".dash-ld")) draw(); }, 6000);
+    }
+  };
+  D.cards.forEach(k=>{ try{ builders[k](); }catch(e){ try{ console.warn("dashboard", k, e); }catch(_){} } });
 }
 let _lgClubOpen=false;
 function renderLeague(){
@@ -30961,6 +31274,91 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .gp3-under.solo{grid-template-columns:minmax(0,1fr)}
 .gp3-under > .gp3-ks{margin-top:0}
 .gp3-under:not(.solo) > .gp3-ks .gp3-ksb{column-width:auto!important;column-count:2;column-gap:18px}
+/* DASHBOARDS: one screen a person, five or six cards, a tap to the full report */
+.dash{max-width:1320px;margin:0 auto;padding:14px 4px 30px;display:grid;gap:12px}
+.dash-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:2px 2px 10px;border-bottom:2px solid var(--ink,#141821)}
+.dash-hi{display:flex;flex-direction:column;min-width:0}
+.dash-hi b{font:700 22px/1.1 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase}
+.dash-hi span{font:500 11.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.dash-day{font:600 12px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);padding:4px 10px;border-radius:999px;background:var(--panel-2,#f1f2f4)}
+.dash-who{margin-left:auto;display:inline-flex;gap:3px;padding:3px;border-radius:9px;background:rgba(20,24,33,.06)}
+.dash-who button{border:0;background:transparent;border-radius:7px;padding:6px 14px;cursor:pointer;font:700 11px 'Oswald',sans-serif;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}
+.dash-who button.on{background:#141821;color:#fff}
+.dash-att{display:flex;flex-wrap:wrap;gap:6px}
+.dash-a{border:1px solid var(--line-strong,#cfd4dc);background:var(--panel,#fff);border-radius:999px;padding:4px 12px;font:600 12px 'Inter',system-ui,sans-serif;cursor:pointer;color:var(--ink,#141821)}
+.dash-a.bad{border-color:#d8524e;color:#c0403c}.dash-a.warn{border-color:#d9a521;color:#8a6410}
+.dash-a::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:7px;vertical-align:1px}
+.dash-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;align-items:stretch}
+.dash-card{grid-column:span 3;border:1px solid var(--line,#e4e7ec);border-radius:12px;background:var(--panel,#fff);overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.dash-card.small{grid-column:span 2}
+.dash-card.work{grid-column:span 6}
+.dash-ch{display:flex;align-items:center;gap:10px;background:#141821;color:#fff;padding:6px 12px;min-height:32px}
+.dash-card.them .dash-ch{background:#8a2f2b}
+.dash-ch h3{margin:0;font:700 12px 'Oswald',sans-serif;letter-spacing:.17em;text-transform:uppercase}
+.dash-go{margin-left:auto;border:1px solid rgba(255,255,255,.55);background:transparent;color:#fff;border-radius:6px;padding:2px 9px;cursor:pointer;font:600 10.5px 'IBM Plex Mono',monospace}
+.dash-go:hover{background:rgba(255,255,255,.14)}
+.dash-cb{padding:12px 14px 14px;display:grid;gap:11px;align-content:start;flex:1}
+.dash-hero{display:flex;align-items:center;gap:10px;min-width:0}
+.dash-hero img,.dash-hero .opp{width:38px!important;height:38px!important;flex:none}
+.dash-crest{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--panel-2,#f1f2f4);font:700 11px 'Oswald',sans-serif;flex:none}
+.dash-who2{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
+.dash-who2 b{font:700 17px/1.15 'Oswald',sans-serif;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-who2 span{font:500 11.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.dash-score{margin-left:auto;font:700 28px/1 'Oswald',sans-serif;font-variant-numeric:tabular-nums}
+.dash-score.good{color:#17805a}.dash-score.bad{color:#c0403c}
+.dash-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font:700 10.5px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap}
+.dash-pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.dash-pill.ready{background:rgba(47,158,134,.16);color:#17805a}
+.dash-pill.prep{background:rgba(217,165,33,.18);color:#8a6410}
+.dash-pill.pend{background:rgba(216,82,78,.14);color:#c0403c}
+.dash-pill.wait{background:var(--panel-2,#f1f2f4);color:var(--ink-faint,#8a93a2)}
+.dash-ideas{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.dash-ideas li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;font-size:13px;line-height:1.35}
+.dash-ideas li > i{font:700 11px 'IBM Plex Mono',monospace;font-style:normal;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;background:var(--panel-2,#f1f2f4);color:var(--ink-soft,#5b6472)}
+.dash-ideas li.good > i{background:rgba(47,158,134,.18);color:#17805a}
+.dash-ideas li.bad > i{background:rgba(216,82,78,.16);color:#c0403c}
+.dash-ideas small{display:block;font:500 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);margin-top:1px}
+.dash-miss{font-size:12.5px;color:var(--ink-soft,#5b6472);background:var(--panel-2,#f4f5f7);border-radius:8px;padding:8px 10px;border-left:3px solid var(--ink-faint,#8a93a2)}
+.dash-miss.ok{border-left-color:#2f9e86}
+.dash-src{font:500 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+.dash-src:empty{display:none}
+.dash-ld{font-size:12px;color:var(--ink-faint,#8a93a2)}
+.dash-figs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.dash-fig{display:flex;flex-direction:column;border-radius:8px;padding:6px 8px;background:var(--panel-2,#f4f5f7);min-width:0}
+.dash-fig i{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint,#8a93a2)}
+.dash-fig b{font:700 20px/1.1 'Oswald',sans-serif}
+.dash-fig span{font-size:10.5px;color:var(--ink-soft,#5b6472);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-fig.good b{color:#17805a}.dash-fig.bad b{color:#c0403c}
+.dash-ranks .ui-rank{grid-template-columns:minmax(90px,1.3fr) 46px minmax(60px,1fr) 38px}
+.dash-card .ui-strip{border:0;padding:0}
+.dash-card .ui-strip .ui-vis-h{display:none}
+.dash-card .ui-strip-c .plot{height:64px}
+.dash-card .ui-strip{padding-top:14px!important}
+.dash-week{display:grid;grid-template-columns:repeat(auto-fit,minmax(42px,1fr));gap:4px}
+.dash-week > div{border-radius:7px;padding:5px 3px;text-align:center;background:var(--panel-2,#f4f5f7);display:grid;gap:1px;min-width:0}
+.dash-week > div.game{background:#141821;color:#fff}
+.dash-week > div.today{box-shadow:inset 0 0 0 2px #c6a15b}
+.dash-week em{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;opacity:.75;text-transform:uppercase}
+.dash-week b{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-week i{font:700 10px 'IBM Plex Mono',monospace;font-style:normal;min-height:12px}
+.dash-week u{text-decoration:none;font:700 8px 'IBM Plex Mono',monospace;text-transform:uppercase;color:#7a5cc0}
+.dash-av{display:flex;flex-wrap:wrap;gap:4px}
+.dash-avp{display:inline-flex;align-items:baseline;gap:6px;border-radius:6px;padding:2px 8px;font-size:11.5px;font-weight:600;background:rgba(217,165,33,.14)}
+.dash-avp.out{background:rgba(216,82,78,.14)}
+.dash-avp b{font:700 9.5px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-soft,#5b6472)}
+.dash-edit{justify-self:start;border:1px dashed var(--line-strong,#cfd4dc);background:transparent;border-radius:6px;padding:3px 10px;font-size:11.5px;cursor:pointer;color:var(--ink-soft,#5b6472);margin-top:6px}
+.dash-in{width:100%;border:1px solid var(--line-strong,#cfd4dc);border-radius:6px;padding:5px 8px;font:inherit;font-size:12.5px;margin-bottom:5px;background:var(--panel,#fff);color:var(--ink,#141821)}
+.dash-btns{display:flex;gap:6px}
+.dash-work{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px}
+.dash-wi{display:flex;align-items:center;gap:8px;border:1px solid var(--line,#e4e7ec);border-left:3px solid var(--line-strong,#cfd4dc);border-radius:8px;background:var(--panel,#fff);padding:6px 10px;cursor:pointer;text-align:left;font:inherit;font-size:12.5px;color:var(--ink,#141821)}
+.dash-wi.bad{border-left-color:#d8524e}.dash-wi.warn{border-left-color:#d9a521}
+.dash-wi b{font:700 10px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;flex:none}
+.dash-wi span{flex:1 1 auto;min-width:0}
+.dash-wi em{font-style:normal;color:var(--ink-faint,#8a93a2)}
+.dash-off{position:fixed;left:-20000px;top:0;width:1300px;visibility:hidden;pointer-events:none}
+.sc-note-wrap{margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line,#e4e7ec);border-radius:10px;background:var(--panel,#fff);max-width:760px}
+.sc-note-h{display:block;font:700 11px 'Oswald',sans-serif;letter-spacing:.15em;text-transform:uppercase;margin-bottom:6px}
+@media (max-width:1000px){ .dash-card,.dash-card.small{grid-column:span 6} }
 /* the league in two levels */
 .lg-l1{display:flex;align-items:center;gap:12px;margin:18px 0 10px;padding:9px 14px;border-radius:10px;background:#141821;color:#fff}
 .lg-l1 > b{font:700 15px 'Oswald',sans-serif;letter-spacing:.18em;text-transform:uppercase}
