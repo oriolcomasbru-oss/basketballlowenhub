@@ -253,12 +253,12 @@
   }
   /* a bigger chart: each game as a dot, the three-game rolling value as the line, the
      season as the dashed line, and the start of each goal as a vertical marker */
-  function chart(m, lines, mode, marks) {
+  function chart(m, lines, mode, marks, lv) {
     var W = 520, H = 150, L = 34, Rr = 8, T = 10, B = 22;
     var per = lines.map(function (x) { return value(m, sum([x]), mode); });
     var roll = lines.map(function (x, i) { return value(m, sum(lines.slice(Math.max(0, i - 2), i + 1)), mode); });
-    var season = value(m, sum(lines), mode);
-    var all = per.concat(roll).concat([season]).filter(function (v) { return v != null && isFinite(v); });
+    var season = lv ? null : value(m, sum(lines), mode);
+    var all = per.concat(roll).concat([season]).concat(lv ? [lv.b, lv.n] : []).filter(function (v) { return v != null && isFinite(v); });
     var s = svg("svg", { viewBox: "0 0 " + W + " " + H, class: "pd-chart", preserveAspectRatio: "none" });
     if (all.length < 2) return s;
     var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all); if (hi === lo) { hi += 1; lo -= 1; }
@@ -270,6 +270,12 @@
     (marks || []).forEach(function (mk) { if (mk.i < 0) return; s.appendChild(svg("line", { x1: X(mk.i), x2: X(mk.i), y1: T, y2: H - B, class: "mk" }));
       var t = svg("text", { x: X(mk.i) + 3, y: T + 8, class: "mkt" }); t.textContent = mk.t; s.appendChild(t); });
     if (season != null) s.appendChild(svg("line", { x1: L, x2: W - Rr, y1: Y(season), y2: Y(season), class: "ref" }));
+    /* the two levels a goal is judged on: the average before, and the average now */
+    if (lv && lv.gi > 0) {
+      if (lv.b != null) s.appendChild(svg("line", { x1: X(0), x2: X(lv.gi - 1), y1: Y(lv.b), y2: Y(lv.b), class: "lvb" }));
+      if (lv.n != null) s.appendChild(svg("line", { x1: X(lv.gi), x2: X(lines.length - 1), y1: Y(lv.n), y2: Y(lv.n), class: "lvn " + (lv.tone || "") }));
+      s.appendChild(svg("rect", { x: X(lv.gi) - 4, y: T, width: W - Rr - X(lv.gi) + 4, height: H - T - B, class: "now" }));
+    }
     var rp = roll.map(function (v, i) { return v == null ? null : X(i).toFixed(1) + "," + Y(v).toFixed(1); }).filter(Boolean);
     if (rp.length > 1) s.appendChild(svg("polyline", { points: rp.join(" "), class: "roll" }));
     per.forEach(function (v, i) { if (v == null || !isFinite(v)) return; var c = svg("circle", { cx: X(i), cy: Y(v), r: 3, class: "gm" });
@@ -372,9 +378,6 @@
           var row = el("div", { class: "pd-tiles" });
           gr.ks.forEach(function (k) { var m = MK[k]; if (!m) return; var x = tile(m, lines); row.appendChild(x.el);
             if (act.length && !x.t.small) { if (x.t.tone === "up") up++; else if (x.t.tone === "dn") dn++; } });
-          gr.rs.forEach(function (rk) { var lab = (RATINGS.filter(function (x) { return x[0] === rk; })[0] || [rk, rk])[1];
-            var rr = (r.ratings || []).filter(function (x) { return x.k === rk; }), lr = rr[rr.length - 1];
-            row.appendChild(el("div", { class: "pd-tile staff" }, el("i", {}, lab + " · staff"), el("div", { class: "tv" }, el("b", {}, lr ? lr.v + "/5" : "—")), spark(rr.map(function (x) { return x.v; }), { w: 120, h: 28 }))); });
           body.appendChild(el("div", { class: "pd-gr" }, el("div", { class: "pd-grn" }, gr.name), row)); });
       }
       var verdict = !lines.length || !act.length ? null : (up && !dn) ? ["up", "Improving"] : (dn && !up) ? ["dn", "Dropping"] : (up || dn) ? ["mix", "Mixed"] : ["", "Steady"];
@@ -394,6 +397,102 @@
     P.dl.forEach(function (p) { rest.appendChild(cardOf(p, true)); });
     root.appendChild(el("div", { class: "pd-sep" }, "Double licence and the rest of the roster"));
     root.appendChild(rest);
+  }
+  /* ONE PLAYER, BY HIS GOALS. Each goal he is working on is a block of its own with one
+     answer at the top - better, worse or the same - and under it each of its measures as
+     a large before -> now, coloured by what it means, with the game-by-game line and the
+     two levels drawn on it. "Before" is the games before the goal began when the goal has
+     a start inside the season, and otherwise the games before the last few. Everything
+     that is not about his goals is folded underneath. */
+  function verdictOf(ts) { var up = 0, dn = 0; ts.forEach(function (t) { if (t.small) return; if (t.tone === "up") up++; else if (t.tone === "dn") dn++; });
+    return { up: up, dn: dn, v: (up && !dn) ? ["up", "Improving"] : (dn && !up) ? ["dn", "Getting worse"] : (up || dn) ? ["mix", "Mixed"] : ["", "No clear change yet"] }; }
+  function goalCompare(m, lines, g) {
+    var gi = -1; for (var i = 0; i < lines.length; i++) if (lines[i].d >= (g.start || "0000")) { gi = i; break; }
+    var end = g.end || "", during, before, how;
+    if (gi > 0) { during = lines.filter(function (x) { return x.d >= g.start && (!end || x.d <= end); }); before = lines.slice(0, gi); how = "since " + ddmm(g.start) + " against before"; }
+    else { var n = Math.min(+UI.period || 3, Math.max(1, lines.length - 1)); during = lines.slice(-n); before = lines.slice(0, lines.length - n); how = "last " + n + " games against the " + before.length + " before"; }
+    var a = sum(during), b = sum(before), va = value(m, a, UI.mode), vb = before.length ? value(m, b, UI.mode) : null;
+    var sm = small(m, a) || (before.length && small(m, b));
+    var d = (va != null && vb != null) ? va - vb : null;
+    var th = m.pct ? 3 : (m.k === "ortg" || m.k === "drtg" || m.k === "net") ? 4 : Math.max(0.3, Math.abs(vb || 0) * 0.12);
+    var tone = (d == null || sm || m.hi == null || Math.abs(d) < th) ? "" : ((d > 0) === m.hi ? "up" : "dn");
+    return { v: va, base: vb, d: d, tone: tone, small: sm, how: how, gi: gi > 0 ? gi : (lines.length - during.length), nd: during.length, nb: before.length };
+  }
+  function card2(root, key) {
+    var P = people(), all = P.main.concat(P.dl), p = all.filter(function (x) { return x.key === key; })[0];
+    if (!p) { UI.open = null; return overview(root); }
+    var r = rec(key), ed = canEd(), lines = p.lines, S = sum(lines);
+    var act = (r.goals || []).filter(function (g) { return g.status === "active"; });
+    /* the head: who, and one line for all his goals together */
+    var allT = [];
+    act.forEach(function (g) { (g.metrics || []).forEach(function (k) { if (MK[k] && lines.length) allT.push(goalCompare(MK[k], lines, g)); }); });
+    var V = verdictOf(allT);
+    root.appendChild(el("div", { class: "pd-head" },
+      el("button", { type: "button", class: "btn", onclick: function () { UI.open = null; draw(); } }, "‹ All players"),
+      el("div", { class: "pd-title" }, el("b", {}, (p.num ? "#" + p.num + " " : "") + p.nm),
+        el("span", {}, [p.pos, lines.length ? lines.length + " games · " + (S.s / 60 / Math.max(1, lines.length)).toFixed(1) + " min a game" : "no games yet"].filter(Boolean).join(" · "))),
+      act.length && lines.length ? el("span", { class: "pd-big " + V.v[0] }, V.v[1], (V.up || V.dn) ? el("i", {}, "▲ " + V.up + "   ▼ " + V.dn) : null) : null,
+      el("div", { class: "pd-tools" }, seg(MODES, UI.mode, function (v) { UI.mode = v; }))));
+    /* a block per goal */
+    if (!act.length) root.appendChild(el("div", { class: "pd-miss" }, "No goal set for him yet." + (ed ? " Add one below." : "")));
+    var goalsHost = el("div", { class: "pd-goals2" }); root.appendChild(goalsHost);
+    act.forEach(function (g) {
+      var ts = [], tiles = el("div", { class: "pd-gt" });
+      (g.metrics || []).forEach(function (k) { var m = MK[k]; if (!m || !lines.length) return;
+        var c = goalCompare(m, lines, g); ts.push(c);
+        tiles.appendChild(el("div", { class: "pd-gm " + c.tone + (c.small ? " sm" : "") },
+          el("div", { class: "gl" }, el("b", {}, m.l), m.note ? el("i", { title: m.note }, "?") : null,
+            el("span", { class: "gv" }, c.small ? "small sample" : c.tone === "up" ? "better" : c.tone === "dn" ? "worse" : "same")),
+          el("div", { class: "gn2" }, el("span", { class: "was" }, c.base == null ? "—" : fmt(m, c.base)), el("span", { class: "arr" }, "→"), el("b", {}, fmt(m, c.v)),
+            c.d != null ? el("em", {}, (c.d > 0 ? "+" : "") + fmt(Object.assign({}, m, { sign: false }), c.d)) : null),
+          el("div", { class: "gw" }, "before · now"),
+          chart(m, lines, UI.mode, [], { gi: c.gi, b: c.base, n: c.v, tone: c.tone }))); });
+      var gv = verdictOf(ts);
+      var head = el("div", { class: "pd-gh2" }, el("b", {}, g.name), el("span", { class: "pd-big sm " + gv.v[0] }, gv.v[1]),
+        el("i", {}, ts[0] ? ts[0].how : ""),
+        ed ? el("span", { class: "ga" },
+          el("button", { type: "button", onclick: function () { goalEditor(root, p, g); } }, "Edit"),
+          el("button", { type: "button", onclick: function () { closeGoal(p, g, "done"); } }, "Finish"),
+          el("button", { type: "button", onclick: function () { closeGoal(p, g, "replaced"); goalEditor(root, p, null, g); } }, "Replace")) : null);
+      var blk = el("div", { class: "pd-goal2 " + gv.v[0] }, head, g.desc ? el("div", { class: "gd" }, g.desc) : null,
+        lines.length ? tiles : el("div", { class: "pd-miss" }, "No games yet."));
+      /* the staff's observations on this goal */
+      var notes = g.notes || [], nb = el("div", { class: "pd-notes" });
+      notes.slice(-3).forEach(function (n) { nb.appendChild(el("div", {}, el("i", {}, ddmm(n.at) + " · " + (n.by || "")), " ", n.text)); });
+      if (ed) { var inp = el("input", { class: "pd-in", id: "pdn" + g.id, placeholder: "Add a staff observation and press Enter…" });
+        inp.addEventListener("keydown", function (e) { if (e.key !== "Enter" || !inp.value.trim()) return; var txt = inp.value.trim();
+          commit("note on " + g.name + " · " + p.nm, function (doc, by) { var x = doc.players[p.key]; var gg = x && (x.goals || []).filter(function (y) { return y.id === g.id; })[0]; if (gg) (gg.notes = gg.notes || []).push({ at: today(), by: by, text: txt }); }).then(function () { draw(); }); });
+        nb.appendChild(inp); }
+      if (notes.length || ed) blk.appendChild(nb);
+      goalsHost.appendChild(blk);
+    });
+    if (ed) goalsHost.appendChild(el("button", { type: "button", class: "pd-add big", onclick: function () { goalEditor(root, p, null); } }, "+ New goal"));
+    /* everything else, folded */
+    var fold = function (title, node, open) { var d = el("details", { class: "pd-hist" }, el("summary", {}, title)); if (open) d.open = true; d.appendChild(node); return d; };
+    if (lines.length) {
+      var sel = (UI.sel && UI.sel.key === key) ? UI.sel.ks : (r.metrics && r.metrics.length ? r.metrics.slice() : ["pts", "ts", "ast", "pir"]);
+      UI.sel = { key: key, ks: sel };
+      var ex = el("div", {});
+      var groups = {}; M.forEach(function (m) { (groups[m.g] = groups[m.g] || []).push(m); });
+      var pick = el("div", { class: "pd-pick" });
+      Object.keys(groups).forEach(function (gk) { pick.appendChild(el("div", { class: "pd-pg" }, el("i", {}, gk), groups[gk].map(function (m) { var on = sel.indexOf(m.k) >= 0;
+        return el("button", { type: "button", class: on ? "on" : "", title: m.note || "", onclick: function () { if (on) sel.splice(sel.indexOf(m.k), 1); else sel.push(m.k); UI.exOpen = true; draw(); } }, m.l); }))); });
+      ex.appendChild(pick);
+      var grid = el("div", { class: "pd-charts" });
+      sel.forEach(function (k) { var m = MK[k]; if (!m) return; var t = trend(m, lines, "3", UI.mode), seas = value(m, sum(lines), UI.mode);
+        grid.appendChild(el("div", { class: "pd-ch" }, el("div", { class: "pd-cht" }, el("b", {}, m.l), el("span", { class: t.tone + (t.small ? " sm" : "") }, "season " + fmt(m, seas) + " · last 3 " + fmt(m, t.v))), chart(m, lines, UI.mode, []))); });
+      ex.appendChild(grid);
+      root.appendChild(fold("Other stats · season game by game", ex, !!UI.exOpen));
+      root.appendChild(fold("Team with him on the floor", impactBox(p, lines), false));
+      root.appendChild(logBox(lines));
+    }
+    root.appendChild(fold("Staff ratings", ratingsBox(p, r, ed), false));
+    var past = (r.goals || []).filter(function (g) { return g.status !== "active"; });
+    if (past.length) { var hb = el("div", {}); past.forEach(function (g) { var gi = -1; for (var i = 0; i < lines.length; i++) if (lines[i].d >= (g.start || "0000")) { gi = i; break; } hb.appendChild(goalCard(p, g, lines, gi, ed, root)); });
+      root.appendChild(fold("Goals worked on before · " + past.length, hb, false)); }
+    var log = (D.doc.log || []).filter(function (x) { return String(x.what || "").indexOf(p.nm) >= 0; }).slice(-12).reverse();
+    if (log.length) { var lb = el("div", {}); log.forEach(function (x) { lb.appendChild(el("div", { class: "pd-log" }, el("i", {}, String(x.at || "").slice(0, 10) + " · " + (x.by || "")), " ", x.what)); });
+      root.appendChild(fold("Changes · " + log.length, lb, false)); }
   }
   /* ------------------------------------------------------------ one player */
   function card(root, key) {
@@ -481,7 +580,7 @@
       ms.appendChild(el("div", { class: "gx " + tone + (sm ? " sm" : "") },
         el("i", { title: m.note || "" }, m.l), el("b", {}, fmt(m, va)),
         el("span", {}, b.gp ? "before " + fmt(m, vb) : "since the start"), spark(series, { ref: value(m, sum(lines), UI.mode), mark: gi > 0 ? gi : null, tone: tone, w: 90, h: 22 }))); });
-    (g.ratings || []).forEach(function (rk) {
+    ([]).forEach(function (rk) {   /* staff ratings live in their own section, not on the goal */
       var lab = (RATINGS.filter(function (x) { return x[0] === rk; })[0] || [rk, rk])[1];
       var rr = ((rec(p.key).ratings) || []).filter(function (x) { return x.k === rk && x.d >= (g.start || "0000") && (!end || x.d <= end); });
       var lastR = rr.length ? rr[rr.length - 1] : null;
@@ -535,7 +634,7 @@
     box.appendChild(el("div", { class: "pd-hs" }, "Measures that judge it"));
     box.appendChild(mbox);
     box.appendChild(el("div", { class: "pd-btns" }, save, cancel));
-    var at = root.querySelector(".pd-goals"); if (at) at.appendChild(box); else root.appendChild(box);
+    var at = root.querySelector(".pd-goals2") || root.querySelector(".pd-goals"); if (at) at.appendChild(box); else root.appendChild(box);
     try { name.focus(); } catch (e) { }
   }
   /* what the staff judges by eye, 1 to 5, dated */
@@ -603,7 +702,7 @@
     var page = el("div", { class: "pd" });
     ROOT.appendChild(page);
     if (!D.R && D.err) { page.appendChild(el("div", { class: "pd-miss" }, "The season could not be read: " + D.err)); return; }
-    if (UI.open) card(page, UI.open); else overview(page);
+    if (UI.open) card2(page, UI.open); else overview(page);
     try { var ws2 = document.getElementById("workspace"); if (ws2) ws2.scrollTop = y; } catch (e) { }
   }
   function render(root) {
@@ -634,6 +733,30 @@
       ".pd-row .c b{font:700 13px 'IBM Plex Mono',monospace}.pd-row .c i{font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal}.pd-row .c small{font:600 8.5px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}",
       ".pd-row .c.up{background:rgba(47,158,134,.1)}.pd-row .c.up i{color:#17805a}.pd-row .c.dn{background:rgba(216,82,78,.09)}.pd-row .c.dn i{color:#c0403c}.pd-row .c.sm{opacity:.55}",
       ".pd-row .c.wide{flex-direction:row;flex-wrap:wrap;gap:6px}.pd-row .c.mm .c{border:1px solid var(--line,#eef0f3)}.pd-row .c.none{font-size:11.5px;color:var(--ink-faint,#8a93a2)}",
+      ".pd-big{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:5px 14px;font:700 13px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;background:var(--panel-2,#f1f2f4);color:var(--ink-soft,#5b6472);white-space:nowrap}",
+      ".pd-big i{font:600 11px 'IBM Plex Mono',monospace;font-style:normal;letter-spacing:0;white-space:pre}",
+      ".pd-big.up{background:#2f9e86;color:#fff}.pd-big.dn{background:#d8524e;color:#fff}.pd-big.mix{background:#d9a521;color:#fff}",
+      ".pd-big.sm{font-size:10.5px;padding:3px 10px}",
+      ".pd-goals2{display:grid;gap:12px}",
+      ".pd-goal2{border:1px solid var(--line,#e4e7ec);border-left:6px solid #cfd4dc;border-radius:12px;background:var(--panel,#fff);padding:12px 14px;display:grid;gap:8px}",
+      ".pd-goal2.up{border-left-color:#2f9e86}.pd-goal2.dn{border-left-color:#d8524e}.pd-goal2.mix{border-left-color:#d9a521}",
+      ".pd-gh2{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pd-gh2 > b{font:700 18px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase}.pd-gh2 > i{font:500 11px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}",
+      ".pd-gh2 .ga{margin-left:auto;display:flex;gap:4px}.pd-gh2 .ga button{border:1px solid var(--line-strong,#cfd4dc);background:var(--panel,#fff);border-radius:5px;padding:2px 9px;cursor:pointer;font-size:11px}",
+      ".pd-goal2 .gd{font-size:12.5px;color:var(--ink-soft,#5b6472)}",
+      ".pd-gt{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px}",
+      ".pd-gm{border-radius:10px;padding:8px 10px 4px;background:var(--panel-2,#f4f5f7);border-top:4px solid #cfd4dc;display:grid;gap:2px;min-width:0}",
+      ".pd-gm.up{background:rgba(47,158,134,.08);border-top-color:#2f9e86}.pd-gm.dn{background:rgba(216,82,78,.07);border-top-color:#d8524e}.pd-gm.sm{opacity:.6}",
+      ".pd-gm .gl{display:flex;align-items:center;gap:6px}.pd-gm .gl b{font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase}.pd-gm .gl i{font-style:normal;font-size:10px;color:var(--ink-faint,#8a93a2);cursor:help}",
+      ".pd-gm .gv{margin-left:auto;font:700 10px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;border-radius:999px;padding:1px 8px;background:rgba(20,24,33,.07);color:var(--ink-soft,#5b6472)}",
+      ".pd-gm.up .gv{background:#2f9e86;color:#fff}.pd-gm.dn .gv{background:#d8524e;color:#fff}",
+      ".pd-gm .gn2{display:flex;align-items:baseline;gap:8px}.pd-gm .gn2 .was{font:600 17px 'Oswald',sans-serif;color:var(--ink-faint,#8a93a2)}.pd-gm .gn2 .arr{color:var(--ink-faint,#8a93a2)}",
+      ".pd-gm .gn2 b{font:700 28px/1 'Oswald',sans-serif}.pd-gm .gn2 em{font:700 12px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}",
+      ".pd-gm.up .gn2 b,.pd-gm.up .gn2 em{color:#17805a}.pd-gm.dn .gn2 b,.pd-gm.dn .gn2 em{color:#c0403c}",
+      ".pd-gm .gw{font:600 8.5px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}",
+      ".pd-gm .pd-chart{height:110px}",
+      ".pd-chart .lvb{stroke:#8a93a2;stroke-width:2.5;stroke-dasharray:5 3}.pd-chart .lvn{stroke:#5b6472;stroke-width:3}.pd-chart .lvn.up{stroke:#2f9e86}.pd-chart .lvn.dn{stroke:#d8524e}.pd-chart .now{fill:rgba(198,161,91,.10)}",
+      ".pd-notes{display:grid;gap:3px;font-size:12px}.pd-notes i{font:500 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}",
+      ".pd-add.big{justify-self:start;margin-left:0;padding:6px 14px;font-size:11px}",
       ".pd-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));gap:10px}",
       ".pd-cards.rest{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}",
       "@media (max-width:640px){.pd-cards{grid-template-columns:minmax(0,1fr)}}",
