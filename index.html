@@ -5551,6 +5551,7 @@ function canView(sect){
   if(!currentUser) return true;
   if(sectHidden(sect)) return false;
   if(isPlayerUser()) return PLAYER_VIEW.sects.indexOf(sect)>=0;
+  if(isReader()) return READERS[currentUser].sects.indexOf(sect)>=0;
   const p=state.perms&&state.perms[currentUser];
   if(!p) return true;
   /* Planning swallowed the calendar, so whoever could see either can see it */
@@ -5758,7 +5759,15 @@ const PLAYER_BLOCKS=[
 let PLAYER_VIEW={ sects:PLAYER_VIEW_DEFAULT.sects.slice(), blocks:PLAYER_VIEW_DEFAULT.blocks.slice() };
 function isPlayerUser(){ return SB_SCOPE==="player"; }
 /* may a player see this part of a pre-game report */
-function playerBlockOk(id){ return !isPlayerUser() || PLAYER_VIEW.blocks.indexOf(id)>=0; }
+/* READERS: staff who read the club and its opponents but do not work on the reports.
+   Fabienne writes the club's articles: she has her dashboard, League, and the pre game as
+   a player sees it - the blocks the Players view setting gives the squad, nothing of the
+   staff's working material. Applied here, on top of whatever permission row the server
+   holds, so it cannot drift. */
+const READERS={ Fabienne:{ sects:["league","oppscout"] } };
+function isReader(){ return !isPlayerUser() && !!(currentUser && READERS[currentUser]); }
+function viewsAsPlayer(){ return isPlayerUser() || isReader(); }
+function playerBlockOk(id){ return !viewsAsPlayer() || PLAYER_VIEW.blocks.indexOf(id)>=0; }
 function applyRoleFloor(u){
   if(SB_SCOPE!=="player") return;
   ensurePerms();
@@ -5796,7 +5805,7 @@ async function savePlayerView(sects, blocks){
 }
 /* The admin always edits. Without this a missing permission row from the server
    leaves the owner of the app looking at a read-only page with no way to fix it. */
-function canEdit(sect){ if(!currentUser) return false; if(isPlayerUser()) return false; if(isAdmin()) return true;
+function canEdit(sect){ if(!currentUser) return false; if(isPlayerUser() || isReader()) return false; if(isAdmin()) return true;
   const p=state.perms&&state.perms[currentUser]; return p?!!(p.edit&&p.edit[sect]):false; }
 function phxPark(){ try{ var p=document.getElementById("phxRoot"), park=document.getElementById("phxPark"); if(p&&park&&p.parentElement!==park){ park.appendChild(p); p.style.display="none"; } }catch(e){} }
 function phxHideSub(){ var s=document.getElementById("preSubmenu"); var phx=document.getElementById("phxRoot"); var ctr=s?s.querySelector(".controls"):null; if(ctr&&phx){ phx.appendChild(ctr); } if(s){ s.style.display="none"; } phxPark(); }
@@ -5805,7 +5814,10 @@ function applyPerms(){
   const ab=$("#adminBtn"); if(ab) ab.style.display=isAdmin()?"":"none";
   const bg=$("#backupGroup"); if(bg) bg.style.display=canBackup()?"":"none";
   /* whoever has a dashboard opens the app on it, once per visit */
-  if(currentUser && !_dashLanded){ _dashLanded=true; if(canView("dashboard") && state.ui.view!=="dashboard"){ setView("dashboard"); return; } }
+  if(currentUser && !_dashLanded){ _dashLanded=true;
+    /* and on one's own: Oriol may look at everybody's, but he lands on his */
+    try{ state.ui.dash=_dashFor(currentUser)||null; }catch(e){}
+    if(canView("dashboard") && state.ui.view!=="dashboard"){ setView("dashboard"); return; } }
   if(currentUser && !canView(state.ui.view)){ const first=SECT_KEYS.find(k=>canView(k)); if(first){ setView(first); return; } }
   phxHideSub(); applyView(state.ui.view); syncPrintBtn();
   /* the league feed starts loading with the app, whatever view opened */
@@ -10092,7 +10104,7 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
      has gone. The sections the staff writes, the shot chart, the rotations and the
      tagging are not for them. The floor is here rather than in the permission rows,
      which can be edited; this cannot. */
-  const PV = (typeof isPlayerUser==="function") && isPlayerUser();
+  const PV = (typeof viewsAsPlayer==="function") && viewsAsPlayer();
   _scoutOpponent = (g && g.opponent) || "";
   _scoutRep = rep; _preVaultKey = key;
   if(rep.__w==null) rep.__w=_repWeight(rep);
@@ -23469,7 +23481,8 @@ function _preJoinedPlayers(tid){
    with the reports so everybody reads the same one. */
 var DASHES={
   Ramon:{ name:"Ramón", role:"Head coach", cards:["pre","post","league","trends","week"] },
-  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["quick","coming","work","week"] }
+  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["quick","coming","work","week"] },
+  Fabienne:{ name:"Fabienne", role:"Media · articles", cards:["fquick","us","rivals"] }
 };
 var _dashLanded=false;
 function _dashFor(u){ return (u && DASHES[u])? u : null; }
@@ -23560,6 +23573,13 @@ function _dashOff(build, sel, ms){
   document.body.appendChild(host);
   let el=null; try{ el=build(); if(el) host.appendChild(el); }catch(e){}
   return _dashWait(host, sel, ms||20000).then(ok=>{ const keep=host; setTimeout(()=>{ try{ keep.remove(); }catch(e){} }, 50); return ok? host : null; });
+}
+/* a club's players from the league, asked for when this browser has not read them yet */
+function _dashClubReady(tid){
+  const L=leagueState();
+  if(!tid || (L.players||{})[tid]) return Promise.resolve(true);
+  try{ syncPlayers(tid, false); }catch(e){}
+  return _dashNeed(()=>(leagueState().players||{})[tid], 15000);
 }
 function _dashClubDash(tid){
   const L=leagueState(); if(!tid) return null;
@@ -23867,6 +23887,79 @@ function renderDashboard(){
       if(lim.length){ c.__b.appendChild(h("div",{class:"dash-av"}, lim.map(x=>h("span",{class:"dash-avp "+x.c}, x.n, h("b",{}, AV_LABEL[x.c]||x.c)))));
         alerts.push({ tone:lim.some(x=>x.c==="out")? "bad" : "warn", text:lim.length+" player"+(lim.length===1?"":"s")+" not fully available", go:()=>_dashOpen("planification",{ planTab:"cycle" }) }); paintAtt(); }
       c.__b.appendChild(_scNoteBox(cyc));
+    },
+    /* ---------------------------------------------------- Fabienne: the doors she uses */
+    fquick:()=>{
+      const c=card("wide quick", "Quick access", null);
+      const row=h("div",{class:"dash-quick"}); c.__b.appendChild(row);
+      const up=G.upcoming;
+      const pre=(lbl, x)=>{
+        if(!x){ row.appendChild(h("div",{class:"dash-q off"}, h("i",{}, lbl), h("b",{},"—"))); return; }
+        const g=x.g, dd=dayDelta(g.date);
+        row.appendChild(h("button",{type:"button", class:"dash-q", onclick:()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } })},
+          h("i",{}, lbl), h("div",{class:"dash-qh"}, crest(g), h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent),
+            h("span",{}, _dashFmt(g.date)+" · "+(g.competition||"")+" · "+(dd===0? "today" : dd===1? "tomorrow" : "in "+dd+" days"))))));
+      };
+      pre("Next game · pre game", up[0]); pre("The one after", up[1]);
+      row.appendChild(h("button",{type:"button", class:"dash-q", onclick:()=>_dashOpen("league")},
+        h("i",{},"League"), h("div",{class:"dash-qh"}, h("div",{class:"dash-who2"}, h("b",{},"Table, results, leaders"), h("span",{},"easyCredit BBL")))));
+      const x=G.last;
+      if(x){ const g=x.g, r=x.res;
+        row.appendChild(h("div",{class:"dash-q"}, h("i",{},"Last result"), h("div",{class:"dash-qh"}, crest(g), h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent), h("span",{}, _dashFmt(g.date)+" · "+(g.competition||"")))),
+          r? h("div",{class:"dash-qf"}, h("span",{class:"dash-qs "+(r.won? "good" : "bad")}, (r.won? "W " : "L ")+r.us+"–"+r.them+(r.ot? " OT" : ""))) : null)); }
+    },
+    /* ---------------------------------------------------- Fabienne: us, for the articles */
+    us:()=>{
+      const c=card("wide", "Basketball Löwen · the story so far", ()=>_dashOpen("league"), "League");
+      const L=leagueState(), our=((L.teams||[]).filter(t=>_lgOurs(t.name))[0]||{}).id;
+      if(!our){ c.__b.appendChild(h("div",{class:"dash-miss"},"The league has not loaded yet.")); return; }
+      const body=h("div",{}, loading("Reading the season…")); c.__b.appendChild(body);
+      _dashClubReady(our).then(()=>{ body.innerHTML="";
+        const el=_dashClubDash(our);
+        /* the season, game by game, as results a reader can quote */
+        const mine=(L.games||[]).concat(L.cup||[]).filter(y=>(String(y.homeId)===String(our)||String(y.awayId)===String(our)) && _lgDone(y)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+        const res=h("div",{class:"dash-results"}, mine.slice(-8).map(y=>{ const home=String(y.homeId)===String(our), us=home? y.hs : y.as, th=home? y.as : y.hs;
+          return h("div",{class:"dash-res "+(us>th? "w" : "l")}, h("b",{}, (us>th? "W " : "L ")+us+"–"+th), h("span",{}, (home? "vs " : "@ ")+_lgShort(home? y.away : y.home)), h("em",{}, y.date.slice(8)+"/"+y.date.slice(5,7))); }));
+        const figs=el? [...el.querySelectorAll(".ui-fig")].slice(0,3).map(f=>({ k:((f.querySelector("i")||{}).textContent||""), v:((f.querySelector("b")||{}).textContent||""), n:((f.querySelector("span")||{}).textContent||""), tone:f.classList.contains("good")? "good" : f.classList.contains("bad")? "bad" : "" })) : [];
+        const left=h("div",{class:"dash-sub"}, h("h4",{},"Where we are"), h("div",{class:"dash-figs"}, figs.map(f=>h("div",{class:"dash-fig "+f.tone}, h("i",{}, f.k), h("b",{}, f.v), h("span",{}, f.n)))),
+          h("h4",{},"Results"), res);
+        /* who is carrying the team, and where they rank in the league: the lines an article quotes */
+        const men=el? _dashCards(el, 6, /how they are going|where they shoot|starters/i) : [];
+        const mid=h("div",{class:"dash-sub"}, h("h4",{},"Our players · in the league"), ideas(men, "The league has not published our players' numbers yet."));
+        const rk=el? [...el.querySelectorAll(".ui-rank")].map(r=>{ const m=/(\d+)\/(\d+)/.exec(((r.querySelector("em")||{}).textContent||"")); return { r:r, rank:m? +m[1] : 99 }; }).sort((a,b)=>a.rank-b.rank).slice(0,4) : [];
+        const right=h("div",{class:"dash-sub"}, h("h4",{},"Where we are among the best"), rk.length? h("div",{class:"dash-ranks"}, rk.map(x=>x.r.cloneNode(true))) : h("div",{class:"dash-miss"},"No league comparison yet."));
+        body.appendChild(h("div",{class:"dash-3"}, left, mid, right));
+      });
+    },
+    /* ---------------------------------------------------- Fabienne: the next opponents */
+    rivals:()=>{
+      const c=card("wide", "The next opponents", null);
+      const L=leagueState(), our=((L.teams||[]).filter(t=>_lgOurs(t.name))[0]||{}).id;
+      const list=G.upcoming.filter(x=>{ try{ return !_gamePlaceholder(x.g.opponent); }catch(e){ return true; } }).slice(0,3);
+      if(!list.length){ c.__b.appendChild(h("div",{class:"dash-miss"},"No known opponent in the calendar yet.")); return; }
+      const wrap=h("div",{class:"dash-3"}); c.__b.appendChild(wrap);
+      list.forEach(x=>{
+        const g=x.g, tid=_lgTeamIdByName(L, g.opponent), dd=dayDelta(g.date);
+        const box=h("div",{class:"dash-sub"}, h("h4",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent+" · "+_dashFmt(g.date)+" · "+(dd===0? "today" : dd===1? "tomorrow" : "in "+dd+" days")));
+        const body=h("div",{}, loading()); box.appendChild(body); wrap.appendChild(box);
+        if(!tid){ body.innerHTML=""; body.appendChild(h("div",{class:"dash-miss"},"This club is not in the league feed.")); return; }
+        _dashClubReady(tid).then(()=>{ body.innerHTML="";
+          const st=(L.standings||[]).filter(r=>String(r.teamId)===String(tid))[0];
+          const theirs=(L.games||[]).concat(L.cup||[]).filter(y=>(String(y.homeId)===String(tid)||String(y.awayId)===String(tid)) && _lgDone(y)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+          const last=theirs.slice(-5);
+          body.appendChild(h("div",{class:"dash-form"}, st? h("b",{}, st.pos+"º · "+st.w+"–"+st.l) : null, last.map(y=>{ const home=String(y.homeId)===String(tid), w=home? y.hs>y.as : y.as>y.hs;
+            return h("i",{class:w? "w" : "l", title:y.date+" "+y.home+" "+y.hs+"–"+y.as+" "+y.away}, w? "W" : "L"); })));
+          const ly=theirs[theirs.length-1];
+          if(ly){ const home=String(ly.homeId)===String(tid), a=home? ly.hs : ly.as, b=home? ly.as : ly.hs;
+            body.appendChild(h("div",{class:"dash-src"}, "Last game: "+(a>b? "W " : "L ")+a+"–"+b+(home? " vs " : " @ ")+_lgShort(home? ly.away : ly.home)+" · "+ly.date.slice(8)+"/"+ly.date.slice(5,7))); }
+          /* the two of us this season, when we have met */
+          const h2h=theirs.filter(y=>our && (String(y.homeId)===String(our)||String(y.awayId)===String(our)));
+          h2h.forEach(y=>{ const home=String(y.homeId)===String(our), a=home? y.hs : y.as, b=home? y.as : y.hs;
+            body.appendChild(h("div",{class:"dash-src"}, "Against us: "+(a>b? "we won " : "we lost ")+a+"–"+b+" · "+y.date.slice(8)+"/"+y.date.slice(5,7))); });
+          const el=_dashClubDash(tid);
+          body.appendChild(ideas(el? _dashCards(el, 4, /how they are going|starters/i) : [], "The league has not published this club's numbers yet."));
+        });
+      });
     },
     /* ---------------------------------------------------- the four reports one tap away */
     quick:()=>{
@@ -31706,6 +31799,10 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-card.small{grid-column:span 2}
 .dash-card.work,.dash-card.wide{grid-column:span 6}
 .dash-quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.dash-results{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:4px}
+.dash-res{display:grid;border-radius:7px;padding:4px 8px;border-left:3px solid #d8524e;background:rgba(216,82,78,.07)}
+.dash-res.w{border-left-color:#2f9e86;background:rgba(47,158,134,.08)}
+.dash-res b{font:700 13px 'Oswald',sans-serif}.dash-res span{font-size:11.5px;font-weight:600}.dash-res em{font:500 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
 @media (max-width:1000px){ .dash-quick{grid-template-columns:repeat(2,minmax(0,1fr))} }
 .dash-q{display:grid;gap:6px;text-align:left;border:1px solid var(--line,#e4e7ec);border-radius:10px;background:var(--panel,#fff);padding:8px 10px;cursor:pointer;font:inherit;color:var(--ink,#141821);min-width:0}
 .dash-q:hover{border-color:#c6a15b;box-shadow:0 2px 8px rgba(20,24,33,.08)}
