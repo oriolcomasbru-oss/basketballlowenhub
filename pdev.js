@@ -350,6 +350,65 @@
       "The little line is the three-game rolling value, the dashed one his season. On-floor measures are the team's, with him on - not his alone."));
   }
 
+  /* GAME BY GAME, ONE ROW A MEASURE. The table Trends drew for the PIR, made general: every
+     game of the season a column, every row a measure of one player, each cell coloured
+     against that row's own season - green above it, red below, darker the further, pale
+     when the game gave too little to judge (three attempts are not a percentage). The last
+     columns are his season and the line of it. */
+  function seasonGames() {
+    return ((D.R && D.R.games) || []).map(function (gm) { return { d: gm.g.date, code: gm.code || "", opp: gm.opp, home: gm.home,
+      us: gm.home ? gm.hs : gm.as, them: gm.home ? gm.as : gm.hs }; }).sort(function (a, b) { return String(a.d).localeCompare(String(b.d)); });
+  }
+  function matrix(rows, games, opts) {
+    opts = opts || {};
+    var t = el("div", { class: "pd-mx", style: "grid-template-columns:minmax(150px,1.6fr) repeat(" + games.length + ",minmax(44px,1fr)) minmax(56px,.9fr) minmax(90px,1.1fr)" });
+    t.appendChild(el("span", { class: "hd l" }, opts.head || ""));
+    games.forEach(function (g, i) { t.appendChild(el("span", { class: "hd g" + (opts.mark === i ? " mk" : ""), title: g.d + " " + (g.home ? "vs " : "@ ") + g.opp + (g.us != null ? " " + g.us + "–" + g.them : "") },
+      el("b", {}, g.code || ddmm(g.d)), el("i", { class: g.us != null ? (g.us > g.them ? "w" : "l") : "" }, ddmm(g.d)))); });
+    t.appendChild(el("span", { class: "hd" }, "Season")); t.appendChild(el("span", { class: "hd" }, "Trend"));
+    rows.forEach(function (r) {
+      if (r.group) { t.appendChild(el("span", { class: "grp", style: "grid-column:1/-1" }, r.group)); return; }
+      var m = r.m, byD = {}; r.lines.forEach(function (x) { byD[x.d] = x; });
+      var seas = value(m, sum(r.lines), UI.mode);
+      t.appendChild(el("span", { class: "l", title: m.note || "" }, el("b", {}, r.label), r.sub ? el("i", {}, r.sub) : null));
+      games.forEach(function (g, i) { var x = byD[g.d];
+        if (!x) { t.appendChild(el("span", { class: "c dnp" + (opts.mark === i ? " mk" : "") }, "·")); return; }
+        var S = sum([x]), v = value(m, S, UI.mode), sm = small(m, S) && m.t === "rate";
+        var cls = "";
+        if (v != null && seas != null && m.hi != null && !sm) {
+          var d = v - seas, s1 = m.pct ? 5 : (m.k === "ortg" || m.k === "drtg" || m.k === "net") ? 8 : Math.max(0.5, Math.abs(seas) * 0.25);
+          var good = (d > 0) === m.hi;
+          cls = Math.abs(d) < s1 ? "" : (good ? (Math.abs(d) >= 2 * s1 ? "u2" : "u1") : (Math.abs(d) >= 2 * s1 ? "d2" : "d1"));
+        }
+        t.appendChild(el("span", { class: "c " + cls + (sm ? " sm" : "") + (opts.mark === i ? " mk" : ""), title: ddmm(g.d) + " " + g.opp + " · " + m.l + " " + fmt(m, v) + (sm ? " (small sample)" : "") }, v == null ? "—" : fmt(m, v))); });
+      t.appendChild(el("span", { class: "c seas" }, fmt(m, seas)));
+      var series = r.lines.map(function (x, i) { return value(m, sum(r.lines.slice(Math.max(0, i - 2), i + 1)), UI.mode); });
+      var tr = trend(m, r.lines, "3", UI.mode);
+      t.appendChild(el("span", { class: "c tr" }, spark(series, { ref: seas, tone: tr.tone, w: 90, h: 22 })));
+    });
+    return el("div", { class: "pd-mxw" }, t);
+  }
+  /* the overview's table: by each player's own goals, or one measure for everybody */
+  var MXK = [["goals", "By their goals"], ["pir", "PIR"], ["pts", "Points"], ["reb", "Rebounds"], ["ast", "Assists"], ["tov", "Turnovers"], ["p3p", "3P%"], ["ts", "TS%"], ["pm", "+/-"], ["min", "Minutes"], ["net", "Net on"]];
+  function overviewMatrix(root, P) {
+    var games = seasonGames(); if (!games.length) return;
+    var cur = UI.mx || "goals";
+    var box = el("div", { class: "pd-mxbox" });
+    box.appendChild(el("div", { class: "pd-h" }, el("b", {}, "Game by game"), el("span", { class: "pd-hs" }, "each cell against that row's own season: green above, red below, darker the further"),
+      el("span", { class: "pd-tools" }, seg(MXK, cur, function (v) { UI.mx = v; }))));
+    var rows = [];
+    if (cur === "goals") {
+      P.main.forEach(function (p) { if (!p.lines.length) return; var r = rec(p.key), act = (r.goals || []).filter(function (g) { return g.status === "active"; });
+        var ks = []; act.forEach(function (g) { (g.metrics || []).forEach(function (k) { if (MK[k] && ks.indexOf(k) < 0) ks.push(k); }); });
+        if (!ks.length) return;
+        rows.push({ group: (p.num ? "#" + p.num + " " : "") + p.nm + " · " + act.map(function (g) { return g.name; }).join(" · ") });
+        ks.forEach(function (k) { rows.push({ label: MK[k].l, m: MK[k], lines: p.lines }); }); });
+    } else {
+      P.main.concat(P.dl).forEach(function (p) { if (!p.lines.length) return; rows.push({ label: (p.num ? "#" + p.num + " " : "") + p.nm, m: MK[cur], lines: p.lines }); });
+    }
+    box.appendChild(matrix(rows, games, { head: cur === "goals" ? "Player · measure" : MK[cur].l }));
+    root.appendChild(box);
+  }
   /* EVERY PLAYER BY WHAT HE IS WORKING ON. One card a man: his goals, and under each goal
      only the measures that judge it - the value for the period, where it stands against
      his season, and the line of it game by game. On top, how many of those measures are
@@ -390,6 +449,7 @@
     };
     P.main.forEach(function (p) { grid.appendChild(cardOf(p, false)); });
     root.appendChild(grid);
+    overviewMatrix(root, P);
     root.appendChild(el("div", { class: "pd-foot" }, (UI.period === "all" ? "Season values. Choose last 10, 5 or 3 to see each measure against his season." :
       "Last " + UI.period + " games against the games before them: green is better, red is worse, pale is a sample too small to judge. ") +
       "The line is the three-game rolling value, the dashed line his season. Improving / dropping counts only his goal measures."));
@@ -467,6 +527,19 @@
       goalsHost.appendChild(blk);
     });
     if (ed) goalsHost.appendChild(el("button", { type: "button", class: "pd-add big", onclick: function () { goalEditor(root, p, null); } }, "+ New goal"));
+    /* his goals, game by game: one row per measure, grouped by goal, the start of each
+       goal marked on its column */
+    if (act.length && lines.length) {
+      var games = seasonGames(), mrows = [], mark = null;
+      act.forEach(function (g) { mrows.push({ group: g.name });
+        var gi = -1; games.forEach(function (x, i) { if (gi < 0 && x.d >= (g.start || "0000")) gi = i; });
+        if (gi > 0 && mark == null) mark = gi;
+        (g.metrics || []).forEach(function (k) { if (MK[k]) mrows.push({ label: MK[k].l, m: MK[k], lines: lines }); }); });
+      var mb = el("div", { class: "pd-mxbox" }, el("div", { class: "pd-h" }, el("b", {}, "His goals · game by game"),
+        el("span", { class: "pd-hs" }, "each cell against his own season: green above, red below, darker the further · pale = too little in that game to judge")));
+      mb.appendChild(matrix(mrows, games, { head: "Measure", mark: mark }));
+      root.appendChild(mb);
+    }
     /* everything else, folded */
     var fold = function (title, node, open) { var d = el("details", { class: "pd-hist" }, el("summary", {}, title)); if (open) d.open = true; d.appendChild(node); return d; };
     if (lines.length) {
@@ -757,6 +830,20 @@
       ".pd-chart .lvb{stroke:#8a93a2;stroke-width:2.5;stroke-dasharray:5 3}.pd-chart .lvn{stroke:#5b6472;stroke-width:3}.pd-chart .lvn.up{stroke:#2f9e86}.pd-chart .lvn.dn{stroke:#d8524e}.pd-chart .now{fill:rgba(198,161,91,.10)}",
       ".pd-notes{display:grid;gap:3px;font-size:12px}.pd-notes i{font:500 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}",
       ".pd-add.big{justify-self:start;margin-left:0;padding:6px 14px;font-size:11px}",
+      ".pd-mxbox{border:1px solid var(--line,#e4e7ec);border-radius:11px;background:var(--panel,#fff);padding:10px 12px}",
+      ".pd-mxbox .pd-h .pd-tools{margin-left:auto}",
+      ".pd-mxw{overflow-x:auto}",
+      ".pd-mx{display:grid;gap:2px;min-width:720px;font-size:12px;align-items:stretch}",
+      ".pd-mx .hd{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-faint,#8a93a2);padding-bottom:3px}",
+      ".pd-mx .hd.l{align-items:flex-start}.pd-mx .hd b{font:700 10px 'Oswald',sans-serif;letter-spacing:.06em;color:var(--ink,#141821)}",
+      ".pd-mx .hd i{font-style:normal;border-radius:3px;padding:0 3px}.pd-mx .hd i.w{background:rgba(47,158,134,.18);color:#17805a}.pd-mx .hd i.l{background:rgba(216,82,78,.15);color:#c0403c}",
+      ".pd-mx .grp{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#7a5c12;padding:6px 0 2px;border-bottom:1px solid var(--line,#e4e7ec)}",
+      ".pd-mx .l{display:flex;flex-direction:column;justify-content:center;padding:2px 4px;min-width:0}.pd-mx .l b{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pd-mx .l i{font-style:normal;font-size:10px;color:var(--ink-faint,#8a93a2)}",
+      ".pd-mx .c{display:flex;align-items:center;justify-content:center;border-radius:5px;background:var(--panel-2,#f4f5f7);font:700 11.5px 'IBM Plex Mono',monospace;padding:4px 2px;min-height:24px}",
+      ".pd-mx .c.u1{background:rgba(47,158,134,.22);color:#17603f}.pd-mx .c.u2{background:#2f9e86;color:#fff}.pd-mx .c.d1{background:rgba(216,82,78,.2);color:#9e302c}.pd-mx .c.d2{background:#d8524e;color:#fff}",
+      ".pd-mx .c.sm{opacity:.45}.pd-mx .c.dnp{background:transparent;color:var(--ink-faint,#cfd4dc)}",
+      ".pd-mx .c.seas{background:transparent;border:1px solid var(--line,#e4e7ec)}.pd-mx .c.tr{background:transparent}",
+      ".pd-mx .mk{box-shadow:inset 3px 0 0 #c6a15b}",
       ".pd-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));gap:10px}",
       ".pd-cards.rest{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}",
       "@media (max-width:640px){.pd-cards{grid-template-columns:minmax(0,1fr)}}",
