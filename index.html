@@ -14508,7 +14508,8 @@ function _gpTimeline(feed, uc, inWin, names){
     if(shot && a.result!=="+" && k==="FT"){ /* a missed free throw of ours costs a point */ if(us) push(o, "off", "bad", 0.8, "ftm", "Missed free throw"); }
     if(shot || lost || (reb && a.info1!=="O")){ if(second===other) second=null; if(offTO===other) offTO=null; }
     if(k==="BL" && !us) push(o, "off", "bad", 1, "blk", "Blocked");
-    if(k==="ST" && us) push(o, "def", "good", 1, "stl", "Steal");
+    /* a steal is the same moment as their turnover, already on the line: it only names who */
+    if(k==="ST" && us){ for(let j=ev.length-1;j>=0 && ev[j].t>=o.t-2;j--) if(ev[j].kind==="tov" && ev[j].side==="def"){ ev[j].label="Their turnover · steal "+who(a.player_id1); break; } }
   });
   if(run && run.pts>=7) runs.push(run);
   runs.forEach(r=>{ if(!inWin(r.o1) && !inWin(r.o0)) return;
