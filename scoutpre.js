@@ -2879,6 +2879,15 @@
                avg: R.D.say.selfPpp, games: R.D.meta.games, flags: R.D.playbookFlags };
     });
   };
+  /* the tagged games of an opponent as files, without reading them: the name, the game it
+     is (the other team), and when it reached the folder - for the video staff's deadlines */
+  API.filesOf = function (opponent) {
+    return listFolder().then(function (all) {
+      return pickFiles(all, opponent).map(function (f) {
+        return { name: f.name, rival: classify(f.name, opponent).rival, at: f.createdTime || f.modifiedTime || "" };
+      });
+    });
+  };
   API.refresh = function () {
     dropCache();
     var n = document.querySelectorAll(".scoutpre-slot, .scoutpre-players-slot");

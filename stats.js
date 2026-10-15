@@ -4974,6 +4974,8 @@
                               gameModel: gameModel, shotLine: shotLine, measured: measured, summarise: summarise,
                               seasonGames: seasonGames, addUp: addUp,
                               datesWithFiles: datesWithFiles,
+                              /* the folders as files (name, created), for the video staff's deadlines */
+                              files: listFolder, findGameFile: findGameFile, fileDate: fileDate,
                               /* exposed so a report block can be rendered against a
                                  known file without driving the whole page */
                               buildPractice: buildPractice, buildGame: buildGame,

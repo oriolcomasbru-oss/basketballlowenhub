@@ -424,31 +424,43 @@
      only the measures that judge it - the value for the period, where it stands against
      his season, and the line of it game by game. On top, how many of those measures are
      going the right way and how many the wrong way, so the page reads in one sweep. */
-  function goalsView(root, P) {
-    var grid = el("div", { class: "pd-cards" });
-    var tile = function (m, lines) {
-      var t = trend(m, lines, UI.period, UI.mode);
-      var series = lines.map(function (x, i) { return value(m, sum(lines.slice(Math.max(0, i - 2), i + 1)), UI.mode); });
-      return { t: t, el: el("div", { class: "pd-tile " + t.tone + (t.small ? " sm" : ""), title: (m.note ? m.note + " · " : "") + (t.base != null ? "before " + fmt(m, t.base) : "") + (t.small ? " · small sample" : "") },
-        el("i", {}, m.l),
-        el("div", { class: "tv" }, el("b", {}, fmt(m, t.v)),
-          t.d != null ? el("em", {}, (t.tone === "up" ? "▲" : t.tone === "dn" ? "▼" : "▸") + " " + fmt(Object.assign({}, m, { sign: true }), t.d)) : null),
-        spark(series, { ref: t.base, tone: t.tone, w: 120, h: 28 })) };
-    };
-    /* the players outside the programme: one small line each - who, how much he has played,
-       and three numbers - and the full page one tap away */
-    var mini = function (p) {
-      var lines = p.lines, S = sum(lines), g = lines.length;
-      var f = function (k) { var m = MK[k]; return el("span", {}, el("i", {}, m.l), el("b", {}, fmt(m, value(m, S, UI.mode)))); };
-      return el("button", { type: "button", class: "pd-mini", onclick: function () { UI.open = p.key; draw(); } },
-        face(p, "sm"), el("u", {}, p.num ? "#" + p.num : ""), el("b", {}, p.nm),
-        g ? el("em", {}, g + " GP · " + (S.s / 60 / g).toFixed(1) + " min") : el("em", { class: "none" }, p.missing ? "not on the league roster" : "no stats yet"),
-        g ? el("span", { class: "st" }, f("pts"), f("reb"), f("pir")) : null);
-    };
-    var cardOf = function (p, dl) {
-      if (dl) return mini(p);
+  /* one measure of a card: the value of the period, the change against the games before,
+     the line of it - and each of the last games as its own number, so the trend can be
+     read in figures and not only in a line */
+  function tile(m, lines) {
+    var t = trend(m, lines, UI.period, UI.mode);
+    var series = lines.map(function (x, i) { return value(m, sum(lines.slice(Math.max(0, i - 2), i + 1)), UI.mode); });
+    var n = UI.period === "all" ? 5 : Math.min(5, +UI.period || 5);
+    var lastG = lines.slice(-Math.max(n, 5)).map(function (x) { var S1 = sum([x]); return { x: x, v: value(m, S1, UI.mode), sm: m.t === "rate" && small(m, S1) }; });
+    var ref = t.base != null ? t.base : value(m, sum(lines), UI.mode);
+    var gl = el("div", { class: "pd-lg" }, lastG.map(function (o) {
+      var c = "";
+      if (o.v != null && ref != null && m.hi != null && !o.sm) { var d = o.v - ref, th = m.pct ? 4 : Math.max(0.5, Math.abs(ref) * 0.15); if (Math.abs(d) >= th) c = (d > 0) === m.hi ? "u" : "d"; }
+      return el("span", { class: c + (o.sm ? " sm" : ""), title: ddmm(o.x.d) + " " + (o.x.home ? "vs " : "@ ") + o.x.opp + " · " + m.l + " " + fmt(m, o.v) }, o.v == null ? "—" : fmt(m, o.v)); }));
+    return { t: t, el: el("div", { class: "pd-tile " + t.tone + (t.small ? " sm" : ""), title: (m.note ? m.note + " · " : "") + (t.base != null ? "before " + fmt(m, t.base) : "") + (t.small ? " · small sample" : "") },
+      el("i", {}, m.l),
+      el("div", { class: "tv" }, el("b", {}, fmt(m, t.v)),
+        t.d != null ? el("em", {}, (t.tone === "up" ? "▲" : t.tone === "dn" ? "▼" : "▸") + " " + fmt(Object.assign({}, m, { sign: true }), t.d)) : null),
+      spark(series, { ref: t.base, tone: t.tone, w: 120, h: 28 }), gl) };
+  }
+  /* the players outside the programme: one small line each - who, how much he has played,
+     and three numbers - and the full page one tap away */
+  function mini(p, open) {
+    var lines = p.lines, S = sum(lines), g = lines.length;
+    var f = function (k) { var m = MK[k]; return el("span", {}, el("i", {}, m.l), el("b", {}, fmt(m, value(m, S, UI.mode)))); };
+    return el("button", { type: "button", class: "pd-mini", onclick: function () { open(p.key); } },
+      face(p, "sm"), el("u", {}, p.num ? "#" + p.num : ""), el("b", {}, p.nm),
+      g ? el("em", {}, g + " GP · " + (S.s / 60 / g).toFixed(1) + " min") : el("em", { class: "none" }, p.missing ? "not on the league roster" : "no stats yet"),
+      g ? el("span", { class: "st" }, f("pts"), f("reb"), f("pir")) : null);
+  }
+  function openHere(key) { UI.open = key; draw(); }
+  /* a section of the page, headed the way the League and the reports head theirs */
+  function L1(title, sub) { return el("div", { class: "lg-l1 pd-l1" }, el("b", {}, title), sub ? el("span", {}, sub) : null); }
+  function cardOf(p, dl, open) {
+      open = open || openHere;
+      if (dl) return mini(p, open);
       var r = rec(p.key), act = (r.goals || []).filter(function (g) { return g.status === "active"; }), lines = p.lines;
-      var c = el("button", { type: "button", class: "pd-pc" + (dl ? " dl" : ""), onclick: function () { UI.open = p.key; draw(); } });
+      var c = el("button", { type: "button", class: "pd-pc" + (dl ? " dl" : ""), onclick: function () { open(p.key); } });
       var up = 0, dn = 0;
       var body = el("div", { class: "pd-pcb" });
       if (!lines.length) body.appendChild(el("div", { class: "pd-miss" }, p.missing ? "Not on the league roster - check the name." : dl ? "No stats yet - they arrive with the ProB feed." : "No games yet."));
@@ -468,17 +480,41 @@
         verdict ? el("span", { class: "pd-vd " + verdict[0] }, verdict[1], (up || dn) ? el("i", {}, "▲" + up + " ▼" + dn) : null) : null));
       c.appendChild(body);
       return c;
-    };
-    P.main.forEach(function (p) { grid.appendChild(cardOf(p, false)); });
-    root.appendChild(grid);
-    overviewMatrix(root, P);
-    root.appendChild(el("div", { class: "pd-foot" }, (UI.period === "all" ? "Season values. Choose last 10, 5 or 3 to see each measure against his season." :
+  }
+  var FOOT = function () { return (UI.period === "all" ? "Season values. Choose last 10, 5 or 3 to see each measure against his season." :
       "Last " + UI.period + " games against the games before them: green is better, red is worse, pale is a sample too small to judge. ") +
-      "The line is the three-game rolling value, the dashed line his season. Improving / dropping counts only his goal measures."));
+      "The line is the three-game rolling value, the dashed line his season; the figures under it are his last games one by one. Improving / dropping counts only his goal measures."; };
+  function goalsView(root, P) {
+    var grid = el("div", { class: "pd-cards" });
+    P.main.forEach(function (p) { grid.appendChild(cardOf(p, false)); });
+    root.appendChild(L1("The programme", "each player by his own goals · " + (UI.period === "all" ? "the season" : "last " + UI.period + " games against the games before")));
+    root.appendChild(grid);
+    root.appendChild(el("div", { class: "pd-foot" }, FOOT()));
+    root.appendChild(L1("Game by game", "every game of the season, each cell against that row's own season"));
+    overviewMatrix(root, P);
     var rest = el("div", { class: "pd-cards rest" });
     P.dl.forEach(function (p) { rest.appendChild(cardOf(p, true)); });
-    root.appendChild(el("div", { class: "pd-sep" }, "Double licence and the rest of the roster"));
+    root.appendChild(L1("Double licence and the rest of the roster", P.dl.length + " players · one line each, tap for the full page"));
     root.appendChild(rest);
+  }
+  /* THE SAME CARDS ON A DASHBOARD. The players of the programme as they are on the first
+     screen of this section; a tap opens his page here. */
+  function dash(box, opts) {
+    opts = opts || {};
+    var go = function () {
+      box.innerHTML = "";
+      if (!D.R) { box.appendChild(el("div", { class: "pd-miss" }, "The season could not be read" + (D.err ? ": " + D.err : "."))); return; }
+      var P = people(); seedOnce(P.main);
+      var open = function (key) { UI.open = key; try { if (typeof setView === "function") setView("playerdev"); } catch (e) { } };
+      var grid = el("div", { class: "pd-cards" + (opts.compact ? " dash" : "") });
+      P.main.forEach(function (p) { grid.appendChild(cardOf(p, false, open)); });
+      box.appendChild(grid);
+      box.appendChild(el("div", { class: "pd-foot" }, FOOT()));
+    };
+    if (D.R && D.doc) return go();
+    box.appendChild(el("div", { class: "ld" }, "Reading the season, game by game…", el("span", { class: "ld-bar" })));
+    if (D.busy) { var n = 0, t = setInterval(function () { if ((D.R && D.doc) || ++n > 120) { clearInterval(t); go(); } }, 250); return; }
+    load(go);
   }
   /* ONE PLAYER, BY HIS GOALS. Each goal he is working on is a block of its own with one
      answer at the top - better, worse or the same - and under it each of its measures as
@@ -903,6 +939,10 @@
       ".pd-tile .tv{display:flex;align-items:baseline;gap:6px}.pd-tile .tv b{font:700 17px 'Oswald',sans-serif}.pd-tile .tv em{font:700 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}",
       ".pd-tile.up .tv b,.pd-tile.up .tv em{color:#17805a}.pd-tile.dn .tv b,.pd-tile.dn .tv em{color:#c0403c}",
       ".pd-tile svg{width:100%;height:28px}",
+      ".pd-lg{display:flex;gap:2px;margin-top:1px}.pd-lg span{flex:1;text-align:center;font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);background:rgba(20,24,33,.05);border-radius:3px;padding:1px 0;min-width:0;overflow:hidden}",
+      ".pd-lg span.u{background:rgba(47,158,134,.2);color:#17603f}.pd-lg span.d{background:rgba(216,82,78,.17);color:#9e302c}.pd-lg span.sm{opacity:.5}",
+      ".pd .lg-l1.pd-l1{margin:8px 0 0}",
+      ".pd-cards.dash{grid-template-columns:repeat(auto-fill,minmax(440px,1fr))}@media (max-width:640px){.pd-cards.dash{grid-template-columns:minmax(0,1fr)}}",
       ".pd-sep{font:700 11px 'Oswald',sans-serif;letter-spacing:.15em;text-transform:uppercase;margin:14px 0 4px;padding-bottom:4px;border-bottom:2px solid var(--ink,#141821)}",
       ".pd-foot{font-size:11.5px;color:var(--ink-soft,#5b6472);max-width:90ch}",
       ".pd-spark{display:block}.pd-spark .ln{fill:none;stroke:#8a93a2;stroke-width:1.6}.pd-spark .ln.up{stroke:#2f9e86}.pd-spark .ln.dn{stroke:#d8524e}.pd-spark .ref{stroke:#cfd4dc;stroke-dasharray:2 2}.pd-spark .mk{stroke:#c6a15b;stroke-width:1.5}.pd-spark .dot{fill:#5b6472}.pd-spark .dot.up{fill:#2f9e86}.pd-spark .dot.dn{fill:#d8524e}",
@@ -945,5 +985,5 @@
     document.head.appendChild(s);
   }
   css();
-  window.PDev = { render: render, reload: function () { D.R = null; D.doc = null; } };
+  window.PDev = { render: render, dash: dash, reload: function () { D.R = null; D.doc = null; } };
 })();
