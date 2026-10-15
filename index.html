@@ -23551,12 +23551,13 @@ function _preJoinedPlayers(tid){
    missing. The only thing that is new is the S&C note of the cycle, kept on the server
    with the reports so everybody reads the same one. */
 var DASHES={
-  Ramon:{ name:"Ramón", role:"Head coach", cards:["pre","post","players","league","trends","week","month"] },
+  Ramon:{ name:"Ramón", role:"Head coach", cards:["pre","post","players","league","trends2","week","month"] },
   Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["quick","coming","league","trends2","oppr","week","month"] },
-  Keith:{ name:"Keith", role:"Coaching staff", cards:["pdev","pre","post","players","league","trends","week","monthP"] },
+  Keith:{ name:"Keith", role:"Coaching staff", cards:["pdev","pre","post","players","league","trends2","week","monthP"] },
   Liviu:{ name:"Liviu", role:"Coaching staff", cards:["pdev","month"] },
-  "Joan Marc":{ name:"Joan Marc", role:"Video", cards:["vwork","vcal","vrivals"] },
-  "Marc Ribas":{ name:"Marc", role:"Video", cards:["vwork","vcal","vrivals"] },
+  /* Joan Marc does the games and sees what Marc has done and owes; Marc the trainings */
+  "Joan Marc":{ name:"Joan Marc", role:"Video · games", cards:["vgames","vrivals","vcal","vtrain"] },
+  "Marc Ribas":{ name:"Marc", role:"Video · trainings", cards:["vtrain","month"] },
   Pedro:{ name:"Pedro", role:"Physical coach", cards:["week","avail","minutes","month"] },
   Jonas:{ name:"Jonas", role:"Staff", cards:["us","month"] },
   Fabienne:{ name:"Fabienne", role:"Media · articles", cards:["fquick","us","rivals"] }
@@ -23871,28 +23872,43 @@ function _dashLegend(series){ return h("div",{class:"dash-leg"}, series.map(sr=>
    by the next day; the post game - the CSV, the NAC analysis and the presentation, not the
    report - sent and on MEGA by the next morning. What the app can see (the CSV files in the
    Drive) it checks itself; what it cannot (MEGA, the analysis sent) the video staff ticks. */
+/* Joan Marc does the games (the scouting of each opponent and our post games), Marc the
+   trainings. Every opponent is scouted on three or four of its games, each game with its own
+   CSV, analysis, presentation and botonera: the first three by our game two before theirs,
+   the last one by the game before. */
 const VIDEO_DOC="video:v1", VIDEO_WHO=["Joan Marc","Marc Ribas","Oriol"];
-function _videoTasks(G, T){
-  const seq=G.past.concat(G.upcoming), out=[];
+const VIDEO_PARTS=[["csv","CSV"],["analysis","Analysis"],["presentation","Presentation"],["botonera","Botonera"]];
+function _videoPlan(G, T){
+  const seq=G.past.concat(G.upcoming);
   const ph=g=>{ try{ return _gamePlaceholder(g.opponent); }catch(e){ return false; } };
-  G.upcoming.slice(0,4).forEach(x=>{ const g=x.g; if(ph(g)) return;
-    const i=seq.indexOf(x), p2=seq[i-2], p1=seq[i-1];
-    const d2=p2? p2.g.date : addDays(g.date,-13), d1=p1? p1.g.date : addDays(g.date,-6);
-    out.push({ kind:"scout", g:g, key:"scout:"+g.id+":csv", what:"2 games of "+_lgShort(g.opponent)+" cut", grp:"Scouting · "+g.opponent, due:d2,
-      dueTxt:_dashFmt(d2)+(p2? " · game vs "+_lgShort(p2.g.opponent) : "") });
-    [["analysis","Game analysis on MEGA"],["presentation","Presentation on MEGA"],["botonera","Botonera on MEGA"]].forEach(k=>
-      out.push({ kind:"manual", g:g, key:"scout:"+g.id+":"+k[0], what:k[1], grp:"Scouting · "+g.opponent, due:d1, dueTxt:_dashFmt(d1)+(p1? " · game vs "+_lgShort(p1.g.opponent) : "") })); });
-  G.past.slice(-3).forEach(x=>{ const g=x.g, due=addDays(g.date,1);
-    out.push({ kind:"post", g:g, key:"post:"+g.id+":csv", what:"CSV in the Drive folder", grp:"Post game · "+g.opponent, due:due, noon:true, dueTxt:_dashFmt(due)+" 12:00" });
-    out.push({ kind:"manual", g:g, key:"post:"+g.id+":nac", what:"NAC analysis sent and on MEGA", grp:"Post game · "+g.opponent, due:due, noon:true, dueTxt:_dashFmt(due)+" 12:00" });
-    out.push({ kind:"manual", g:g, key:"post:"+g.id+":pres", what:"Presentation on MEGA", grp:"Post game · "+g.opponent, due:due, noon:true, dueTxt:_dashFmt(due)+" 12:00" }); });
-  for(let k=10;k>=1;k--){ const d=addDays(T,-k);
+  const scout=G.upcoming.slice(0,4).filter(x=>!ph(x.g)).map(x=>{ const g=x.g, i=seq.indexOf(x), p2=seq[i-2], p1=seq[i-1];
+    return { g:g, p2:p2? p2.g : null, p1:p1? p1.g : null, d2:p2? p2.g.date : addDays(g.date,-13), d1:p1? p1.g.date : addDays(g.date,-6) }; });
+  const post=G.past.slice(-3).map(x=>({ g:x.g, due:addDays(x.g.date,1) }));
+  const train=[];
+  for(let k=14;k>=0;k--){ const d=addDays(T,-k);
     if((state.games||[]).some(g=>g.date===d && isCycleGame(g))) continue;
     const pj=((state.plan&&state.plan.pfj)||{})[d], ses=((state.plan&&state.plan.sessions)||{})[d];
     if(!((pj && !pj.off) || (Array.isArray(ses)? ses.length : !!ses))) continue;
     let five=null; try{ five=praFive(d); }catch(e){} if(five===false) continue;
-    out.push({ kind:"train", d:d, key:"train:"+d, what:"Training CSV in the Drive folder", grp:"Training · "+_dashFmt(d), due:addDays(d,1), dueTxt:_dashFmt(addDays(d,1)) }); }
+    train.push({ d:d, due:addDays(d,1), pj:pj }); }
+  return { scout:scout, post:post, train:train };
+}
+/* the deadlines alone, for the calendar */
+function _videoTasks(G, T){
+  const P=_videoPlan(G, T), out=[];
+  P.scout.forEach(s=>{ out.push({ kind:"scout", g:s.g, due:s.d2, what:"games 1–3 of "+_lgShort(s.g.opponent) });
+    out.push({ kind:"scoutL", g:s.g, due:s.d1, what:"last game of "+_lgShort(s.g.opponent) }); });
+  P.post.forEach(p=>out.push({ kind:"post", g:p.g, due:p.due, what:"post game "+_lgShort(p.g.opponent) }));
+  P.train.forEach(t=>out.push({ kind:"train", d:t.d, due:t.due, what:"training "+_dashFmt(t.d) }));
   return out;
+}
+/* the state of one item: done, done late, late, due today, soon, open, optional */
+function _videoState(done, at, due, noon, optional){
+  const T=todayISO(), dueAt=new Date(due+(noon? "T12:00:00" : "T23:59:59"));
+  if(done) return (at && new Date(at)>dueAt)? ["dlate","late ✓"] : ["ok","✓"];
+  if(new Date()>dueAt) return optional? ["opt","—"] : ["late","late"];
+  const dl=Math.round((new Date(due+"T00:00:00")-new Date(T+"T00:00:00"))/86400000);
+  return dl===0? ["today","today"] : dl<=2? ["soon",dl+"d"] : ["open",dl+"d"];
 }
 /* the other team of a game of theirs, said short */
 function _videoOther(y, tid){ return String(y.homeId)===String(tid)? (y.away||"") : (y.home||""); }
@@ -24027,7 +24043,7 @@ function renderDashboard(){
   const loading=t=>h("div",{class:"dash-ld"}, t||"Reading…");
   const crest=g=>{ try{ return _lgOppCrest(g, "opp big")||h("span",{class:"dash-crest"}, String(g.opponent||"?").slice(0,3).toUpperCase()); }catch(e){ return null; } };
 
-  let monthCard=()=>{};
+  let monthCard=()=>{}, videoCard=()=>{};
   const builders={
     /* ---------------------------------------------------- next game, pre game */
     pre:()=>{
@@ -24422,73 +24438,97 @@ function renderDashboard(){
       c.__b.appendChild(t);
       c.__b.appendChild(h("div",{class:"dash-src"},"From the medical sheet in Planning · only the players with a restriction on one of the next seven days"));
     },
-    /* ---------------------------------------------------- the video staff */
-    vwork:()=>{
-      const c=card("wide", "Video · what is owed and by when", null);
-      const head=h("div",{class:"dash-vsum"}), list=h("div",{class:"dash-vt"}, loading("Checking the Drive folders…"));
+    /* GAMES (Joan Marc): each opponent's scouting game by game - the first three games by
+       our game two before theirs, the last one by the game before - and our post games */
+    vgames:()=>videoCard("games"),
+    /* TRAININGS (Marc): each training tagged by the next day */
+    vtrain:()=>videoCard("train"),
+    video0:(what)=>{
+      const games=what==="games";
+      const c=card("wide", games? "Video · games — scouting and post game" : "Video · trainings", null);
+      const head=h("div",{class:"dash-vsum"}), list=h("div",{}, loading("Checking the Drive folders…"));
       c.__b.appendChild(head); c.__b.appendChild(list);
-      const tasks=_videoTasks(G, T);
+      const P=_videoPlan(G, T);
       const may=VIDEO_WHO.indexOf(currentUser)>=0;
       let ticks={};
       const vAlert={ tone:"bad", text:"" };
-      const st={};   /* key -> { done, at, late, info } from the folders */
-      const now=new Date();
-      const dueAt=t=>new Date(t.due+(t.noon? "T12:00:00" : "T23:59:59"));
-      const paint=()=>{ list.innerHTML="";
-        const rows=tasks.map(t=>{
-          let done=false, info="", at="";
-          if(t.kind==="manual"){ const k=ticks[t.key]; if(k){ done=true; at=k.at||""; info="ticked by "+(k.by||"?"); } }
-          else { const s=st[t.key]; if(s===undefined) return { t:t, s:"wait", txt:"checking…" }; done=!!s.done; at=s.at||""; info=s.info||""; }
-          const lateDone=done && at && new Date(at)>dueAt(t);
-          const dl=Math.round((new Date(t.due+"T00:00:00")-new Date(T+"T00:00:00"))/86400000);
-          const s=done? (lateDone? "dlate" : "ok") : (now>dueAt(t)? "late" : dl===0? "today" : dl<=2? "soon" : "open");
-          const txt=done? (lateDone? "Done late" : "Done") : s==="late"? "Late" : s==="today"? "Due today" : "In "+dl+" day"+(dl===1? "" : "s");
-          return { t:t, s:s, txt:txt, info:info, at:at };
-        });
-        const late=rows.filter(r=>r.s==="late").length, soon=rows.filter(r=>r.s==="today"||r.s==="soon").length, ok=rows.filter(r=>r.s==="ok"||r.s==="dlate").length;
-        head.innerHTML="";
-        head.appendChild(h("span",{class:"bad"}, late+" late")); head.appendChild(h("span",{class:"warn"}, soon+" due in the next 2 days")); head.appendChild(h("span",{class:"good"}, ok+" done"));
-        { const i=alerts.indexOf(vAlert); if(i>=0) alerts.splice(i,1);
-          if(late){ vAlert.text=late+" video task"+(late===1? "" : "s")+" late"; alerts.push(vAlert); }
-          paintAtt(); }
-        const ord={ late:0, today:1, soon:2, open:3, wait:4, dlate:5, ok:6 };
-        const grps=[]; const by={};
-        rows.forEach(r=>{ if(!by[r.t.grp]){ by[r.t.grp]=[]; grps.push(r.t.grp); } by[r.t.grp].push(r); });
-        grps.sort((a,b)=>Math.min(...by[a].map(r=>ord[r.s]))-Math.min(...by[b].map(r=>ord[r.s])) || String(by[a][0].t.due).localeCompare(String(by[b][0].t.due)));
-        grps.forEach(gk=>{
-          const g0=by[gk][0].t.g;
-          const box=h("div",{class:"dash-vg"}, h("div",{class:"dash-vgh"}, h("b",{}, gk), h("span",{}, g0? "game "+_dashFmt(g0.date) : "")));
-          by[gk].forEach(r=>{
-            const tick=(r.t.kind==="manual" && may)? h("button",{type:"button", class:"dash-tick"+(ticks[r.t.key]? " on" : ""), title:ticks[r.t.key]? "Untick" : "Mark as done", onclick:()=>toggle(r.t.key)}, ticks[r.t.key]? "✓" : "") : null;
-            box.appendChild(h("div",{class:"dash-vr "+r.s}, h("span",{class:"pill"}, r.txt), tick, h("span",{class:"w"}, r.t.what, r.t.kind==="manual"? h("i",{}," · ticked by hand") : h("i",{}," · checked in the Drive")),
-              h("span",{class:"inf"}, ["due "+r.t.dueTxt, r.info, r.at? "at "+String(r.at).slice(8,10)+"/"+String(r.at).slice(5,7)+" "+String(r.at).slice(11,16) : ""].filter(Boolean).join(" · "))));
-          });
-          list.appendChild(box); });
-        if(!rows.length) list.appendChild(h("div",{class:"dash-miss"},"Nothing in the calendar to prepare."));
-      };
+      const files={ scout:{}, game:null, practice:null, err:{} };
+      const fmtAt=a=>a? String(a).slice(8,10)+"/"+String(a).slice(5,7)+" "+String(a).slice(11,16) : "";
       const toggle=async (key)=>{
         const srv=(await _clubDocGet(VIDEO_DOC))||{}; srv.ticks=srv.ticks||{};
         if(srv.ticks[key]) delete srv.ticks[key]; else srv.ticks[key]={ by:currentUser||"", at:new Date().toISOString() };
         const ok=await _clubDocPut(VIDEO_DOC, srv);
         if(ok){ ticks=srv.ticks; paint(); } else toast("Not saved — check the connection");
       };
+      let nLate=0, nSoon=0, nDone=0;
+      const count=s=>{ if(s[0]==="late") nLate++; else if(s[0]==="today"||s[0]==="soon") nSoon++; else if(s[0]==="ok"||s[0]==="dlate") nDone++; };
+      /* one cell: what the Drive says, or a tick */
+      const autoCell=(done, at, due, noon, opt, info)=>{ const s=_videoState(done, at, due, noon, opt); count(s);
+        return h("span",{class:"vc "+s[0], title:[info, at? "in the Drive "+fmtAt(at) : ""].filter(Boolean).join(" · ")}, s[1]); };
+      const tickCell=(key, due, noon, opt, auto)=>{ const t=ticks[key], done=!!t || !!(auto && auto.done);
+        const s=_videoState(done, t? t.at : (auto && auto.at), due, noon, opt); count(s);
+        const tip=t? "ticked by "+(t.by||"?")+" "+fmtAt(t.at) : auto && auto.done? "found in the Drive "+fmtAt(auto.at) : may? "tap to mark as done" : "";
+        return may? h("button",{type:"button", class:"vc "+s[0]+" tk", title:tip, onclick:()=>toggle(key)}, s[1]) : h("span",{class:"vc "+s[0], title:tip}, s[1]); };
+      const paint=()=>{ list.innerHTML=""; nLate=0; nSoon=0; nDone=0;
+        if(games){
+          /* the scouting: one block an opponent, one row a game of theirs */
+          P.scout.forEach(s=>{
+            const fs=files.scout[s.g.id], sorted=fs? fs.slice().sort((a,b)=>String(a.at).localeCompare(String(b.at))) : null;
+            const box=h("div",{class:"dash-vg"}, h("div",{class:"dash-vgh"}, h("b",{}, "Scouting · "+s.g.opponent), h("span",{}, "our game "+_dashFmt(s.g.date)+" · "+(fs? fs.length+" game"+(fs.length===1? "" : "s")+" cut" : files.err[s.g.id]? "folder not read" : "checking…"))));
+            const tbl=h("div",{class:"dash-vm"}, h("span",{class:"hd"},""), ...VIDEO_PARTS.map(p=>h("span",{class:"hd"}, p[1])));
+            const part=(lbl, due, ref)=>tbl.appendChild(h("span",{class:"sep"}, h("b",{}, lbl), " · due "+_dashFmt(due)+(ref? " (game vs "+_lgShort(ref.opponent)+")" : "")));
+            [1,2,3,4].forEach(i=>{
+              if(i===1) part("First games, 1 to 3", s.d2, s.p2);
+              if(i===4) part("The last game", s.d1, s.p1);
+              const due=i<=3? s.d2 : s.d1, opt=i===4, f=sorted? sorted[i-1] : null;
+              tbl.appendChild(h("span",{class:"gl"}, "Game "+i, h("i",{}, f? " · vs "+String(f.rival||"").replace(/^VS\s+/i,"") : opt? " · optional" : "")));
+              tbl.appendChild(sorted? autoCell(!!f, f && f.at, due, false, opt, f? f.name : "no file yet") : h("span",{class:"vc wait"},"…"));
+              VIDEO_PARTS.slice(1).forEach(p=>tbl.appendChild(tickCell("scout:"+s.g.id+":g"+i+":"+p[0], due, false, opt)));
+            });
+            box.appendChild(tbl); list.appendChild(box); });
+          /* our post games: the CSV, the NAC analysis and the presentation by the next morning */
+          if(P.post.length){
+            const box=h("div",{class:"dash-vg"}, h("div",{class:"dash-vgh"}, h("b",{}, "Post game"), h("span",{}, "by 12:00 the day after")));
+            const tbl=h("div",{class:"dash-vm post"}, h("span",{class:"hd"},""), h("span",{class:"hd"},"CSV"), h("span",{class:"hd"},"NAC analysis"), h("span",{class:"hd"},"Presentation"));
+            P.post.slice().reverse().forEach(p=>{
+              const f=files.game? window.LowenPostStats.findGameFile(files.game, p.g.opponent, p.g.date) : null;
+              tbl.appendChild(h("span",{class:"gl"}, (p.g.venue==="Away"? "@ " : "vs ")+p.g.opponent, h("i",{}, " · "+_dashFmt(p.g.date))));
+              tbl.appendChild(files.game? autoCell(!!f, f && (f.createdTime||f.modifiedTime), p.due, true, false, f? f.name : "no file yet") : h("span",{class:"vc wait"}, files.err.game? "?" : "…"));
+              tbl.appendChild(tickCell("post:"+p.g.id+":nac", p.due, true, false));
+              tbl.appendChild(tickCell("post:"+p.g.id+":pres", p.due, true, false)); });
+            box.appendChild(tbl); list.appendChild(box); }
+        } else {
+          /* the trainings: the CSV in the Drive, or ticked by Marc when the file is named otherwise */
+          const box=h("div",{class:"dash-vg"}, h("div",{class:"dash-vgh"}, h("b",{}, "Trainings · the last two weeks"), h("span",{}, "tagged by the next day")));
+          const tbl=h("div",{class:"dash-vm train"}, h("span",{class:"hd"},""), h("span",{class:"hd"},"CSV in the Drive"), h("span",{class:"hd"},"Done (Marc)"));
+          if(!P.train.length) box.appendChild(h("div",{class:"dash-miss"},"No training with five on five in the last two weeks."));
+          P.train.slice().reverse().forEach(t=>{
+            const f=files.practice? files.practice.filter(x=>window.LowenPostStats.fileDate(x.name)===t.d)[0] : null;
+            const auto=f? { done:true, at:f.createdTime||f.modifiedTime||"" } : null;
+            tbl.appendChild(h("span",{class:"gl"}, _dashFmt(t.d), h("i",{}, t.pj && t.pj.md? " · "+t.pj.md : "")));
+            tbl.appendChild(files.practice? h("span",{class:"vc "+(f? "ok" : "none"), title:f? f.name+" · "+fmtAt(auto.at) : "no file named with this date"}, f? "✓ "+fmtAt(auto.at).slice(0,5) : "—") : h("span",{class:"vc wait"}, files.err.practice? "?" : "…"));
+            tbl.appendChild(tickCell("train:"+t.d, t.due, false, false, auto)); });
+          if(P.train.length) box.appendChild(tbl);
+          list.appendChild(box);
+        }
+        head.innerHTML="";
+        head.appendChild(h("span",{class:"bad"}, nLate+" late")); head.appendChild(h("span",{class:"warn"}, nSoon+" due in the next 2 days")); head.appendChild(h("span",{class:"good"}, nDone+" done"));
+        { const i=alerts.indexOf(vAlert); if(i>=0) alerts.splice(i,1);
+          if(nLate){ vAlert.text=nLate+" video item"+(nLate===1? "" : "s")+" late · "+(games? "games" : "trainings"); alerts.push(vAlert); }
+          paintAtt(); }
+      };
       _clubDocGet(VIDEO_DOC).then(d=>{ ticks=(d && d.ticks)||{}; paint(); }).catch(()=>paint());
-      /* what the folders say: the scouting files of each opponent, our game files, the trainings */
       _dashNeed(()=>window.ScoutPre && window.ScoutPre.filesOf && window.LowenPostStats && window.LowenPostStats.files).then(ok=>{
-        if(!ok){ tasks.forEach(t=>{ if(t.kind!=="manual") st[t.key]={ done:false, info:"the Drive reader has not loaded" }; }); paint(); return; }
+        if(!ok){ files.err.game=files.err.practice=true; paint(); return; }
         const SP=window.ScoutPre, PS=window.LowenPostStats;
-        tasks.filter(t=>t.kind==="scout").forEach(t=>{
-          SP.filesOf(t.g.opponent).then(fs=>{ const s2=fs.slice().sort((a,b)=>String(a.at).localeCompare(String(b.at)));
-            st[t.key]={ done:fs.length>=2, at:fs.length>=2? s2[1].at : "", info:fs.length+" game"+(fs.length===1? "" : "s")+" cut"+(fs.length? " ("+fs.map(f=>f.rival).join(", ")+")" : "")+(fs.length>=2 && fs.length<4? " · 1–2 more welcome" : "") }; paint(); })
-            .catch(()=>{ st[t.key]={ done:false, info:"the scouting folder could not be read" }; paint(); }); });
-        PS.files("game").then(fs=>{ tasks.filter(t=>t.kind==="post").forEach(t=>{ const f=PS.findGameFile(fs, t.g.opponent, t.g.date);
-            st[t.key]=f? { done:true, at:f.createdTime||f.modifiedTime||"", info:f.name } : { done:false, info:"no file for this game yet" }; }); paint(); })
-          .catch(()=>{ tasks.filter(t=>t.kind==="post").forEach(t=>{ st[t.key]={ done:false, info:"the games folder could not be read" }; }); paint(); });
-        PS.files("practice").then(fs=>{ tasks.filter(t=>t.kind==="train").forEach(t=>{ const f=fs.filter(x=>PS.fileDate(x.name)===t.d)[0];
-            st[t.key]=f? { done:true, at:f.createdTime||f.modifiedTime||"", info:f.name } : { done:false, info:"no file for this day yet" }; }); paint(); })
-          .catch(()=>{ tasks.filter(t=>t.kind==="train").forEach(t=>{ st[t.key]={ done:false, info:"the practice folder could not be read" }; }); paint(); });
+        if(games){
+          P.scout.forEach(s=>SP.filesOf(s.g.opponent).then(fs=>{ files.scout[s.g.id]=fs; paint(); }).catch(()=>{ files.err[s.g.id]=true; paint(); }));
+          PS.files("game").then(fs=>{ files.game=fs||[]; paint(); }).catch(()=>{ files.err.game=true; paint(); });
+        } else PS.files("practice").then(fs=>{ files.practice=fs||[]; paint(); }).catch(()=>{ files.err.practice=true; paint(); });
       });
-      c.__b.appendChild(h("div",{class:"dash-src"},"The rule: 2 games of each opponent cut by our game two before theirs (1–2 more after that); the analysis, the presentation and the botonera on MEGA by the game before; a training tagged by the next day; the post game CSV, the NAC analysis and the presentation by 12:00 the next day. The CSVs are checked in the Drive; MEGA and what was sent are ticked here by Joan Marc or Marc."));
+      c.__b.appendChild(h("div",{class:"dash-src"}, games
+        ? "Three or four games of every opponent, each with its CSV, analysis, presentation and botonera: games 1 to 3 by our game two before theirs, the last one by the game before (optional). The CSVs are checked in the Drive scouting folder, the rest is ticked here. Post game: CSV, NAC analysis and presentation by 12:00 the next day."
+        : "A training with five on five, tagged by the next day. The CSV is found in the Drive by the date in its name; when it is named otherwise, Marc ticks it."));
     },
     vcal:()=>{
       const c=card("wide", "Video calendar · our games, the next opponents' games, the deadlines", null);
@@ -24523,10 +24563,10 @@ function renderDashboard(){
               if(_lgOurs(other)) return;
               cell.appendChild(h("span",{class:"dash-og", style:"border-left-color:"+o.hue, title:z.home+" – "+z.away+" · "+(z.competition||"")},
                 h("b",{}, _lgShort(o.g.opponent)), " vs "+_lgShort(other)+(z.competition && !/^bbl$/i.test(z.competition)? " · "+z.competition : ""))); }); });
-          tasks.filter(t=>t.due===iso && t.kind!=="train" && !(t.kind==="manual" && /^post:/.test(t.key))).forEach(t=>{
-            const txt="Due: "+(t.kind==="scout"? t.what : t.kind==="post"? "post game "+_lgShort(t.g.opponent) : "MEGA package "+_lgShort(t.g.opponent));
+          tasks.filter(t=>t.due===iso && t.kind!=="train").forEach(t=>{
+            const txt="Due: "+t.what;
             if(seenD[txt]) return; seenD[txt]=1;
-            cell.appendChild(h("span",{class:"dash-dl", title:t.grp+" · "+t.what}, txt)); });
+            cell.appendChild(h("span",{class:"dash-dl", title:t.what}, txt)); });
           grid.appendChild(cell);
         }
         box.appendChild(grid);
@@ -24858,7 +24898,7 @@ function renderDashboard(){
       if(keys.every(k=>k in _repStat)) draw(); else setTimeout(()=>{ if(list.querySelector(".dash-ld")) draw(); }, 6000);
     }
   };
-  monthCard=prob=>builders.month0(prob);
+  monthCard=prob=>builders.month0(prob); videoCard=w=>builders.video0(w);
   D.cards.forEach(k=>{ try{ builders[k](); }catch(e){ try{ console.warn("dashboard", k, e); }catch(_){} } });
 }
 let _lgClubOpen=false;
@@ -32902,6 +32942,22 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-vgm i{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
 .dash-vgm b{font:700 10.5px 'IBM Plex Mono',monospace}.dash-vgm u{text-decoration:none;font:700 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);text-align:right}
 .dash-vgm.cut{background:rgba(47,158,134,.1)}.dash-vgm.cut u{color:#17805a}.dash-vgm.fut{opacity:.75}
+/* the video tables: one row a game, one column a part of the work */
+#viewDash .dash-vt,.dash-card .dash-vt{display:block}
+.dash-card .dash-cb > div:has(> .dash-vg){display:grid;grid-template-columns:repeat(auto-fill,minmax(460px,1fr));gap:10px}
+@media (max-width:640px){ .dash-card .dash-cb > div:has(> .dash-vg){grid-template-columns:minmax(0,1fr)} }
+.dash-vm{display:grid;grid-template-columns:minmax(120px,1.6fr) repeat(4,minmax(0,1fr));gap:3px 5px;align-items:center;font-size:12px}
+.dash-vm.post{grid-template-columns:minmax(140px,1.8fr) repeat(3,minmax(0,1fr))}
+.dash-vm.train{grid-template-columns:minmax(120px,1.4fr) repeat(2,minmax(0,1fr))}
+.dash-vm .hd{font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint,#8a93a2);text-align:center}
+.dash-vm .sep{grid-column:1/-1;font-size:10.5px;color:var(--ink-soft,#5b6472);margin-top:5px;padding-bottom:2px;border-bottom:1px dashed var(--line,#e4e7ec)}
+.dash-vm .sep b{font:700 10px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink,#141821)}
+.dash-vm .gl{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dash-vm .gl i{font-weight:400;font-style:normal;color:var(--ink-faint,#8a93a2);font-size:11px}
+.dash-vm .vc{display:block;text-align:center;border-radius:6px;padding:4px 2px;font:700 10.5px 'IBM Plex Mono',monospace;border:0;background:var(--panel-2,#f1f2f4);color:var(--ink-soft,#5b6472);min-width:0;white-space:nowrap}
+.dash-vm button.vc{cursor:pointer}.dash-vm button.vc:hover{outline:2px solid #c6a15b}
+.dash-vm .vc.ok{background:#2f9e86;color:#fff}.dash-vm .vc.dlate{background:rgba(47,158,134,.25);color:#17603f}
+.dash-vm .vc.late{background:#d8524e;color:#fff}.dash-vm .vc.today,.dash-vm .vc.soon{background:#d9a521;color:#fff}
+.dash-vm .vc.opt,.dash-vm .vc.none,.dash-vm .vc.wait{background:transparent;color:var(--ink-faint,#8a93a2);border:1px dashed var(--line,#e4e7ec)}
 /* a player's first screen */
 .dash-pnext{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line,#e4e7ec);border-radius:12px;background:var(--panel,#fff);padding:12px 14px;cursor:pointer;font:inherit;color:var(--ink,#141821);margin-bottom:8px}
 .dash-pnext:hover{border-color:#c6a15b}.dash-pnext .dash-who2{flex:1;min-width:0}.dash-pnext .dash-who2 b{font-size:18px}
