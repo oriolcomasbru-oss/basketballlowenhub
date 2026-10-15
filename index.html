@@ -5599,7 +5599,8 @@ function isAdmin(){ return !isPlayerUser() && currentUser==="Oriol"; }
    does not read as a night of work. Two devices at once resolve by taking the larger of
    the two counts rather than the sum, which can undercount and will never invent time. */
 const USE_V = 1, USE_BEAT = 15, USE_IDLE = 120000, USE_FLUSH = 45000, USE_DAYS = 120;
-let _use = null, _useDirty = false, _useAct = Date.now(), _useTimer = null, _useOn = false;
+let _use = null, _useDirty = false, _useAct = Date.now(), _useTimer = null, _useOn = false, _useVidOn = null;
+const USE_VID_IDLE = 20 * 60000;
 function useKey(u){ return "usage:" + String(u || "").trim(); }
 function _useBlank(u){ return { v: USE_V, user: u || "", days: {} }; }
 function _useDay(){
@@ -5629,7 +5630,7 @@ function _useMerge(a, b){
     const ids = Object.keys(x.vids||{}).concat(Object.keys(y.vids||{}));
     ids.forEach(id => {
       const p1 = (x.vids||{})[id] || {}, p2 = (y.vids||{})[id] || {};
-      m.vids[id] = { n: Math.max(p1.n||0, p2.n||0), where: p1.where || p2.where || "",
+      m.vids[id] = { n: Math.max(p1.n||0, p2.n||0), sec: Math.max(p1.sec||0, p2.sec||0), where: p1.where || p2.where || "",
                      title: p1.title || p2.title || "" };
     });
     days[d] = m;
@@ -5658,8 +5659,14 @@ async function useStart(){
   let since = 0;
   _useTimer = setInterval(() => {
     if(document.visibilityState !== "visible") return;
-    if(Date.now() - _useAct > USE_IDLE) return;
+    /* a video being watched is time in use with no touch on the page: while its player is
+       still open the time counts, up to twenty minutes without a touch */
+    const vo = _useVidOn && document.querySelector('iframe[src*="youtube.com/embed/' + _useVidOn.id + '"]');
+    if(!vo) _useVidOn = null;
+    if(Date.now() - _useAct > (vo ? USE_VID_IDLE : USE_IDLE)) return;
     const d = _useDay(); if(!d) return;
+    if(vo){ const p = d.vids[_useVidOn.id] = d.vids[_useVidOn.id] || { n: 0, where: _useVidOn.where, title: _useVidOn.title };
+      p.sec = (p.sec || 0) + USE_BEAT; }
     d.sec += USE_BEAT;
     const v = (state && state.ui && state.ui.view) || "?";
     d.vsec[v] = (d.vsec[v] || 0) + USE_BEAT;
@@ -5688,6 +5695,8 @@ function useVideo(id, where, title){
   const p = d.vids[id] = d.vids[id] || { n: 0, where: where || "", title: title || "" };
   p.n++; if(where) p.where = where; if(title) p.title = title;
   _useDirty = true;
+  /* the player is open from now: the heartbeat adds its seconds while it stays open */
+  _useVidOn = { id: id, where: where || "", title: title || "" };
 }
 let _useBusy = false;
 async function useFlush(){
@@ -22113,8 +22122,12 @@ function _lgSeason(L, u){ return String(u).replace(/\{season\}/g, encodeURICompo
    <img>, which is why asking it directly produced nothing. Both crests and portraits come
    through our own function instead, which holds the key server side and hands back the
    image with its own content type. */
+/* portraits the staff supplied for a player the league has no picture of (a signing),
+   kept in the site itself under img/players/<league player id> */
+const PLAYER_PHOTOS={ "2003030":"/img/players/2003030.png" };   /* Ryan Mikesell, Chemnitz */
 function _lgImgUrl(L, kind, id){
   if(!id) return "";
+  if(kind==="player" && PLAYER_PHOTOS[String(id)]) return PLAYER_PHOTOS[String(id)];
   return "/.netlify/functions/bbl?res=img&kind="+kind+"&id="+encodeURIComponent(id)
     +"&season="+encodeURIComponent(L.season||"")+"&v="+LG_DATA_VER;
 }
@@ -23930,13 +23943,24 @@ function _dashFmt(iso){ return new Date(iso+"T00:00:00").toLocaleDateString("en-
    reads. The study of an opponent is the time in the pre game between our game before and
    the game against them; since the report itself is now recorded too, the time in that one
    report is shown when there is any. Only seconds with the tab visible and in use count. */
-async function _playerDash(root){
+/* the admin's switch: the staff's dashboards on one line, every player's on a second,
+   smaller one */
+function _dashSwitch(cur){
+  const go=k=>{ state.ui.dash=k; persist(); renderDashboard(); };
+  let pl=[]; try{ pl=rosterUsers(); }catch(e){}
+  return h("div",{class:"dash-sw"},
+    h("div",{class:"dash-who"}, Object.keys(DASHES).map(k=>h("button",{type:"button", class:k===cur? "on" : "", onclick:()=>go(k)}, DASHES[k].name))),
+    pl.length? h("div",{class:"dash-who pl"}, h("i",{},"Players"), pl.map(p=>h("button",{type:"button", class:("pl:"+p.name)===cur? "on" : "", title:p.pos+(p.dl? " · double licence" : ""), onclick:()=>go("pl:"+p.name)}, p.name))) : null);
+}
+async function _playerDash(root, who){
   const G=_dashGames(), T=todayISO();
   const page=h("div",{class:"dash pdash"}); root.appendChild(page);
-  const nm=String(currentUser||"");
-  page.appendChild(h("div",{class:"dash-top"},
-    h("div",{class:"dash-hi"}, h("b",{}, _dashGreeting()+", "+(nm.split(/\s+/)[0]||nm)), h("span",{},"Player")),
-    h("span",{class:"dash-day"}, _dashFmt(T)+(G.next? " · "+(dayDelta(G.next.g.date)===0? "game day" : dayDelta(G.next.g.date)+" days to "+G.next.g.opponent) : ""))));
+  const nm=String(who||currentUser||""), own=(nm===String(currentUser||""));
+  const top=h("div",{class:"dash-top"},
+    h("div",{class:"dash-hi"}, h("b",{}, own? _dashGreeting()+", "+(nm.split(/\s+/)[0]||nm) : nm), h("span",{}, own? "Player" : "Player · his dashboard, as he sees it")),
+    h("span",{class:"dash-day"}, _dashFmt(T)+(G.next? " · "+(dayDelta(G.next.g.date)===0? "game day" : dayDelta(G.next.g.date)+" days to "+G.next.g.opponent) : "")));
+  if(!own && isAdmin()) top.appendChild(_dashSwitch("pl:"+nm));
+  page.appendChild(top);
   const grid=h("div",{class:"dash-grid"}); page.appendChild(grid);
   const card=(cls, title)=>{ const b=h("div",{class:"dash-cb"}); const c=h("article",{class:"dash-card "+cls}, h("div",{class:"dash-ch"}, h("h3",{}, title)), b); c.__b=b; grid.appendChild(c); return c; };
   const crest=g=>{ try{ return _lgOppCrest(g, "opp big")||h("span",{class:"dash-crest"}, String(g.opponent||"?").slice(0,3).toUpperCase()); }catch(e){ return null; } };
@@ -23958,19 +23982,21 @@ async function _playerDash(root){
   const cS=card("wide", "Your scouting in numbers");
   const body=h("div",{}, h("div",{class:"dash-ld"},"Reading your time…")); cS.__b.appendChild(body);
   let doc=null;
-  try{ const r=await sbrpc("get_report",{ p_token:SB_TOKEN, p_key:useKey(currentUser) }); doc=r && r.ok && r.report && r.report.data; }catch(e){}
-  try{ if(_use) doc=doc && doc.days? _useMerge(doc, _use) : _use; }catch(e){}
+  try{ const r=await sbrpc("get_report",{ p_token:SB_TOKEN, p_key:useKey(nm) }); doc=r && r.ok && r.report && r.report.data; }catch(e){}
+  try{ if(own && _use) doc=doc && doc.days? _useMerge(doc, _use) : _use; }catch(e){}
   const days=(doc && doc.days)||{};
   /* one scouting: the days from the day after our game before, to the game itself */
   const study=(x, prev, toDay)=>{
     const from=prev? addDays(prev.g.date,1) : addDays(x.g.date,-7), to=toDay||x.g.date;
-    let sec=0, vids=0, dset=0; const per=[];
+    let sec=0, vids=0, vsec=0, dset=0; const per=[], V={};
     for(let d=from; d<=to; d=addDays(d,1)){ const y=days[d]||{};
       const s=(y.vsec||{}).oppscout||0; sec+=s; per.push({ d:d, s:s });
       if(s>0) dset++;
-      Object.keys(y.vids||{}).forEach(id=>{ vids+=(y.vids[id].n||0); }); }
+      Object.keys(y.vids||{}).forEach(id=>{ const v=y.vids[id]; vids+=(v.n||0); vsec+=(v.sec||0);
+        const e=V[id]||(V[id]={ id:id, n:0, sec:0, title:v.title||"", where:v.where||"" }); e.n+=(v.n||0); e.sec+=(v.sec||0); if(v.title) e.title=v.title; }); }
     let rep=0; Object.keys(days).forEach(d=>{ rep+=((days[d].rsec||{})["pre:"+x.g.id]||0); });
-    return { x:x, from:from, to:to, sec:sec, rep:rep, vids:vids, days:dset, per:per };
+    const list=Object.keys(V).map(k=>V[k]).sort((a,b)=>b.sec-a.sec||b.n-a.n);
+    return { x:x, from:from, to:to, sec:sec, rep:rep, vids:vids, vsec:vsec, vlist:list, days:dset, per:per };
   };
   const mins=s=>{ const m=Math.round(s/60); return m<60? m+" min" : Math.floor(m/60)+" h "+String(m%60).padStart(2,"0")+" min"; };
   body.innerHTML="";
@@ -23984,21 +24010,30 @@ async function _playerDash(root){
       h("div",{class:"big"}, h("i",{},"Studying "+last.g.opponent), h("b",{}, mins(S.sec)), h("span",{}, "in the pre game, "+_dashFmt(S.from)+" – "+_dashFmt(S.to))),
       h("div",{class:"dash-figs"},
         h("div",{class:"dash-fig"}, h("i",{},"Days you opened it"), h("b",{}, String(S.days)), h("span",{}, "of "+S.per.length)),
-        h("div",{class:"dash-fig"}, h("i",{},"Videos played"), h("b",{}, String(S.vids)), h("span",{}, "in those days")),
+        h("div",{class:"dash-fig"}, h("i",{},"Watching videos"), h("b",{}, S.vsec? mins(S.vsec) : "—"), h("span",{}, S.vids+" play"+(S.vids===1? "" : "s")+(S.vsec? "" : " · time recorded from now on"))),
         h("div",{class:"dash-fig"}, h("i",{},"In this report"), h("b",{}, S.rep? mins(S.rep) : "—"), h("span",{}, S.rep? "the "+last.g.opponent+" pre game itself" : "recorded from now on"))),
       h("div",{class:"dash-pbars"}, S.per.map(p=>h("div",{title:_dashFmt(p.d)+": "+mins(p.s)}, h("span",{style:"height:"+Math.max(p.s? 6 : 0, Math.round(100*p.s/mx))+"%"}), h("em",{}, p.d.slice(8)+"/"+p.d.slice(5,7)))))));
+    /* every video of that scouting, with the time it was on screen */
+    if(S.vlist.length){
+      const vm=Math.max(1, ...S.vlist.map(v=>v.sec));
+      body.appendChild(h("div",{class:"dash-h5"},"The videos of that scouting"));
+      body.appendChild(h("div",{class:"dash-pvid"}, S.vlist.slice(0,12).map(v=>h("div",{},
+        h("b",{}, v.title||"Video"), h("i",{}, v.where||""),
+        h("span",{class:"bar"}, h("u",{style:"width:"+Math.round(100*v.sec/vm)+"%"})),
+        h("em",{}, (v.sec? mins(v.sec) : "—")+" · "+v.n+" play"+(v.n===1? "" : "s"))))));
+    }
     /* the one being studied now */
     const nx0=G.upcoming.filter(x=>!ph(x.g))[0];
     if(nx0){ const N=study(nx0, last, T);
-      body.appendChild(h("div",{class:"dash-pnow"}, h("b",{}, "Now · "+nx0.g.opponent+": "+mins(N.sec)), h("span",{}, " so far since "+_dashFmt(N.from)+" · "+N.days+" day"+(N.days===1? "" : "s")+" · "+N.vids+" video"+(N.vids===1? "" : "s")))); }
+      body.appendChild(h("div",{class:"dash-pnow"}, h("b",{}, "Now · "+nx0.g.opponent+": "+mins(N.sec)), h("span",{}, " so far since "+_dashFmt(N.from)+" · "+N.days+" day"+(N.days===1? "" : "s")+" · "+N.vids+" video"+(N.vids===1? "" : "s")+(N.vsec? ", "+mins(N.vsec)+" watching" : "")))); }
     /* and the scoutings before, one line each */
     const hist=past.slice(-6).map((x,i,a)=>{ const k=past.indexOf(x); return study(x, past[k-1]); }).reverse();
     if(hist.length>1){
-      const t=h("div",{class:"dash-phist"}, h("span",{class:"hd"},"Opponent"), h("span",{class:"hd"},"Game"), h("span",{class:"hd"},"Time studying"), h("span",{class:"hd"},"Days"), h("span",{class:"hd"},"Videos"));
+      const t=h("div",{class:"dash-phist"}, h("span",{class:"hd"},"Opponent"), h("span",{class:"hd"},"Game"), h("span",{class:"hd"},"Time studying"), h("span",{class:"hd"},"Days"), h("span",{class:"hd"},"Videos · time"));
       const hm=Math.max(1, ...hist.map(s=>s.sec));
       hist.forEach(s=>{ t.appendChild(h("span",{class:"n"}, s.x.g.opponent)); t.appendChild(h("span",{}, _dashFmt(s.x.g.date)));
         t.appendChild(h("span",{class:"bar"}, h("i",{style:"width:"+Math.round(100*s.sec/hm)+"%"}), h("b",{}, mins(s.sec))));
-        t.appendChild(h("span",{}, String(s.days))); t.appendChild(h("span",{}, String(s.vids))); });
+        t.appendChild(h("span",{}, String(s.days))); t.appendChild(h("span",{}, s.vids+(s.vsec? " · "+mins(s.vsec) : ""))); });
       body.appendChild(h("div",{class:"dash-h5"},"Your last scoutings"));
       body.appendChild(t);
     }
@@ -24011,6 +24046,8 @@ function renderDashboard(){
   /* a report marked finished elsewhere is read again, never remembered from before */
   _dashMemo.rep={};
   if(isPlayerUser()){ _playerDash(root); return; }
+  /* the admin looks at a player's dashboard as the player sees it */
+  if(isAdmin() && /^pl:/.test(String(state.ui.dash||""))){ _playerDash(root, String(state.ui.dash).slice(3)); return; }
   const mine=_dashList(currentUser);
   if(!mine.length){ root.appendChild(h("div",{class:"lg-empty"},"There is no dashboard for this account yet.")); return; }
   let who=state.ui.dash; if(mine.indexOf(who)<0) who=_dashFor(currentUser)||mine[0];
@@ -24021,7 +24058,8 @@ function renderDashboard(){
   const head=h("div",{class:"dash-top"},
     h("div",{class:"dash-hi"}, h("b",{}, _dashGreeting()+", "+D.name), h("span",{}, D.role)),
     h("span",{class:"dash-day"}, _dashFmt(T)+(G.next? " · "+(toNext===0? "game day" : toNext===1? "1 day to "+G.next.g.opponent : toNext+" days to "+G.next.g.opponent) : "")));
-  if(mine.length>1) head.appendChild(h("div",{class:"dash-who"}, mine.map(k=>h("button",{type:"button", class:k===who? "on" : "", onclick:()=>{ state.ui.dash=k; persist(); renderDashboard(); }}, DASHES[k].name))));
+  if(isAdmin()) head.appendChild(_dashSwitch(who));
+  else if(mine.length>1) head.appendChild(h("div",{class:"dash-who"}, mine.map(k=>h("button",{type:"button", class:k===who? "on" : "", onclick:()=>{ state.ui.dash=k; persist(); renderDashboard(); }}, DASHES[k].name))));
   page.appendChild(head);
   const att=h("div",{class:"dash-att"}); page.appendChild(att);
   const alerts=[];
@@ -32958,6 +32996,17 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-vm .vc.ok{background:#2f9e86;color:#fff}.dash-vm .vc.dlate{background:rgba(47,158,134,.25);color:#17603f}
 .dash-vm .vc.late{background:#d8524e;color:#fff}.dash-vm .vc.today,.dash-vm .vc.soon{background:#d9a521;color:#fff}
 .dash-vm .vc.opt,.dash-vm .vc.none,.dash-vm .vc.wait{background:transparent;color:var(--ink-faint,#8a93a2);border:1px dashed var(--line,#e4e7ec)}
+/* the admin's switch: staff on one line, the players on a smaller second one */
+.dash-sw{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:5px;max-width:100%}
+.dash-sw .dash-who{margin-left:0;flex-wrap:wrap}
+.dash-who.pl{gap:2px;padding:2px;align-items:center;justify-content:flex-end}
+.dash-who.pl > i{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint,#8a93a2);padding:0 6px}
+.dash-who.pl button{padding:3px 8px;font-size:9.5px;letter-spacing:.08em}
+.dash-pvid{display:grid;gap:3px}
+.dash-pvid > div{display:grid;grid-template-columns:minmax(120px,1.4fr) minmax(70px,.7fr) minmax(80px,1.6fr) minmax(110px,auto);gap:8px;align-items:center;font-size:12.5px}
+.dash-pvid b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dash-pvid i{font:500 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
+.dash-pvid .bar u{display:block;height:8px;border-radius:4px;background:#4a86d8;min-width:2px}
+.dash-pvid em{font:700 11px 'IBM Plex Mono',monospace;font-style:normal;text-align:right;white-space:nowrap}
 /* a player's first screen */
 .dash-pnext{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line,#e4e7ec);border-radius:12px;background:var(--panel,#fff);padding:12px 14px;cursor:pointer;font:inherit;color:var(--ink,#141821);margin-bottom:8px}
 .dash-pnext:hover{border-color:#c6a15b}.dash-pnext .dash-who2{flex:1;min-width:0}.dash-pnext .dash-who2 b{font-size:18px}
@@ -32975,7 +33024,7 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-pbars em{font:600 8.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);margin-top:2px;white-space:nowrap}
 .dash-pnow{margin-top:12px;padding:8px 12px;border-radius:9px;background:rgba(198,161,91,.14);font-size:13px}
 .dash-pnow span{color:var(--ink-soft,#5b6472)}
-.dash-phist{display:grid;grid-template-columns:minmax(110px,1.3fr) minmax(70px,.8fr) minmax(140px,2fr) 50px 60px;gap:4px 10px;align-items:center;font-size:12.5px}
+.dash-phist{display:grid;grid-template-columns:minmax(110px,1.3fr) minmax(70px,.8fr) minmax(140px,2fr) 50px 110px;gap:4px 10px;align-items:center;font-size:12.5px}
 .dash-phist .hd{font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
 .dash-phist .n{font-weight:700}
 .dash-phist .bar{display:flex;align-items:center;gap:8px}.dash-phist .bar i{display:block;height:8px;border-radius:4px;background:#c6a15b;min-width:2px}
