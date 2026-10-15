@@ -5551,7 +5551,7 @@ function ensurePerms(){
 const PDEV_WHO=["Oriol","Ramon","Keith","Liviu","Pedro","Nils","Joan Marc","Marc Ribas"];
 function canView(sect){
   /* a dashboard is a person's, not a section with permissions: whoever has one sees it */
-  if(sect==="dashboard") return !!currentUser && (isPlayerUser() || _dashList(currentUser).length>0);
+  if(sect==="dashboard") return !!currentUser && ((isPlayerUser() && !_isDLUser(currentUser)) || (!isPlayerUser() && _dashList(currentUser).length>0));
   if(sect==="playerdev") return !!currentUser && !isPlayerUser() && PDEV_WHO.indexOf(currentUser)>=0;
   if(!currentUser) return true;
   if(sectHidden(sect)) return false;
@@ -5665,13 +5665,28 @@ function _legacyParse(text){
   });
   return out;
 }
-async function _legacyImport(map){
+/* once, in the admin's browser: every player whose record does not carry this version of
+   the old hub's sessions gets them */
+let _legacyAutoDone=false;
+function _legacyAuto(){
+  if(_legacyAutoDone || !isAdmin() || !SB_TOKEN) return; _legacyAutoDone=true;
+  const s=document.createElement("script"); s.src="/legacy-usage.js?v=1";
+  s.onload=async ()=>{ const L0=window.LEGACY_USAGE; if(!L0 || !L0.text) return;
+    const map=_legacyParse(L0.text); Object.keys(map).forEach(n=>{ if(!map[n].length) delete map[n]; });
+    const res=await _legacyImport(map, L0.ver);
+    const done=res.filter(r=>r.ok && !r.skip), bad=res.filter(r=>!r.ok);
+    if(done.length || bad.length) toast("Old hub: "+done.length+" player"+(done.length===1? "" : "s")+" imported"+(bad.length? " · "+bad.length+" failed ("+bad.map(r=>r.name).join(", ")+")" : ""));
+    try{ if(state.ui.view==="dashboard") renderDashboard(); }catch(e){} };
+  document.head.appendChild(s);
+}
+async function _legacyImport(map, ver){
   const res=[];
   for(const name of Object.keys(map)){
     try{
       const r=await sbrpc("get_report",{ p_token:SB_TOKEN, p_key:useKey(name) });
       const doc=(r && r.ok && r.report && r.report.data && r.report.data.days)? r.report.data : _useBlank(name);
-      doc.legacy={ from:"old hub", at:new Date().toISOString(), sessions:map[name] };
+      if(ver && doc.legacy && doc.legacy.ver===ver){ res.push({ name:name, ok:true, skip:true, n:map[name].length }); continue; }
+      doc.legacy={ from:"old hub", ver:ver||"", at:new Date().toISOString(), sessions:map[name] };
       const w=await sbrpc("save_report",{ p_token:SB_TOKEN, p_key:useKey(name), p_kind:"usage", p_opponent:"", p_date:null, p_data:doc, p_html:null });
       res.push({ name:name, ok:!!(w && w.ok), n:map[name].length, err:w && w.error });
     }catch(e){ res.push({ name:name, ok:false, n:map[name].length, err:e.message }); }
@@ -23996,9 +24011,11 @@ function _dashFmt(iso){ return new Date(iso+"T00:00:00").toLocaleDateString("en-
    report is shown when there is any. Only seconds with the tab visible and in use count. */
 /* the admin's switch: the staff's dashboards on one line, every player's on a second,
    smaller one */
+/* the double licence players have no dashboard of their own */
+function _isDLUser(name){ try{ return rosterUsers().some(p=>p.dl && p.name===String(name||"")); }catch(e){ return false; } }
 function _dashSwitch(cur){
   const go=k=>{ state.ui.dash=k; persist(); renderDashboard(); };
-  let pl=[]; try{ pl=rosterUsers(); }catch(e){}
+  let pl=[]; try{ pl=rosterUsers().filter(p=>!p.dl); }catch(e){}
   return h("div",{class:"dash-sw"},
     h("div",{class:"dash-who"}, Object.keys(DASHES).map(k=>h("button",{type:"button", class:k===cur? "on" : "", onclick:()=>go(k)}, DASHES[k].name))),
     pl.length? h("div",{class:"dash-who pl"}, h("i",{},"Players"), pl.map(p=>h("button",{type:"button", class:("pl:"+p.name)===cur? "on" : "", title:p.pos+(p.dl? " · double licence" : ""), onclick:()=>go("pl:"+p.name)}, p.name))) : null);
@@ -24112,7 +24129,8 @@ function renderDashboard(){
   root.innerHTML="";
   /* a report marked finished elsewhere is read again, never remembered from before */
   _dashMemo.rep={};
-  if(isPlayerUser()){ _playerDash(root); return; }
+  if(isPlayerUser()){ if(!_isDLUser(currentUser)) _playerDash(root); return; }
+  try{ _legacyAuto(); }catch(e){}
   /* the admin looks at a player's dashboard as the player sees it */
   if(isAdmin() && /^pl:/.test(String(state.ui.dash||""))){ _playerDash(root, String(state.ui.dash).slice(3)); return; }
   const mine=_dashList(currentUser);
