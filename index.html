@@ -5636,7 +5636,47 @@ function _useMerge(a, b){
     days[d] = m;
   });
   out.days = days;
+  /* what was brought over from the old hub travels with the document, whoever writes it */
+  const lg = (a && a.legacy) || (b && b.legacy); if(lg) out.legacy = lg;
   return _useTrim(out);
+}
+/* THE OLD HUB'S RECORD. Before this app the players studied the opponent in another one,
+   which kept one line per session: when, which scout, the active time, and each video with
+   the time it played. Those lines are brought into each player's own usage document under
+   "legacy", written by the admin, read by the player like the rest of his record. A
+   scouting the old hub has lines for is told from them; one it has none for is told from
+   this app. */
+const LEGACY_NAMES={ Leo:"Leonhard" };
+function _legacyParse(text){
+  const out={}; let who=null, staff=false;
+  const sec=s=>{ const m=/^(\d+):(\d{2})$/.exec(String(s||"").trim()); return m? (+m[1])*60+(+m[2]) : 0; };
+  String(text||"").split(/\r?\n/).forEach(line=>{
+    const t=line.trim(); if(!t) return;
+    let m=/^(.+?)\s*\((\d+)\s+sessions?,/i.exec(t);
+    if(m && t.indexOf("\t")<0){ const n=m[1].trim(); if(/^staff$/i.test(n)){ staff=true; who=null; return; }
+      who=staff? null : (LEGACY_NAMES[n]||n); if(who && !out[who]) out[who]=[]; return; }
+    if(!who || /^When\t/i.test(t)) return;
+    const c=line.split("\t"); if(c.length<4) return;
+    const d=/^(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(c[0].trim()); if(!d) return;
+    const at=d[3]+"-"+String(d[2]).padStart(2,"0")+"-"+String(d[1]).padStart(2,"0")+"T"+String(d[4]).padStart(2,"0")+":"+d[5]+":"+(d[6]||"00");
+    const vids=String(c[4]||"").trim()==="—"? [] : String(c[4]||"").split(/,\s*(?=[^,]*\d+:\d{2}\s*\(\d+x\))/).map(v=>{
+      const q=/^(.*?)\s+(\d+:\d{2})\s*\((\d+)x\)\s*$/.exec(v.trim()); return q? { t:q[1].replace(/^\W+/,"").trim(), sec:sec(q[2]), n:+q[3] } : null; }).filter(Boolean);
+    out[who].push({ at:at, scout:c[1].trim(), sec:sec(c[2]), tg:+c[3]||0, vids:vids });
+  });
+  return out;
+}
+async function _legacyImport(map){
+  const res=[];
+  for(const name of Object.keys(map)){
+    try{
+      const r=await sbrpc("get_report",{ p_token:SB_TOKEN, p_key:useKey(name) });
+      const doc=(r && r.ok && r.report && r.report.data && r.report.data.days)? r.report.data : _useBlank(name);
+      doc.legacy={ from:"old hub", at:new Date().toISOString(), sessions:map[name] };
+      const w=await sbrpc("save_report",{ p_token:SB_TOKEN, p_key:useKey(name), p_kind:"usage", p_opponent:"", p_date:null, p_data:doc, p_html:null });
+      res.push({ name:name, ok:!!(w && w.ok), n:map[name].length, err:w && w.error });
+    }catch(e){ res.push({ name:name, ok:false, n:map[name].length, err:e.message }); }
+  }
+  return res;
 }
 async function useStart(){
   if(_useOn || !currentUser) return;
@@ -6129,6 +6169,17 @@ async function renderUsage(body, accounts, log){
     h("span",{class:"adm-only"},"only you see this")));
   const box=h("div",{class:"use-box"});
   body.appendChild(box);
+  /* the old hub's sessions, pasted once and written into each player's record */
+  { const ta=h("textarea",{class:"use-legacy", id:"useLegacy", rows:"4", placeholder:"Paste here the players' table from the old hub (Name (N sessions, 8 wks) / When · Scout · Active · Toggles · Videos)…"});
+    const out=h("div",{class:"use-note"});
+    const btn=h("button",{class:"btn primary", type:"button"},"Import from the old hub");
+    btn.onclick=async ()=>{ const map=_legacyParse(ta.value); const names=Object.keys(map).filter(n=>map[n].length);
+      if(!names.length){ out.textContent="Nothing recognised in the text."; return; }
+      btn.disabled=true; out.textContent="Writing "+names.length+" players…";
+      const res=await _legacyImport(names.reduce((o,n)=>(o[n]=map[n],o),{}));
+      btn.disabled=false;
+      out.textContent=res.map(r=>r.name+" "+(r.ok? r.n+" sessions ✓" : "✗ "+(r.err||""))).join(" · "); };
+    body.appendChild(h("div",{class:"use-legacy-box"}, h("b",{},"The old hub"), h("span",{class:"use-note"},"Each player's sessions from the old hub become part of his own record: his dashboard tells a scouting from them when they are there, and from this app when they are not. Importing again replaces what was imported before."), ta, h("div",{}, btn), out)); }
   const draw=rows=>{
     box.innerHTML="";
     const sel=h("select",{class:"adm-src use-sel"});
@@ -23985,6 +24036,7 @@ async function _playerDash(root, who){
   try{ const r=await sbrpc("get_report",{ p_token:SB_TOKEN, p_key:useKey(nm) }); doc=r && r.ok && r.report && r.report.data; }catch(e){}
   try{ if(own && _use) doc=doc && doc.days? _useMerge(doc, _use) : _use; }catch(e){}
   const days=(doc && doc.days)||{};
+  const legacy=((doc && doc.legacy && doc.legacy.sessions)||[]).filter(s=>s && s.at);
   /* one scouting: the days from the day after our game before, to the game itself */
   const study=(x, prev, toDay)=>{
     const from=prev? addDays(prev.g.date,1) : addDays(x.g.date,-7), to=toDay||x.g.date;
@@ -23996,6 +24048,21 @@ async function _playerDash(root, who){
         const e=V[id]||(V[id]={ id:id, n:0, sec:0, title:v.title||"", where:v.where||"" }); e.n+=(v.n||0); e.sec+=(v.sec||0); if(v.title) e.title=v.title; }); }
     let rep=0; Object.keys(days).forEach(d=>{ rep+=((days[d].rsec||{})["pre:"+x.g.id]||0); });
     const list=Object.keys(V).map(k=>V[k]).sort((a,b)=>b.sec-a.sec||b.n-a.n);
+    /* the old hub, when it has the sessions of this scouting: matched by the scout's name */
+    const opp=_lgNorm(x.g.opponent||"");
+    const ls=legacy.filter(s=>{ const ws=String(s.scout||"").split(/\s+/).map(_lgNorm).filter(w=>w.length>=4);
+      return ws.some(w=>opp.indexOf(w)>=0) && s.at.slice(0,10)<=x.g.date && s.at.slice(0,10)>=addDays(from,-7); });
+    if(ls.length){
+      const LV={}, pd={}; let ls_sec=0, ls_n=0, ls_vs=0;
+      ls.forEach(s=>{ ls_sec+=s.sec; const d=s.at.slice(0,10); pd[d]=(pd[d]||0)+s.sec;
+        (s.vids||[]).forEach(v=>{ ls_n+=v.n; ls_vs+=v.sec; const e=LV[v.t]||(LV[v.t]={ id:v.t, n:0, sec:0, title:v.t, where:"old hub" }); e.n+=v.n; e.sec=Math.max(e.sec, v.sec); }); });
+      /* a video's time in the old hub is the time it played in that session: the longest
+         of its sessions is kept per video, so watching it twice does not double it */
+      ls_vs=Object.keys(LV).reduce((a,k)=>a+LV[k].sec,0);
+      const ds=Object.keys(pd).sort(), f0=ds[0]<from? ds[0] : from;
+      const per2=[]; for(let d=f0; d<=to; d=addDays(d,1)) per2.push({ d:d, s:pd[d]||0 });
+      return { x:x, from:f0, to:to, sec:ls_sec, rep:0, vids:ls_n, vsec:ls_vs, vlist:Object.keys(LV).map(k=>LV[k]).sort((a,b)=>b.sec-a.sec||b.n-a.n), days:ds.length, per:per2, old:true, sessions:ls.length };
+    }
     return { x:x, from:from, to:to, sec:sec, rep:rep, vids:vids, vsec:vsec, vlist:list, days:dset, per:per };
   };
   const mins=s=>{ const m=Math.round(s/60); return m<60? m+" min" : Math.floor(m/60)+" h "+String(m%60).padStart(2,"0")+" min"; };
@@ -24007,7 +24074,7 @@ async function _playerDash(root, who){
     const S=study(last, past[past.length-2]);
     const mx=Math.max(1, ...S.per.map(p=>p.s));
     body.appendChild(h("div",{class:"dash-pstudy"},
-      h("div",{class:"big"}, h("i",{},"Studying "+last.g.opponent), h("b",{}, mins(S.sec)), h("span",{}, "in the pre game, "+_dashFmt(S.from)+" – "+_dashFmt(S.to))),
+      h("div",{class:"big"}, h("i",{},"Studying "+last.g.opponent), h("b",{}, mins(S.sec)), h("span",{}, (S.old? "in the old hub, "+S.sessions+" session"+(S.sessions===1? "" : "s")+", " : "in the pre game, ")+_dashFmt(S.from)+" – "+_dashFmt(S.to))),
       h("div",{class:"dash-figs"},
         h("div",{class:"dash-fig"}, h("i",{},"Days you opened it"), h("b",{}, String(S.days)), h("span",{}, "of "+S.per.length)),
         h("div",{class:"dash-fig"}, h("i",{},"Watching videos"), h("b",{}, S.vsec? mins(S.vsec) : "—"), h("span",{}, S.vids+" play"+(S.vids===1? "" : "s")+(S.vsec? "" : " · time recorded from now on"))),
@@ -24031,7 +24098,7 @@ async function _playerDash(root, who){
     if(hist.length>1){
       const t=h("div",{class:"dash-phist"}, h("span",{class:"hd"},"Opponent"), h("span",{class:"hd"},"Game"), h("span",{class:"hd"},"Time studying"), h("span",{class:"hd"},"Days"), h("span",{class:"hd"},"Videos · time"));
       const hm=Math.max(1, ...hist.map(s=>s.sec));
-      hist.forEach(s=>{ t.appendChild(h("span",{class:"n"}, s.x.g.opponent)); t.appendChild(h("span",{}, _dashFmt(s.x.g.date)));
+      hist.forEach(s=>{ t.appendChild(h("span",{class:"n"}, s.x.g.opponent, s.old? h("i",{class:"old"}," · old hub") : null)); t.appendChild(h("span",{}, _dashFmt(s.x.g.date)));
         t.appendChild(h("span",{class:"bar"}, h("i",{style:"width:"+Math.round(100*s.sec/hm)+"%"}), h("b",{}, mins(s.sec))));
         t.appendChild(h("span",{}, String(s.days))); t.appendChild(h("span",{}, s.vids+(s.vsec? " · "+mins(s.vsec) : ""))); });
       body.appendChild(h("div",{class:"dash-h5"},"Your last scoutings"));
@@ -33002,6 +33069,9 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-who.pl{gap:2px;padding:2px;align-items:center;justify-content:flex-end}
 .dash-who.pl > i{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint,#8a93a2);padding:0 6px}
 .dash-who.pl button{padding:3px 8px;font-size:9.5px;letter-spacing:.08em}
+.dash-phist i.old{font:500 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
+.use-legacy-box{display:grid;gap:6px;margin:10px 0 14px;padding:10px 12px;border:1px dashed var(--line-strong,#cfd4dc);border-radius:10px}
+.use-legacy{width:100%;box-sizing:border-box;font:12px ui-monospace,Consolas,monospace;border:1px solid var(--line,#e4e7ec);border-radius:8px;padding:6px 8px;background:var(--panel,#fff);color:var(--ink,#141821)}
 .dash-pvid{display:grid;gap:3px}
 .dash-pvid > div{display:grid;grid-template-columns:minmax(120px,1.4fr) minmax(70px,.7fr) minmax(80px,1.6fr) minmax(110px,auto);gap:8px;align-items:center;font-size:12.5px}
 .dash-pvid b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dash-pvid i{font:500 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
