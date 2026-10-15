@@ -24059,6 +24059,81 @@ function _dashBestInto(box, opp){
     box.appendChild(h("div",{class:"dash-src"},"Ranked by PIR a game · places among the "+pool.length+" players of the league with enough games and minutes"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their players could not be read.")); });
 }
+/* THEIR KEY PLAYERS, BOTH SOURCES ON ONE LINE - the pre game's first table, cut to the men
+   who matter: the league's play by play (minutes, points, TS%, threes, rebounds, assists,
+   turnovers, PIR, with the place in the league where it is a top 25) and our tagging
+   (possessions he finishes, his share of theirs, what they return, where they end). Ranked
+   by PIR; a man our tagging makes their first option is kept even when his PIR is lower. */
+function _dashKeyPlayersInto(box, opp){
+  box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading their players…"));
+  const L=leagueState(), tid=_lgTeamIdByName(L, opp);
+  if(!tid){ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"This club is not in the league feed.")); return; }
+  const SP=window.ScoutPre;
+  Promise.all([ _dashClubReady(tid), _dashNeed(()=>window.ScoutPre && window.ScoutPre.playersOf, 15000).then(ok=>ok? window.ScoutPre.playersOf(opp).catch(()=>null) : null) ]).then(([_, T])=>{ box.innerHTML="";
+    const L2=leagueState(), pool=(_lgLeadPool(L2).pool||[]);
+    const ros=(((L2.players||{})[tid]||{}).players)||[];
+    const numOf={}; ros.forEach(p=>{ numOf[String(p.id)]=p.num; if(p.pid) numOf[String(p.pid)]=p.num; });
+    const gp=x=>(x.t && x.t.gp)||1;
+    const mine=pool.filter(x=>String(x.tid)===String(tid));
+    const tag=(T && T.rows)||[], avg=T && T.avg;
+    if(!mine.length && !tag.length){ box.appendChild(h("div",{class:"dash-miss"},"Neither the league's numbers nor our tagging of this club are in yet.")); return; }
+    const tnum=s=>{ const m=/#\s*(\d+)/.exec(String(s||"")); return m? String(parseInt(m[1],10)) : ""; };
+    const tagOf=x=>{ const n=String(parseInt(numOf[String(x.id)]||x.num||"",10)); let r=n? tag.filter(t=>tnum(t.label)===n)[0] : null;
+      if(!r){ const k=_lgNorm(_lgLastName(x.name||"")); if(k) r=tag.filter(t=>_lgNorm(String(t.label||"").replace(/#\s*\d+/,"")).indexOf(k)>=0)[0]||null; } return r; };
+    const rank=(x,f)=>{ const v=f(x); if(v==null || !isFinite(v)) return null; return 1+pool.filter(y=>{ const w=f(y); return w!=null && w>v; }).length; };
+    const P=x=>x.t.pts/gp(x), RB=x=>(x.t.reb||((x.t.oreb||0)+(x.t.dreb||0)))/gp(x), AS=x=>(x.t.ast||0)/gp(x), PIR=x=>x.m.pir/gp(x);
+    const TS=x=>{ const a=(x.t.p2a||0)+(x.t.p3a||0)+0.44*(x.t.fta||0); return a>=30? 100*x.t.pts/(2*a) : null; };
+    /* the men: the top PIR, and anybody our tagging gives a big share of their possessions */
+    const rows=mine.map(x=>({ x:x, tg:tagOf(x) }));
+    const byPir=rows.slice().sort((a,b)=>PIR(b.x)-PIR(a.x)).slice(0,6);
+    rows.filter(r=>r.tg && r.tg.use>=18 && byPir.indexOf(r)<0).forEach(r=>byPir.push(r));
+    const sel=byPir.slice(0,8);
+    const top25=(x,f)=>{ const r=rank(x,f); return (r!=null && r<=25)? h("sup",{class:r<=10? "t10" : ""}, r+"º") : null; };
+    const roles=r=>{ const o=(r && r.roles)||{}; return Object.keys(o).filter(k=>o[k]>0).sort((a,b)=>o[b]-o[a]).slice(0,2).map(k=>k).join(" · "); };
+    const pppCls=v=>(v==null||avg==null)? "" : v-avg>=0.12? "hot" : v-avg<=-0.12? "cold" : "";
+    const t=h("div",{class:"dash-kp"},
+      h("span",{class:"hd l"},"Player"), h("span",{class:"hd g1"},"Min"), h("span",{class:"hd"},"Pts"), h("span",{class:"hd"},"TS%"), h("span",{class:"hd"},"3P"),
+      h("span",{class:"hd"},"Reb"), h("span",{class:"hd"},"Ast"), h("span",{class:"hd"},"TO"), h("span",{class:"hd"},"PIR"),
+      h("span",{class:"hd g2"},"Use"), h("span",{class:"hd"},"PPP"), h("span",{class:"hd"},"eFG"), h("span",{class:"hd l"},"His possessions end in"));
+    sel.forEach(r=>{ const x=r.x, a=x.t, g=gp(x), tg=r.tg, ts=TS(x), num=numOf[String(x.id)]||"";
+      t.appendChild(h("span",{class:"n"}, _lgFace(L2, { n:num, pid:x.id, id:x.id }, "mini"), h("u",{}, num? "#"+num : ""), h("b",{}, _lgLastName(x.name)||x.name)));
+      t.appendChild(h("span",{class:"c g1"}, (a.sec/60/g).toFixed(0)));
+      t.appendChild(h("span",{class:"c"}, P(x).toFixed(1), top25(x,P)));
+      t.appendChild(h("span",{class:"c"}, ts==null? "—" : Math.round(ts)+"%"));
+      t.appendChild(h("span",{class:"c"}, a.p3a? (a.p3m/g).toFixed(1)+"/"+(a.p3a/g).toFixed(1) : "—"));
+      t.appendChild(h("span",{class:"c"}, RB(x).toFixed(1), top25(x,RB)));
+      t.appendChild(h("span",{class:"c"}, AS(x).toFixed(1), top25(x,AS)));
+      t.appendChild(h("span",{class:"c"}, ((a.tov||0)/g).toFixed(1)));
+      t.appendChild(h("span",{class:"c b"}, PIR(x).toFixed(1), top25(x,PIR)));
+      t.appendChild(h("span",{class:"c g2 use", style:tg? "--s:"+Math.min(1,tg.use/30) : ""}, tg? tg.use+"%" : "—"));
+      t.appendChild(h("span",{class:"c "+(tg? pppCls(tg.ppp) : "")}, tg? Number(tg.ppp).toFixed(2) : "—"));
+      t.appendChild(h("span",{class:"c"}, tg? tg.efg+"%" : "—"));
+      t.appendChild(h("span",{class:"c l rl"}, tg? roles(tg)||"—" : "—")); });
+    box.appendChild(h("div",{class:"dash-kpw"}, t));
+    box.appendChild(h("div",{class:"dash-src"},"League per game (º = place among the league's "+pool.length+" players, gold = top 10) · our tagging of "+((T&&T.games)||0)+" game"+(((T&&T.games)||0)===1? "" : "s")+": Use = share of their possessions he finishes, PPP red = above their average "+(avg==null? "" : Number(avg).toFixed(2))+" (he hurts us), blue = below"));
+  }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their players could not be read.")); });
+}
+/* THE KEY SETS OF AN OPPONENT: the ones the staff starred in the pre game playbook, with the
+   names it gave them, how often they run and what they return */
+function _dashKeySetsInto(box, g){
+  box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading their sets…"));
+  const L=leagueState(), tid=_lgTeamIdByName(L, g.opponent);
+  _dashNeed(()=>window.ScoutPre && window.ScoutPre.sets, 20000).then(ok=>Promise.all([ ok? window.ScoutPre.sets(g.opponent, null).catch(()=>null) : null, _dashRep(g) ])).then(async ([res, rep])=>{
+    await new Promise(r2=>{ try{ if(!tid || _clubPulled[tid]) return r2(); _clubPull(tid, null, r2); setTimeout(r2, 8000); }catch(e){ r2(); } });
+    const edits={}; ((rep && rep.data && rep.data.sections)||[]).forEach(s2=>((s2 && s2.items)||[]).forEach(it=>{ if(it && it.pbEdit && typeof it.pbEdit==="object") Object.assign(edits, it.pbEdit); }));
+    const keep=_scoutOpponent; let rows=[];
+    try{ _scoutOpponent=g.opponent; rows=((res && res.rows)||[]).filter(r=>{ try{ return _pbClass(r).kind!=="Concepts" && _pbKeyRead(r.label); }catch(e){ return false; } }).sort((a,b)=>b.n-a.n); }
+    finally{ _scoutOpponent=keep; }
+    box.innerHTML="";
+    if(!rows.length){ box.appendChild(h("div",{class:"dash-miss"}, (res && (res.rows||[]).length)? "No key sets starred in the pre game playbook yet." : "No tagging of this club yet, so no sets.")); return; }
+    const mx=Math.max(1, ...rows.map(r=>r.n||0));
+    box.appendChild(h("div",{class:"dash-sets"}, rows.slice(0,10).map(r=>{ let kind=""; try{ kind=_pbClass(r).kind||""; }catch(e){}
+      return h("div",{class:"dash-set"}, h("b",{}, edits[r.label]||r.label), kind? h("i",{class:"kd"}, kind) : null, r.call? h("q",{}, r.call) : h("span",{class:"nc"},"no call"),
+        h("span",{class:"vol"}, h("i",{style:"width:"+Math.max(8,Math.round(100*(r.n||0)/mx))+"%"})), h("u",{}, String(r.n||0)),
+        r.ppp!=null? h("em",{class:r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : null); })));
+    box.appendChild(h("div",{class:"dash-src"},"Starred in the pre game playbook · runs in the games tagged · points per possession (red: it hurts us)"+(rows.length>10? " · +"+(rows.length-10)+" more in the pre game" : "")));
+  }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their sets could not be read.")); });
+}
 /* OUR GAME FROM OUR TAGGING, OFFENSE AND DEFENSE APART: OER, paint touches and the sets
    that worked and did not; DER, what TAG and BACK conceded and each defensive concept with
    what it gave up */
@@ -24645,8 +24720,19 @@ function renderDashboard(){
       const g=x.g, dd=dayDelta(g.date);
       c.__b.appendChild(h("div",{class:"dash-hero"}, crest(g), h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent),
         h("span",{}, _dashFmt(g.date)+(g.time? " · "+g.time : "")+" · "+(g.competition||"")+" · "+(dd===0? "today" : dd===1? "tomorrow" : "in "+dd+" days")))));
-      const box=h("div",{}); c.__b.appendChild(box);
-      _dashRosterInto(box, g, true);
+      /* their key players from both sources, their key sets, their ball screen defense on
+         the 4 and the 5, and the roster as the staff ordered it */
+      const sub=(title)=>{ const b=h("div",{class:"dash-sub"}, h("h4",{}, title)); const body=h("div",{}); b.appendChild(body); b.__b=body; return b; };
+      const cP=sub("Their key players · play by play and our tagging");
+      c.__b.appendChild(cP);
+      const cK=sub("Key sets"), cV=sub("Ball screen defense · their 4 and their 5");
+      c.__b.appendChild(h("div",{class:"dash-2"}, cK, cV));
+      const cR=sub("Their roster · in the order of our cards");
+      c.__b.appendChild(h("div",{style:"margin-top:12px"}, cR));
+      _dashKeyPlayersInto(cP.__b, g.opponent);
+      _dashKeySetsInto(cK.__b, g);
+      _dashCoverInto(cV.__b, g.opponent);
+      _dashRosterInto(cR.__b, g, true);
     },
     /* ---------------------------------------------------- Oriol: the season in lines, sets best and worst */
     trends2:()=>{
@@ -33437,6 +33523,20 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-gps .dash-gp{margin-left:0;padding:4px 9px}
 .dash-gp.pre{background:#8a2f2b;border-color:#8a2f2b;color:#fff}
 .dash-gp.post{background:#141821;border-color:#141821;color:#fff}
+/* their key players: the league and our tagging on one line */
+.dash-kpw{overflow-x:auto}
+.dash-kp{display:grid;grid-template-columns:minmax(150px,1.8fr) repeat(8,minmax(44px,.7fr)) repeat(3,minmax(48px,.75fr)) minmax(150px,1.8fr);gap:3px 6px;align-items:center;font-size:12.5px;min-width:900px}
+.dash-kp .hd{font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint,#8a93a2);text-align:right;padding-bottom:3px;border-bottom:1px solid var(--line,#e4e7ec)}
+.dash-kp .hd.l{text-align:left}.dash-kp .hd.g2{border-left:2px solid #c6a15b;padding-left:6px;color:#7a5c12}
+.dash-kp .n{display:flex;align-items:center;gap:6px;min-width:0;white-space:nowrap}.dash-kp .n u{text-decoration:none;font:600 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}.dash-kp .n b{overflow:hidden;text-overflow:ellipsis}
+.dash-kp .c{text-align:right;font:600 12px 'IBM Plex Mono',monospace;padding:3px 2px;border-radius:5px;white-space:nowrap}
+.dash-kp .c sup{font-size:8.5px;color:var(--ink-faint,#8a93a2);margin-left:1px}.dash-kp .c sup.t10{color:#a07a1f;font-weight:800}
+.dash-kp .c.b{font-weight:800}
+.dash-kp .c.g2{border-left:2px solid #c6a15b;padding-left:6px}
+.dash-kp .c.use{background:linear-gradient(90deg, rgba(198,161,91,.35) calc(var(--s,0)*100%), transparent 0)}
+.dash-kp .c.hot{background:rgba(216,82,78,.16);color:#c0403c}.dash-kp .c.cold{background:rgba(74,134,216,.14);color:#2f63a8}
+.dash-kp .c.l{text-align:left}.dash-kp .c.rl{font:500 11px 'Inter',system-ui,sans-serif;color:var(--ink-soft,#5b6472);white-space:normal}
+.dash-set i.kd{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);flex:none}
 /* a player's first screen */
 .dash-pnext{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line,#e4e7ec);border-radius:12px;background:var(--panel,#fff);padding:12px 14px;cursor:pointer;font:inherit;color:var(--ink,#141821);margin-bottom:8px}
 .dash-pnext:hover{border-color:#c6a15b}.dash-pnext .dash-who2{flex:1;min-width:0}.dash-pnext .dash-who2 b{font-size:18px}
