@@ -23714,7 +23714,20 @@ function _dashRosterInto(box, g, wide){
         (cd && String(cd.tag||"").trim())? h("div",{class:"tg"}, cd.tag) : null,
         ideas.length? h("div",{class:"id"}, ideas.join(" · ")) : null); };
     const wrap=h("div",{class:wide? "dash-ros5" : ""}); box.appendChild(wrap);
-    if(R){
+    /* THE STAFF'S ORDER FIRST. When the pre game has cards, the roster is the cards: each
+       position and each man in the order the staff put them in the pre game. Their games
+       only add the minutes and the starts to the man the card names. */
+    if(POS.some(k=>(cards[k]||[]).filter(Boolean).length)){
+      const ms={}, mn={};
+      if(R) R.five.concat(...R.bench).forEach(p=>{ if(!p) return; if(p.num) ms[String(parseInt(p.num,10))]=p; const k=nk(p.name); if(k) mn[k]=p; });
+      POS.forEach(k=>{ const l=(cards[k]||[]).filter(Boolean); if(!l.length) return;
+        const grp=h("div",{class:"dash-pos2"}, h("b",{}, k)); const list=h("div",{}); grp.appendChild(list);
+        const anyS=l.some(cd=>cd.badge==="STARTER");
+        l.forEach((cd,i)=>{ const p=ms[String(parseInt(cd.num,10))] || mn[nk(cd.name)] || null;
+          list.appendChild(man(Object.assign({ num:cd.num, name:cd.name }, p? { min:p.min, st:p.st, last:p.last } : {}), anyS? cd.badge==="STARTER" : i===0, cd)); });
+        wrap.appendChild(grp); });
+      box.appendChild(h("div",{class:"dash-src"}, "In the order of the pre game cards"+(R? " · minutes from their last "+R.n+" games · S = games started" : "")+" · the edge is the closeout on the card · ? = missed the last game"));
+    } else if(R){
       R.five.forEach((e,i)=>{ const row=[e].concat(R.bench[i]||[]);
         const grp=h("div",{class:"dash-pos2"}, h("b",{}, POS[i]));
         const list=h("div",{}); grp.appendChild(list);
