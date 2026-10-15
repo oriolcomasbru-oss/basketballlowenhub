@@ -5551,7 +5551,7 @@ function ensurePerms(){
 const PDEV_WHO=["Oriol","Ramon","Keith","Liviu","Pedro","Nils","Joan Marc","Marc Ribas"];
 function canView(sect){
   /* a dashboard is a person's, not a section with permissions: whoever has one sees it */
-  if(sect==="dashboard") return !!currentUser && !isPlayerUser() && _dashList(currentUser).length>0;
+  if(sect==="dashboard") return !!currentUser && (isPlayerUser() || _dashList(currentUser).length>0);
   if(sect==="playerdev") return !!currentUser && !isPlayerUser() && PDEV_WHO.indexOf(currentUser)>=0;
   if(!currentUser) return true;
   if(sectHidden(sect)) return false;
@@ -5621,8 +5621,8 @@ function _useMerge(a, b){
     const x = days[d], y = b.days[d];
     if(!x){ days[d] = y; return; }
     const m = { sec: Math.max(x.sec||0, y.sec||0), opens: Math.max(x.opens||0, y.opens||0),
-                views:{}, vsec:{}, vids:{} };
-    ["views","vsec"].forEach(k => {
+                views:{}, vsec:{}, vids:{}, rsec:{} };
+    ["views","vsec","rsec"].forEach(k => {
       const names = Object.keys(x[k]||{}).concat(Object.keys(y[k]||{}));
       names.forEach(n => { m[k][n] = Math.max((x[k]||{})[n]||0, (y[k]||{})[n]||0); });
     });
@@ -5663,6 +5663,11 @@ async function useStart(){
     d.sec += USE_BEAT;
     const v = (state && state.ui && state.ui.view) || "?";
     d.vsec[v] = (d.vsec[v] || 0) + USE_BEAT;
+    /* and which report: the time in one pre game is the time spent studying that opponent */
+    try{ const os = state.ui.os, ts = state.ui.ts;
+      const rk = (v === "oppscout" && os && os.mode === "game" && os.gameId) ? "pre:" + os.gameId
+        : (v === "teamscout" && ts && ts.mode === "game" && ts.gameId) ? "post:" + ts.gameId : "";
+      if(rk){ d.rsec = d.rsec || {}; d.rsec[rk] = (d.rsec[rk] || 0) + USE_BEAT; } }catch(e){}
     _useDirty = true;
     since += USE_BEAT * 1000;
     if(since >= USE_FLUSH){ since = 0; useFlush(); }
@@ -23891,11 +23896,92 @@ function _dashOpen(view, ui){ try{ if(ui) Object.assign(state.ui, ui); persist()
 function _dashGreeting(){ const hr=new Date().getHours(); return hr<12? "Good morning" : hr<19? "Good afternoon" : "Good evening"; }
 function _dashFmt(iso){ return new Date(iso+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short", day:"2-digit", month:"2-digit"}).replace(",",""); }
 
+/* A PLAYER'S FIRST SCREEN. The next pre game, opened in the players' view, and the time he
+   gave to studying the last opponent - in numbers, from the same usage record the staff
+   reads. The study of an opponent is the time in the pre game between our game before and
+   the game against them; since the report itself is now recorded too, the time in that one
+   report is shown when there is any. Only seconds with the tab visible and in use count. */
+async function _playerDash(root){
+  const G=_dashGames(), T=todayISO();
+  const page=h("div",{class:"dash pdash"}); root.appendChild(page);
+  const nm=String(currentUser||"");
+  page.appendChild(h("div",{class:"dash-top"},
+    h("div",{class:"dash-hi"}, h("b",{}, _dashGreeting()+", "+(nm.split(/\s+/)[0]||nm)), h("span",{},"Player")),
+    h("span",{class:"dash-day"}, _dashFmt(T)+(G.next? " · "+(dayDelta(G.next.g.date)===0? "game day" : dayDelta(G.next.g.date)+" days to "+G.next.g.opponent) : ""))));
+  const grid=h("div",{class:"dash-grid"}); page.appendChild(grid);
+  const card=(cls, title)=>{ const b=h("div",{class:"dash-cb"}); const c=h("article",{class:"dash-card "+cls}, h("div",{class:"dash-ch"}, h("h3",{}, title)), b); c.__b=b; grid.appendChild(c); return c; };
+  const crest=g=>{ try{ return _lgOppCrest(g, "opp big")||h("span",{class:"dash-crest"}, String(g.opponent||"?").slice(0,3).toUpperCase()); }catch(e){ return null; } };
+  const ph=g=>{ try{ return _gamePlaceholder(g.opponent); }catch(e){ return false; } };
+  /* ---- the next pre game, one tap away */
+  const nx=G.upcoming.filter(x=>!ph(x.g)).slice(0,2);
+  const cN=card("wide them", "Your next pre game");
+  if(!nx.length) cN.__b.appendChild(h("div",{class:"dash-miss"},"No game in the calendar yet."));
+  nx.forEach((x,i)=>{ const g=x.g, dd=dayDelta(g.date);
+    const st=h("span",{class:"dash-pill wait"},"…");
+    const b=h("button",{type:"button", class:"dash-pnext"+(i? " sec" : ""), onclick:()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } })},
+      crest(g), h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent),
+        h("span",{}, _dashFmt(g.date)+(g.time? " · "+g.time : "")+" · "+(g.competition||"")+" · "+(dd===0? "today" : dd===1? "tomorrow" : "in "+dd+" days"))),
+      st, h("em",{}, "Open ›"));
+    cN.__b.appendChild(b);
+    _dashRep(g).then(rep=>{ const pub=rep && (rep.share_state==="published" || (rep.data && rep.data.status && rep.data.status.pre && rep.data.status.pre.done));
+      st.className="dash-pill "+(rep? "ready" : "pend"); st.textContent=rep? "Ready to study" : "Not published yet"; if(!rep) b.classList.add("off"); }); });
+  /* ---- the time studying the opponent */
+  const cS=card("wide", "Your scouting in numbers");
+  const body=h("div",{}, h("div",{class:"dash-ld"},"Reading your time…")); cS.__b.appendChild(body);
+  let doc=null;
+  try{ const r=await sbrpc("get_report",{ p_token:SB_TOKEN, p_key:useKey(currentUser) }); doc=r && r.ok && r.report && r.report.data; }catch(e){}
+  try{ if(_use) doc=doc && doc.days? _useMerge(doc, _use) : _use; }catch(e){}
+  const days=(doc && doc.days)||{};
+  /* one scouting: the days from the day after our game before, to the game itself */
+  const study=(x, prev, toDay)=>{
+    const from=prev? addDays(prev.g.date,1) : addDays(x.g.date,-7), to=toDay||x.g.date;
+    let sec=0, vids=0, dset=0; const per=[];
+    for(let d=from; d<=to; d=addDays(d,1)){ const y=days[d]||{};
+      const s=(y.vsec||{}).oppscout||0; sec+=s; per.push({ d:d, s:s });
+      if(s>0) dset++;
+      Object.keys(y.vids||{}).forEach(id=>{ vids+=(y.vids[id].n||0); }); }
+    let rep=0; Object.keys(days).forEach(d=>{ rep+=((days[d].rsec||{})["pre:"+x.g.id]||0); });
+    return { x:x, from:from, to:to, sec:sec, rep:rep, vids:vids, days:dset, per:per };
+  };
+  const mins=s=>{ const m=Math.round(s/60); return m<60? m+" min" : Math.floor(m/60)+" h "+String(m%60).padStart(2,"0")+" min"; };
+  body.innerHTML="";
+  const past=G.past.filter(x=>!ph(x.g));
+  const last=past[past.length-1];
+  if(!last){ body.appendChild(h("div",{class:"dash-miss"},"No game played yet this season.")); }
+  else {
+    const S=study(last, past[past.length-2]);
+    const mx=Math.max(1, ...S.per.map(p=>p.s));
+    body.appendChild(h("div",{class:"dash-pstudy"},
+      h("div",{class:"big"}, h("i",{},"Studying "+last.g.opponent), h("b",{}, mins(S.sec)), h("span",{}, "in the pre game, "+_dashFmt(S.from)+" – "+_dashFmt(S.to))),
+      h("div",{class:"dash-figs"},
+        h("div",{class:"dash-fig"}, h("i",{},"Days you opened it"), h("b",{}, String(S.days)), h("span",{}, "of "+S.per.length)),
+        h("div",{class:"dash-fig"}, h("i",{},"Videos played"), h("b",{}, String(S.vids)), h("span",{}, "in those days")),
+        h("div",{class:"dash-fig"}, h("i",{},"In this report"), h("b",{}, S.rep? mins(S.rep) : "—"), h("span",{}, S.rep? "the "+last.g.opponent+" pre game itself" : "recorded from now on"))),
+      h("div",{class:"dash-pbars"}, S.per.map(p=>h("div",{title:_dashFmt(p.d)+": "+mins(p.s)}, h("span",{style:"height:"+Math.max(p.s? 6 : 0, Math.round(100*p.s/mx))+"%"}), h("em",{}, p.d.slice(8)+"/"+p.d.slice(5,7)))))));
+    /* the one being studied now */
+    const nx0=G.upcoming.filter(x=>!ph(x.g))[0];
+    if(nx0){ const N=study(nx0, last, T);
+      body.appendChild(h("div",{class:"dash-pnow"}, h("b",{}, "Now · "+nx0.g.opponent+": "+mins(N.sec)), h("span",{}, " so far since "+_dashFmt(N.from)+" · "+N.days+" day"+(N.days===1? "" : "s")+" · "+N.vids+" video"+(N.vids===1? "" : "s")))); }
+    /* and the scoutings before, one line each */
+    const hist=past.slice(-6).map((x,i,a)=>{ const k=past.indexOf(x); return study(x, past[k-1]); }).reverse();
+    if(hist.length>1){
+      const t=h("div",{class:"dash-phist"}, h("span",{class:"hd"},"Opponent"), h("span",{class:"hd"},"Game"), h("span",{class:"hd"},"Time studying"), h("span",{class:"hd"},"Days"), h("span",{class:"hd"},"Videos"));
+      const hm=Math.max(1, ...hist.map(s=>s.sec));
+      hist.forEach(s=>{ t.appendChild(h("span",{class:"n"}, s.x.g.opponent)); t.appendChild(h("span",{}, _dashFmt(s.x.g.date)));
+        t.appendChild(h("span",{class:"bar"}, h("i",{style:"width:"+Math.round(100*s.sec/hm)+"%"}), h("b",{}, mins(s.sec))));
+        t.appendChild(h("span",{}, String(s.days))); t.appendChild(h("span",{}, String(s.vids))); });
+      body.appendChild(h("div",{class:"dash-h5"},"Your last scoutings"));
+      body.appendChild(t);
+    }
+    body.appendChild(h("div",{class:"dash-src"},"Counted only while the pre game is on screen and in use — a tab left open does not count."));
+  }
+}
 function renderDashboard(){
   const root=$("#viewDash"); if(!root) return;
   root.innerHTML="";
   /* a report marked finished elsewhere is read again, never remembered from before */
   _dashMemo.rep={};
+  if(isPlayerUser()){ _playerDash(root); return; }
   const mine=_dashList(currentUser);
   if(!mine.length){ root.appendChild(h("div",{class:"lg-empty"},"There is no dashboard for this account yet.")); return; }
   let who=state.ui.dash; if(mine.indexOf(who)<0) who=_dashFor(currentUser)||mine[0];
@@ -32803,6 +32889,28 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-vgm i{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
 .dash-vgm b{font:700 10.5px 'IBM Plex Mono',monospace}.dash-vgm u{text-decoration:none;font:700 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);text-align:right}
 .dash-vgm.cut{background:rgba(47,158,134,.1)}.dash-vgm.cut u{color:#17805a}.dash-vgm.fut{opacity:.75}
+/* a player's first screen */
+.dash-pnext{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line,#e4e7ec);border-radius:12px;background:var(--panel,#fff);padding:12px 14px;cursor:pointer;font:inherit;color:var(--ink,#141821);margin-bottom:8px}
+.dash-pnext:hover{border-color:#c6a15b}.dash-pnext .dash-who2{flex:1;min-width:0}.dash-pnext .dash-who2 b{font-size:18px}
+.dash-pnext em{font:700 12px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;font-style:normal;color:#8a6829}
+.dash-pnext.sec{padding:8px 14px;opacity:.85}.dash-pnext.sec .dash-who2 b{font-size:14px}.dash-pnext.off{opacity:.6}
+.dash-pstudy{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.4fr) minmax(0,1.5fr);gap:16px;align-items:center}
+@media (max-width:900px){ .dash-pstudy{grid-template-columns:minmax(0,1fr)} }
+.dash-pstudy .big{display:flex;flex-direction:column}
+.dash-pstudy .big i{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint,#8a93a2)}
+.dash-pstudy .big b{font:700 44px/1.05 'Oswald',sans-serif;color:var(--ink,#141821)}
+.dash-pstudy .big span{font-size:12px;color:var(--ink-soft,#5b6472)}
+.dash-pbars{display:flex;align-items:flex-end;gap:3px;height:90px}
+.dash-pbars > div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;min-width:0}
+.dash-pbars span{display:block;width:100%;background:#c6a15b;border-radius:3px 3px 0 0}
+.dash-pbars em{font:600 8.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);margin-top:2px;white-space:nowrap}
+.dash-pnow{margin-top:12px;padding:8px 12px;border-radius:9px;background:rgba(198,161,91,.14);font-size:13px}
+.dash-pnow span{color:var(--ink-soft,#5b6472)}
+.dash-phist{display:grid;grid-template-columns:minmax(110px,1.3fr) minmax(70px,.8fr) minmax(140px,2fr) 50px 60px;gap:4px 10px;align-items:center;font-size:12.5px}
+.dash-phist .hd{font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.dash-phist .n{font-weight:700}
+.dash-phist .bar{display:flex;align-items:center;gap:8px}.dash-phist .bar i{display:block;height:8px;border-radius:4px;background:#c6a15b;min-width:2px}
+.dash-phist .bar b{font:700 11.5px 'IBM Plex Mono',monospace;white-space:nowrap}
 /* the league in two levels */
 .lg-l1{display:flex;align-items:center;gap:12px;margin:18px 0 10px;padding:9px 14px;border-radius:10px;background:#141821;color:#fff}
 .lg-l1 > b{font:700 15px 'Oswald',sans-serif;letter-spacing:.18em;text-transform:uppercase}
