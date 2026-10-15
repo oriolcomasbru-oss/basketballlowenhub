@@ -306,6 +306,18 @@
   /* the trend is the recent games against the games BEFORE them - his own season up to
      then - so a change is not hidden inside an average that already contains it */
   function trend(m, lines, period, mode) {
+    /* the season has nothing before it: its direction is the second half of his games
+       against the first */
+    if (period === "all") {
+      var S0 = sum(lines), v0 = value(m, S0, mode), sm0 = small(m, S0);
+      if (lines.length < 4) return { v: v0, base: null, d: null, tone: "", small: sm0 };
+      var hf = Math.floor(lines.length / 2), A = sum(lines.slice(0, hf)), B = sum(lines.slice(hf));
+      var a = value(m, A, mode), b = value(m, B, mode), smH = small(m, A) || small(m, B);
+      var dH = (a == null || b == null) ? null : b - a;
+      var thH = m.pct ? 3 : (m.k === "ortg" || m.k === "drtg" || m.k === "net") ? 4 : Math.max(0.3, Math.abs(a || 0) * 0.12);
+      var toneH = (dH == null || Math.abs(dH) < thH || m.hi == null || smH) ? "" : ((dH > 0) === m.hi ? "up" : "dn");
+      return { v: v0, base: a, d: dH, tone: toneH, small: sm0, halves: true };
+    }
     var all = sum(lines), wl = windowOf(lines, period), win = sum(wl);
     var prev = lines.slice(0, Math.max(0, lines.length - wl.length));
     var v = value(m, period === "all" ? all : win, mode), base = value(m, (period === "all" || !prev.length) ? all : sum(prev), mode);
@@ -481,7 +493,7 @@
       c.appendChild(body);
       return c;
   }
-  var FOOT = function () { return (UI.period === "all" ? "Season values. Choose last 10, 5 or 3 to see each measure against his season." :
+  var FOOT = function () { return (UI.period === "all" ? "Season values; the colour and the arrow are the second half of his games against the first half (green better, red worse). " :
       "Last " + UI.period + " games against the games before them: green is better, red is worse, pale is a sample too small to judge. ") +
       "The line is the three-game rolling value, the dashed line his season; the figures under it are his last games one by one. Improving / dropping counts only his goal measures."; };
   function goalsView(root, P) {
@@ -496,6 +508,40 @@
     P.dl.forEach(function (p) { rest.appendChild(cardOf(p, true)); });
     root.appendChild(L1("Double licence and the rest of the roster", P.dl.length + " players · one line each, tap for the full page"));
     root.appendChild(rest);
+  }
+  /* ONE LINE A PLAYER, FOR A DASHBOARD: who, whether his goals are going the right way,
+     and each goal measure as its value with the arrow of the last games against before */
+  function compact(box) {
+    var go = function () {
+      box.innerHTML = "";
+      if (!D.R) { box.appendChild(el("div", { class: "pd-miss" }, "The season could not be read" + (D.err ? ": " + D.err : "."))); return; }
+      var P = people(); seedOnce(P.main);
+      var open = function (key) { UI.open = key; try { if (typeof setView === "function") setView("playerdev"); } catch (e) { } };
+      var per = UI.period === "all" ? "3" : UI.period;
+      var rows = P.main.map(function (p) {
+        var r = rec(p.key), act = (r.goals || []).filter(function (g) { return g.status === "active"; }), lines = p.lines;
+        var up = 0, dn = 0, cells = [];
+        act.forEach(function (g) { (g.metrics || []).forEach(function (k) { var m = MK[k]; if (!m || !lines.length) return;
+          var t = trend(m, lines, per, UI.mode); if (!t.small) { if (t.tone === "up") up++; else if (t.tone === "dn") dn++; }
+          cells.push(el("span", { class: "pd-cc " + t.tone + (t.small ? " sm" : ""), title: g.name + " · " + m.l + ": " + fmt(m, t.v) + (t.base != null ? " (before " + fmt(m, t.base) + ")" : "") },
+            el("i", {}, m.l), el("b", {}, fmt(m, t.v)), el("u", {}, t.tone === "up" ? "▲" : t.tone === "dn" ? "▼" : "·"))); }); });
+        var v = !lines.length ? ["", "No games yet"] : !act.length ? ["", "No goal set"] : (up && !dn) ? ["up", "Improving"] : (dn && !up) ? ["dn", "Dropping"] : (up || dn) ? ["mix", "Mixed"] : ["", "Steady"];
+        return { p: p, v: v, up: up, dn: dn, cells: cells, act: act, score: up - dn };
+      }).sort(function (a, b) { return b.score - a.score; });
+      var t = el("div", { class: "pd-cmp" });
+      rows.forEach(function (x) {
+        t.appendChild(el("button", { type: "button", class: "pd-cr", onclick: function () { open(x.p.key); } },
+          face(x.p, "sm"), el("span", { class: "nm" }, el("b", {}, x.p.nm), el("i", {}, x.act.map(function (g) { return g.name; }).join(" · ") || "—")),
+          el("span", { class: "pd-vd " + x.v[0] }, x.v[1], (x.up || x.dn) ? el("i", {}, "▲" + x.up + " ▼" + x.dn) : null),
+          el("span", { class: "cells" }, x.cells)));
+      });
+      box.appendChild(t);
+      box.appendChild(el("div", { class: "pd-foot" }, "Last " + per + " games against the games before them, on each player's own goal measures · best first · tap a player for his page"));
+    };
+    if (D.R && D.doc) return go();
+    box.appendChild(el("div", { class: "ld" }, "Reading the season, game by game…", el("span", { class: "ld-bar" })));
+    if (D.busy) { var n = 0, tm = setInterval(function () { if ((D.R && D.doc) || ++n > 120) { clearInterval(tm); go(); } }, 250); return; }
+    load(go);
   }
   /* THE SAME CARDS ON A DASHBOARD. The players of the programme as they are on the first
      screen of this section; a tap opens his page here. */
@@ -942,6 +988,15 @@
       ".pd-lg{display:flex;gap:2px;margin-top:1px}.pd-lg span{flex:1;text-align:center;font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);background:rgba(20,24,33,.05);border-radius:3px;padding:1px 0;min-width:0;overflow:hidden}",
       ".pd-lg span.u{background:rgba(47,158,134,.2);color:#17603f}.pd-lg span.d{background:rgba(216,82,78,.17);color:#9e302c}.pd-lg span.sm{opacity:.5}",
       ".pd .lg-l1.pd-l1{margin:8px 0 0}",
+      ".pd-cmp{display:grid;gap:3px}",
+      ".pd-cr{display:grid;grid-template-columns:auto minmax(150px,1.3fr) 120px minmax(0,4fr);gap:10px;align-items:center;text-align:left;border:1px solid var(--line,#e4e7ec);border-radius:9px;background:var(--panel,#fff);padding:5px 10px;font:inherit;color:var(--ink,#141821);cursor:pointer}",
+      ".pd-cr:hover{border-color:#c6a15b}",
+      ".pd-cr .nm{display:flex;flex-direction:column;min-width:0}.pd-cr .nm b{font-size:13px}.pd-cr .nm i{font:500 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".pd-cr .cells{display:flex;flex-wrap:wrap;gap:3px}",
+      ".pd-cc{display:inline-flex;align-items:baseline;gap:4px;border-radius:6px;padding:2px 6px;background:var(--panel-2,#f4f5f7);font-size:11px}",
+      ".pd-cc i{font:600 8.5px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}.pd-cc b{font:700 11.5px 'IBM Plex Mono',monospace}.pd-cc u{text-decoration:none;font-size:9px}",
+      ".pd-cc.up{background:rgba(47,158,134,.14)}.pd-cc.up b,.pd-cc.up u{color:#17805a}.pd-cc.dn{background:rgba(216,82,78,.12)}.pd-cc.dn b,.pd-cc.dn u{color:#c0403c}.pd-cc.sm{opacity:.5}",
+      "@media (max-width:800px){.pd-cr{grid-template-columns:auto minmax(0,1fr) auto}.pd-cr .cells{grid-column:1/-1}}",
       ".pd-cards.dash{grid-template-columns:repeat(auto-fill,minmax(440px,1fr))}@media (max-width:640px){.pd-cards.dash{grid-template-columns:minmax(0,1fr)}}",
       ".pd-sep{font:700 11px 'Oswald',sans-serif;letter-spacing:.15em;text-transform:uppercase;margin:14px 0 4px;padding-bottom:4px;border-bottom:2px solid var(--ink,#141821)}",
       ".pd-foot{font-size:11.5px;color:var(--ink-soft,#5b6472);max-width:90ch}",
@@ -985,5 +1040,5 @@
     document.head.appendChild(s);
   }
   css();
-  window.PDev = { render: render, dash: dash, reload: function () { D.R = null; D.doc = null; } };
+  window.PDev = { render: render, dash: dash, compact: compact, reload: function () { D.R = null; D.doc = null; } };
 })();
