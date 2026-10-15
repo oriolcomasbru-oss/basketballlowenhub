@@ -11894,6 +11894,25 @@ async function _clubDocPut(key, data){
     return !!(r && r.ok===true);
   }catch(e){ return false; }
 }
+/* DOCUMENTS ANY MEMBER OF STAFF WRITES: the video staff's ticks, the S&C note. Kept under
+   staff:<key> and written through save_staff_doc (supabase/006_staff_docs.sql), which any
+   coach account may call. Until that has been run, the admin's write goes the old way and
+   a copy written before under the old key is still read. */
+async function _staffDocGet(key, oldKey){
+  const d=await _clubDocGet("staff:"+key);
+  if(d) return d;
+  return oldKey? await _clubDocGet(oldKey) : null;
+}
+async function _staffDocPut(key, data){
+  if(!SB_TOKEN) return false;
+  try{
+    const r=await sbrpc("save_staff_doc",{ p_token:SB_TOKEN, p_key:"staff:"+key, p_data:data });
+    if(r && r.ok===true) return true;
+  }catch(e){}
+  /* the function is not there yet: the admin can still write it */
+  try{ if(isAdmin()) return await _clubDocPut("staff:"+key, data); }catch(e){}
+  return false;
+}
 /* the key sets of one club, pulled out of the flat store they live in */
 function _clubKeyLabels(L, tid){
   const st=L.pbKey||{}, pre="id:"+tid+"|", out=[];
@@ -16092,14 +16111,42 @@ function _trendsDashDraw(R, TD){
   if(K){ const oa=byName("Offensive rating").of(REC), ob=byName("Offensive rating").of(BEF), da=byName("Defensive rating").of(REC), db=byName("Defensive rating").of(BEF);
     figs.push({ label:"Offense, last "+K, value:f1(oa), note:f1(ob)+" before", tone:K0.tone(oa, ob, true, 4) });
     figs.push({ label:"Defense, last "+K, value:f1(da), note:f1(db)+" before", tone:K0.tone(da, db, false, 4) }); }
-  if(ptAll!=null && isFinite(ptAll)) figs.push({ label:"Paint touches", value:fP(ptAll), note:"target 70, floor 60 · "+nTag+" tagged", tone:ptAll>=70? "good" : ptAll<60? "bad" : "neutral" });
-  /* the season as three small charts: every game's net rating, the paint-touch measure of
-     the tagged ones against its two lines, and where in a game the points are won and lost */
+  /* WHAT IS KEY FOR US COMES FIRST: TAG and BACK conceded, paint touches and ball
+     reversals - the season, and the last games against the ones before - then the rest */
+  const keyFigs=[], keyIdeas=[];
+  if(nTag && API.measured){
+    const tbOf=(list,k)=>{ let n=0,p=0; list.filter(Boolean).forEach(x=>{ const t=x.m && x.m.trans && x.m.trans[k]; if(t){ n+=t.n||0; p+=t.pts||0; } }); return n? p/n : null; };
+    const msOf=(list,k)=>{ const s=pool(list); if(!s) return null; const v=API.measured(s,k); return isFinite(v)? v : null; };
+    const rec=K? tagged.slice(-K) : null, bef=K? tagged.slice(0,N-K) : null;
+    [["TAG conceded","tag",false,f2,0.1],["BACK conceded","back",false,f2,0.1]].forEach(d=>{
+      const all=tbOf(tagged,d[1]); if(all==null) return;
+      const a=rec? tbOf(rec,d[1]) : null, b=bef? tbOf(bef,d[1]) : null;
+      keyFigs.push({ label:d[0], value:f2(all), note:(a!=null? "last "+K+": "+f2(a) : "points a transition")+(b!=null? " · before "+f2(b) : ""), tone:(a!=null && b!=null)? K0.tone(a, b, false, d[4]) : "neutral" });
+      if(a!=null && b!=null) keyIdeas.push({ text:d[0]+": "+f2(b)+" → "+f2(a)+" points a transition", tone:Math.abs(a-b)<d[4]? "neutral" : (a<b? "good" : "bad"), size:Math.min(1,Math.abs(a-b)/0.4)+0.3, n:K, solidN:4, unit:"games" }); });
+    [["Paint touches","pt",true],["Ball reversals","br",true]].forEach(d=>{
+      const all=msOf(tagged,d[1]); if(all==null) return;
+      const a=rec? msOf(rec,d[1]) : null, b=bef? msOf(bef,d[1]) : null;
+      keyFigs.push({ label:d[0], value:fP(all), note:(d[1]==="pt"? "target 70 · " : "")+(a!=null? "last "+K+": "+fP(a) : nTag+" tagged"),
+        tone:d[1]==="pt"? (all>=70? "good" : all<60? "bad" : "neutral") : ((a!=null && b!=null)? K0.tone(a, b, true, 3) : "neutral") });
+      if(a!=null && b!=null) keyIdeas.push({ text:d[0]+": "+fP(b)+" → "+fP(a)+(d[1]==="pt"? " (target 70%)" : ""), tone:Math.abs(a-b)<3? "neutral" : (a>b? "good" : "bad"), size:Math.min(1,Math.abs(a-b)/12)+0.3, n:K, solidN:4, unit:"games" }); });
+  }
+  /* the key measures lead the figures; record, net rating and the ratings follow */
+  figs.unshift(...keyFigs);
+  /* the season as small charts: the key measures first - paint touches against its lines,
+     TAG and BACK - then every game's net rating and where in a game the points are won */
   const visuals=[];
   try{
+    if(nTag && API.measured){
+      const tb1=(x,k)=>{ const t=x && x.m && x.m.trans && x.m.trans[k]; return (t && t.n)? t.pts/t.n : null; };
+      const items=k=>G.map((g,i)=>{ const v=tb1(tagged[i],k); return v==null? null : { label:g.code||"", value:v, text:v.toFixed(2), tone:v<=0.9? "good" : v>=1.2? "bad" : "neutral" }; }).filter(Boolean);
+      if(items("tag").length) visuals.push(K0.strip({ title:"TAG conceded", sub:"points a transition after our long shot", items:items("tag") }));
+      if(items("back").length) visuals.push(K0.strip({ title:"BACK conceded", sub:"points a transition after our shot at the rim", items:items("back") }));
+    }
+    if(nTag && API.measured) visuals.push(K0.strip({ title:"Ball reversals", sub:"share of possessions", items:G.map((g,i)=>{ const x=tagged[i]; if(!x) return null; const v=API.measured(x.s,"br");
+      return isFinite(v)? { label:g.code||"", value:v, text:Math.round(v)+"%", tone:"neutral" } : null; }).filter(Boolean) }));
     visuals.push(K0.strip({ title:"Net rating", sub:"game by game", signed:true, items:G.map(g=>{ const T1=one(g), o1=byName("Offensive rating").of(T1), d1=byName("Defensive rating").of(T1), v=o1-d1;
       return { label:g.code||String(g.opp||"").slice(0,3).toUpperCase(), value:v, text:(v>=0? "+" : "−")+Math.abs(v).toFixed(0), tone:v>=0? "good" : "bad", title:(g.home? "vs " : "@ ")+g.opp+" "+g.us.pts+"–"+g.them.pts }; }) }));
-    if(nTag && API.measured) visuals.push(K0.strip({ title:"Paint touches", sub:"target 70 · floor 60", items:G.map((g,i)=>{ const x=tagged[i]; if(!x) return null; const v=API.measured(x.s,"pt");
+    if(nTag && API.measured) visuals.unshift(K0.strip({ title:"Paint touches", sub:"target 70 · floor 60", items:G.map((g,i)=>{ const x=tagged[i]; if(!x) return null; const v=API.measured(x.s,"pt");
       return { label:g.code||"", value:v, text:Math.round(v)+"%", tone:v>=70? "good" : v<60? "bad" : "neutral" }; }).filter(Boolean) }));
     const qs=[0,1,2,3].map(q=>G.reduce((a,g)=>a+((g.seg||[])[2*q]||0)+((g.seg||[])[2*q+1]||0),0));
     visuals.push(K0.strip({ title:"Where the points are won", sub:"margin by quarter, all games", signed:true, items:qs.map((v,q)=>({ label:"Q"+(q+1), value:v, text:(v>0? "+" : v<0? "−" : "")+Math.abs(v), tone:v>0? "good" : v<0? "bad" : "neutral" })) }));
@@ -16119,7 +16166,8 @@ function _trendsDashDraw(R, TD){
   out.appendChild(K0.summary({ title:"Where we are, and where it is heading", visuals:visuals,
     sub:N+" games from the play by play"+(nTag? " · "+nTag+" of them tagged" : " · the tagging has not been read yet")+(K? " · the last "+K+" against the "+(N-K)+" before" : ""),
     figures:figs,
-    groups:[ { title:"Getting better", ideas:K0.pick(up,6) }, { title:"Getting worse", ideas:K0.pick(down,6) },
+    groups:[ keyIdeas.length? { title:"What is key for us · TAG/BACK, paint touches, ball reversals", ideas:keyIdeas } : null,
+      { title:"Getting better", ideas:K0.pick(up,6) }, { title:"Getting worse", ideas:K0.pick(down,6) },
       { title:"Game after game", ideas:K0.pick(rep,6) }, { title:"Holding, or just different", ideas:K0.pick(hold,4) },
       { title:"What moves with a bad night · an association, not a cause", ideas:[aOff, aDef].filter(Boolean) } ] }));
   if(!K) out.appendChild(h("div",{class:"gpo-note"},"With "+N+" games there is no “last games against the ones before” yet; the trends start at four."));
@@ -18892,6 +18940,16 @@ function _postOverviewDraw(sg, P, Tg, API, K){
     figs.push({ label:"Ball reversals", value:pc(PT.br), note:"same measure, no target", tone:"vol" });
     figs.push({ label:"Tagged poss.", value:poss.length, note:f2(ppp(poss))+" per possession", tone:"vol" });
   }
+  /* TAG and BACK conceded beside the paint touches: what is key for us, at the front */
+  if(model && model.trans){
+    const tg0=model.trans.tag, bk0=model.trans.back;
+    [["TAG conceded", tg0],["BACK conceded", bk0]].forEach(x=>{ const o=x[1]; if(!o || !o.n) return; const v=o.pts/o.n;
+      figs.push({ label:x[0], value:f2(v), note:o.n+" transitions · points each", tone:v<=0.9? "good" : v>=1.2? "bad" : "neutral" }); });
+  }
+  /* the order a coach reads them: the score, then TAG, BACK, paint touches, reversals, then the rest */
+  { const rank=f=>({ "Score":0, "TAG conceded":1, "BACK conceded":2, "Paint touches":3, "Ball reversals":4 }[f.label]);
+    const key=figs.filter(f=>rank(f)!=null).sort((a,b)=>rank(a)-rank(b)), rest=figs.filter(f=>rank(f)==null);
+    figs.length=0; key.concat(rest).forEach(f=>figs.push(f)); }
   /* ---- by quarter: the table, and what changed between the best and the worst */
   const qRows=[];
   for(let q=0;q<5;q++){
@@ -19020,17 +19078,20 @@ function _postOverviewDraw(sg, P, Tg, API, K){
   const visuals=[];
   try{
     const qm=qRows.filter(r=>r.A).map(r=>{ const v=r.A.u.pts-r.A.t.pts; return { label:QN[r.q], value:v, text:r.A.u.pts+"–"+r.A.t.pts, tone:v>0? "good" : v<0? "bad" : "neutral" }; });
-    if(qm.length) visuals.push(K.strip({ title:"Quarter by quarter", sub:"our score – theirs", signed:true, items:qm }));
     const qp=qRows.filter(r=>r.m && r.n>=4 && r.q<4).map(r=>({ label:QN[r.q], value:r.m.v, text:pc(r.m.v), tone:r.m.v>=70? "good" : r.m.v<60? "bad" : "neutral" }));
-    if(qp.length) visuals.push(K.strip({ title:"Paint touches", sub:"target 70 · floor 60", items:qp }));
+    if(qp.length) visuals.push(K.strip({ title:"Paint touches", sub:"by quarter · target 70 · floor 60", items:qp }));
+    const qb=qRows.filter(r=>r.m && r.n>=4 && r.q<4).map(r=>({ label:QN[r.q], value:r.m.br, text:pc(r.m.br), tone:"neutral" }));
+    if(qb.length) visuals.push(K.strip({ title:"Ball reversals", sub:"by quarter", items:qb }));
+    if(qm.length) visuals.push(K.strip({ title:"Quarter by quarter", sub:"our score – theirs", signed:true, items:qm }));
     if(poss.length && phases.length) visuals.push(K.split({ title:"What our possessions were", sub:"share · points per possession",
       parts:phases.slice().sort((a,b)=>b.n-a.n).map(p=>({ label:p.k, share:p.n/poss.length, value:f2(p.ppp), tone:(p.n>=5 && allPpp!=null)? (p.ppp-allPpp>=0.15? "good" : p.ppp-allPpp<=-0.15? "bad" : "neutral") : "neutral" })) }));
     if(dposs.length && concepts.length) visuals.push(K.split({ title:"What we defended", sub:"share · conceded per possession",
       parts:concepts.slice().sort((a,b)=>b.n-a.n).slice(0,7).map(c=>({ label:c.k, share:c.n/dposs.length, value:f2(c.ppp), tone:(c.n>=4 && dAll!=null)? (c.ppp-dAll<=-0.15? "good" : c.ppp-dAll>=0.15? "bad" : "neutral") : "neutral" })) }));
   }catch(e){}
   out.appendChild(K.summary({ title:"Game performance overview", sub:src||"", figures:figs, visuals:visuals,
-    groups:[ { title:"The game · play by play", ideas:K.pick(gPbp,6) }, { title:"By quarter", ideas:K.pick(gQ,4) }, { title:"Paint touches · ball reversals", ideas:K.pick(gPT,4) },
-             { title:"Sets", ideas:K.pick(gSets,6) }, { title:"Phases", ideas:K.pick(gPh,4) }, { title:"Defense", ideas:K.pick(gDef,5) } ],
+    groups:[ { title:"What is key for us · TAG/BACK, paint touches, ball reversals", ideas:gDef.filter(x=>/^TAG /.test(x.text)).concat(K.pick(gPT,4)) },
+             { title:"Sets", ideas:K.pick(gSets,6) }, { title:"Defense", ideas:K.pick(gDef.filter(x=>!/^TAG /.test(x.text)),5) },
+             { title:"The game · play by play", ideas:K.pick(gPbp,6) }, { title:"By quarter", ideas:K.pick(gQ,4) }, { title:"Phases", ideas:K.pick(gPh,4) } ],
     empty:"Neither the play by play nor the tagging of this game is in yet." }));
   if(!P) out.appendChild(h("div",{class:"gpo-note"},"The league's play by play of this game was not found, so the official half of this overview is missing."));
   if(!model) out.appendChild(h("div",{class:"gpo-note"},"No tagging file for this game in the Drive yet, so sets, paint touches, reversals and the defensive concepts are missing."));
@@ -23749,10 +23810,10 @@ function _preJoinedPlayers(tid){
    missing. The only thing that is new is the S&C note of the cycle, kept on the server
    with the reports so everybody reads the same one. */
 var DASHES={
-  Ramon:{ name:"Ramón", role:"Head coach", cards:["pre","post","players","league","trends2","week","month"] },
+  Ramon:{ name:"Ramón", role:"Head coach", cards:["pre","post","pdevc","players","league","trends2","week","month"] },
   Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["quick","coming","league","trends2","oppr","week","month"] },
   Keith:{ name:"Keith", role:"Coaching staff", cards:["pdevc","pre","post","players","league","trends2","week","monthP"] },
-  Liviu:{ name:"Liviu", role:"Coaching staff", cards:["pdev","quick","month"] },
+  Liviu:{ name:"Liviu", role:"Coaching staff", cards:["quick","month","pdevc"] },
   /* Joan Marc does the games and sees what Marc has done and owes; Marc the trainings */
   "Joan Marc":{ name:"Joan Marc", role:"Video · games", cards:["vgames","vrivals","vcal","vtrain"] },
   "Marc Ribas":{ name:"Marc", role:"Video · trainings", cards:["vtrain","month"] },
@@ -23865,7 +23926,7 @@ function _dashClubDash(tid){
 }
 /* ---- the S&C note of a cycle: three lines from the physical coach, on the server */
 function _dashScKey(cyc){ return "scnote:"+cyc.start; }
-async function _dashScGet(cyc){ const d=await _clubDocGet(_dashScKey(cyc)); return (d && Array.isArray(d.lines))? d : null; }
+async function _dashScGet(cyc){ const d=await _staffDocGet(_dashScKey(cyc), _dashScKey(cyc)); return (d && Array.isArray(d.lines))? d : null; }
 /* the note itself, read and written in one box - on the dashboard and at the top of the
    game-to-game cycle in Planning, where the physical coach works. Three lines at most;
    the app never writes one of its own. */
@@ -23885,7 +23946,7 @@ function _scNoteBox(cyc){
     const save=h("button",{type:"button", class:"btn primary sm"},"Save"), cancel=h("button",{type:"button", class:"btn sm"},"Cancel");
     save.onclick=async ()=>{ save.disabled=true;
       const nd={ lines:ins.map(x=>x.value.trim()).filter(Boolean), by:currentUser||"", at:new Date().toISOString(), cycle:cyc.start+"|"+cyc.end };
-      const ok=await _clubDocPut(_dashScKey(cyc), nd);
+      const ok=await _staffDocPut(_dashScKey(cyc), nd);
       if(ok){ toast("S&C note saved"); drawNote(nd); } else { save.disabled=false; toast("Not saved — check the connection"); } };
     cancel.onclick=()=>drawNote(d);
     ins.forEach(x=>note.appendChild(x)); note.appendChild(h("div",{class:"dash-btns"}, save, cancel)); ins[0].focus(); };
@@ -24103,7 +24164,8 @@ function _videoTasks(G, T){
 /* the state of one item: done, done late, late, due today, soon, open, optional */
 function _videoState(done, at, due, noon, optional){
   const T=todayISO(), dueAt=new Date(due+(noon? "T12:00:00" : "T23:59:59"));
-  if(done) return (at && new Date(at)>dueAt)? ["dlate","late ✓"] : ["ok","✓"];
+  /* done is done: a tick put in after the deadline is a tick, shaded a little lighter */
+  if(done) return (at && new Date(at)>dueAt)? ["dlate","✓"] : ["ok","✓"];
   if(new Date()>dueAt) return optional? ["opt","—"] : ["late","late"];
   const dl=Math.round((new Date(due+"T00:00:00")-new Date(T+"T00:00:00"))/86400000);
   return dl===0? ["today","today"] : dl<=2? ["soon",dl+"d"] : ["open",dl+"d"];
@@ -24759,10 +24821,10 @@ function renderDashboard(){
       const files={ scout:{}, game:null, practice:null, err:{} };
       const fmtAt=a=>a? String(a).slice(8,10)+"/"+String(a).slice(5,7)+" "+String(a).slice(11,16) : "";
       const toggle=async (key)=>{
-        const srv=(await _clubDocGet(VIDEO_DOC))||{}; srv.ticks=srv.ticks||{};
+        const srv=(await _staffDocGet(VIDEO_DOC, VIDEO_DOC))||{}; srv.ticks=srv.ticks||{};
         if(srv.ticks[key]) delete srv.ticks[key]; else srv.ticks[key]={ by:currentUser||"", at:new Date().toISOString() };
-        const ok=await _clubDocPut(VIDEO_DOC, srv);
-        if(ok){ ticks=srv.ticks; paint(); } else toast("Not saved — check the connection");
+        const ok=await _staffDocPut(VIDEO_DOC, srv);
+        if(ok){ ticks=srv.ticks; paint(); } else toast("Not saved — the server refused it (supabase/006_staff_docs.sql still has to be run)");
       };
       let nLate=0, nSoon=0, nDone=0;
       const count=s=>{ if(s[0]==="late") nLate++; else if(s[0]==="today"||s[0]==="soon") nSoon++; else if(s[0]==="ok"||s[0]==="dlate") nDone++; };
@@ -24821,7 +24883,7 @@ function renderDashboard(){
           if(nLate){ vAlert.text=nLate+" video item"+(nLate===1? "" : "s")+" late · "+(games? "games" : "trainings"); alerts.push(vAlert); }
           paintAtt(); }
       };
-      _clubDocGet(VIDEO_DOC).then(d=>{ ticks=(d && d.ticks)||{}; paint(); }).catch(()=>paint());
+      _staffDocGet(VIDEO_DOC, VIDEO_DOC).then(d=>{ ticks=(d && d.ticks)||{}; paint(); }).catch(()=>paint());
       _dashNeed(()=>window.ScoutPre && window.ScoutPre.filesOf && window.LowenPostStats && window.LowenPostStats.files).then(ok=>{
         if(!ok){ files.err.game=files.err.practice=true; paint(); return; }
         const SP=window.ScoutPre, PS=window.LowenPostStats;
@@ -25144,12 +25206,15 @@ function renderDashboard(){
         row.appendChild(t);
         _dashRep(g).then(rep=>{ st.innerHTML=""; st.appendChild(pill(_dashStatus(rep, view==="teamscout"))); });
       };
-      tile("Last post game", G.last, "teamscout", g=>({ ts:{ mode:"game", gameId:g.id } }));
+      /* each tile says where it goes: the report itself, and the game plan beside the pre game */
+      const go=(lbl, fn, cls)=>h("button",{type:"button", class:"dash-gp "+(cls||""), onclick:e=>{ e.stopPropagation(); fn(); }}, lbl+" ›");
+      const pre=g=>go("Pre game", ()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } }), "pre");
+      const plan=g=>canView("gameplan")? go("Game plan", ()=>_dashOpen("gameplan",{ gp:{ mode:"game", gameId:g.id } })) : null;
+      tile("Last game", G.last, "teamscout", g=>({ ts:{ mode:"game", gameId:g.id } }),
+        G.last? h("span",{class:"dash-gps"}, go("Post game", ()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:G.last.g.id } }), "post"), canView("oppscout")? go("Its pre game", ()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:G.last.g.id } })) : null) : null);
       const up=G.upcoming;
-      tile("Current pre game", up[0], "oppscout", g=>({ os:{ mode:"game", gameId:g.id } }),
-        up[0]? h("button",{type:"button", class:"dash-gp", onclick:e=>{ e.stopPropagation(); _dashOpen("gameplan",{ gp:{ mode:"game", gameId:up[0].g.id } }); }},"Game plan ›") : null);
-      tile("Next pre game", up[1], "oppscout", g=>({ os:{ mode:"game", gameId:g.id } }));
-      tile("After that", up[2], "oppscout", g=>({ os:{ mode:"game", gameId:g.id } }));
+      [["Next game", up[0]], ["The one after", up[1]], ["After that", up[2]]].forEach(p=>
+        tile(p[0], p[1], "oppscout", g=>({ os:{ mode:"game", gameId:g.id } }), p[1]? h("span",{class:"dash-gps"}, pre(p[1].g), plan(p[1].g)) : null));
     },
     /* ---------------------------------------------------- what is coming, and what is ready */
     coming:()=>{
@@ -33308,7 +33373,7 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-vm .vc{justify-self:center;display:inline-grid;place-items:center;min-width:30px;height:24px;padding:0 6px;border-radius:999px;font:700 10px 'IBM Plex Mono',monospace;border:2px solid var(--line,#e4e7ec);background:transparent;color:var(--ink-faint,#8a93a2);white-space:nowrap;box-sizing:border-box}
 .dash-vm button.vc{cursor:pointer}.dash-vm button.vc:hover{border-color:#c6a15b}
 .dash-vm .vc.ok{background:#2f9e86;border-color:#2f9e86;color:#fff;font-size:13px}
-.dash-vm .vc.dlate{background:rgba(47,158,134,.2);border-color:#2f9e86;color:#17603f}
+.dash-vm .vc.dlate{background:#7cc3b3;border-color:#7cc3b3;color:#fff;font-size:13px}
 .dash-vm .vc.late{border-color:#d8524e;color:#c0403c;background:rgba(216,82,78,.08)}
 .dash-vm .vc.today,.dash-vm .vc.soon{border-color:#d9a521;color:#9a6f0c;background:rgba(217,165,33,.1)}
 .dash-vm .vc.opt,.dash-vm .vc.none,.dash-vm .vc.wait{border-style:dashed}
@@ -33368,6 +33433,10 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .gp-tl-i em{font:800 12px 'IBM Plex Mono',monospace;font-style:normal;text-align:right}
 .gp-tl-i.good em{color:#17805a}.gp-tl-i.bad em{color:#c0403c}
 .gp-tl-i.big .lb{font-weight:800}
+.dash-gps{margin-left:auto;display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.dash-gps .dash-gp{margin-left:0;padding:4px 9px}
+.dash-gp.pre{background:#8a2f2b;border-color:#8a2f2b;color:#fff}
+.dash-gp.post{background:#141821;border-color:#141821;color:#fff}
 /* a player's first screen */
 .dash-pnext{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line,#e4e7ec);border-radius:12px;background:var(--panel,#fff);padding:12px 14px;cursor:pointer;font:inherit;color:var(--ink,#141821);margin-bottom:8px}
 .dash-pnext:hover{border-color:#c6a15b}.dash-pnext .dash-who2{flex:1;min-width:0}.dash-pnext .dash-who2 b{font-size:18px}
