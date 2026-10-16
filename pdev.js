@@ -200,6 +200,18 @@
     }).catch(function () { }).then(function () { PREV.busy = false; PREV.done = true; try { if (after) after(); } catch (e) { } });
   }
   /* what we found for the men who played outside the BBL last season, with where it is from */
+  /* SYNERGY, 2025/26: how each of them was used and what it returned, per game, as the
+     staff took it from Synergy - the role, the possessions he finished, the points each
+     returned, how often he lost it. The league line above it has no possessions in it. */
+  var SYN_PREV = {
+    "Tajh Green": { gp: 20, role: "Stretch big", poss: 11.8, pts: 12.2, ppp: 1.034, ast: 1.2, to: 1.4, top: 11.5, fgp: 52.6, efg: 56.9, ts: 58.5, p3: "0.8/2.3 · 32.6%", ft: "2.2/3.7 · 59.5%", reb: 7.5, or: 2.1, dr: 5.4, stl: 0.7, blk: 1.5, gms: 10.2 },
+    "Sheldon Edwards": { gp: 41, role: "Dynamic shooting wing", poss: 12.0, pts: 11.3, ppp: 0.947, ast: 1.5, to: 1.0, top: 8.2, fgp: 37.6, efg: 51.0, ts: 51.7, p3: "2.9/8.4 · 34.6%", ft: "0.3/0.4 · 81.3%", reb: 3.5, or: 0.6, dr: 2.9, stl: 0.9, blk: 0.2, gms: 7.3 },
+    "Gian Aydinoglu": { gp: 43, role: "Secondary ball handler", poss: 6.9, pts: 4.7, ppp: 0.678, ast: 1.9, to: 1.3, top: 19.0, fgp: 33.3, efg: 38.4, ts: 42.6, p3: "0.5/2.6 · 18.0%", ft: "1.1/2.0 · 57.1%", reb: 1.8, or: 0.5, dr: 1.3, stl: 0.6, blk: 0.0, gms: 2.3 },
+    "De'Jour Reaves": { gp: 31, role: "Scoring ball handler", poss: 18.5, pts: 17.9, ppp: 0.965, ast: 3.6, to: 2.3, top: 12.5, fgp: 46.8, efg: 50.4, ts: 55.4, p3: "1.1/3.8 · 28.2%", ft: "3.3/3.9 · 85.8%", reb: 4.2, or: 1.0, dr: 3.3, stl: 1.8, blk: 0.2, gms: 13.4 },
+    "Devin Askew": { gp: 33, role: "Secondary ball handler", poss: 9.9, pts: 9.9, ppp: 0.994, ast: 2.0, to: 1.2, top: 11.6, fgp: 40.6, efg: 52.6, ts: 55.8, p3: "2.0/4.8 · 40.9%", ft: "1.2/1.5 · 85.4%", reb: 2.5, or: 0.6, dr: 1.9, stl: 1.1, blk: 0.1, gms: 6.9 },
+    "Felipe Haase Thiers": { gp: 43, role: "Stretch big", poss: 10.7, pts: 9.3, ppp: 0.864, ast: 1.9, to: 1.4, top: 13.4, fgp: 38.0, efg: 48.7, ts: 52.4, p3: "1.8/5.1 · 34.9%", ft: "1.2/1.3 · 91.4%", reb: 3.9, or: 1.0, dr: 2.9, stl: 0.4, blk: 0.3, gms: 5.9 },
+    "Zaba Bangala": { gp: 34, role: "Playmaking big", poss: 16.2, pts: 16.6, ppp: 1.027, ast: 2.4, to: 2.5, top: 15.6, fgp: 56.5, efg: 58.0, ts: 60.5, p3: "0.3/1.0 · 33.3%", ft: "4.3/7.1 · 60.8%", reb: 8.3, or: 2.7, dr: 5.6, stl: 1.2, blk: 0.8, gms: 14.1 }
+  };
   /* 2025/26, every game of the season (regular season and play-offs), as totals from the
      league's or the school's own pages. The staff's entry on a player's page replaces it. */
   var SEED_PREV = {
@@ -688,6 +700,14 @@
        ["FG%", S.fa ? Math.round(100 * S.fm / S.fa) + "%" : "—"], ["3P", S.ta ? (S.tm / g).toFixed(1) + "/" + (S.ta / g).toFixed(1) + " · " + Math.round(100 * S.tm / S.ta) + "%" : "—"],
        ["FT%", S.fta ? Math.round(100 * S.f1 / S.fta) + "%" : "—"]].map(function (x) { return el("span", {}, el("i", {}, x[0]), el("b", {}, x[1])); }),
       el("em", {}, pv.by === "league" ? "from the league's " + prevLabel() + " rosters" : pv.by === "research" ? "found by search · " + (pv.src || "") : "entered by the staff · " + (pv.src || ""))));
+    /* how he was used: the Synergy profile of that season */
+    var sy = SYN_PREV[p.nm];
+    if (sy) box.appendChild(el("div", { class: "pd-syn" },
+      el("div", { class: "pd-synh" }, el("b", {}, "Synergy · " + prevLabel()), el("span", { class: "role" }, sy.role), el("i", {}, sy.gp + " games · per game")),
+      el("div", { class: "pd-lastl" }, [["Poss.", sy.poss.toFixed(1)], ["PPP", sy.ppp.toFixed(3)], ["Pts", sy.pts.toFixed(1)], ["TO%", sy.top.toFixed(1) + "%"],
+        ["Ast / TO", sy.ast.toFixed(1) + " / " + sy.to.toFixed(1)], ["eFG%", sy.efg.toFixed(1) + "%"], ["TS%", sy.ts.toFixed(1) + "%"], ["3P", sy.p3], ["FT", sy.ft],
+        ["Reb", sy.reb.toFixed(1) + " (" + sy.or.toFixed(1) + "/" + sy.dr.toFixed(1) + ")"], ["Stl / Blk", sy.stl.toFixed(1) + " / " + sy.blk.toFixed(1)]]
+        .concat(sy.gms != null ? [["Game score", sy.gms.toFixed(1)]] : []).map(function (x) { return el("span", {}, el("i", {}, x[0]), el("b", {}, x[1])); }))));
     if (!pv) box.appendChild(el("div", { class: "pd-miss" }, "He did not play in the BBL in " + prevLabel() + ". " + (ed ? "Type his line from the source below - season totals - and every goal measure is set against it." : "The staff can add it from the source.")));
     if (ed) {
       var r = rec(p.key), cur = (r.prev && r.prev.t) || {};
@@ -1135,6 +1155,9 @@
       ".pd-lastl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0}.pd-lastl span{display:flex;flex-direction:column;border-radius:7px;padding:4px 9px;background:var(--panel-2,#f4f5f7)}",
       ".pd-lastl span i{font:600 8.5px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}.pd-lastl span b{font:700 14px 'Oswald',sans-serif}",
       ".pd-lastl em{font:500 10.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);overflow-wrap:anywhere}",
+      ".pd-syn{margin:4px 0 8px;padding:8px 10px;border-radius:9px;border:1px solid var(--line,#e4e7ec);border-left:4px solid #4a86d8}",
+      ".pd-synh{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}.pd-synh b{font:700 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase}",
+      ".pd-synh .role{font:700 10px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;background:#4a86d8;color:#fff;border-radius:999px;padding:1px 8px}.pd-synh i{font:500 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}",
       ".pd-laste{display:grid;gap:8px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line,#e4e7ec)}",
       ".pd-lastf{display:grid;grid-template-columns:1fr 1fr 2fr;gap:8px}.pd-lastn{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:6px}",
       ".pd-lastf label,.pd-lastn label{display:grid;gap:2px;font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}",
