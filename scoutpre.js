@@ -760,6 +760,55 @@
 
   /* games:    [{game:<rival label>, evs:[...]}]  the opponent being scouted
      refGames: the same shape for EVERY file in the folder — the reference  */
+  /* ONE ROW OF THE PLAYBOOK from the possessions it is made of. The possessions travel with
+     the row (not enumerable, so nothing copies or stores them), which is what lets the
+     staff split a set the tagging lumped together: the row is cut by possession and each
+     part is counted again from its own possessions. */
+  function pbRow(o, name, chs) {
+    var a = agg(chs);
+    var ends = {}, eo = [];
+    chs.forEach(function (c) { actOf(c).forEach(function (x) { if (!ends[x]) { ends[x] = 0; eo.push(x); } ends[x]++; }); });
+    eo.sort(function (x, y) { return ends[y] - ends[x]; });
+    var bk = ORIGIN_BAND[o] || ["Half court", o];
+    var code = (String(name).match(/^([A-Z]{1,2}\d[A-Z]?)\b/) || [])[1] || "";
+    var row = { band: bk[0], kind: bk[1], label: String(name).slice(0, 58), code: code,
+      origin: o, n: chs.length,
+      poss: a ? r1(a.poss) : 0, ppp: a ? r2(a.ppp) : null, xppp: a ? r2(a.xppp) : null, efg: a ? rp(a.efg) : 0,
+      p3r: a ? rp(a.p3r) : 0, conf: conf(a ? a.poss : 0),
+      end1: eo.length ? eo[0] : "",
+      ends: eo.slice(0, 3).map(function (k) { return k + " " + ends[k]; }) };
+    try { Object.defineProperty(row, "_chs", { value: chs, enumerable: false }); } catch (e) { }
+    return row;
+  }
+  /* the possessions of a row, one line each, to choose from when splitting it */
+  function possId(c) { return (c[0].game || "") + "|" + Math.round(Number(c[0].t0) || 0); }
+  function pbPoss(row) {
+    var clock = function (s) { s = Math.max(0, Math.round(Number(s) || 0));
+      var hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), ss = s % 60;
+      return (hh ? hh + ":" + (mm < 10 ? "0" : "") : "") + mm + ":" + (ss < 10 ? "0" : "") + ss; };
+    return ((row && row._chs) || []).map(function (c) { var a = agg([c]);
+      return { id: possId(c), game: c[0].game || "", period: perOf(c) || "", at: clock(c[0].t0), cat: c[0].label || "",
+        pts: a ? Math.round(a.ppp * a.poss * 10) / 10 : null, ends: actOf(c).join(", "), who: plOf(c).map(function (p) { return p.replace("|", " #"); }).join(", ") }; });
+  }
+  /* the staff's splits, applied: { "<label>": [ { name, ids:[possession ids] }, ... ] } -
+     each part becomes its own row, the rest stays under the old name */
+  function pbSplit(rows, splits) {
+    if (!splits || typeof splits !== "object") return rows;
+    var out = [];
+    rows.forEach(function (r) {
+      var sp = splits[r.label];
+      if (!sp || !sp.length || !r._chs) { out.push(r); return; }
+      var taken = {}, parts = [];
+      sp.forEach(function (s) { if (!s || !s.name || !s.ids) return;
+        var want = {}; s.ids.forEach(function (id) { want[id] = 1; });
+        var chs = r._chs.filter(function (c) { var id = possId(c); if (want[id] && !taken[id]) { taken[id] = 1; return true; } return false; });
+        if (chs.length) { var nr = pbRow(r.origin, s.name, chs); nr.split = r.label; parts.push(nr); } });
+      var rest = r._chs.filter(function (c) { return !taken[possId(c)]; });
+      if (rest.length) { var rr = pbRow(r.origin, r.label, rest); rr.flagUse = r.flagUse; rr.flagPpp = r.flagPpp; rr.hasSplit = true; out.push(rr); }
+      parts.forEach(function (p) { out.push(p); });
+    });
+    return out;
+  }
   function buildReport(teamName, games, refGames) {
     var evs = [], refEvs = [];
     games.forEach(function (g) { evs = evs.concat(g.evs); });
@@ -898,20 +947,7 @@
        and the coach decides whether it matters — the table says how often it
        was called and leaves the PPP uncoloured, which is the honest version of
        hiding it. */
-    var pbrows = pbOrder.map(function (key) {
-      var it = pb[key], a = agg(it.chs);
-      var ends = {}, eo = [];
-      it.chs.forEach(function (c) { actOf(c).forEach(function (x) { if (!ends[x]) { ends[x] = 0; eo.push(x); } ends[x]++; }); });
-      eo.sort(function (x, y) { return ends[y] - ends[x]; });
-      var bk = ORIGIN_BAND[it.o] || ["Half court", it.o];
-      var code = (it.name.match(/^([A-Z]{1,2}\d[A-Z]?)\b/) || [])[1] || "";
-      return { band: bk[0], kind: bk[1], label: it.name.slice(0, 58), code: code,
-        origin: it.o, n: it.chs.length,
-        poss: r1(a.poss), ppp: r2(a.ppp), xppp: r2(a.xppp), efg: rp(a.efg),
-        p3r: rp(a.p3r), conf: conf(a.poss),
-        end1: eo.length ? eo[0] : "",
-        ends: eo.slice(0, 3).map(function (k) { return k + " " + ends[k]; }) };
-    });
+    var pbrows = pbOrder.map(function (key) { var it = pb[key]; return pbRow(it.o, it.name, it.chs); });
 
     /* The two red flags. Volume is read straight off the calls. "Best" is only
        read among sets called at least three times: one made three on a single
@@ -2900,6 +2936,8 @@
       });
     });
   };
+  API.pbPoss = pbPoss;
+  API.pbSplit = pbSplit;
   API.refresh = function () {
     dropCache();
     var n = document.querySelectorAll(".scoutpre-slot, .scoutpre-players-slot");

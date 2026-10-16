@@ -13500,6 +13500,55 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
   const hasAdj=k=>{ const o=pickOf(k); return !!(o && String(o.p.rule||"").replace(/<[^>]*>/g,"").replace(/&nbsp;/g," ").trim()); };
   const keyOn=k=>{ try{ return _pbKeyRead(k); }catch(e){ return false; } };
   const keyWrite=(k,on)=>{ _pbKeyWrite(k, on); try{ save(); }catch(e){} try{ persist(); }catch(e){} try{ _clubPush(_preClub()); }catch(e){} draw(); };
+  /* THE STAFF CORRECTS THE TAGGING. A call written by hand for a set the call sheet does
+     not cover, and a set the tagging lumped together split into the plays it really is -
+     a few of its possessions taken out under a name of their own. Both are kept in the
+     report beside the renames (pbCall, pbSplit); the tagging itself is never changed, so
+     taking a split back gives the row back exactly. */
+  let BASE=[];
+  const home=areas[0]||null;
+  if(home){ home.pbCall=(home.pbCall && typeof home.pbCall==="object")? home.pbCall : {}; home.pbSplit=(home.pbSplit && typeof home.pbSplit==="object")? home.pbSplit : {}; }
+  const callOf=k=>{ for(let i=0;i<areas.length;i++){ const c=areas[i].pbCall && areas[i].pbCall[k]; if(c) return c; } return ""; };
+  const splitsAll=()=>{ const o={}; areas.forEach(a=>{ const s=a.pbSplit||{}; Object.keys(s).forEach(k=>{ o[k]=(o[k]||[]).concat(s[k]||[]); }); }); return o; };
+  function derive(){
+    const SP=window.ScoutPre;
+    const rows=(SP && SP.pbSplit)? SP.pbSplit(BASE, splitsAll()) : BASE;
+    ROWS=rows.map(r=>{ const o=Object.assign({}, r, { c:_pbClass(r) }); const mc=callOf(r.label); if(mc){ o.call=mc; o.callMan=true; }
+      try{ Object.defineProperty(o, "_src", { value:r, enumerable:false }); }catch(e){} return o; }).filter(r=>r.c.kind!=="Concepts");
+  }
+  const setCall=(k, v)=>{ if(!home) return; areas.forEach(a=>{ if(a!==home && a.pbCall) delete a.pbCall[k]; });
+    if(v) home.pbCall[k]=v; else delete home.pbCall[k]; save(); derive(); draw(); };
+  /* split a set: its possessions, one line each - game, quarter, clock, how it ended - and
+     the ones ticked go under the new name */
+  const openSplit=r=>{
+    const SP=window.ScoutPre, src=r._src||r;
+    const poss=(SP && SP.pbPoss)? SP.pbPoss(src) : [];
+    if(!poss.length){ toast("The possessions of this set could not be read"); return; }
+    const nm=h("input",{class:"pbs-in", id:"pbSplitName", placeholder:"Name of the other play, e.g. "+(r.c.code? r.c.code+"B" : "H4B")+" Flex"});
+    const picked={};
+    const cnt=h("b",{},"0");
+    const list=h("div",{class:"pbs-list"}, poss.map(p=>{ const cb=h("input",{type:"checkbox"});
+      cb.addEventListener("change",()=>{ if(cb.checked) picked[p.id]=1; else delete picked[p.id]; cnt.textContent=String(Object.keys(picked).length); });
+      return h("label",{class:"pbs-p"}, cb, h("b",{}, p.game), h("span",{}, (p.period? p.period+" · " : "")+p.at), h("em",{}, p.pts==null? "—" : p.pts+" pts"), h("i",{}, [p.ends, p.who].filter(Boolean).join(" · "))); }));
+    const go=()=>{ const ids=Object.keys(picked), name=nm.value.replace(/\s+/g," ").trim();
+      if(!name){ toast("Give the other play a name"); nm.focus(); return; }
+      if(!ids.length){ toast("Tick the possessions that are the other play"); return; }
+      if(ids.length>=poss.length){ toast("Leave at least one possession in "+r.label); return; }
+      if(ROWS.some(x=>x.label===name)){ toast("There is a set called "+name+" already"); return; }
+      const base=r.split || r.label;
+      (home.pbSplit[base]=home.pbSplit[base]||[]).push({ name:name, ids:ids, by:currentUser||"", at:new Date().toISOString() });
+      save(); closeDialog(); derive(); draw(); toast(ids.length+" possessions moved to "+name); };
+    openDialog(h("div",{class:"pbs"},
+      h("h3",{}, "Split "+nameOf(r.label)),
+      h("p",{class:"pbs-sub"}, "Tick the possessions that are a different play, give it a name, and they become a set of their own - counted again from those possessions. "+r.label+" keeps the rest."),
+      h("div",{class:"field"}, h("label",{},"The other play"), nm),
+      h("div",{class:"pbs-h"}, h("span",{}, poss.length+" possessions · "), cnt, h("span",{}," ticked")),
+      list,
+      h("div",{class:"dialog-foot"}, h("button",{class:"btn", onclick:closeDialog},"Cancel"), h("button",{class:"btn primary", onclick:go},"Split it off"))));
+    setTimeout(()=>{ try{ nm.focus(); }catch(e){} }, 40);
+  };
+  const unsplit=r=>{ if(!r.split) return; areas.forEach(a=>{ const s=a.pbSplit && a.pbSplit[r.split]; if(s){ a.pbSplit[r.split]=s.filter(x=>x.name!==r.label); if(!a.pbSplit[r.split].length) delete a.pbSplit[r.split]; } });
+    save(); derive(); draw(); toast(r.label+" put back into "+r.split); };
   const COLS=[ ["code","Code",false, r=>(r.c.fam||"~")+" "+(r.c.variant||"")+" "+String(nameOf(r.label)).toLowerCase()],
     ["name","Set",false, r=>String(nameOf(r.label)).toLowerCase()], ["call","Call",false, r=>String(r.call||"￿").toLowerCase()],
     ["n","Use",true, r=>r.n], ["ppp","PPP",true, r=>r.ppp], ["efg","eFG",true, r=>r.efg] ];
@@ -13563,10 +13612,31 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
       row.appendChild(star);
       row.appendChild(h("span",{class:"pbb-c-code"}, paint(r.c.code? h("b",{}, r.c.code) : h("i",{class:"nocode"},"—"), r), h("em",{}, r.c.kind+(r.c.ato? " · ATO" : ""))));
       { const fc=famColor(r); if(fc) row.style.setProperty("--fam", fc.bg); }
-      const nm=h("span",{class:"pbb-c-name"}, nameOf(r.label));
+      const nm=h("span",{class:"pbb-nm"}, nameOf(r.label)), cellN=h("span",{class:"pbb-c-name"}, nm);
       if(canEd) _pbbRename(nm, r, itemFor, areas, save, drawKey);
-      row.appendChild(nm);
-      row.appendChild(r.call? h("span",{class:"pbb-c-call pbx-call"}, r.call) : h("span",{class:"pbb-c-call pbx-nocall"},"—"));
+      /* the split tools beside the name: cut a set in two, or put a part back */
+      if(canEd){
+        const tools=h("span",{class:"pbb-tools"});
+        if(r.split){ const b=h("button",{type:"button", class:"pbb-tb", title:"Split from "+r.split+" — press to put it back"},"↩"); b.addEventListener("click",e=>{ e.stopPropagation(); unsplit(r); }); tools.appendChild(b); }
+        else if(r.n>=2){ const b=h("button",{type:"button", class:"pbb-tb", title:"Split: some of these possessions are a different play"},"⑂"); b.addEventListener("click",e=>{ e.stopPropagation(); openSplit(r); }); tools.appendChild(b); }
+        cellN.appendChild(tools);
+      }
+      if(r.split) cellN.appendChild(h("i",{class:"pbb-from", title:"Split from "+r.split}, " ⑂ "+r.split));
+      row.appendChild(cellN);
+      /* the call: from the call sheet, or written here when the sheet does not have it */
+      const callEl=r.call? h("span",{class:"pbb-c-call pbx-call"+(r.callMan? " man" : ""), title:r.callMan? "Written by the staff" : "From the call sheet"}, r.call) : h("span",{class:"pbb-c-call pbx-nocall"},"—");
+      if(canEd){ callEl.classList.add("pbb-callable"); callEl.title=(r.callMan? "Written by the staff" : r.call? "From the call sheet" : "No call")+" — click to write it";
+        callEl.addEventListener("click",()=>{ if(callEl.querySelector("input")) return;
+          const inp=h("input",{class:"pbb-callin", value:callOf(r.label)||r.call||"", placeholder:"Call"});
+          callEl.innerHTML=""; callEl.appendChild(inp); inp.focus(); inp.select();
+          let done=false; const fin=keep=>{ if(done) return; done=true; const v=inp.value.replace(/\s+/g," ").trim();
+            if(!keep){ derive(); draw(); return; }
+            /* writing the sheet's own call back, or nothing, leaves the sheet's */
+            const sheet=(r._src && r._src.call) || "";
+            setCall(r.label, (v && v!==sheet)? v : ""); };
+          inp.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); fin(true); } else if(e.key==="Escape"){ fin(false); } });
+          inp.addEventListener("blur",()=>fin(true)); }); }
+      row.appendChild(callEl);
       const mx=Math.max.apply(null, ROWS.map(x=>x.n).concat([1]));
       row.appendChild(h("span",{class:"pbb-c-n", title:r.n+" runs"}, h("i",{style:"width:"+Math.max(4,Math.round(100*r.n/mx))+"%"}), h("b",{}, String(r.n))));
       const pp=pbxPppChip(r.ppp, AVG, r.n); pp.classList.add("pbb-c-ppp"); row.appendChild(pp);
@@ -13638,7 +13708,7 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
   try{ _clubPull(_preClub(), ()=>{ try{ if(ROWS.length) draw(); }catch(e){} }); }catch(e){}
   if(_scoutOpponent && window.ScoutPre && window.ScoutPre.sets){
     window.ScoutPre.sets(_scoutOpponent, null).then(res=>{
-      ROWS=(res.rows||[]).map(r=>Object.assign({}, r, { c:_pbClass(r) })).filter(r=>r.c.kind!=="Concepts");  /* concepts are not sets: the staff keeps them out of the playbook */ AVG=(res.avg!=null)? res.avg : null;
+      BASE=res.rows||[]; derive();  /* concepts are not sets: the staff keeps them out of the playbook */ AVG=(res.avg!=null)? res.avg : null;
       if(!ROWS.length){ tableBox.innerHTML=""; tableBox.appendChild(h("div",{class:"pbx-none"},
         res.why==="nomatch"? "The tagging holds no games against this opponent." : res.why==="empty"? "No files in the pregame folder." : "Nothing tagged for this opponent yet."));
         /* what the staff wrote is still shown, with nothing to hang it on */
@@ -24129,8 +24199,13 @@ function _dashKeySetsInto(box, g){
   _dashNeed(()=>window.ScoutPre && window.ScoutPre.sets, 20000).then(ok=>Promise.all([ ok? window.ScoutPre.sets(g.opponent, null).catch(()=>null) : null, _dashRep(g) ])).then(async ([res, rep])=>{
     await new Promise(r2=>{ try{ if(!tid || _clubPulled[tid]) return r2(); _clubPull(tid, null, r2); setTimeout(r2, 8000); }catch(e){ r2(); } });
     const edits={}; ((rep && rep.data && rep.data.sections)||[]).forEach(s2=>((s2 && s2.items)||[]).forEach(it=>{ if(it && it.pbEdit && typeof it.pbEdit==="object") Object.assign(edits, it.pbEdit); }));
+    /* the staff's corrections of the playbook: its splits and the calls written by hand */
+    const calls={}, splits={}; ((rep && rep.data && rep.data.sections)||[]).forEach(s2=>((s2 && s2.items)||[]).forEach(it=>{ if(!it) return;
+      if(it.pbCall && typeof it.pbCall==="object") Object.assign(calls, it.pbCall);
+      if(it.pbSplit && typeof it.pbSplit==="object") Object.keys(it.pbSplit).forEach(k=>{ splits[k]=(splits[k]||[]).concat(it.pbSplit[k]||[]); }); }));
+    const base=((res && res.rows)||[]), all=((window.ScoutPre && window.ScoutPre.pbSplit)? window.ScoutPre.pbSplit(base, splits) : base).map(r=>calls[r.label]? Object.assign({}, r, { call:calls[r.label] }) : r);
     const keep=_scoutOpponent; let rows=[];
-    try{ _scoutOpponent=g.opponent; rows=((res && res.rows)||[]).filter(r=>{ try{ return _pbClass(r).kind!=="Concepts" && _pbKeyRead(r.label); }catch(e){ return false; } }).sort((a,b)=>b.n-a.n); }
+    try{ _scoutOpponent=g.opponent; rows=all.filter(r=>{ try{ return _pbClass(r).kind!=="Concepts" && _pbKeyRead(r.label); }catch(e){ return false; } }).sort((a,b)=>b.n-a.n); }
     finally{ _scoutOpponent=keep; }
     box.innerHTML="";
     if(!rows.length){ box.appendChild(h("div",{class:"dash-miss"}, (res && (res.rows||[]).length)? "No key sets starred in the pre game playbook yet." : "No tagging of this club yet, so no sets.")); return; }
@@ -33700,6 +33775,24 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-gps .dash-gp{margin-left:0;padding:4px 9px}
 .dash-gp.pre{background:#8a2f2b;border-color:#8a2f2b;color:#fff}
 .dash-gp.post{background:#141821;border-color:#141821;color:#fff}
+/* the playbook: a call written by hand, a set split by possession */
+.pbb-c-name{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}
+.pbb-tools{display:inline-flex;gap:2px;opacity:.35;transition:opacity .15s}
+.pbb-r:hover .pbb-tools{opacity:1}
+.pbb-tb{border:1px solid var(--line-strong,#cfd4dc);background:var(--panel,#fff);border-radius:5px;width:22px;height:20px;line-height:1;cursor:pointer;font-size:12px;color:var(--ink-soft,#5b6472);padding:0}
+.pbb-tb:hover{border-color:#c6a15b;color:#7a5c12}
+.pbb-from{font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:#7a5c12;background:rgba(198,161,91,.15);border-radius:4px;padding:0 4px}
+.pbb-callable{cursor:text}.pbb-callable:hover{outline:1px dashed #c6a15b;outline-offset:2px;border-radius:3px}
+.pbb-callin{width:100%;min-width:70px;box-sizing:border-box;font:inherit;border:1px solid #c6a15b;border-radius:5px;padding:2px 5px;background:var(--panel,#fff);color:var(--ink,#141821)}
+.pbx-call.man{border-bottom:1px dotted #c6a15b}
+.pbs{max-width:720px}.pbs-sub{font-size:12.5px;color:var(--ink-soft,#5b6472);margin:2px 0 10px}
+.pbs-in{width:100%;box-sizing:border-box}
+.pbs-h{font-size:12px;color:var(--ink-soft,#5b6472);margin:8px 0 4px}
+.pbs-list{display:grid;gap:2px;max-height:52vh;overflow:auto;border:1px solid var(--line,#e4e7ec);border-radius:8px;padding:4px}
+.pbs-p{display:grid;grid-template-columns:20px minmax(90px,1.2fr) 110px 54px minmax(0,2fr);gap:8px;align-items:center;padding:5px 6px;border-radius:6px;cursor:pointer;font-size:12.5px}
+.pbs-p:hover{background:var(--panel-2,#f4f5f7)}.pbs-p:has(input:checked){background:rgba(198,161,91,.18)}
+.pbs-p span{font:600 11.5px 'IBM Plex Mono',monospace}.pbs-p em{font:700 11px 'IBM Plex Mono',monospace;font-style:normal;text-align:right}
+.pbs-p i{font-style:normal;font-size:11px;color:var(--ink-soft,#5b6472);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* the owner seeing the hub as somebody else */
 #viewAsBar{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);z-index:9000;display:flex;align-items:center;gap:12px;padding:8px 10px 8px 16px;border-radius:999px;background:#c6a15b;color:#141821;box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:13px}
 #viewAsBar b{font-weight:800}
