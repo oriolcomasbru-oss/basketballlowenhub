@@ -149,6 +149,59 @@
   }
   function small(m, S) { if (!S || !S.gp) return true; if (m.need) return !m.need(S); return S.s < 30 * 60; }
 
+  /* ------------------------------------------------------------ last season
+     THE YARDSTICK OF LAST YEAR. Every goal measure is also set against what the player did
+     the season before: the league's own line for a man who played in the BBL, read from
+     the league's rosters of that season; for anybody who played elsewhere, the line the
+     staff typed from the source (RealGM, the league's site), kept in the document with that
+     source. Only what a box score holds can be compared: the measures that need who was on
+     the floor (usage, rebound shares, ratings on) are not in another league's line, and say
+     so rather than borrow a number. */
+  var ONCOURT = { usg: 1, orbp: 1, drbp: 1, torb: 1, tdrb: 1, ortg: 1, drtg: 1, net: 1 };
+  var PREV = { bbl: {}, busy: false, done: false };
+  function prevYear() { var s = +(leagueState().season) || 2026; return String(s - 1); }
+  function prevLabel() { var y = +prevYear(); return y + "/" + String((y + 1) % 100).padStart(2, "0"); }
+  /* a line of season totals in the shape the measures read */
+  function toS(t) {
+    if (!t) return null; var g = +t.gp || 0; if (!g) return null;
+    var n = function (k) { return t[k] == null || t[k] === "" ? null : +t[k]; };
+    var fm = (n("p2m") || 0) + (n("p3m") || 0), fa = (n("p2a") || 0) + (n("p3a") || 0);
+    return { gp: g, s: (n("sec") != null ? n("sec") : (n("min") || 0) * 60), p: n("pts") || 0,
+      r: (n("oreb") || 0) + (n("dreb") || 0), a: n("ast") || 0, t: n("tov") || 0, pm: n("pm"), pir: n("eff"),
+      fm: fm, fa: fa, tm: n("p3m") || 0, ta: n("p3a") || 0, f1: n("ftm") || 0, fta: n("fta") || 0,
+      or: n("oreb") || 0, dr: n("dreb") || 0, stl: n("stl") || 0, blk: n("blk") || 0, pf: n("pf") || 0, fd: n("fd"),
+      up: 0, tp: 0, uposs: 0, tposs: 0, uor: 0, udr: 0, tor: 0, tdr: 0 };
+  }
+  function prevValue(m, S) {
+    if (!S || ONCOURT[m.k] || UI.mode === "p100") return null;
+    if ((m.k === "pir" && S.pir == null) || (m.k === "pm" && S.pm == null) || (m.k === "fd" && S.fd == null)) return null;
+    return value(m, S, UI.mode);
+  }
+  /* the line of last season of one of ours: the staff's own entry first, then the league's */
+  function prevOf(p) {
+    var r = D.doc && D.doc.players[p.key], man = r && r.prev;
+    if (man && man.t) { var S = toS(man.t); if (S) return { S: S, src: man.src || "", team: man.team || "", league: man.league || "", by: "staff" }; }
+    var b = PREV.bbl[p.key]; if (b) return b;
+    var sd = SEED_PREV[p.nm]; if (sd && sd.t) { var S2 = toS(sd.t); if (S2) return { S: S2, src: sd.src || "", team: sd.team || "", league: sd.league || "", by: "research" }; }
+    return null;
+  }
+  /* the league's rosters of last season, once: each of ours found by his full name */
+  function loadPrev(after) {
+    if (PREV.done || PREV.busy || typeof _preFindSeason !== "function") return;
+    PREV.busy = true;
+    Promise.resolve(_preFindSeason(prevYear())).then(function (all) {
+      var P = people();
+      P.main.concat(P.dl).forEach(function (p) {
+        var want = [norm(p.nm), norm(p.league)];
+        var hit = (all || []).filter(function (x) { var nm = norm(x.p.name || ((x.p.first || "") + " " + (x.p.last || ""))); return want.indexOf(nm) >= 0; })
+          .sort(function (a, b) { return ((b.p.off && b.p.off.gp) || 0) - ((a.p.off && a.p.off.gp) || 0); })[0];
+        if (hit && hit.p.off && hit.p.off.gp) { var S = toS(hit.p.off); if (S) PREV.bbl[p.key] = { S: S, src: "BBL " + prevLabel(), team: (hit.team && hit.team.name) || "", league: "BBL", by: "league" }; }
+      });
+    }).catch(function () { }).then(function () { PREV.busy = false; PREV.done = true; try { if (after) after(); } catch (e) { } });
+  }
+  /* what we found for the men who played outside the BBL last season, with where it is from */
+  var SEED_PREV = {};
+
   /* ------------------------------------------------------------ data */
   var D = { R: null, doc: null, err: "", busy: false };
   function ourId() { var L = leagueState(); var t = (L.teams || []).filter(function (x) { return _lgOurs(x.name); })[0]; return t ? t.id : ""; }
@@ -384,11 +437,11 @@
   }
   function matrix(rows, games, opts) {
     opts = opts || {};
-    var t = el("div", { class: "pd-mx", style: "grid-template-columns:minmax(150px,1.6fr) repeat(" + games.length + ",minmax(44px,1fr)) minmax(56px,.9fr) minmax(90px,1.1fr)" });
+    var t = el("div", { class: "pd-mx", style: "grid-template-columns:minmax(150px,1.6fr) repeat(" + games.length + ",minmax(44px,1fr)) minmax(56px,.9fr) minmax(56px,.9fr) minmax(90px,1.1fr)" });
     t.appendChild(el("span", { class: "hd l" }, opts.head || ""));
     games.forEach(function (g, i) { t.appendChild(el("span", { class: "hd g" + (opts.mark === i ? " mk" : ""), title: g.d + " " + (g.home ? "vs " : "@ ") + g.opp + (g.us != null ? " " + g.us + "–" + g.them : "") },
       crest(g.opp), el("b", {}, g.code || ddmm(g.d)), el("i", { class: g.us != null ? (g.us > g.them ? "w" : "l") : "" }, ddmm(g.d)))); });
-    t.appendChild(el("span", { class: "hd" }, "Season")); t.appendChild(el("span", { class: "hd" }, "Trend"));
+    t.appendChild(el("span", { class: "hd ly", title: "Last season, and whether this season is better" }, prevLabel())); t.appendChild(el("span", { class: "hd" }, "Season")); t.appendChild(el("span", { class: "hd" }, "Trend"));
     rows.forEach(function (r) {
       if (r.group) { t.appendChild(el("span", { class: "grp", style: "grid-column:1/-1" }, r.p ? face(r.p, "sm") : null, r.group)); return; }
       var m = r.m, byD = {}; r.lines.forEach(function (x) { byD[x.d] = x; });
@@ -404,6 +457,9 @@
           cls = Math.abs(d) < s1 ? "" : (good ? (Math.abs(d) >= 2 * s1 ? "u2" : "u1") : (Math.abs(d) >= 2 * s1 ? "d2" : "d1"));
         }
         t.appendChild(el("span", { class: "c " + cls + (sm ? " sm" : "") + (opts.mark === i ? " mk" : ""), title: ddmm(g.d) + " " + g.opp + " · " + m.l + " " + fmt(m, v) + (sm ? " (small sample)" : "") }, v == null ? "—" : fmt(m, v))); });
+      /* last season beside this one: the colour says whether this season is better */
+      var pvr = r.pv || (r.p ? prevOf(r.p) : null), vl = vsLast(m, r.lines, pvr);
+      t.appendChild(el("span", { class: "c lyc " + vl.tone, title: pvr ? prevLabel() + " · " + [pvr.team, pvr.league].filter(Boolean).join(", ") : "no line for last season" }, vl.ly == null ? "—" : fmt(m, vl.ly)));
       t.appendChild(el("span", { class: "c seas" }, fmt(m, seas)));
       var series = r.lines.map(function (x, i) { return value(m, sum(r.lines.slice(Math.max(0, i - 2), i + 1)), UI.mode); });
       var tr = trend(m, r.lines, "3", UI.mode);
@@ -425,7 +481,7 @@
         var ks = []; act.forEach(function (g) { (g.metrics || []).forEach(function (k) { if (MK[k] && ks.indexOf(k) < 0) ks.push(k); }); });
         if (!ks.length) return;
         rows.push({ p: p, group: (p.num ? "#" + p.num + " " : "") + p.nm + " · " + act.map(function (g) { return g.name; }).join(" · ") });
-        ks.forEach(function (k) { rows.push({ label: MK[k].l, m: MK[k], lines: p.lines }); }); });
+        ks.forEach(function (k) { rows.push({ label: MK[k].l, m: MK[k], lines: p.lines, pv: prevOf(p) }); }); });
     } else {
       P.main.concat(P.dl).forEach(function (p) { if (!p.lines.length) return; rows.push({ p: p, label: (p.num ? "#" + p.num + " " : "") + p.nm, m: MK[cur], lines: p.lines }); });
     }
@@ -439,7 +495,22 @@
   /* one measure of a card: the value of the period, the change against the games before,
      the line of it - and each of the last games as its own number, so the trend can be
      read in figures and not only in a line */
-  function tile(m, lines) {
+  /* this season against last season, measure by measure */
+  function vsLast(m, lines, pv) {
+    var ly = pv ? prevValue(m, pv.S) : null, S = sum(lines), now = value(m, S, UI.mode);
+    if (ly == null || now == null) return { ly: ly, now: now, tone: "", d: null };
+    var d = now - ly, th = m.pct ? 3 : Math.max(0.3, Math.abs(ly) * 0.1);
+    var tone = (m.hi == null || Math.abs(d) < th || small(m, S)) ? "" : ((d > 0) === m.hi ? "up" : "dn");
+    return { ly: ly, now: now, d: d, tone: tone };
+  }
+  function lyChip(m, lines, pv) {
+    if (!pv) return null;
+    var c = vsLast(m, lines, pv);
+    if (c.ly == null) return el("div", { class: "pd-ly na", title: ONCOURT[m.k] ? "Needs who was on the floor - not in last season's line" : "Not in last season's line" }, el("i", {}, prevLabel()), el("b", {}, "—"));
+    return el("div", { class: "pd-ly " + c.tone, title: prevLabel() + " (" + [pv.team, pv.league].filter(Boolean).join(", ") + "): " + fmt(m, c.ly) + " · this season " + fmt(m, c.now) },
+      el("i", {}, prevLabel()), el("b", {}, fmt(m, c.ly)), el("u", {}, c.tone === "up" ? "▲ better" : c.tone === "dn" ? "▼ worse" : "= same"));
+  }
+  function tile(m, lines, pv) {
     var t = trend(m, lines, UI.period, UI.mode);
     var series = lines.map(function (x, i) { return value(m, sum(lines.slice(Math.max(0, i - 2), i + 1)), UI.mode); });
     var n = UI.period === "all" ? 5 : Math.min(5, +UI.period || 5);
@@ -453,7 +524,7 @@
       el("i", {}, m.l),
       el("div", { class: "tv" }, el("b", {}, fmt(m, t.v)),
         t.d != null ? el("em", {}, (t.tone === "up" ? "▲" : t.tone === "dn" ? "▼" : "▸") + " " + fmt(Object.assign({}, m, { sign: true }), t.d)) : null),
-      spark(series, { ref: t.base, tone: t.tone, w: 120, h: 28 }), gl) };
+      spark(series, { ref: t.base, tone: t.tone, w: 120, h: 28 }), gl, lyChip(m, lines, pv)) };
   }
   /* the players outside the programme: one small line each - who, how much he has played,
      and three numbers - and the full page one tap away */
@@ -473,7 +544,7 @@
       if (dl) return mini(p, open);
       var r = rec(p.key), act = (r.goals || []).filter(function (g) { return g.status === "active"; }), lines = p.lines;
       var c = el("button", { type: "button", class: "pd-pc" + (dl ? " dl" : ""), onclick: function () { open(p.key); } });
-      var up = 0, dn = 0;
+      var up = 0, dn = 0, pvP = prevOf(p);
       var body = el("div", { class: "pd-pcb" });
       if (!lines.length) body.appendChild(el("div", { class: "pd-miss" }, p.missing ? "Not on the league roster - check the name." : dl ? "No stats yet - they arrive with the ProB feed." : "No games yet."));
       else {
@@ -481,14 +552,15 @@
           : [{ name: "No goal set yet · his season", ks: (r.metrics && r.metrics.length) ? r.metrics.slice(0, 4) : ["min", "pts", "ts", "pir"], rs: [] }];
         groups.forEach(function (gr) {
           var row = el("div", { class: "pd-tiles" });
-          gr.ks.forEach(function (k) { var m = MK[k]; if (!m) return; var x = tile(m, lines); row.appendChild(x.el);
+          gr.ks.forEach(function (k) { var m = MK[k]; if (!m) return; var x = tile(m, lines, pvP); row.appendChild(x.el);
             if (act.length && !x.t.small) { if (x.t.tone === "up") up++; else if (x.t.tone === "dn") dn++; } });
           body.appendChild(el("div", { class: "pd-gr" }, el("div", { class: "pd-grn" }, gr.name), row)); });
       }
       var verdict = !lines.length || !act.length ? null : (up && !dn) ? ["up", "Improving"] : (dn && !up) ? ["dn", "Dropping"] : (up || dn) ? ["mix", "Mixed"] : ["", "Steady"];
       c.appendChild(el("div", { class: "pd-pch" }, face(p, "md"),
         el("div", { class: "pl" }, el("u", {}, p.num ? "#" + p.num : ""), el("b", {}, p.nm),
-          el("span", {}, lines.length ? lines.length + " GP · " + (sum(lines).s / 60 / lines.length).toFixed(1) + " min" : "")),
+          el("span", {}, lines.length ? lines.length + " GP · " + (sum(lines).s / 60 / lines.length).toFixed(1) + " min" : ""),
+          el("span", { class: "pd-lysrc" + (pvP ? "" : " none"), title: pvP && pvP.src ? pvP.src : "" }, prevLabel() + ": " + (pvP ? [pvP.team, pvP.league].filter(Boolean).join(" · ") + (pvP.S ? " · " + pvP.S.gp + " GP" : "") : "no line yet"))),
         verdict ? el("span", { class: "pd-vd " + verdict[0] }, verdict[1], (up || dn) ? el("i", {}, "▲" + up + " ▼" + dn) : null) : null));
       c.appendChild(body);
       return c;
@@ -537,6 +609,7 @@
       });
       box.appendChild(t);
       box.appendChild(el("div", { class: "pd-foot" }, "Last " + per + " games against the games before them, on each player's own goal measures · best first · tap a player for his page"));
+      if (!PREV.done) loadPrev(go);
     };
     if (D.R && D.doc) return go();
     box.appendChild(el("div", { class: "ld" }, "Reading the season, game by game…", el("span", { class: "ld-bar" })));
@@ -556,6 +629,7 @@
       P.main.forEach(function (p) { grid.appendChild(cardOf(p, false, open)); });
       box.appendChild(grid);
       box.appendChild(el("div", { class: "pd-foot" }, FOOT()));
+      if (!PREV.done) loadPrev(go);
     };
     if (D.R && D.doc) return go();
     box.appendChild(el("div", { class: "ld" }, "Reading the season, game by game…", el("span", { class: "ld-bar" })));
@@ -582,6 +656,46 @@
     var tone = (d == null || sm || m.hi == null || Math.abs(d) < th) ? "" : ((d > 0) === m.hi ? "up" : "dn");
     return { v: va, base: vb, d: d, tone: tone, small: sm, how: how, gi: gi > 0 ? gi : (lines.length - during.length), nd: during.length, nb: before.length };
   }
+  /* LAST SEASON ON HIS PAGE: the line, per game, with its source; the staff types it (or
+     corrects it) when he played outside the BBL - season totals, as the source gives them */
+  var PREV_F = [["gp", "GP"], ["min", "Min (total)"], ["pts", "Pts"], ["p2m", "2PM"], ["p2a", "2PA"], ["p3m", "3PM"], ["p3a", "3PA"], ["ftm", "FTM"], ["fta", "FTA"],
+    ["oreb", "OR"], ["dreb", "DR"], ["ast", "Ast"], ["tov", "TO"], ["stl", "Stl"], ["blk", "Blk"], ["pf", "PF"]];
+  function lastBox(p, pv, ed) {
+    var box = el("details", { class: "pd-hist pd-last" + (pv ? "" : " none") });
+    if (!pv) box.setAttribute("open", "open");
+    var S = pv && pv.S, g = S ? S.gp : 0;
+    var per = function (v) { return g ? (v / g).toFixed(1) : "—"; };
+    box.appendChild(el("summary", {}, "Last season · " + prevLabel() + (pv ? " · " + [pv.team, pv.league].filter(Boolean).join(" · ") + (g ? " · " + g + " games" : "") : " · no line yet")));
+    if (S) box.appendChild(el("div", { class: "pd-lastl" },
+      [["Min", per(S.s / 60)], ["Pts", per(S.p)], ["Reb", per(S.or + S.dr)], ["Ast", per(S.a)], ["TO", per(S.t)],
+       ["FG%", S.fa ? Math.round(100 * S.fm / S.fa) + "%" : "—"], ["3P", S.ta ? (S.tm / g).toFixed(1) + "/" + (S.ta / g).toFixed(1) + " · " + Math.round(100 * S.tm / S.ta) + "%" : "—"],
+       ["FT%", S.fta ? Math.round(100 * S.f1 / S.fta) + "%" : "—"]].map(function (x) { return el("span", {}, el("i", {}, x[0]), el("b", {}, x[1])); }),
+      el("em", {}, pv.by === "league" ? "from the league's " + prevLabel() + " rosters" : pv.by === "research" ? "found by search · " + (pv.src || "") : "entered by the staff · " + (pv.src || ""))));
+    if (!pv) box.appendChild(el("div", { class: "pd-miss" }, "He did not play in the BBL in " + prevLabel() + ". " + (ed ? "Type his line from the source below - season totals - and every goal measure is set against it." : "The staff can add it from the source.")));
+    if (ed) {
+      var r = rec(p.key), cur = (r.prev && r.prev.t) || {};
+      var ins = {};
+      var form = el("div", { class: "pd-lastf" },
+        el("label", {}, "Team", (ins.team = el("input", { class: "pd-in", value: (r.prev && r.prev.team) || (pv && pv.by !== "league" ? pv.team : "") || "" }))),
+        el("label", {}, "League", (ins.league = el("input", { class: "pd-in", value: (r.prev && r.prev.league) || (pv && pv.by !== "league" ? pv.league : "") || "" }))),
+        el("label", { class: "w" }, "Source (link)", (ins.src = el("input", { class: "pd-in", value: (r.prev && r.prev.src) || "", placeholder: "https://basketball.realgm.com/player/…" }))));
+      var nums = el("div", { class: "pd-lastn" }, PREV_F.map(function (f) {
+        var v = cur[f[0]] != null ? cur[f[0]] : (f[0] === "min" && cur.sec != null ? Math.round(cur.sec / 60) : "");
+        return el("label", {}, f[1], (ins[f[0]] = el("input", { class: "pd-in", type: "number", step: "1", value: v === "" ? "" : String(v) }))); }));
+      var save = el("button", { type: "button", class: "btn primary sm" }, r.prev ? "Save the line" : "Add the line");
+      save.onclick = function () {
+        var t = {}; PREV_F.forEach(function (f) { var v = ins[f[0]].value; if (v !== "") t[f[0]] = +v; });
+        if (!t.gp) { toast("Games played is needed"); return; }
+        var entry = { season: prevYear(), team: ins.team.value.trim(), league: ins.league.value.trim(), src: ins.src.value.trim(), t: t };
+        commit("last season line · " + p.nm, function (doc, by) { var x = doc.players[p.key] || (doc.players[p.key] = { metrics: null, goals: [], ratings: [] }); entry.by = by; entry.at = new Date().toISOString(); x.prev = entry; })
+          .then(function (ok) { if (ok) { toast("Last season saved"); draw(); } else toast("Not saved"); }); };
+      var clear = r.prev ? el("button", { type: "button", class: "btn sm" }, "Use the league's again") : null;
+      if (clear) clear.onclick = function () { commit("last season line removed · " + p.nm, function (doc) { var x = doc.players[p.key]; if (x) delete x.prev; }).then(function () { draw(); }); };
+      box.appendChild(el("div", { class: "pd-laste" }, el("div", { class: "pd-h" }, el("b", {}, pv && pv.by === "league" ? "Correct the line" : "Last season's line"), el("span", { class: "pd-hs" }, "season totals, as the source gives them · minutes as a total")),
+        form, nums, el("div", { class: "pd-btns" }, save, clear)));
+    }
+    return box;
+  }
   function card2(root, key) {
     var P = people(), all = P.main.concat(P.dl), p = all.filter(function (x) { return x.key === key; })[0];
     if (!p) { UI.open = null; return overview(root); }
@@ -598,6 +712,9 @@
         el("span", {}, [p.pos, lines.length ? lines.length + " games · " + (S.s / 60 / Math.max(1, lines.length)).toFixed(1) + " min a game" : "no games yet"].filter(Boolean).join(" · "))),
       act.length && lines.length ? el("span", { class: "pd-big " + V.v[0] }, V.v[1], (V.up || V.dn) ? el("i", {}, "▲ " + V.up + "   ▼ " + V.dn) : null) : null,
       el("div", { class: "pd-tools" }, seg(MODES, UI.mode, function (v) { UI.mode = v; }))));
+    /* last season, the yardstick: where it is from, and the staff's entry when the league has none */
+    var pv2 = prevOf(p);
+    root.appendChild(lastBox(p, pv2, ed));
     /* a block per goal */
     if (!act.length) root.appendChild(el("div", { class: "pd-miss" }, "No goal set for him yet." + (ed ? " Add one below." : "")));
     var goalsHost = el("div", { class: "pd-goals2" }); root.appendChild(goalsHost);
@@ -611,6 +728,7 @@
           el("div", { class: "gn2" }, el("span", { class: "was" }, c.base == null ? "—" : fmt(m, c.base)), el("span", { class: "arr" }, "→"), el("b", {}, fmt(m, c.v)),
             c.d != null ? el("em", {}, (c.d > 0 ? "+" : "") + fmt(Object.assign({}, m, { sign: false }), c.d)) : null),
           el("div", { class: "gw" }, "before · now"),
+          lyChip(m, lines, pv2),
           chart(m, lines, UI.mode, [], { gi: c.gi, b: c.base, n: c.v, tone: c.tone }))); });
       var gv = verdictOf(ts);
       var head = el("div", { class: "pd-gh2" }, el("b", {}, g.name), el("span", { class: "pd-big sm " + gv.v[0] }, gv.v[1]),
@@ -639,7 +757,7 @@
       act.forEach(function (g) { mrows.push({ group: g.name });
         var gi = -1; games.forEach(function (x, i) { if (gi < 0 && x.d >= (g.start || "0000")) gi = i; });
         if (gi > 0 && mark == null) mark = gi;
-        (g.metrics || []).forEach(function (k) { if (MK[k]) mrows.push({ label: MK[k].l, m: MK[k], lines: lines }); }); });
+        (g.metrics || []).forEach(function (k) { if (MK[k]) mrows.push({ label: MK[k].l, m: MK[k], lines: lines, pv: pv2 }); }); });
       var mb = el("div", { class: "pd-mxbox" }, el("div", { class: "pd-h" }, el("b", {}, "His goals · game by game"),
         el("span", { class: "pd-hs" }, "each cell against his own season: green above, red below, darker the further · pale = too little in that game to judge")));
       mb.appendChild(matrix(mrows, games, { head: "Measure", mark: mark }));
@@ -882,6 +1000,7 @@
     ROOT.appendChild(page);
     if (!D.R && D.err) { page.appendChild(el("div", { class: "pd-miss" }, "The season could not be read: " + D.err)); return; }
     if (UI.open) card2(page, UI.open); else overview(page);
+    if (!PREV.done) loadPrev(draw);
     try { var ws2 = document.getElementById("workspace"); if (ws2) ws2.scrollTop = y; } catch (e) { }
   }
   function render(root) {
@@ -988,6 +1107,22 @@
       ".pd-lg{display:flex;gap:2px;margin-top:1px}.pd-lg span{flex:1;text-align:center;font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);background:rgba(20,24,33,.05);border-radius:3px;padding:1px 0;min-width:0;overflow:hidden}",
       ".pd-lg span.u{background:rgba(47,158,134,.2);color:#17603f}.pd-lg span.d{background:rgba(216,82,78,.17);color:#9e302c}.pd-lg span.sm{opacity:.5}",
       ".pd .lg-l1.pd-l1{margin:8px 0 0}",
+      /* last season */
+      ".pd-ly{display:flex;align-items:baseline;gap:5px;margin-top:3px;padding:2px 5px;border-radius:5px;background:rgba(20,24,33,.05);font-size:10px;min-width:0}",
+      ".pd-ly i{font:600 8.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}.pd-ly b{font:700 11px 'IBM Plex Mono',monospace}.pd-ly u{text-decoration:none;margin-left:auto;font:700 9px 'IBM Plex Mono',monospace;white-space:nowrap}",
+      ".pd-ly.up{background:rgba(47,158,134,.16)}.pd-ly.up u{color:#17805a}.pd-ly.dn{background:rgba(216,82,78,.13)}.pd-ly.dn u{color:#c0403c}.pd-ly.na{opacity:.55}",
+      ".pd-lysrc{font:500 9.5px 'IBM Plex Mono',monospace;color:#7a5c12}.pd-lysrc.none{color:var(--ink-faint,#8a93a2)}",
+      ".pd-mx .hd.ly{color:#7a5c12}.pd-mx .c.lyc{background:transparent;border:1px dashed var(--line-strong,#cfd4dc);color:var(--ink-soft,#5b6472)}",
+      ".pd-mx .c.lyc.up{border:1px solid #2f9e86;background:rgba(47,158,134,.12);color:#17603f}.pd-mx .c.lyc.dn{border:1px solid #d8524e;background:rgba(216,82,78,.1);color:#9e302c}",
+      ".pd-last summary{font:700 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase}",
+      ".pd-lastl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0}.pd-lastl span{display:flex;flex-direction:column;border-radius:7px;padding:4px 9px;background:var(--panel-2,#f4f5f7)}",
+      ".pd-lastl span i{font:600 8.5px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}.pd-lastl span b{font:700 14px 'Oswald',sans-serif}",
+      ".pd-lastl em{font:500 10.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);overflow-wrap:anywhere}",
+      ".pd-laste{display:grid;gap:8px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line,#e4e7ec)}",
+      ".pd-lastf{display:grid;grid-template-columns:1fr 1fr 2fr;gap:8px}.pd-lastn{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:6px}",
+      ".pd-lastf label,.pd-lastn label{display:grid;gap:2px;font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}",
+      ".pd-btns{display:flex;gap:6px}",
+      "@media (max-width:640px){.pd-lastf{grid-template-columns:minmax(0,1fr)}}",
       ".pd-cmp{display:grid;gap:3px}",
       ".pd-cr{display:grid;grid-template-columns:auto minmax(150px,1.3fr) 120px minmax(0,4fr);gap:10px;align-items:center;text-align:left;border:1px solid var(--line,#e4e7ec);border-radius:9px;background:var(--panel,#fff);padding:5px 10px;font:inherit;color:var(--ink,#141821);cursor:pointer}",
       ".pd-cr:hover{border-color:#c6a15b}",
