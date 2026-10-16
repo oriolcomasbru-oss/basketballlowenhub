@@ -10350,7 +10350,8 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
        tagging's own players table back in PLAYERS STATS. The joined columns stay in the
        code, switched off. */
     /* ...and then asked for the joined table again: it is on */
-    _preTagOn=!!(tid0 && !PV && playerBlockOk("stats"));
+    /* and the players get the same table as the staff: the league line and our tagging of the opponent on one row (the Drive lets a player read the opponent tagging) */
+    _preTagOn=!!(tid0 && playerBlockOk("stats"));
     try{ window.__preOneTable=_preTagOn; }catch(e){}
     if(!tid0 && !_preSeasonDone){
       _preSeasonDone=true;
@@ -21170,6 +21171,10 @@ function _lgRoster(L){
   } else {
     box.appendChild(h("div",{class:"lg-scroll"}, tbl));
     box.appendChild(_lgColourKey(false));
+    /* how to read our columns, in one line - for the players above all */
+    if(TG && !TG.empty) box.appendChild(h("div",{class:"gpo-note pre-tag-how"},
+      h("b",{},"Our tagging: "), "Poss = possessions he finished · Use = his share of their possessions · ",
+      h("b",{},"PPP in red"), " = he scores more than their average — he is the one to stop · eFG and TO = how well he shoots and how often he loses it · the last columns = how his possessions end (spot up, pick and roll, post…)."));
     /* when the tagging columns are not there, say why rather than leave a plain table */
     if(TG && TG.empty){
       const st=_preTagState(), e=_preTagKeep.by[_scoutOpponent||""]||{};
