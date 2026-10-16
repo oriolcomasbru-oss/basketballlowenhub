@@ -200,7 +200,24 @@
     }).catch(function () { }).then(function () { PREV.busy = false; PREV.done = true; try { if (after) after(); } catch (e) { } });
   }
   /* what we found for the men who played outside the BBL last season, with where it is from */
-  var SEED_PREV = {};
+  /* 2025/26, every game of the season (regular season and play-offs), as totals from the
+     league's or the school's own pages. The staff's entry on a player's page replaces it. */
+  var SEED_PREV = {
+    "Tajh Green": { team: "BC Balkan Botevgrad", league: "Bulgaria NBL", src: "https://nbl.basketball.bg/player.php?p_id=39648&season=28 · from 08/03/2026; his games at KB Peja (Kosovo) before are not in it",
+      t: { gp: 20, min: 529.7, pts: 240, p2m: 74, p2a: 123, p3m: 16, p3a: 47, ftm: 44, fta: 73, oreb: 42, dreb: 108, ast: 23, tov: 26, stl: 13, blk: 28, pf: 65 } },
+    "Sheldon Edwards": { team: "Texas Legends", league: "NBA G League", src: "https://gleague.nba.com/player/1643234/sheldon-edwards · regular season and Tip-Off Tournament",
+      t: { gp: 42, min: 1031.7, pts: 477, p2m: 49, p2a: 102, p3m: 121, p3a: 354, ftm: 13, fta: 16, oreb: 26, dreb: 120, ast: 64, tov: 43, stl: 40, blk: 7, pf: 45 } },
+    "Gian Aydinoglu": { team: "Kirchheim Knights", league: "ProA", src: "https://www.2basketballbundesliga.de/teams/kader/?id=527&season=2025/2026&round=ALL · regular season and play-offs",
+      t: { gp: 42, min: 727.7, pts: 203, p2m: 47, p2a: 87, p3m: 20, p3a: 110, ftm: 49, fta: 84, oreb: 23, dreb: 62, ast: 83, tov: 57, stl: 27, blk: 2, pf: 93 } },
+    "De'Jour Reaves": { team: "Fordham", league: "NCAA D-I (A-10)", src: "https://fordhamsports.com/sports/mens-basketball/stats/2025-26",
+      t: { gp: 31, min: 1048, pts: 554, p2m: 176, p2a: 327, p3m: 33, p3a: 115, ftm: 103, fta: 120, oreb: 31, dreb: 102, ast: 113, tov: 74, stl: 57, blk: 7, pf: 55 } },
+    "Devin Askew": { team: "Villanova", league: "NCAA D-I (Big East)", src: "https://villanova.com/sports/mens-basketball/stats/2025-26",
+      t: { gp: 33, min: 762, pts: 324, p2m: 44, p2a: 112, p3m: 65, p3a: 160, ftm: 41, fta: 47, oreb: 21, dreb: 64, ast: 68, tov: 38, stl: 36, blk: 4, pf: 73 } },
+    "Felipe Haase Thiers": { team: "Mexico City Capitanes", league: "NBA G League", src: "https://gleague.nba.com/player/1642527/felipe-haase · regular season, Tip-Off Tournament and play-offs",
+      t: { gp: 43, min: 1008.6, pts: 443, p2m: 59, p2a: 140, p3m: 76, p3a: 217, ftm: 53, fta: 58, oreb: 46, dreb: 126, ast: 80, tov: 60, stl: 15, blk: 12, pf: 94 } },
+    "Zaba Bangala": { team: "Kangoeroes Mechelen", league: "BNXT League", src: "BNXT League game logs (bnxt.sportpress.info), regular season and Belgian play-offs",
+      t: { gp: 32, min: 950, pts: 538, p2m: 184, p2a: 310, p3m: 11, p3a: 31, ftm: 137, fta: 225, oreb: 93, dreb: 188, ast: 77, tov: 78, stl: 42, blk: 25, pf: 68 } }
+  };
 
   /* ------------------------------------------------------------ data */
   var D = { R: null, doc: null, err: "", busy: false };
