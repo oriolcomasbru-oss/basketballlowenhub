@@ -2520,17 +2520,29 @@
         if (!files.length) return { why: "empty", files: names, D: null, calls: calls };
         var mine = pickFiles(files, opponent);
         if (!mine.length) return { why: "nomatch", files: names, D: null, calls: calls };
+        /* EVERY FILE OF THE FOLDER, FOUR AT A TIME, EACH WITH A LIMIT. They were all asked
+           for at once with no limit, so one download that never answered left the report -
+           and the roster table that waits on it - reading forever. A file that fails or
+           does not answer in time is left out and the rest are read; the opponent's own
+           files are what the report is about, so their loss is the only one counted. */
+        var pool = function (list, n, fn) {
+          var out = new Array(list.length), i = 0;
+          var next = function () { if (i >= list.length) return Promise.resolve(); var k = i++;
+            return fn(list[k]).then(function (v) { out[k] = v; }, function () { out[k] = null; }).then(next); };
+          var runs = []; for (var j = 0; j < Math.min(n, list.length); j++) runs.push(next());
+          return Promise.all(runs).then(function () { return out; });
+        };
         return Promise.all([
-          loadCalls(calls),
-          Promise.all(files.map(function (f) {
-            return getText(f.id).then(function (txt) {
+          loadCalls(calls).catch(function () { return {}; }),
+          pool(files, 4, function (f) {
+            return within(25000, f.name, getText(f.id)).then(function (txt) {
               var label = rivalLabel(f.name, opponent);
               var game = (mine.indexOf(f) >= 0 ? label : f.name);
               return { file: f, game: game, evs: buildEvents(parseFile(txt), game) };
             });
-          }))
+          })
         ]).then(function (both) {
-          var CALLS = both[0], all = both[1];
+          var CALLS = both[0], all = both[1].filter(Boolean);
           var ours = all.filter(function (g) { return mine.indexOf(g.file) >= 0; });
           var D = buildReport(opponent || "Opponent", ours, all);
           /* the call sheet is keyed by the same code the tagging uses, so a set

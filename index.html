@@ -2945,6 +2945,9 @@ const SB_URL = "https://smpahparklfuzxmgviql.supabase.co";
 const SB_KEY = "sb_publishable_FGaC9HnZp9zpRBAgmW1CVQ_EaIRnYEk";
 let SB_TOKEN = null, SB_ME = null;
 async function sbrpc(fn, params){
+  /* while the owner looks at the hub as somebody else, nothing is written anywhere */
+  if(typeof _viewAs!=="undefined" && _viewAs && /^(save_|set_|admin_(add|remove|reset|set)|change_)/.test(fn))
+    throw new Error("Read only while viewing as "+_viewAs.name);
   const r = await fetch(SB_URL.replace(/\/+$/,"")+"/rest/v1/rpc/"+fn, {
     method:"POST", headers:{"Content-Type":"application/json","apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY},
     body: JSON.stringify(params||{})
@@ -5714,6 +5717,7 @@ async function useStart(){
   let since = 0;
   _useTimer = setInterval(() => {
     if(document.visibilityState !== "visible") return;
+    if(typeof _viewAs!=="undefined" && _viewAs) return;
     /* a video being watched is time in use with no touch on the page: while its player is
        still open the time counts, up to twenty minutes without a touch */
     const vo = _useVidOn && document.querySelector('iframe[src*="youtube.com/embed/' + _useVidOn.id + '"]');
@@ -5756,6 +5760,8 @@ function useVideo(id, where, title){
 let _useBusy = false;
 async function useFlush(){
   if(!_use || !_useDirty || !SB_TOKEN || !currentUser || _useBusy) return;
+  /* seeing the hub as somebody else counts for nobody */
+  if(typeof _viewAs!=="undefined" && _viewAs) return;
   _useBusy = true;
   const mine = JSON.parse(JSON.stringify(_use));
   _useDirty = false;
@@ -5879,7 +5885,7 @@ async function savePlayerView(sects, blocks){
 }
 /* The admin always edits. Without this a missing permission row from the server
    leaves the owner of the app looking at a read-only page with no way to fix it. */
-function canEdit(sect){ if(!currentUser) return false; if(isPlayerUser() || isReader()) return false; if(isAdmin()) return true;
+function canEdit(sect){ if(!currentUser) return false; if(typeof _viewAs!=="undefined" && _viewAs) return false; if(isPlayerUser() || isReader()) return false; if(isAdmin()) return true;
   if(sect==="playerdev") return false;
   const p=state.perms&&state.perms[currentUser]; return p?!!(p.edit&&p.edit[sect]):false; }
 function phxPark(){ try{ var p=document.getElementById("phxRoot"), park=document.getElementById("phxPark"); if(p&&park&&p.parentElement!==park){ park.appendChild(p); p.style.display="none"; } }catch(e){} }
@@ -21092,7 +21098,9 @@ function _preTagRows(tid){
     const e=K.by[opp];
     if(e) return (!e.busy && e.T && (e.T.rows||[]).length)? e.T : null;
     const ent=K.by[opp]={ busy:true, T:null, err:false, msg:"" };
-    SP.playersOf(opp).then(T=>{ ent.T=T||null; ent.why=(T && T.why)||""; },
+    /* never "reading…" for ever: two minutes, and it is said and tried again */
+    Promise.race([ SP.playersOf(opp), new Promise((_,no)=>setTimeout(()=>no(new Error("the Drive did not answer in 2 minutes")), 120000)) ])
+      .then(T=>{ ent.T=T||null; ent.why=(T && T.why)||""; },
       e=>{ ent.err=true; ent.msg=String((e && e.message)||e||"");
         /* a read that failed - a slow Drive, a dropped request - is tried again, it is not
            remembered as the answer for this opponent for the rest of the visit */
@@ -23811,7 +23819,7 @@ function _preJoinedPlayers(tid){
    with the reports so everybody reads the same one. */
 var DASHES={
   Ramon:{ name:"Ramón", role:"Head coach", cards:["oppr","post","pdevc","players","league","trends2","week","month"] },
-  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["quick","owork","coming","league","trends2","oppr","week","month"] },
+  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["owork","league","trends2","oppr","week","month"] },
   Keith:{ name:"Keith", role:"Coaching staff", cards:["pdevc","oppr","post","players","league","trends2","week","monthP"] },
   Liviu:{ name:"Liviu", role:"Coaching staff", cards:["quick","month","pdevc"] },
   /* Joan Marc does the games and sees what Marc has done and owes; Marc the trainings */
@@ -24281,7 +24289,7 @@ async function _playerDash(root, who){
   const page=h("div",{class:"dash pdash"}); root.appendChild(page);
   const nm=String(who||currentUser||""), own=(nm===String(currentUser||""));
   const top=h("div",{class:"dash-top"},
-    h("div",{class:"dash-hi"}, h("b",{}, own? _dashGreeting()+", "+(nm.split(/\s+/)[0]||nm) : nm), h("span",{}, own? "Player" : "Player · his dashboard, as he sees it")),
+    h("div",{class:"dash-hi"}, h("b",{}, own? _dashGreeting()+", "+(nm.split(/\s+/)[0]||nm) : nm), h("span",{}, "Player")),
     h("span",{class:"dash-day"}, _dashFmt(T)+(G.next? " · "+(dayDelta(G.next.g.date)===0? "game day" : dayDelta(G.next.g.date)+" days to "+G.next.g.opponent) : "")));
   if(!own && isAdmin()) top.appendChild(_dashSwitch("pl:"+nm));
   page.appendChild(top);
@@ -24295,19 +24303,19 @@ async function _playerDash(root, who){
   if(!nx.length) cN.__b.appendChild(h("div",{class:"dash-miss"},"No game in the calendar yet."));
   nx.forEach((x,i)=>{ const g=x.g, dd=dayDelta(g.date);
     const st=h("span",{class:"dash-pill wait"},"…");
-    const b=h("button",{type:"button", class:"dash-pnext"+(i? " sec" : ""), onclick:()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } })},
+    const b=h("button",{type:"button", class:"dash-pnext off"+(i? " sec" : ""), disabled:"disabled", onclick:()=>{ if(!b.disabled) _dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } }); }},
       crest(g), h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent),
         h("span",{}, _dashFmt(g.date)+(g.time? " · "+g.time : "")+" · "+(g.competition||"")+" · "+(dd===0? "today" : dd===1? "tomorrow" : "in "+dd+" days"))),
       st, h("em",{}, "Open ›"));
     cN.__b.appendChild(b);
     _dashRep(g).then(rep=>{ const pub=rep && (rep.share_state==="published" || (rep.data && rep.data.status && rep.data.status.pre && rep.data.status.pre.done));
-      st.className="dash-pill "+(rep? "ready" : "pend"); st.textContent=rep? "Ready to study" : "Not published yet"; if(!rep) b.classList.add("off"); }); });
+      const ok=!!(rep && rep.share_state==="published"); st.className="dash-pill "+(ok? "ready" : "pend"); st.textContent=ok? "Ready to study" : "Not published yet"; b.disabled=!ok; b.classList.toggle("off", !ok); b.querySelector("em").textContent=ok? "Open ›" : "Locked"; }); });
   /* ---- the time studying the opponent */
   const cS=card("wide", "Your scouting in numbers");
   const body=h("div",{}, h("div",{class:"dash-ld"},"Reading your time…")); cS.__b.appendChild(body);
   let doc=null;
   try{ const r=await sbrpc("get_report",{ p_token:SB_TOKEN, p_key:useKey(nm) }); doc=r && r.ok && r.report && r.report.data; }catch(e){}
-  try{ if(own && _use) doc=doc && doc.days? _useMerge(doc, _use) : _use; }catch(e){}
+  try{ if(own && _use && !_viewAs) doc=doc && doc.days? _useMerge(doc, _use) : _use; }catch(e){}
   const days=(doc && doc.days)||{};
   const legacy=((doc && doc.legacy && doc.legacy.sessions)||[]).filter(s=>s && s.at);
   /* one scouting: the days from the day after our game before, to the game itself */
@@ -24354,7 +24362,6 @@ async function _playerDash(root, who){
     body.appendChild(h("div",{class:"dash-pstudy"},
       h("div",{class:"big"}, h("i",{},"Studying "+last.g.opponent), h("b",{class:"na"},"Not recorded"), h("span",{}, "neither the old hub nor this app has this scouting"+(covStart? " · this app records from "+_dashFmt(covStart) : "")))));
   } else {
-    const mx=Math.max(1, ...S.per.map(p=>p.s));
     body.appendChild(h("div",{class:"dash-pstudy"},
       h("div",{class:"big"}, h("i",{},"Studying "+last.g.opponent+" · "+src(S)), h("b",{}, mins(S.sec)),
         h("span",{}, (S.old? S.sessions+" session"+(S.sessions===1? "" : "s")+" in the old hub, " : "in the pre game, ")+_dashFmt(S.from)+" – "+_dashFmt(S.to))),
@@ -24362,8 +24369,7 @@ async function _playerDash(root, who){
         h("div",{class:"dash-fig"}, h("i",{},"Days you studied"), h("b",{}, String(S.days)), h("span",{}, "of the "+S.per.length+" days")),
         h("div",{class:"dash-fig"}, h("i",{},"Watching their videos"), h("b",{}, S.vsec? mins(S.vsec) : "—"), h("span",{}, S.vids+" video"+(S.vids===1? "" : "s")+" opened")),
         S.old? h("div",{class:"dash-fig"}, h("i",{},"Sessions"), h("b",{}, String(S.sessions)), h("span",{},"in the old hub"))
-          : h("div",{class:"dash-fig"}, h("i",{},"In this report"), h("b",{}, S.rep? mins(S.rep) : "—"), h("span",{}, S.rep? "the "+last.g.opponent+" pre game itself" : "recorded per report from 15/10"))),
-      h("div",{class:"dash-pbars"}, S.per.map(p=>h("div",{title:_dashFmt(p.d)+": "+mins(p.s)}, h("span",{style:"height:"+Math.max(p.s? 6 : 0, Math.round(100*p.s/mx))+"%"}), h("em",{}, p.d.slice(8)+"/"+p.d.slice(5,7)))))));
+          : h("div",{class:"dash-fig"}, h("i",{},"In this report"), h("b",{}, S.rep? mins(S.rep) : "—"), h("span",{}, S.rep? "the "+last.g.opponent+" pre game itself" : "recorded per report from 15/10")))));
     /* every video of that scouting, with the time it was on screen */
     if(S.vlist.length){
       const vm=Math.max(1, ...S.vlist.map(v=>v.sec));
@@ -24781,14 +24787,14 @@ function renderDashboard(){
         const by={};
         ((R && R.games)||[]).forEach(x=>(x.pl||[]).forEach(q=>{ if(!(q.s>0)) return; (by[q.nm]=by[q.nm]||{ nm:q.nm, n:q.n, l:[] }).l.push({ pir:+q.pir||0, pts:+q.p||0, min:q.s/60 }); }));
         const av=(l,k)=>l.reduce((a,e)=>a+e[k],0)/l.length;
-        const mv=Object.keys(by).map(k=>by[k]).filter(e=>e.l.length>=6).map(e=>{ const a=e.l.slice(0,-3), b=e.l.slice(-3);
+        const mv=Object.keys(by).map(k=>by[k]).filter(e=>e.l.length>=5).map(e=>{ const a=e.l.slice(0,-3), b=e.l.slice(-3);
           return { e:e, a:av(a,"pir"), b:av(b,"pir"), pa:av(a,"pts"), pb:av(b,"pts"), ma:av(a,"min"), mb:av(b,"min") }; }).map(x=>Object.assign(x,{ d:x.b-x.a }));
         const prow=(x,t)=>h("div",{class:"dash-mv "+t, title:"points "+x.pa.toFixed(1)+" → "+x.pb.toFixed(1)+" · minutes "+x.ma.toFixed(1)+" → "+x.mb.toFixed(1)},
           h("span",{}, (x.e.n? "#"+x.e.n+" " : "")+(_lgLastName(x.e.nm)||x.e.nm)), h("b",{}, x.a.toFixed(1)+" → "+x.b.toFixed(1)));
-        const up=mv.filter(x=>x.d>=2).sort((a,b)=>b.d-a.d).slice(0,5), dn=mv.filter(x=>x.d<=-2).sort((a,b)=>a.d-b.d).slice(0,5);
-        cPU.__b.appendChild(up.length? h("div",{}, up.map(x=>prow(x,"good"))) : h("div",{class:"dash-src"},"Nobody up two PIR or more."));
-        cPD.__b.appendChild(dn.length? h("div",{}, dn.map(x=>prow(x,"bad"))) : h("div",{class:"dash-src"},"Nobody down two PIR or more."));
-        cPU.__b.appendChild(h("div",{class:"dash-src"},"PIR a game: the games before → his last three · players with six games or more"));
+        const up=mv.filter(x=>x.d>=1.5).sort((a,b)=>b.d-a.d).slice(0,5), dn=mv.filter(x=>x.d<=-1.5).sort((a,b)=>a.d-b.d).slice(0,5);
+        cPU.__b.appendChild(up.length? h("div",{}, up.map(x=>prow(x,"good"))) : h("div",{class:"dash-src"},"Nobody up 1.5 PIR or more."));
+        cPD.__b.appendChild(dn.length? h("div",{}, dn.map(x=>prow(x,"bad"))) : h("div",{class:"dash-src"},"Nobody down 1.5 PIR or more."));
+        cPU.__b.appendChild(h("div",{class:"dash-src"},"PIR a game: the games before → his last three · players with five games or more"));
       }).catch(()=>{ [cN,cPU,cPD].forEach(x=>{ x.__b.innerHTML=""; }); cN.__b.appendChild(h("div",{class:"dash-miss"},"Our games could not be read from the league.")); });
       /* our tagging: the key measures, the charts, the sets */
       _dashNeed(()=>window.LowenPostStats && window.LowenPostStats.seasonGames).then(()=>window.LowenPostStats.seasonGames()).then(list=>{
@@ -24905,7 +24911,7 @@ function renderDashboard(){
       const PRE=[["report","Report"],["keys","Video keys"],["attack","Video how to attack"],["players","Video players"]];
       const POST=[["report","Report"],["team","Video team"],["players","Video players"]];
       const ph=g=>{ try{ return _gamePlaceholder(g.opponent); }catch(e){ return false; } };
-      const preG=G.upcoming.filter(x=>!ph(x.g)).slice(0,3), postG=G.past.slice(-2);
+      const preG=G.upcoming.filter(x=>!ph(x.g)).slice(0,4), postG=G.past.slice(-1);
       /* the windows: pre game from seven days before to the day before; post game from the
          game to the same hour the day after */
       const at=(g)=>(g.time && /^\d{1,2}:\d{2}/.test(g.time))? g.time.slice(0,5) : "20:00";
@@ -24913,13 +24919,13 @@ function renderDashboard(){
       preG.forEach(x=>W.push({ kind:"pre", g:x.g, start:addDays(x.g.date,-7), due:addDays(x.g.date,-1), dueAt:addDays(x.g.date,-1)+"T23:59:59" }));
       postG.forEach(x=>W.push({ kind:"post", g:x.g, start:x.g.date, due:addDays(x.g.date,1), dueAt:addDays(x.g.date,1)+"T"+at(x.g)+":00" }));
       W.sort((a,b)=>String(a.dueAt).localeCompare(String(b.dueAt)));
-      let ticks={}; const reps={};
+      let ticks={}; const reps={}, info={};
       const line=h("div",{class:"ow-line"}), list=h("div",{class:"ow-list"});
       c.__b.appendChild(line); c.__b.appendChild(list);
       const stateOf=(done, doneAt, w)=>{
         const now=new Date(), due=new Date(w.dueAt);
         if(done) return (doneAt && new Date(doneAt)>due)? ["dlate","✓"] : ["ok","✓"];
-        if(T<w.start) return ["wait","from "+_dashFmt(w.start).slice(4)];
+        if(T<w.start) return ["wait", _dashFmt(w.start).slice(4)];
         if(now>due) return ["late","late"];
         const dl=Math.round((new Date(w.due+"T00:00:00")-new Date(T+"T00:00:00"))/86400000);
         return dl===0? ["today","today"] : dl<=2? ["soon",dl+"d"] : ["open",dl+"d"];
@@ -24961,22 +24967,49 @@ function renderDashboard(){
         /* ---- each game with its parts */
         list.innerHTML="";
         W.forEach(w=>{
-          const ps=partsOf(w);
+          const ps=partsOf(w), g=w.g, I=info[g.id]||{}, dd=dayDelta(g.date);
+          const go=(lbl, fn, cls)=>h("button",{type:"button", class:"dash-gp "+(cls||""), onclick:fn}, lbl+" ›");
+          const btns=w.kind==="pre"
+            ? [go("Pre game", ()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } }), "pre"), go("Game plan", ()=>_dashOpen("gameplan",{ gp:{ mode:"game", gameId:g.id } }))]
+            : [go("Post game", ()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:g.id } }), "post"), go("Pre game", ()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } }))];
+          const r=(G.past.filter(x=>x.g===g)[0]||{}).res;
           const box=h("div",{class:"ow-g "+w.kind},
-            h("div",{class:"ow-gh"}, crest(w.g), h("div",{}, h("b",{}, (w.kind==="pre"? "Pre game · " : "Post game · ")+w.g.opponent),
-              h("span",{}, (w.kind==="pre"? "start "+_dashFmt(w.start)+" · hand in "+_dashFmt(w.due) : "game "+_dashFmt(w.g.date)+" · hand in "+_dashFmt(w.due)+" "+at(w.g)))),
-              h("button",{type:"button", class:"dash-gp "+(w.kind==="pre"? "pre" : "post"), onclick:()=>_dashOpen(w.kind==="pre"? "oppscout" : "teamscout", w.kind==="pre"? { os:{ mode:"game", gameId:w.g.id } } : { ts:{ mode:"game", gameId:w.g.id } })}, "Open ›")));
+            h("div",{class:"ow-gh"}, crest(g), h("div",{}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+_lgShort(g.opponent)),
+              h("span",{}, (w.kind==="pre"? "PRE · "+_dashFmt(g.date)+" · in "+dd+"d" : "POST · "+_dashFmt(g.date)))),
+              r? h("span",{class:"dash-qs "+(r.won? "good" : "bad")}, r.us+"–"+r.them) : null),
+            h("div",{class:"ow-when"}, w.kind==="pre"? "start "+_dashFmt(w.start).slice(4)+" → hand in "+_dashFmt(w.due).slice(4) : "hand in "+_dashFmt(w.due).slice(4)+" "+at(g)));
+          /* what What is coming showed: their form, our tagging of them, the key sets, the game plan */
+          if(w.kind==="pre") box.appendChild(h("div",{class:"ow-info"},
+            h("span",{title:"their place and last five"}, I.form||h("i",{},"…")),
+            h("span",{class:I.tag==null? "" : I.tag>=3? "ok" : I.tag>=2? "mid" : "no", title:"their games tagged in the Drive"}, h("i",{},"Tagged "), I.tag==null? "…" : String(I.tag)),
+            h("span",{class:I.keys==null? "" : I.keys? "ok" : "no", title:"key sets starred in the pre game playbook"}, h("i",{},"Key sets "), I.keys==null? "…" : String(I.keys)),
+            h("span",{class:I.gp==="Ready"? "ok" : I.gp==="Started"? "mid" : I.gp? "no" : "", title:"game plan"}, h("i",{},"Plan "), I.gp||"…")));
           const grid=h("div",{class:"ow-parts"});
           ps.forEach(x=>{ const s=x.wait? ["wait","…"] : stateOf(x.done, x.at, w);
             const cell=x.auto? h("span",{class:"vc "+s[0], title:x.done? "marked ready in the report" : "ticks itself when the report is marked ready"}, s[1])
-              : h("button",{type:"button", class:"vc tk "+s[0], title:x.done? "ticked "+String(x.at||"").slice(8,10)+"/"+String(x.at||"").slice(5,7)+" — tap to untick" : "tap when done", onclick:()=>toggle(x.k)}, s[1]);
-            grid.appendChild(h("div",{class:"ow-p"+(x.done? " done" : "")}, cell, h("span",{}, x.p[1], x.auto? h("i",{}," · from the report") : null))); });
-          box.appendChild(grid); list.appendChild(box); });
+              : h("button",{type:"button", class:"vc tk "+s[0], title:x.done? "ticked "+String(x.at||"").slice(8,10)+"/"+String(x.at||"").slice(5,7)+" — tap to untick" : "tap when done — any time, ahead of the start too", onclick:()=>toggle(x.k)}, s[1]);
+            grid.appendChild(h("div",{class:"ow-p"+(x.done? " done" : "")}, cell, h("span",{}, x.p[1]))); });
+          box.appendChild(grid);
+          box.appendChild(h("div",{class:"ow-btns"}, btns));
+          list.appendChild(box); });
         if(!W.length) list.appendChild(h("div",{class:"dash-miss"},"No games in the calendar."));
       };
       paint();
       _staffDocGet(KEY).then(d=>{ ticks=(d && d.ticks)||{}; paint(); }).catch(()=>{});
-      W.forEach(w=>_dashRep(w.g).then(rep=>{ reps[w.g.id]=rep||null; paint(); }));
+      W.forEach(w=>_dashRep(w.g).then(rep=>{ reps[w.g.id]=rep||null;
+        /* the game plan, as the report has it */
+        if(w.kind==="pre"){ let gp=false; try{ const ps2=((rep && rep.data && rep.data.sections)||[]).filter(z=>z && z.kind==="plan")[0]; gp=(ps2 && ps2.plan)? !gpPlanEmpty(ps2.plan) : false; }catch(e){}
+          (info[w.g.id]=info[w.g.id]||{}).gp=(rep && repDone(rep,"plan"))? "Ready" : gp? "Started" : "Not started"; }
+        paint(); }));
+      /* their form, how many of their games are tagged, how many key sets are starred */
+      { const L=leagueState();
+        W.filter(w=>w.kind==="pre").forEach(w=>{ const g=w.g, I=(info[g.id]=info[g.id]||{}), tid=_lgTeamIdByName(L, g.opponent);
+          try{ if(tid){ const mine=(L.games||[]).concat(L.cup||[]).filter(y=>(String(y.homeId)===String(tid)||String(y.awayId)===String(tid)) && _lgDone(y)).sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(-5);
+            const st=(L.standings||[]).filter(r=>String(r.teamId)===String(tid))[0];
+            I.form=h("span",{class:"dash-form"}, st? h("b",{}, st.pos+"º") : null, mine.map(y=>{ const home=String(y.homeId)===String(tid), wn=home? y.hs>y.as : y.as>y.hs; return h("i",{class:wn? "w" : "l"}, wn? "W" : "L"); })); } }catch(e){}
+          _dashNeed(()=>window.ScoutPre && window.ScoutPre.filesOf, 20000).then(ok=>ok? window.ScoutPre.filesOf(g.opponent) : null).then(fs=>{ I.tag=fs? fs.length : 0; paint(); }).catch(()=>{ I.tag=0; paint(); });
+          new Promise(r2=>{ try{ if(!tid || _clubPulled[tid]) return r2(); _clubPull(tid, null, r2); setTimeout(r2, 8000); }catch(e){ r2(); } }).then(()=>{
+            let n=0; try{ n=tid? _clubKeyLabels(leagueState(), tid).filter(l=>_pbClass({ label:l }).kind!=="Concepts").length : 0; }catch(e){} I.keys=n; paint(); }); }); }
       c.__b.appendChild(h("div",{class:"dash-src"},"Pre game: started the week before, handed in the day before the game · post game: within 24 hours of the game · the report ticks itself when it is marked ready, the videos are ticked here · the bar fills as the parts are done, ⚑ is the deadline, ● the game, the line today"));
     },
     /* GAMES (Joan Marc): each opponent's scouting game by game - the first three games by
@@ -25970,14 +26003,61 @@ function openChangePassword(u, byChoice){
 }
 /* The chip used to sign you out the moment it was touched. It asks now, because it is
    also the only place a password can be changed from. */
+/* SEEING THE HUB AS SOMEBODY ELSE - the owner's alone. The whole app is drawn as that
+   person: his tabs, his dashboard, what he may open; a player as a player. Nothing is
+   written while it lasts: no edit, no usage counted, no report saved. The data underneath
+   is still read with the owner's session, so a player's view shows the reports the owner
+   can read - what he is allowed to open is the player's. Leaving puts everything back. */
+var _viewAs=null; var _realMe={ user:null, scope:null };
+function viewAsReal(){ return _viewAs? _realMe.user : currentUser; }
+function canViewAs(){ return !!SB_TOKEN && (_viewAs? _realMe.scope : SB_SCOPE)!=="player" && viewAsReal()==="Oriol"; }
+async function viewAsStart(name, scope){
+  if(!canViewAs()) return;
+  if(!_viewAs){ _realMe.user=currentUser; _realMe.scope=SB_SCOPE; }
+  try{ useFlush(); }catch(e){}
+  /* the person's own permissions, as the server keeps them */
+  if(scope!=="player"){ try{ const d=await sbrpc("admin_accounts",{ p_token:SB_TOKEN });
+    const a=((d && d.accounts)||[]).filter(x=>x.scope==="coach" && x.username===name)[0];
+    if(a){ ensurePerms(); state.perms[name]=sbPermsToHub(a.perms); try{ applyRoleFloor(name); }catch(e){} } }catch(e){} }
+  _viewAs={ name:name, scope:scope };
+  currentUser=name; SB_SCOPE=scope;
+  _dashLanded=false; state.ui.dash=null; try{ _dashMemo.rep={}; }catch(e){}
+  document.body.classList.add("viewing-as");
+  let bar=document.getElementById("viewAsBar");
+  if(!bar){ bar=h("div",{id:"viewAsBar"}); document.body.appendChild(bar); }
+  bar.innerHTML=""; bar.appendChild(h("span",{}, "Viewing the hub as ", h("b",{}, name), scope==="player"? " · player" : "", " · nothing is saved"));
+  bar.appendChild(h("button",{type:"button", class:"btn sm", onclick:viewAsStop},"Back to Oriol"));
+  renderUser(); applyPerms();
+}
+function viewAsStop(){
+  if(!_viewAs) return;
+  currentUser=_realMe.user; SB_SCOPE=_realMe.scope; _viewAs=null;
+  _dashLanded=false; state.ui.dash=null; try{ _dashMemo.rep={}; }catch(e){}
+  document.body.classList.remove("viewing-as");
+  const bar=document.getElementById("viewAsBar"); if(bar) bar.remove();
+  renderUser(); applyPerms();
+}
 function openUserMenu(){
   if(!currentUser || !SB_TOKEN){ logout(); return; }
+  let viewBox=null;
+  if(canViewAs()){
+    /* everybody with an account: the staff, then the players */
+    let pl=[]; try{ pl=rosterUsers(); }catch(e){}
+    const staff=USERS.filter(u=>u!=="Oriol" && !pl.some(p=>p.name===u));
+    const btn=(n, sc, sub)=>h("button",{type:"button", class:"va-b"+((_viewAs && _viewAs.name===n)? " on" : ""), onclick:()=>{ closeDialog(); viewAsStart(n, sc); }}, n, sub? h("i",{}, sub) : null);
+    viewBox=h("div",{class:"va-box"},
+      h("b",{},"See the hub as…"),
+      h("div",{class:"va-l"}, h("i",{},"Staff"), staff.map(n=>btn(n,"coach"))),
+      h("div",{class:"va-l"}, h("i",{},"Players"), pl.map(p=>btn(p.name,"player", p.dl? "DL" : ""))),
+      _viewAs? h("button",{type:"button", class:"btn primary", onclick:()=>{ closeDialog(); viewAsStop(); }},"Back to my own view") : null);
+  }
   openDialog(h("div",{class:"login-dlg"},
-    h("h3",{}, "Signed in as "+currentUser),
+    h("h3",{}, _viewAs? "Viewing as "+currentUser+" · you are "+_realMe.user : "Signed in as "+currentUser),
+    viewBox,
     h("div",{class:"dialog-foot"},
       h("button",{class:"btn",onclick:closeDialog},"Cancel"),
-      h("button",{class:"btn",onclick:()=>{ closeDialog(); openChangePassword(currentUser, true); }},"Change password"),
-      h("button",{class:"btn primary",onclick:()=>{ closeDialog(); logout(); }},"Sign out"))));
+      _viewAs? null : h("button",{class:"btn",onclick:()=>{ closeDialog(); openChangePassword(currentUser, true); }},"Change password"),
+      h("button",{class:"btn primary",onclick:()=>{ closeDialog(); viewAsStop(); logout(); }},"Sign out"))));
 }
 function openSetup(u){
   const pw=h("input",{type:"password", placeholder:"Choose a password"});
@@ -33612,6 +33692,18 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-gps .dash-gp{margin-left:0;padding:4px 9px}
 .dash-gp.pre{background:#8a2f2b;border-color:#8a2f2b;color:#fff}
 .dash-gp.post{background:#141821;border-color:#141821;color:#fff}
+/* the owner seeing the hub as somebody else */
+#viewAsBar{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);z-index:9000;display:flex;align-items:center;gap:12px;padding:8px 10px 8px 16px;border-radius:999px;background:#c6a15b;color:#141821;box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:13px}
+#viewAsBar b{font-weight:800}
+#viewAsBar .btn{background:#141821;color:#fff;border-color:#141821}
+body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
+.va-box{display:grid;gap:8px;margin:6px 0 12px;padding:10px;border:1px solid var(--line,#e4e7ec);border-radius:10px}
+.va-box > b{font:700 12px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase}
+.va-l{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.va-l > i{font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;color:var(--ink-faint,#8a93a2);width:56px}
+.va-b{border:1px solid var(--line-strong,#cfd4dc);background:var(--panel,#fff);border-radius:7px;padding:4px 9px;cursor:pointer;font:600 12px Inter,system-ui,sans-serif;color:var(--ink,#141821)}
+.va-b i{font-style:normal;font-size:9px;color:var(--ink-faint,#8a93a2);margin-left:4px}
+.va-b:hover{border-color:#c6a15b}.va-b.on{background:#c6a15b;border-color:#c6a15b}
 /* my work: a line of days with each window, then each game with its parts */
 .ow-line{display:grid;gap:4px;margin-bottom:12px}
 .ow-days{position:relative;height:30px;margin-left:120px}
@@ -33641,6 +33733,23 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .ow-p i{font-style:normal;font-size:10.5px;color:var(--ink-faint,#8a93a2)}
 .ow-p.done > span{color:var(--ink-soft,#5b6472)}
 .ow-parts .vc{min-width:46px;height:28px}
+/* my work, compact: the five games in one row */
+.ow-list{grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+@media (max-width:1300px){ .ow-list{grid-template-columns:repeat(3,minmax(0,1fr))} }
+@media (max-width:800px){ .ow-list{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media (max-width:520px){ .ow-list{grid-template-columns:minmax(0,1fr)} }
+.ow-g{padding:8px;gap:6px}
+.ow-gh .lg-bdg.crest{width:26px;height:26px}
+.ow-gh b{font-size:12.5px}.ow-gh span{font-size:9.5px}
+.ow-when{font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+.ow-info{display:flex;flex-wrap:wrap;gap:3px}
+.ow-info > span{display:inline-flex;align-items:center;gap:3px;font:700 10px 'IBM Plex Mono',monospace;border-radius:5px;padding:2px 5px;background:var(--panel-2,#f4f5f7)}
+.ow-info > span i{font-weight:500;font-style:normal;color:var(--ink-faint,#8a93a2)}
+.ow-info > span.ok{background:rgba(47,158,134,.15);color:#17805a}.ow-info > span.mid{background:rgba(217,165,33,.18);color:#9a6f0c}.ow-info > span.no{background:rgba(216,82,78,.12);color:#c0403c}
+.ow-info .dash-form{gap:2px}
+.ow-p{grid-template-columns:50px minmax(0,1fr);gap:6px;font-size:12px}
+.ow-parts .vc{min-width:40px;height:24px}
+.ow-btns{display:flex;gap:4px;flex-wrap:wrap}.ow-btns .dash-gp{margin-left:0;padding:4px 8px}
 /* their key players: the league and our tagging on one line */
 .dash-kpw{overflow-x:auto}
 .dash-kp{display:grid;grid-template-columns:minmax(150px,1.8fr) repeat(8,minmax(44px,.7fr)) repeat(3,minmax(48px,.75fr)) minmax(150px,1.8fr);gap:3px 6px;align-items:center;font-size:12.5px;min-width:900px}
