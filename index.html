@@ -24916,7 +24916,15 @@ function renderDashboard(){
          game to the same hour the day after */
       const at=(g)=>(g.time && /^\d{1,2}:\d{2}/.test(g.time))? g.time.slice(0,5) : "20:00";
       const W=[];
-      preG.forEach(x=>W.push({ kind:"pre", g:x.g, start:addDays(x.g.date,-7), due:addDays(x.g.date,-1), dueAt:addDays(x.g.date,-1)+"T23:59:59" }));
+      /* A PRE GAME IS DONE A GAME AHEAD: it is started when our game two before it ends and
+         handed in when the game before it ends - Chemnitz from the end of Vechta to the end
+         of Ludwigsburg. "The end" is two hours after the tip-off. */
+      const seq=G.past.concat(G.upcoming);
+      const endOf=g=>{ const t=at(g).split(":"), m=(+t[0])*60+(+t[1])+120; return g.date+"T"+String(Math.min(23,Math.floor(m/60))).padStart(2,"0")+":"+String(m%60).padStart(2,"0")+":00"; };
+      preG.forEach(x=>{ const i=seq.indexOf(x), p1=seq[i-1], p2=seq[i-2];
+        W.push({ kind:"pre", g:x.g, p1:p1? p1.g : null, p2:p2? p2.g : null,
+          start:p2? p2.g.date : addDays(x.g.date,-14), due:p1? p1.g.date : addDays(x.g.date,-7),
+          dueAt:p1? endOf(p1.g) : addDays(x.g.date,-7)+"T23:59:59" }); });
       postG.forEach(x=>W.push({ kind:"post", g:x.g, start:x.g.date, due:addDays(x.g.date,1), dueAt:addDays(x.g.date,1)+"T"+at(x.g)+":00" }));
       W.sort((a,b)=>String(a.dueAt).localeCompare(String(b.dueAt)));
       let ticks={}; const reps={}, info={};
@@ -24944,7 +24952,7 @@ function renderDashboard(){
       const paint=()=>{
         /* ---- the line of days: from three days ago to two weeks ahead */
         line.innerHTML="";
-        const lastG=postG.length? postG[postG.length-1].g.date : T, d0=(lastG<addDays(T,-3))? lastG : addDays(T,-3), d1=addDays(T,14), span=Math.round((new Date(d1)-new Date(d0))/86400000)+1;
+        const firstD=W.map(w=>w.start).concat([addDays(T,-3)]).sort()[0], lastD=W.map(w=>w.due).concat([addDays(T,14)]).sort().pop(), d0=firstD<addDays(T,-21)? addDays(T,-21) : firstD, d1=lastD, span=Math.round((new Date(d1)-new Date(d0))/86400000)+1;
         const X=d=>100*Math.round((new Date(d+"T00:00:00")-new Date(d0+"T00:00:00"))/86400000)/span;
         const head=h("div",{class:"ow-days"});
         for(let i=0;i<span;i++){ const d=addDays(d0,i), wd=new Date(d+"T00:00:00").getDay();
@@ -24977,7 +24985,7 @@ function renderDashboard(){
             h("div",{class:"ow-gh"}, crest(g), h("div",{}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+_lgShort(g.opponent)),
               h("span",{}, (w.kind==="pre"? "PRE · "+_dashFmt(g.date)+" · in "+dd+"d" : "POST · "+_dashFmt(g.date)))),
               r? h("span",{class:"dash-qs "+(r.won? "good" : "bad")}, r.us+"–"+r.them) : null),
-            h("div",{class:"ow-when"}, w.kind==="pre"? "start "+_dashFmt(w.start).slice(4)+" → hand in "+_dashFmt(w.due).slice(4) : "hand in "+_dashFmt(w.due).slice(4)+" "+at(g)));
+            h("div",{class:"ow-when"}, w.kind==="pre"? "start "+_dashFmt(w.start).slice(4)+(w.p2? " after "+(ph(w.p2)? "TBD" : _lgShort(w.p2.opponent)) : "")+" → hand in "+_dashFmt(w.due).slice(4)+(w.p1? " after "+(ph(w.p1)? "TBD" : _lgShort(w.p1.opponent)) : "") : "hand in "+_dashFmt(w.due).slice(4)+" "+at(g)));
           /* what What is coming showed: their form, our tagging of them, the key sets, the game plan */
           if(w.kind==="pre") box.appendChild(h("div",{class:"ow-info"},
             h("span",{title:"their place and last five"}, I.form||h("i",{},"…")),
@@ -25010,7 +25018,7 @@ function renderDashboard(){
           _dashNeed(()=>window.ScoutPre && window.ScoutPre.filesOf, 20000).then(ok=>ok? window.ScoutPre.filesOf(g.opponent) : null).then(fs=>{ I.tag=fs? fs.length : 0; paint(); }).catch(()=>{ I.tag=0; paint(); });
           new Promise(r2=>{ try{ if(!tid || _clubPulled[tid]) return r2(); _clubPull(tid, null, r2); setTimeout(r2, 8000); }catch(e){ r2(); } }).then(()=>{
             let n=0; try{ n=tid? _clubKeyLabels(leagueState(), tid).filter(l=>_pbClass({ label:l }).kind!=="Concepts").length : 0; }catch(e){} I.keys=n; paint(); }); }); }
-      c.__b.appendChild(h("div",{class:"dash-src"},"Pre game: started the week before, handed in the day before the game · post game: within 24 hours of the game · the report ticks itself when it is marked ready, the videos are ticked here · the bar fills as the parts are done, ⚑ is the deadline, ● the game, the line today"));
+      c.__b.appendChild(h("div",{class:"dash-src"},"Pre game: a game ahead - started when our game two before it ends, handed in when the game before it ends · post game: within 24 hours of the game · the report ticks itself when it is marked ready, the videos are ticked here · the bar fills as the parts are done, ⚑ is the deadline, ● the game, the line today"));
     },
     /* GAMES (Joan Marc): each opponent's scouting game by game - the first three games by
        our game two before theirs, the last one by the game before - and our post games */
