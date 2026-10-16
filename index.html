@@ -23811,7 +23811,7 @@ function _preJoinedPlayers(tid){
    with the reports so everybody reads the same one. */
 var DASHES={
   Ramon:{ name:"Ramón", role:"Head coach", cards:["oppr","post","pdevc","players","league","trends2","week","month"] },
-  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["quick","coming","league","trends2","oppr","week","month"] },
+  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["quick","owork","coming","league","trends2","oppr","week","month"] },
   Keith:{ name:"Keith", role:"Coaching staff", cards:["pdevc","oppr","post","players","league","trends2","week","monthP"] },
   Liviu:{ name:"Liviu", role:"Coaching staff", cards:["quick","month","pdevc"] },
   /* Joan Marc does the games and sees what Marc has done and owes; Marc the trainings */
@@ -24893,6 +24893,91 @@ function renderDashboard(){
         days.forEach(d=>{ const v=(av[d]||{})[k]; t.appendChild(h("span",{class:"c "+(v||"ok")}, v? (AV_LABEL[v]||v) : "✓")); }); });
       c.__b.appendChild(t);
       c.__b.appendChild(h("div",{class:"dash-src"},"From the medical sheet in Planning · only the players with a restriction on one of the next seven days"));
+    },
+    /* ORIOL'S WORK, ON A LINE OF DAYS. A pre game is started the week before the game and
+       handed in the day before it; a post game is done and handed in within 24 hours of
+       the game. Each has its parts: the report is ticked by itself when the report is marked
+       ready, the videos are ticked here. The line shows each window, today and the
+       deadlines; under it every game with its parts. */
+    owork:()=>{
+      const c=card("wide", "My work · pre games and post games", null);
+      const KEY="work:oriol";
+      const PRE=[["report","Report"],["keys","Video keys"],["attack","Video how to attack"],["players","Video players"]];
+      const POST=[["report","Report"],["team","Video team"],["players","Video players"]];
+      const ph=g=>{ try{ return _gamePlaceholder(g.opponent); }catch(e){ return false; } };
+      const preG=G.upcoming.filter(x=>!ph(x.g)).slice(0,3), postG=G.past.slice(-2);
+      /* the windows: pre game from seven days before to the day before; post game from the
+         game to the same hour the day after */
+      const at=(g)=>(g.time && /^\d{1,2}:\d{2}/.test(g.time))? g.time.slice(0,5) : "20:00";
+      const W=[];
+      preG.forEach(x=>W.push({ kind:"pre", g:x.g, start:addDays(x.g.date,-7), due:addDays(x.g.date,-1), dueAt:addDays(x.g.date,-1)+"T23:59:59" }));
+      postG.forEach(x=>W.push({ kind:"post", g:x.g, start:x.g.date, due:addDays(x.g.date,1), dueAt:addDays(x.g.date,1)+"T"+at(x.g)+":00" }));
+      W.sort((a,b)=>String(a.dueAt).localeCompare(String(b.dueAt)));
+      let ticks={}; const reps={};
+      const line=h("div",{class:"ow-line"}), list=h("div",{class:"ow-list"});
+      c.__b.appendChild(line); c.__b.appendChild(list);
+      const stateOf=(done, doneAt, w)=>{
+        const now=new Date(), due=new Date(w.dueAt);
+        if(done) return (doneAt && new Date(doneAt)>due)? ["dlate","✓"] : ["ok","✓"];
+        if(T<w.start) return ["wait","from "+_dashFmt(w.start).slice(4)];
+        if(now>due) return ["late","late"];
+        const dl=Math.round((new Date(w.due+"T00:00:00")-new Date(T+"T00:00:00"))/86400000);
+        return dl===0? ["today","today"] : dl<=2? ["soon",dl+"d"] : ["open",dl+"d"];
+      };
+      const partsOf=w=>(w.kind==="pre"? PRE : POST).map(p=>{
+        const k=w.kind+":"+w.g.id+":"+p[0];
+        if(p[0]==="report"){ const rep=reps[w.g.id]; const m=rep===undefined? null : repDoneMeta(rep, w.kind);
+          return { p:p, k:k, auto:true, wait:rep===undefined, done:!!(m && m.done), at:m && m.at }; }
+        const t=ticks[k]; return { p:p, k:k, auto:false, done:!!t, at:t && t.at, by:t && t.by };
+      });
+      const toggle=async k=>{
+        const srv=(await _staffDocGet(KEY))||{}; srv.ticks=srv.ticks||{};
+        if(srv.ticks[k]) delete srv.ticks[k]; else srv.ticks[k]={ by:currentUser||"", at:new Date().toISOString() };
+        if(await _staffDocPut(KEY, srv)){ ticks=srv.ticks; paint(); } else toast("Not saved — check the connection");
+      };
+      const paint=()=>{
+        /* ---- the line of days: from three days ago to two weeks ahead */
+        line.innerHTML="";
+        const lastG=postG.length? postG[postG.length-1].g.date : T, d0=(lastG<addDays(T,-3))? lastG : addDays(T,-3), d1=addDays(T,14), span=Math.round((new Date(d1)-new Date(d0))/86400000)+1;
+        const X=d=>100*Math.round((new Date(d+"T00:00:00")-new Date(d0+"T00:00:00"))/86400000)/span;
+        const head=h("div",{class:"ow-days"});
+        for(let i=0;i<span;i++){ const d=addDays(d0,i), wd=new Date(d+"T00:00:00").getDay();
+          head.appendChild(h("span",{class:(d===T? "t " : "")+((wd===0||wd===6)? "we" : ""), style:"left:"+X(d)+"%;width:"+(100/span)+"%"},
+            h("b",{}, d.slice(8)), h("i",{}, ["Su","Mo","Tu","We","Th","Fr","Sa"][wd]))); }
+        line.appendChild(head);
+        W.forEach(w=>{
+          if(w.due<d0) return;
+          const ps=partsOf(w), nd=ps.filter(x=>x.done).length, all=ps.length;
+          const st=nd===all? "ok" : (new Date()>new Date(w.dueAt))? "late" : (T>=w.start)? "on" : "wait";
+          const a=w.start<d0? d0 : w.start, b=w.due>d1? d1 : w.due;
+          const row=h("div",{class:"ow-row"}, h("span",{class:"ow-lab"}, h("b",{}, (w.kind==="pre"? "PRE " : "POST ")+_lgShort(w.g.opponent)), h("i",{}, nd+"/"+all)));
+          const track=h("div",{class:"ow-track"});
+          if(b>=d0 && a<=d1) track.appendChild(h("span",{class:"ow-bar "+w.kind+" "+st, style:"left:"+X(a)+"%;width:"+Math.max(100/span, X(b)-X(a)+100/span)+"%", title:(w.kind==="pre"? "Pre game · from " : "Post game · from ")+_dashFmt(w.start)+" to "+_dashFmt(w.due)},
+            h("u",{style:"width:"+Math.round(100*nd/all)+"%"})));
+          if(w.g.date>=d0 && w.g.date<=d1) track.appendChild(h("span",{class:"ow-game", style:"left:"+(X(w.g.date)+50/span)+"%", title:"Game · "+w.g.opponent}, "●"));
+          if(w.due>=d0 && w.due<=d1) track.appendChild(h("span",{class:"ow-due "+st, style:"left:"+(X(w.due)+100/span)+"%", title:"Hand in by "+_dashFmt(w.due)+(w.kind==="post"? " "+at(w.g) : "")}, "⚑"));
+          track.appendChild(h("span",{class:"ow-now", style:"left:"+(X(T)+50/span)+"%"}));
+          row.appendChild(track); line.appendChild(row); });
+        /* ---- each game with its parts */
+        list.innerHTML="";
+        W.forEach(w=>{
+          const ps=partsOf(w);
+          const box=h("div",{class:"ow-g "+w.kind},
+            h("div",{class:"ow-gh"}, crest(w.g), h("div",{}, h("b",{}, (w.kind==="pre"? "Pre game · " : "Post game · ")+w.g.opponent),
+              h("span",{}, (w.kind==="pre"? "start "+_dashFmt(w.start)+" · hand in "+_dashFmt(w.due) : "game "+_dashFmt(w.g.date)+" · hand in "+_dashFmt(w.due)+" "+at(w.g)))),
+              h("button",{type:"button", class:"dash-gp "+(w.kind==="pre"? "pre" : "post"), onclick:()=>_dashOpen(w.kind==="pre"? "oppscout" : "teamscout", w.kind==="pre"? { os:{ mode:"game", gameId:w.g.id } } : { ts:{ mode:"game", gameId:w.g.id } })}, "Open ›")));
+          const grid=h("div",{class:"ow-parts"});
+          ps.forEach(x=>{ const s=x.wait? ["wait","…"] : stateOf(x.done, x.at, w);
+            const cell=x.auto? h("span",{class:"vc "+s[0], title:x.done? "marked ready in the report" : "ticks itself when the report is marked ready"}, s[1])
+              : h("button",{type:"button", class:"vc tk "+s[0], title:x.done? "ticked "+String(x.at||"").slice(8,10)+"/"+String(x.at||"").slice(5,7)+" — tap to untick" : "tap when done", onclick:()=>toggle(x.k)}, s[1]);
+            grid.appendChild(h("div",{class:"ow-p"+(x.done? " done" : "")}, cell, h("span",{}, x.p[1], x.auto? h("i",{}," · from the report") : null))); });
+          box.appendChild(grid); list.appendChild(box); });
+        if(!W.length) list.appendChild(h("div",{class:"dash-miss"},"No games in the calendar."));
+      };
+      paint();
+      _staffDocGet(KEY).then(d=>{ ticks=(d && d.ticks)||{}; paint(); }).catch(()=>{});
+      W.forEach(w=>_dashRep(w.g).then(rep=>{ reps[w.g.id]=rep||null; paint(); }));
+      c.__b.appendChild(h("div",{class:"dash-src"},"Pre game: started the week before, handed in the day before the game · post game: within 24 hours of the game · the report ticks itself when it is marked ready, the videos are ticked here · the bar fills as the parts are done, ⚑ is the deadline, ● the game, the line today"));
     },
     /* GAMES (Joan Marc): each opponent's scouting game by game - the first three games by
        our game two before theirs, the last one by the game before - and our post games */
@@ -33460,13 +33545,13 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-pvid .bar u{display:block;height:8px;border-radius:4px;background:#4a86d8;min-width:2px}
 .dash-pvid em{font:700 11px 'IBM Plex Mono',monospace;font-style:normal;text-align:right;white-space:nowrap}
 /* the video cells: a tick in a circle, not a button - green done, red ring late, amber due */
-.dash-vm .vc{justify-self:center;display:inline-grid;place-items:center;min-width:30px;height:24px;padding:0 6px;border-radius:999px;font:700 10px 'IBM Plex Mono',monospace;border:2px solid var(--line,#e4e7ec);background:transparent;color:var(--ink-faint,#8a93a2);white-space:nowrap;box-sizing:border-box}
-.dash-vm button.vc{cursor:pointer}.dash-vm button.vc:hover{border-color:#c6a15b}
-.dash-vm .vc.ok{background:#2f9e86;border-color:#2f9e86;color:#fff;font-size:13px}
-.dash-vm .vc.dlate{background:#7cc3b3;border-color:#7cc3b3;color:#fff;font-size:13px}
-.dash-vm .vc.late{border-color:#d8524e;color:#c0403c;background:rgba(216,82,78,.08)}
-.dash-vm .vc.today,.dash-vm .vc.soon{border-color:#d9a521;color:#9a6f0c;background:rgba(217,165,33,.1)}
-.dash-vm .vc.opt,.dash-vm .vc.none,.dash-vm .vc.wait{border-style:dashed}
+.dash-vm .vc,.ow-parts .vc{justify-self:center;display:inline-grid;place-items:center;min-width:30px;height:24px;padding:0 6px;border-radius:999px;font:700 10px 'IBM Plex Mono',monospace;border:2px solid var(--line,#e4e7ec);background:transparent;color:var(--ink-faint,#8a93a2);white-space:nowrap;box-sizing:border-box}
+.dash-vm button.vc,.ow-parts button.vc{cursor:pointer}.dash-vm button.vc:hover{border-color:#c6a15b}
+.dash-vm .vc.ok,.ow-parts .vc.ok{background:#2f9e86;border-color:#2f9e86;color:#fff;font-size:13px}
+.dash-vm .vc.dlate,.ow-parts .vc.dlate{background:#7cc3b3;border-color:#7cc3b3;color:#fff;font-size:13px}
+.dash-vm .vc.late,.ow-parts .vc.late{border-color:#d8524e;color:#c0403c;background:rgba(216,82,78,.08)}
+.dash-vm .vc.today,.dash-vm .vc.soon,.ow-parts .vc.today,.ow-parts .vc.soon{border-color:#d9a521;color:#9a6f0c;background:rgba(217,165,33,.1)}
+.dash-vm .vc.opt,.dash-vm .vc.none,.dash-vm .vc.wait,.ow-parts .vc.opt,.ow-parts .vc.none,.ow-parts .vc.wait{border-style:dashed}
 /* the next opponents, one column each */
 .dash-vriv{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 @media (max-width:1100px){ .dash-vriv{grid-template-columns:repeat(2,minmax(0,1fr))} }
@@ -33527,6 +33612,35 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-gps .dash-gp{margin-left:0;padding:4px 9px}
 .dash-gp.pre{background:#8a2f2b;border-color:#8a2f2b;color:#fff}
 .dash-gp.post{background:#141821;border-color:#141821;color:#fff}
+/* my work: a line of days with each window, then each game with its parts */
+.ow-line{display:grid;gap:4px;margin-bottom:12px}
+.ow-days{position:relative;height:30px;margin-left:120px}
+.ow-days span{position:absolute;top:0;display:flex;flex-direction:column;align-items:center;font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+.ow-days span b{font-size:11px;color:var(--ink-soft,#5b6472)}.ow-days span i{font-style:normal;font-size:8.5px}
+.ow-days span.we{opacity:.6}.ow-days span.t b{color:#fff;background:#c6a15b;border-radius:4px;padding:0 4px}
+.ow-row{display:grid;grid-template-columns:120px minmax(0,1fr);align-items:center;gap:0}
+.ow-lab{display:flex;justify-content:space-between;gap:6px;padding-right:8px;font-size:11.5px}
+.ow-lab b{font:700 11px 'Oswald',sans-serif;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ow-lab i{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
+.ow-track{position:relative;height:26px;border-radius:6px;background:var(--panel-2,#f4f5f7)}
+.ow-bar{position:absolute;top:4px;bottom:4px;border-radius:5px;overflow:hidden;background:rgba(20,24,33,.12)}
+.ow-bar u{display:block;height:100%;background:rgba(47,158,134,.75)}
+.ow-bar.pre{box-shadow:inset 0 0 0 2px #8a2f2b}.ow-bar.post{box-shadow:inset 0 0 0 2px #141821}
+.ow-bar.on{background:rgba(217,165,33,.28)}.ow-bar.late{background:rgba(216,82,78,.3)}.ow-bar.ok{background:rgba(47,158,134,.3)}
+.ow-game{position:absolute;top:2px;transform:translateX(-50%);font-size:15px;color:#141821}
+.ow-due{position:absolute;top:2px;transform:translateX(-60%);font-size:15px;color:#8a93a2}.ow-due.late{color:#d8524e}.ow-due.on{color:#d9a521}.ow-due.ok{color:#2f9e86}
+.ow-now{position:absolute;top:-2px;bottom:-2px;width:2px;background:#c6a15b}
+.ow-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.ow-g{border:1px solid var(--line,#e4e7ec);border-radius:12px;padding:10px;display:grid;gap:8px;border-top:4px solid #8a2f2b}
+.ow-g.post{border-top-color:#141821}
+.ow-gh{display:flex;align-items:center;gap:9px}.ow-gh > div{flex:1;min-width:0}
+.ow-gh b{display:block;font:700 13px 'Oswald',sans-serif;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ow-gh span{font:500 10.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.ow-gh .dash-gp{margin-left:0}
+.ow-parts{display:grid;gap:5px}
+.ow-p{display:grid;grid-template-columns:52px minmax(0,1fr);gap:8px;align-items:center;font-size:13px}
+.ow-p i{font-style:normal;font-size:10.5px;color:var(--ink-faint,#8a93a2)}
+.ow-p.done > span{color:var(--ink-soft,#5b6472)}
+.ow-parts .vc{min-width:46px;height:28px}
 /* their key players: the league and our tagging on one line */
 .dash-kpw{overflow-x:auto}
 .dash-kp{display:grid;grid-template-columns:minmax(150px,1.8fr) repeat(8,minmax(44px,.7fr)) repeat(3,minmax(48px,.75fr)) minmax(150px,1.8fr);gap:3px 6px;align-items:center;font-size:12.5px;min-width:900px}
