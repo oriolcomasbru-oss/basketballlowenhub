@@ -1176,6 +1176,45 @@ exports.handler = async (event) => {
     } else if (res === "seasons") {
       out = Object.assign(meta, { available: sea.available, active: sea.active });
 
+    } else if (res === "gamecenter") {
+      /* WHAT IS BEING PLAYED NOW. The league's answer to "is it live": three lists - past,
+         present, future - nine games each, the live ones in present, each with its status
+         (PRE / LIVE / POST), where the game is (Q1, Q1_break, Q2 ...) and the game clock.
+         The play by play of gameStats is written after the game; this says when to read it,
+         and whether what has been read is still moving. Fresh every call, held 15 s. */
+      const raw = await api("/v2/gamecenter", key).catch(e => ({ _error: e.message }));
+      if (raw && raw._error) return reply(502, Object.assign(meta, { ok: false, errors: [raw._error] }), 0);
+      const pick = g => {
+        const t = (x) => x && (x.name || x.teamName || x.shortName || x.fullName) || "";
+        const h = g.homeTeam || g.home || {}, a = g.guestTeam || g.awayTeam || g.away || g.guest || {};
+        return { id: S(g.id || g.gameId), status: S(g.status || g.gameStatus), progress: S(g.gameProgress || g.gameProgess || g.progress), time: S(g.gameTime || g.time || ""),
+          home: S(t(h)), homeId: S(h.id || h.teamId || ""), away: S(t(a)), awayId: S(a.id || a.teamId || ""),
+          hs: num(g.homeTeamScore != null ? g.homeTeamScore : (g.result && g.result.homeTeamFinalScore) != null ? g.result.homeTeamFinalScore : h.score),
+          as: num(g.guestTeamScore != null ? g.guestTeamScore : (g.result && g.result.guestTeamFinalScore) != null ? g.result.guestTeamFinalScore : a.score),
+          start: S(g.scheduledTime || g.startTime || g.date || "") };
+      };
+      const list = k => (Array.isArray(raw && raw[k]) ? raw[k] : []).map(pick);
+      out = Object.assign(meta, { past: list("past"), present: list("present"), future: list("future"),
+        sample: raw && raw.present && raw.present[0] ? Object.keys(raw.present[0]) : (raw && raw.past && raw.past[0] ? Object.keys(raw.past[0]) : []) });
+      return reply(200, out, 15000);
+
+    } else if (res === "livedocs") {
+      /* where the live channel is: the API's own documentation, read with our key, and
+         every websocket address it mentions - so the address is read, not guessed */
+      const paths = ["/docs", "/swagger", "/swagger.json", "/openapi.json", "/v2/docs", "/api-docs", "/docs/swagger.json", "/v2/swagger.json", "/doc", "/redoc"];
+      const found = [];
+      for (const p of paths) {
+        try {
+          const r = await fetch(apiBase() + p, { headers: { "X-API-Key": key, accept: "application/json,text/html" } });
+          const txt = await r.text();
+          const ws = Array.from(new Set((txt.match(/wss?:\/\/[^"'\s<>]+/g) || []).slice(0, 20)));
+          const sock = Array.from(new Set((txt.match(/[^"'\s<>]{0,60}(socket|websocket|channel|live)[^"'\s<>]{0,80}/gi) || []).slice(0, 30)));
+          found.push({ path: p, status: r.status, type: S(r.headers.get("content-type")), bytes: txt.length, ws: ws, hints: sock });
+        } catch (e) { found.push({ path: p, error: e.message }); }
+      }
+      out = Object.assign(meta, { found: found });
+      return reply(200, out, 0);
+
     } else if (res === "game") {
       const id = S(q.id);
       if (!id) return reply(400, { ok: false, errors: ["res=game needs &id=<gameId>"] }, 0);
