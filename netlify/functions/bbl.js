@@ -33,7 +33,7 @@ const S = (v) => (v == null ? "" : String(v));
 /* ---------- cache ----------
    Netlify recycles instances, so this only catches bursts. The real protection is the
    cache-control header below, which lets Netlify's CDN hold the answer. */
-const TTL = { all: 10 * 60e3, four: 6 * 3600e3, game: 6 * 3600e3, team: 6 * 3600e3, seasons: 12 * 3600e3, players: 6 * 3600e3, pbpall: 12 * 3600e3, roster: 3 * 3600e3 };
+const TTL = { all: 10 * 60e3, four: 6 * 3600e3, game: 20 * 60e3, team: 6 * 3600e3, seasons: 12 * 3600e3, players: 6 * 3600e3, pbpall: 12 * 3600e3, roster: 3 * 3600e3 };
 const cache = Object.create(null);
 
 function getCache(k, ttl) { const c = cache[k]; return (c && Date.now() - c.t < ttl) ? c.d : null; }

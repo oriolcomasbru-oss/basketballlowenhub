@@ -14897,7 +14897,27 @@ function _gpLiveBlock(){
     if(_gpLiveAll) body.appendChild(more);
     stat.textContent=live? "live · updates every 30 s" : "final";
     stat.className="gp-live-st"+(live?" on":"");
+    try{ paintStat(); }catch(e){}
   };
+  let GC=null, postSeen=0;
+  const prog=p=>{ const m=/^Q(\d)(_break)?$/i.exec(String(p||"")), o=/^OT(\d*)(_break)?$/i.exec(String(p||""));
+    return m? (m[2]? "break after Q"+m[1] : "Q"+m[1]) : o? (o[2]? "break after OT"+(o[1]||"") : "OT"+(o[1]||"")) : String(p||""); };
+  /* the line beside the title: where the game is, as the league says it */
+  const paintStat=()=>{ if(!GC) return;
+    const t=String(GC.time||"").replace(/^00:/,"");
+    stat.textContent=GC.status==="LIVE"? "LIVE · "+prog(GC.progress)+(t && t!=="00:00"? " · "+t : "") + " · updates every 30 s"
+      : GC.status==="PRE"? "starts "+String(GC.start||"").slice(11,16)+" UTC"
+      : GC.status==="POST"? "final · the league is still correcting it"+(over? "" : " — read again every minute")
+      : GC.status==="OFFICIAL"? "final · official" : GC.status;
+    stat.className="gp-live-st"+(GC.status==="LIVE"? " on" : ""); };
+  /* during the game the league's play by play is not written yet: say where the game is */
+  const sayLive=()=>{ tabs.innerHTML=""; body.innerHTML="";
+    body.appendChild(h("div",{class:"gp-lv-wait"},
+      h("b",{}, GC.status==="LIVE"? "LIVE · "+prog(GC.progress)+((String(GC.time||"").replace(/^00:/,"")||"00:00")!=="00:00"? " · "+String(GC.time).replace(/^00:/,"") : "") : "Before the game"),
+      h("span",{}, GC.status==="LIVE"
+        ? "The league writes its play by play after the game, so the stretch summary and the moments for the video fill in at the final buzzer. The live channel (the league's websocket) is being set up with the BBL; when it is, this fills in during the game."
+        : "From the tip-off the block shows where the game is; the summary arrives with the play by play.")));
+    wrap.classList.remove("empty"); };
   const read=async fresh=>{
     try{
       if(!G){
@@ -14912,20 +14932,40 @@ function _gpLiveBlock(){
         home=String(G.homeId)===String(tid);
         over=_lgDone(G) && date<today;
       }
+      /* WHERE THE GAME IS, FROM THE LEAGUE: /v2/gamecenter says PRE, LIVE, POST or
+         OFFICIAL, the period (Q1, Q1_break, Q2 ...) and the clock. The play by play of
+         gameStats is written AFTER the game (the league's own answer): during the game it
+         does not move, so the block says where the game is instead of showing an empty
+         stretch; after it, the league keeps correcting for some 10-20 minutes, so it is read
+         again every minute until the game is OFFICIAL or half an hour has gone by. */
+      if(date>=addDays(today,-1)){
+        try{ const g2=await fetch("/.netlify/functions/bbl?res=gamecenter").then(r=>r.ok? r.json() : null).catch(()=>null);
+          const all=g2? [].concat(g2.present||[], g2.past||[], g2.future||[]) : [];
+          const hit=all.filter(x=>String(x.id)===String(G.id))[0];
+          if(hit){ GC=hit; if(/^(POST|OFFICIAL)$/.test(GC.status) && !postSeen) postSeen=Date.now(); } }catch(e){}
+      }
       const keep=_gpLiveMemo[G.id];
       if(keep && !fresh){ J=keep; draw(); }
       if(!keep || fresh || !over){
-        const j=await fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(G.id)+((date>=today)? "&fresh=1" : ""))
+        const j=await fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(G.id)+((date>=addDays(today,-1))? "&fresh=1" : ""))
           .then(r=>r.ok? r.json() : null).catch(()=>null);
         if(j && j.feed){ J=j; _gpLiveMemo[G.id]=j; }
         const n=(J && J.feed && (J.feed.actions||[]).length)||0;
         if(n!==lastN){ lastN=n; lastChange=Date.now(); }
-        /* the calendar already has the final score and the clock has run out: it is over */
-        try{ if(n && _lgDone(G)){ const la=J.feed.actions.map(a=>_lgGameElapsed(a.quarter,a.time)).sort((x,y)=>y.t-x.t)[0];
-          if(la && la.qi>=3 && la.t>=2400 && (la.t-2400)%300===0) over=true; } }catch(e){}
-        /* the game is over when the fourth quarter has run out and nothing has moved for a while */
-        if(n && Date.now()-lastChange>12*60000) over=true;
-        if(wrap.isConnected || !timer) draw();
+        if(GC){
+          /* the league says when it is over: OFFICIAL, or half an hour of corrections after POST */
+          if(GC.status==="OFFICIAL" && n) over=true;
+          else if(GC.status==="POST" && postSeen && Date.now()-postSeen>30*60000) over=true;
+        } else {
+          /* no word from the league: the old reading - the clock has run out and nothing moves */
+          try{ if(n && _lgDone(G)){ const la=J.feed.actions.map(a=>_lgGameElapsed(a.quarter,a.time)).sort((x,y)=>y.t-x.t)[0];
+            if(la && la.qi>=3 && la.t>=2400 && (la.t-2400)%300===0) over=true; } }catch(e){}
+          if(n && Date.now()-lastChange>12*60000) over=true;
+        }
+        if(wrap.isConnected || !timer){
+          if(!n && GC && (GC.status==="PRE" || GC.status==="LIVE")) sayLive(); else draw();
+          paintStat();
+        }
       }
     }catch(e){ if(!J) say("The play by play could not be read."); }
   };
@@ -15999,14 +16039,16 @@ function _trgRead(onProg){
       .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
     const store=_trgStore();
     /* a line is kept for a game and for its score: a result corrected by the league is read again */
-    const need=games.filter(x=>{ const s=store[x.id]; return !(s && s.hs===x.hs && s.as===x.as); });
+    /* a game is read again when its score changed, and while the league may still be correcting it: until it was read more than an hour after the day it was played, and once more the next day, when a whole game is sometimes scouted again */
+    const fresh2=s=>{ if(!s || !s.at) return false; const age=(s.at - new Date(String(s.date||"")+"T23:59:59").getTime())/3600000; return age>=24; };
+    const need=games.filter(x=>{ const s=store[x.id]; if(!(s && s.hs===x.hs && s.as===x.as)) return true; const d=Math.round((Date.now()-new Date(x.date+"T12:00:00").getTime())/86400000); return d<=2 && !fresh2(s); });
     let done=0;
     for(let i=0;i<need.length;i+=3){
       const part=need.slice(i,i+3);
       const got=await Promise.all(part.map(x=>fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(x.id))
         .then(r=>r.ok? r.json() : null).catch(()=>null)));
       part.forEach((x,k)=>{ let c=null; try{ c=_trgGame(x, got[k], tid); }catch(e){ c=null; }
-        if(c) store[x.id]=c; else delete store[x.id]; });
+        if(c){ c.at=Date.now(); c.date=x.date; store[x.id]=c; } else delete store[x.id]; });
       done+=part.length;
       try{ onProg&&onProg(done, need.length); }catch(e){}
     }
@@ -33741,6 +33783,9 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .vr-sep{font:700 9.5px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft,#5b6472);margin-top:4px}
 .dash-og{font-size:10.5px;padding:2px 4px}.dash-og i{font-style:normal;color:#8a5bd1;font-size:9px}
 .dash-og.cut{box-shadow:inset 0 0 0 1px #2f9e86}.dash-og u{text-decoration:none;color:#17805a;font-weight:800}
+.gp-lv-wait{display:grid;gap:6px;padding:14px 16px;border-radius:12px;background:var(--panel-2,#f4f5f7);border-left:5px solid #d8524e}
+.gp-lv-wait b{font:700 22px 'Oswald',sans-serif;letter-spacing:.06em}
+.gp-lv-wait span{font-size:13px;color:var(--ink-soft,#5b6472);max-width:80ch}
 /* the game plan's line of moments, for the video on the other iPad */
 .gp-tl{margin-top:12px;border:1px solid var(--line,#e4e7ec);border-radius:12px;padding:10px 12px;background:var(--panel,#fff);display:grid;gap:8px}
 .gp-tl-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
