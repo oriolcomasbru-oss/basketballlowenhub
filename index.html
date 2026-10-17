@@ -11781,17 +11781,19 @@ function _preHlExtra(L, c, tid, ranks){
     const n=k==="reb"? (t.reb!=null? t.reb : (t.oreb||0)+(t.dreb||0)) : t[k]; return n==null? null : n/g; };
   const ord=n=>n+(n%10===1&&n%100!==11? "st" : n%10===2&&n%100!==12? "nd" : n%10===3&&n%100!==13? "rd" : "th");
   let best=null;
+  const off=new Set((Array.isArray(c.hlNoExtra)? c.hlNoExtra : []).map(x=>String(x).toUpperCase()));
   PRE_HL_EXTRA.forEach(([lab,k])=>{
-    if(shown.has(lab)) return;
+    if(shown.has(lab) || off.has(lab)) return;
     const mine=v(me,k); if(mine==null || mine<=0) return;
     const rb=1+pool.filter(y=>{ const w=v(y,k); return w!=null && w>mine; }).length;
-    if(rb>25) return;
+    /* only a number that says something: top 10 of the league */
+    if(rb>10) return;
     if(!best || rb<best.score) best={ label:lab, value:(Math.round(mine*10)/10).toFixed(1), score:rb, why:ord(rb)+" BBL" };
   });
   if(!best) return null;
-  /* only when it would be lit: better than his second best among the boxes he has */
+  /* and only when it is the best thing about him: better than every box he already has */
   const have=(ranks||[]).filter(Boolean).map(r=>r.score).sort((a,b)=>a-b);
-  if(have.length>=2 && best.score>=have[1]) return null;
+  if(have.length && best.score>=have[0]) return null;
   return best;
 }
 function _preHl(L, card, c, canEd, save, tid){
@@ -11814,6 +11816,10 @@ function _preHl(L, card, c, canEd, save, tid){
       if(sv){ sv.textContent=ex.value; sv.removeAttribute("contenteditable"); }
       if(sl){ sl.textContent=ex.label; sl.removeAttribute("contenteditable"); }
       nc.classList.add("hl-extra"); nc.title="Added by the hub: one of his best numbers, which this position's card does not ask";
+      /* the staff may not want it: the cross takes it off this card for good */
+      if(canEd) nc.appendChild(h("button",{class:"rm-x rm-x-stat", type:"button", title:"Remove this statistic",
+        onclick:e=>{ e.preventDefault(); e.stopPropagation();
+          c.hlNoExtra=(Array.isArray(c.hlNoExtra)? c.hlNoExtra : []).concat([ex.label]); save(); }},"×"));
       last.parentNode.appendChild(nc); cells.push(nc);
       ranks=(ranks||cells.slice(0,-1).map(()=>null)).slice(0, cells.length-1).concat([{ score:ex.score, why:ex.why }]); } }catch(e){}
   let pick={};
@@ -34233,7 +34239,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .phx .card .stat-cell.hl-warm .stat-value{color:#c0403c!important}
 .phx .card .stat-cell .hl-why{display:block;font:700 9px 'IBM Plex Mono',monospace;margin-top:1px;white-space:nowrap}
 .phx .card .stat-cell.hl-hot .hl-why{color:#fff}.phx .card .stat-cell.hl-warm .hl-why{color:#c0403c}
-.phx .card .hl-cell{position:absolute;top:1px;right:2px;border:0;background:transparent;font-size:10px;line-height:1;cursor:pointer;color:#8a93a2;padding:0;opacity:.6}
+.phx .card .hl-cell{position:absolute;top:1px;left:2px;right:auto;z-index:2;border:0;background:transparent;font-size:10px;line-height:1;cursor:pointer;color:#8a93a2;padding:0;opacity:.6}
 .phx .card .stat-cell.hl-hot .hl-cell{color:#fff}
 .phx .card .hl-cell:hover{opacity:1}
 .phx .card .hl-auto{position:absolute;right:4px;bottom:-14px;border:0;background:transparent;font:600 9px 'IBM Plex Mono',monospace;color:#7a5c12;cursor:pointer}
