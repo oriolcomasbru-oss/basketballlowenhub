@@ -470,45 +470,53 @@
      Each block is coloured against his own first two blocks: green holds up, amber dips,
      red clearly worse, grey too little time there to say. The sentence on top is the
      first red block - for us when to rotate him, for an opponent when to go at him. */
+  /* MINUTE BY MINUTE. Each minute is read with the one before and the one after it (a
+     minute alone is a handful of plays), against his first minutes: the first three in a
+     row, the first eight of the game. The column is his shooting there (eFG%), its colour
+     whether he holds up, dips or is clearly worse - shooting or turnovers + fouls. */
   var FADE = {
-    st: { l: "Minutes in a row on the floor", s: "since he checked in · tells you when to take him off", b: ["0–2'", "2–4'", "4–6'", "6–8'", "8'+"], at: [0, 2, 4, 6, 8] },
-    cum: { l: "Minutes in the whole game", s: "everything he has played tonight · tells you how many minutes he can give", b: ["0–5'", "5–10'", "10–15'", "15–20'", "20–25'", "25–30'", "30'+"], at: [0, 5, 10, 15, 20, 25, 30] }
+    st: { l: "Minutes in a row on the floor", s: "since he checked in · tells you when to take him off", n: 13, base: 3, tick: 2, lab: function (m) { return m >= 12 ? "12'+" : m + "'"; }, how: "in a row" },
+    cum: { l: "Minutes in the whole game", s: "everything he has played tonight · tells you how many minutes he can give", n: 41, base: 8, tick: 5, lab: function (m) { return m >= 40 ? "40'+" : m + "'"; }, how: "in the game" }
   };
   var _fadeAsked = {};
-  function fadeLevels(f) {
+  function fadeLevels(arr, F) {
     var efg = function (x) { return x.fga ? 100 * (x.fgm + 0.5 * x.p3m) / x.fga : null; };
     var bad = function (x) { return x.sec ? 600 * (x.tov + x.pf) / x.sec : null; };
-    var base = { sec: 0, fga: 0, fgm: 0, p3m: 0, tov: 0, pf: 0 };
-    f.slice(0, 2).forEach(function (x) { ["sec", "fga", "fgm", "p3m", "tov", "pf"].forEach(function (k) { base[k] += x[k] || 0; }); });
+    var add = function (a, x) { ["sec", "fga", "fgm", "p3a", "p3m", "fta", "ftm", "tov", "pf", "pts"].forEach(function (k) { a[k] = (a[k] || 0) + (x[k] || 0); }); return a; };
+    var base = {}; for (var i = 0; i < F.base; i++) add(base, arr[i] || {});
     var be = efg(base), bb = bad(base), first = null, firstAmber = null, soft = null, last = null;
-    var out = f.map(function (x, i) {
-      var e = efg(x), b = bad(x), o = { e: e, b: b, x: x, lv: "", why: "" };
-      if (x.sec < 600) { o.lv = "thin"; return o; }
-      if (i < 2) { o.lv = "base"; return o; }
-      var eDrop = (e != null && be != null && x.fga >= 10 && base.fga >= 10) ? be - e : 0;
+    var out = arr.map(function (x0, m) {
+      var w = {}; for (var j = Math.max(0, m - 1); j <= Math.min(arr.length - 1, m + 1); j++) add(w, arr[j]);
+      var e = efg(w), b = bad(w), o = { m: m, e: e, b: b, x: x0, w: w, lv: "", why: "" };
+      if (w.sec < 360 || !x0.sec) { o.lv = "thin"; return o; }
+      if (m < F.base) { o.lv = "base"; return o; }
+      var eDrop = (e != null && be != null && w.fga >= 8 && base.fga >= 10) ? be - e : 0;
       var bRise = (b != null && bb != null) ? b / Math.max(bb, 0.5) : 1;
       if (eDrop >= 10 || (bRise >= 1.6 && b - bb >= 1.5)) o.lv = "red";
       else if (eDrop >= 6 || (bRise >= 1.35 && b - bb >= 0.8)) o.lv = "amber";
       else o.lv = "green";
       if (eDrop >= 6) o.why = "shoots " + Math.round(be) + "% → " + Math.round(e) + "%";
       if (bRise >= 1.35 && b - bb >= 0.8) o.why += (o.why ? " · " : "") + "TO+fouls " + bb.toFixed(1) + " → " + b.toFixed(1);
-      if (o.lv === "red" && first == null) first = i;
-      if (o.lv === "amber" && firstAmber == null) firstAmber = i;
-      /* the first sign of a drop, however small, and the last block there is evidence for */
-      if (soft == null && (eDrop > 2 || (bRise > 1.1 && b - bb > 0.3))) soft = i;
-      last = i;
+      if (o.lv === "red" && first == null) first = m;
+      if (o.lv === "amber" && firstAmber == null) firstAmber = m;
+      if (soft == null && (eDrop > 2 || (bRise > 1.1 && b - bb > 0.3))) soft = m;
+      last = m;
       return o;
     });
     return { blocks: out, red: first, amber: firstAmber, soft: soft, last: last, be: be, bb: bb };
   }
   function fadeStrip(F, R) {
-    return el("div", { class: "fd-strip" }, R.blocks.map(function (o, i) {
+    var col = function (o) {
+      var hgt = o.lv === "thin" || o.e == null ? 6 : Math.max(8, Math.min(100, Math.round(100 * o.e / 80)));
       var x = o.x;
-      return el("div", { class: "fd-b " + o.lv, title: F.b[i] + ": " + Math.round(x.sec / 60) + " min there · FG " + x.fgm + "/" + x.fga + " · 3P " + x.p3m + "/" + x.p3a + " · turnovers " + x.tov + " · fouls " + x.pf + (o.why ? " · " + o.why : "") },
-        el("i", {}, F.b[i]),
-        el("b", {}, o.lv === "thin" ? "·" : (o.e == null ? "—" : Math.round(o.e) + "%")),
-        el("em", {}, o.lv === "thin" ? "too little" : (o.b == null ? "" : o.b.toFixed(1) + " TO+F")));
-    }));
+      return el("div", { class: "fd-m " + o.lv, title: F.lab(o.m) + " " + F.how + ": " + Math.round((x.sec || 0) / 60) + " min there · read with the minutes either side: " +
+          (o.e == null ? "no shots" : "eFG " + Math.round(o.e) + "%") + (o.b == null ? "" : " · TO+fouls " + o.b.toFixed(1) + " per 10'") + (o.why ? " · " + o.why : "") + (o.lv === "thin" ? " · too little to say" : "") },
+        el("i", { style: "height:" + hgt + "%" }));
+    };
+    var axis = el("div", { class: "fd-ax" }, R.blocks.map(function (o) { return el("span", {}, o.m % F.tick === 0 ? F.lab(o.m) : ""); }));
+    /* the reference line: his shooting in his first minutes */
+    var ref = R.be != null ? el("u", { class: "fd-ref", style: "bottom:" + Math.max(8, Math.min(100, Math.round(100 * R.be / 80))) + "%", title: "his first minutes: eFG " + Math.round(R.be) + "%" }) : null;
+    return el("div", { class: "fd-mm" }, el("div", { class: "fd-cols", style: "grid-template-columns:repeat(" + R.blocks.length + ",1fr)" }, R.blocks.map(col), ref), axis);
   }
   function fadeView(root, P) {
     var L = leagueState(), ours = ourId();
@@ -525,14 +533,14 @@
     box.appendChild(el("div", { class: "fd-key" },
       el("span", {}, el("u", { class: "base" }), "his first minutes (the reference)"), el("span", {}, el("u", { class: "green" }), "holds up"),
       el("span", {}, el("u", { class: "amber" }), "dips"), el("span", {}, el("u", { class: "red" }), "clearly worse"), el("span", {}, el("u", { class: "thin" }), "too little time to say"),
-      el("span", { class: "fd-key-n" }, "In each block: his shooting (eFG%) and his turnovers + fouls per 10 minutes.")));
-    var have = PL && (PL.players || []).some(function (p) { return p.fat; });
+      el("span", { class: "fd-key-n" }, "One column a minute, read with the minutes either side: its height is his shooting (eFG%), its colour whether he holds up - shooting and turnovers + fouls. The dashed line is his shooting in his first minutes. Hover a minute for the detail.")));
+    var have = PL && (PL.players || []).some(function (p) { return p.fat && p.fat.st1; });
     if (!have) {
       box.appendChild(el("div", { class: "pd-miss" }, "Reading this club's season game by game for this; it fills in by itself."));
       if (!_fadeAsked[tid] && tid && typeof syncPlayers === "function") { _fadeAsked[tid] = true; try { Promise.resolve(syncPlayers(tid, true)).then(function () { setTimeout(draw, 400); }); } catch (e) { } }
       root.appendChild(box); return;
     }
-    box.appendChild(el("div", { class: "pd-hs", style: "margin:-4px 0 8px" }, (PL.games || "?") + " games read · a block needs 10 minutes and a shooting verdict 10 shots, so early in the season many blocks stay grey; it sharpens with every game"));
+    box.appendChild(el("div", { class: "pd-hs", style: "margin:-4px 0 8px" }, (PL.games || "?") + " games read · a minute needs 6 minutes of play around it and a shooting verdict 8 shots, so early in the season many minutes stay grey; it sharpens with every game"));
     /* our players in the order the page lists them; theirs by minutes */
     var list = [];
     if (mine) { var byId = {}; (PL.players || []).forEach(function (p) { byId[String(p.id)] = p; });
@@ -544,17 +552,17 @@
     var verb = mine ? "Rotate him" : "Attack him";
     var cards = el("div", { class: "fd-cards" });
     list.forEach(function (r) {
-      var S = fadeLevels(r.fat.st), C = fadeLevels(r.fat.cum);
+      var S = fadeLevels(r.fat.st1, FADE.st), C = fadeLevels(r.fat.cum1, FADE.cum);
       var mins = Math.round(r.fat.st.reduce(function (a, x) { return a + x.sec; }, 0) / 60);
       var say = [];
-      if (S.red != null) say.push(el("div", { class: "fd-say red" }, el("b", {}, verb + " after " + FADE.st.at[S.red] + "' in a row"), el("i", {}, S.blocks[S.red].why)));
-      else if (S.amber != null) say.push(el("div", { class: "fd-say amber" }, el("b", {}, "Dips after " + FADE.st.at[S.amber] + "' in a row"), el("i", {}, S.blocks[S.amber].why)));
-      else say.push(el("div", { class: "fd-say green" }, el("b", {}, S.soft != null ? "Holds up · first signs of a drop from " + FADE.st.b[S.soft] + " in a row"
-        : S.last != null ? "Holds up · no drop seen up to " + FADE.st.b[S.last] + " in a row" : "Holds up · not enough long stints read yet")));
-      if (C.red != null) say.push(el("div", { class: "fd-say red" }, el("b", {}, (mine ? "Fades" : "Tires") + " after " + FADE.cum.at[C.red] + "' in the game"), el("i", {}, C.blocks[C.red].why)));
-      else if (C.amber != null) say.push(el("div", { class: "fd-say amber" }, el("b", {}, "Dips after " + FADE.cum.at[C.amber] + "' in the game"), el("i", {}, C.blocks[C.amber].why)));
-      else say.push(el("div", { class: "fd-say green" }, el("b", {}, C.soft != null ? "Keeps his level · first signs of a drop from " + FADE.cum.b[C.soft] + " in the game"
-        : C.last != null ? "Keeps his level · no drop seen up to " + FADE.cum.b[C.last] + " in the game" : "Keeps his level · not enough minutes read yet")));
+      if (S.red != null) say.push(el("div", { class: "fd-say red" }, el("b", {}, verb + " after " + S.red + "' in a row"), el("i", {}, S.blocks[S.red].why)));
+      else if (S.amber != null) say.push(el("div", { class: "fd-say amber" }, el("b", {}, "Dips after " + S.amber + "' in a row"), el("i", {}, S.blocks[S.amber].why)));
+      else say.push(el("div", { class: "fd-say green" }, el("b", {}, S.soft != null ? "Holds up · first signs of a drop from " + FADE.st.lab(S.soft) + " in a row"
+        : S.last != null ? "Holds up · no drop seen up to " + FADE.st.lab(S.last) + " in a row" : "Holds up · not enough long stints read yet")));
+      if (C.red != null) say.push(el("div", { class: "fd-say red" }, el("b", {}, (mine ? "Fades" : "Tires") + " after " + C.red + "' in the game"), el("i", {}, C.blocks[C.red].why)));
+      else if (C.amber != null) say.push(el("div", { class: "fd-say amber" }, el("b", {}, "Dips after " + C.amber + "' in the game"), el("i", {}, C.blocks[C.amber].why)));
+      else say.push(el("div", { class: "fd-say green" }, el("b", {}, C.soft != null ? "Keeps his level · first signs of a drop from " + FADE.cum.lab(C.soft) + " in the game"
+        : C.last != null ? "Keeps his level · no drop seen up to " + FADE.cum.lab(C.last) + " in the game" : "Keeps his level · not enough minutes read yet")));
       cards.appendChild(el("div", { class: "fd-card" },
         el("div", { class: "fd-h" }, el("b", {}, (r.num ? "#" + r.num + " " : "") + r.nm), el("span", {}, mins + " min read")),
         el("div", { class: "fd-says" }, say),
@@ -1227,7 +1235,17 @@
       ".fd-says{display:grid;gap:4px}.fd-say{border-radius:8px;padding:5px 9px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}.fd-say b{font:700 13px 'Oswald',sans-serif;letter-spacing:.04em}.fd-say i{font-style:normal;font-size:11px}",
       ".fd-say.red{background:#d8524e;color:#fff}.fd-say.amber{background:rgba(217,165,33,.2);color:#7a5c12}.fd-say.green{background:rgba(47,158,134,.14);color:#17603f}",
       ".fd-l{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;margin-top:4px}.fd-l b{font:700 10.5px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em}.fd-l span{font-size:10.5px;color:var(--ink-faint,#8a93a2)}",
+      ".fd-mm{position:relative}.fd-cols{position:relative;display:grid;gap:1px;align-items:end;height:64px;background:var(--panel-2,#f4f5f7);border-radius:6px;padding:0 2px}",
+      ".fd-m{height:100%;display:flex;align-items:flex-end}.fd-m i{display:block;width:100%;border-radius:2px 2px 0 0}",
+      ".fd-m.base i{background:#c3c9d2}.fd-m.green i{background:#2f9e86}.fd-m.amber i{background:#d9a521}.fd-m.red i{background:#d8524e}.fd-m.thin i{background:repeating-linear-gradient(45deg,#e7eaef 0 3px,#f6f7f9 3px 6px)}",
+      ".fd-ref{position:absolute;left:0;right:0;height:0;border-top:1.5px dashed #5b6472}",
+      ".fd-ax{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:1px;padding:0 2px}.fd-ax span{font:600 8.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);white-space:nowrap;overflow:visible}",
       ".fd-strip{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:3px}",
+      ".fd-mm{position:relative}.fd-cols{position:relative;display:grid;gap:1px;align-items:end;height:64px;background:var(--panel-2,#f4f5f7);border-radius:6px;padding:0 2px}",
+      ".fd-m{height:100%;display:flex;align-items:flex-end}.fd-m i{display:block;width:100%;border-radius:2px 2px 0 0}",
+      ".fd-m.base i{background:#c3c9d2}.fd-m.green i{background:#2f9e86}.fd-m.amber i{background:#d9a521}.fd-m.red i{background:#d8524e}.fd-m.thin i{background:repeating-linear-gradient(45deg,#e7eaef 0 3px,#f6f7f9 3px 6px)}",
+      ".fd-ref{position:absolute;left:0;right:0;height:0;border-top:1.5px dashed #5b6472;pointer-events:auto}",
+      ".fd-ax{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:1px;padding:0 2px}.fd-ax span{font:600 8.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);white-space:nowrap;overflow:visible}",
       ".fd-b{border-radius:6px;padding:4px 2px;display:flex;flex-direction:column;align-items:center;min-width:0;line-height:1.15}.fd-b i{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}.fd-b b{font:700 13px 'IBM Plex Mono',monospace}.fd-b em{font:600 8.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472);white-space:nowrap}",
       ".fd-b.red,.fd-b.red i,.fd-b.red em{color:#fff}",
       /* portraits and crests */

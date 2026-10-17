@@ -354,13 +354,17 @@ function fatigueInto(agg, acts, code, spans) {
       s.before = played; s.stint = stintFrom; played += s.to - s.from; prevTo = s.to;
     });
     const slot = agg[id]; if (!slot) return;
-    const F = slot.fat || (slot.fat = { cum: FAT_CUM.map(fatLine), st: FAT_ST.map(fatLine) });
+    const F = slot.fat || (slot.fat = { cum: FAT_CUM.map(fatLine), st: FAT_ST.map(fatLine),
+      /* and minute by minute: 0..39 (40 = forty and over) in the game, 0..11 (12 = twelve and over) in a row */
+      cum1: Array.from({ length: 41 }, fatLine), st1: Array.from({ length: 13 }, fatLine) });
     const idx = (lim, v) => { for (let i = 0; i < lim.length; i++) if (v < lim[i]) return i; return lim.length - 1; };
     /* the seconds, spread over the blocks second by second (cheap: a game is 2,400) */
     sp.forEach(s => {
       for (let t = s.from; t < s.to; t++) {
         F.cum[idx(FAT_CUM, s.before + (t - s.from))].sec++;
         F.st[idx(FAT_ST, t - s.stint)].sec++;
+        F.cum1[Math.min(40, Math.floor((s.before + (t - s.from)) / 60))].sec++;
+        F.st1[Math.min(12, Math.floor((t - s.stint) / 60))].sec++;
       }
     });
     mine[id] = sp;
@@ -372,7 +376,8 @@ function fatigueInto(agg, acts, code, spans) {
     const t = gameClock(a);
     const s = sp.filter(x => t >= x.from && t <= x.to)[0]; if (!s) return;
     const idx = (lim, v) => { for (let i = 0; i < lim.length; i++) if (v < lim[i]) return i; return lim.length - 1; };
-    const L = [slot.fat.cum[idx(FAT_CUM, s.before + (t - s.from))], slot.fat.st[idx(FAT_ST, t - s.stint)]];
+    const L = [slot.fat.cum[idx(FAT_CUM, s.before + (t - s.from))], slot.fat.st[idx(FAT_ST, t - s.stint)],
+      slot.fat.cum1[Math.min(40, Math.floor((s.before + (t - s.from)) / 60))], slot.fat.st1[Math.min(12, Math.floor((t - s.stint) / 60))]];
     const made = S(a.result) === "+";
     L.forEach(x => {
       switch (a.action) {
