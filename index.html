@@ -15321,7 +15321,10 @@ function _gpLiveBlock(){
     }
     wrap.classList.remove("empty");
     let maxQ=0; acts.forEach(a=>{ const q=_lgGameElapsed(a.quarter, a.time).qi; if(q>maxQ) maxQ=q; });
-    const live=_gpRP? true : (!over && date===today);
+    /* the game is over when the league says so: the board, the clock and the floor stop there and
+       the block shows the whole game (the league still corrects the play by play for a while) */
+    const fin=!_gpRP && !!GC && /^(POST|OFFICIAL)$/.test(String(GC.status||""));
+    const live=_gpRP? true : (!over && date===today && !fin);
     const qn=q=>q<4? "Q"+(q+1) : "OT"+(q-3);
     tabs.innerHTML="";
     /* THE CLOCK, NOT THE LAST PLAY. In a replay the clock it is being played at; live, the
@@ -15334,7 +15337,7 @@ function _gpLiveBlock(){
       const base=qi<4? qi*600 : 2400+(qi-4)*300, len=qi<4? 600 : 300;
       const tm=String(GC.time||"").split(":").map(Number); const left=tm.length>=2? tm[tm.length-2]*60+tm[tm.length-1] : NaN;
       return isFinite(left)? base+Math.max(0, Math.min(len, len-left)) : 0; })();
-    const lastT=_gpRP? _gpRP.T : Math.max(evT, gcT);
+    const lastT=_gpRP? _gpRP.T : fin? (maxQ<4? (maxQ+1)*600 : 2400+(maxQ-3)*300) : Math.max(evT, gcT);
     const cur=(_gpLivePick==="auto")? (live? maxQ : "g") : ((typeof _gpLivePick==="number" && _gpLivePick>maxQ)? "g" : _gpLivePick);
     const tab=(k,lab,cls)=>tabs.appendChild(h("button",{class:"gp-live-tab"+(cur===k?" on":"")+(cls? " "+cls : ""), type:"button", onclick:()=>{ _gpLivePick=k; draw(); }}, lab));
     /* the four quarters always, the overtimes when there are any, the game and the last two minutes */
@@ -15512,7 +15515,10 @@ function _gpLiveBlock(){
     /* a reconnection forgets where the game was for a moment: it says so, not "before the tip-off" */
     const rec=!isLive && !GC && CN.rec && Date.now()-CN.rec<20000;
     if(rec) connBar.className="gp-conn bad";
-    connTxt.textContent=!isLive? (navigator.onLine===false? "● This device is offline" : rec? "● Reconnecting to the league…" : "● "+(GC && GC.status? GC.status : "Waiting for the league")+" · the live channel opens at the tip-off")
+    const post=!!GC && /^(POST|OFFICIAL)$/.test(String(GC.status||""));
+    connTxt.textContent=!isLive? (navigator.onLine===false? "● This device is offline" : rec? "● Reconnecting to the league…"
+        : post? (GC.status==="OFFICIAL"? "● Final · the league has made the result official" : "● Final · the league may still correct the play by play for a while")
+        : "● "+(GC && GC.status? GC.status : "Waiting for the league")+" · the live channel opens at the tip-off")
       : bad? "● Connection lost · "+(age==null? "no live data yet" : "last data "+age+" s ago")+" · "+(CN.err||"waiting for the league")+" · trying again every 2 s"
       : "● Live · connected · updated "+age+" s ago";
     if(bad && !CN.lost && age!=null){ CN.lost=true; try{ toast("Live connection lost — trying again"); }catch(e){} }
