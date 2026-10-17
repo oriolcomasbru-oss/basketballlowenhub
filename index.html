@@ -10749,9 +10749,11 @@ function _preNoClubBlock(L, reRender){
   return blk;
 }
 function _prePlaysEuro(tid){
-  const L=leagueState();
-  return (L.games||[]).some(g=>_lgPhase(g)==="euro"
-    && (String(g.homeId||g.home)===tid || String(g.awayId||g.away)===tid));
+  const L=leagueState(), T=String(tid);
+  try{ _lgLinkEuro(L); }catch(e){}
+  /* the European games are in L.euro, not among the BBL's own */
+  return (L.euro||[]).some(g=>String(g.homeId)===T || String(g.awayId)===T)
+    || (L.games||[]).some(g=>_lgPhase(g)==="euro" && (String(g.homeId||g.home)===T || String(g.awayId||g.away)===T));
 }
 function _preBlock(title, node, cls){
   const blk=h("div",{class:"rs-block rs-block-lg "+(cls||"")});
@@ -10844,7 +10846,10 @@ function _preSeasonBlock(tid){
      of the line and made the grid of days unreadable. */
   const left=L=>h("div",{class:"pre-seas-l"}, _preStanding(L), _preFixtures(L));
   const panels=[ left, _preCal ];
-  if(_prePlaysEuro(tid)) panels.push(_lgEuro);
+  /* Europe when they play in it - decided each time the block is drawn, and read here
+     when this browser has not read the European games yet */
+  panels.push(L=>_prePlaysEuro(tid)? _lgEuro(L) : h("span",{}));
+  { const L0=leagueState(); if(!(L0.euro||[]).length && !_lgEuroBusy && typeof syncEuro==="function"){ try{ syncEuro(false).then(()=>{ try{ _lgRerender(); }catch(e){} }); }catch(e){} } }
   return _preBlock("THEIR SEASON", _lgEmbed(tid, panels, "emb-cols"));
 }
 
@@ -20347,7 +20352,7 @@ function _lgEuro(L){
   /* the selected club's own European table first, when it plays in Europe */
   try{ const st=_lgEuroStandings(L, L.team); if(st) box.appendChild(st); }catch(e){}
   /* European games read before the tables were: read them once more, with the tables */
-  if(!L.euroStand && !_lgEuroBusy && !_lgEuroStandAsked){ _lgEuroStandAsked=true; try{ syncEuro(true).then(()=>{ try{ _lgRerender(); }catch(e){} }); }catch(e){} }
+  if(!(L.euroStand||[]).length && !_lgEuroBusy && !_lgEuroStandAsked){ _lgEuroStandAsked=true; try{ syncEuro(true).then(()=>{ try{ _lgRerender(); }catch(e){} }); }catch(e){} }
 
   const week=games.filter(g=>_lgWeekKey(g.date)===wk);
   const byComp={};
