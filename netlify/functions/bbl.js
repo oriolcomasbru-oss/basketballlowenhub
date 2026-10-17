@@ -385,10 +385,22 @@ function possessions(actions) {
     if (S(a.quarter) !== q) { close(t); q = S(a.quarter); handover = null; }
     if (a.action === "SUBST" || a.action === "TIMEO") return;
     if (c !== "A" && c !== "B") return;
-    if (!cur) open(c, t);
+    /* WHO HAS THE BALL WHEN NOBODY DOES. After a basket the next thing in the sheet is often
+       the defence's - a foul, a block, a steal - and opening the possession for whoever
+       acted first gave the defending side a possession it never had; when the side that
+       really had the ball then shot, its clock started at the shot, so every such shot
+       read "0 seconds" and the game had a hundred possessions a side. A defensive action
+       now opens the possession for the other side. */
+    const other = c === "A" ? "B" : "A";
+    const def = (a.action === "FOUL" && S(a.info1) !== "O") || a.action === "BL" || a.action === "ST" || a.action === "CFOUL";
+    if (!cur) open(def ? other : c, t);
     if (c !== cur.team && (a.action === "P2" || a.action === "P3" || a.action === "FT" || a.action === "TO")) {
-      close(t); open(c, t);
+      /* a possession in which its own side never touched the ball was a misreading: it is
+         dropped, and the side that shoots keeps the moment the ball changed hands */
+      if (!cur.ball) { const from = cur.from; cur = null; open(c, from); }
+      else { close(t); open(c, t); }
     }
+    if (c === cur.team && !def) cur.ball = true;
     cur.acts.push(i);
     cur.to = t;
     const made = S(a.result) === "+";
@@ -511,12 +523,16 @@ function lateGame(actions, code) {
 }
 function clockSplit(actions, poss, code) {
   const blank3 = () => [0, 1, 2].map(() => ({ poss: 0, pts: 0, fga: 0, fgm: 0, p3a: 0, p3m: 0, fta: 0, ftm: 0, fd: 0, tov: 0 }));
-  const out = { team: blank3(), opp: blank3(), byPlayer: Object.create(null) };
+  const out = { team: blank3(), opp: blank3(), byPlayer: Object.create(null),
+    /* WHEN THE SHOT COMES: the second of the possession its first shot goes up in, counted
+       from the moment the ball changed hands (0-24), for us and for the side we defended;
+       a possession that ended without a shot - a turnover, a foul trip - is counted apart */
+    first: { team: new Array(25).fill(0), opp: new Array(25).fill(0), teamNo: 0, oppNo: 0 } };
   const pl = id => out.byPlayer[id] || (out.byPlayer[id] = blank3());
   const times = actions.map(gameClock);
   poss.forEach(p => {
     const side = (p.team === code) ? out.team : out.opp;
-    let len = 24, ref = p.from;
+    let len = 24, ref = p.from, shot = false;
     const own = p.acts || [];
     for (let n = 0; n < own.length; n++) {
       const i = own[n], t = times[i], a = actions[i];
@@ -524,6 +540,11 @@ function clockSplit(actions, poss, code) {
       if (a.action === "REB" && S(a.info1) === "O") { len = 14; ref = t; continue; }
       const rem = Math.max(0, Math.min(len, len - (t - ref)));
       const b = clockBlock(rem);
+      if ((a.action === "P2" || a.action === "P3") && !shot) {
+        shot = true;
+        const el = Math.max(0, Math.min(24, Math.floor(t - p.from)));
+        (p.team === code ? out.first.team : out.first.opp)[el]++;
+      }
       if (a.action === "P2" || a.action === "P3") {
         side[b].fga++; if (a.action === "P3") side[b].p3a++;
         const made = S(a.result) === "+";
@@ -546,6 +567,7 @@ function clockSplit(actions, poss, code) {
         if (p.team === code) pl(S(a.player_id1))[b].fd++;
       }
     }
+    if (!shot) { if (p.team === code) out.first.teamNo++; else out.first.oppNo++; }
     const remEnd = Math.max(0, Math.min(len, len - (p.to - ref)));
     const be = clockBlock(remEnd);
     side[be].poss++; side[be].pts += p.pts;
@@ -1441,6 +1463,7 @@ exports.handler = async (event) => {
       const shots = [], rot = [], byGame = [];
       const blk3 = () => [0, 1, 2].map(() => ({ poss: 0, pts: 0, fga: 0, fgm: 0, p3a: 0, p3m: 0, fta: 0, ftm: 0, fd: 0, tov: 0 }));
       const clk = { team: blk3(), opp: blk3(), byPlayer: Object.create(null),
+                    first: { team: new Array(25).fill(0), opp: new Array(25).fill(0), teamNo: 0, oppNo: 0, games: 0 },
                     q2: Object.create(null), cl: Object.create(null),
                     tq2: lateLine(), tcl: lateLine() };
       const tmQ = [blankTeam(), blankTeam(), blankTeam(), blankTeam()];
@@ -1573,6 +1596,8 @@ exports.handler = async (event) => {
         const addBlk = (dst, src) => { [0, 1, 2].forEach(i => {
           Object.keys(src[i]).forEach(k => { dst[i][k] += src[i][k]; }); }); };
         addBlk(clk.team, cs.team); addBlk(clk.opp, cs.opp);
+        for (let s = 0; s < 25; s++) { clk.first.team[s] += cs.first.team[s]; clk.first.opp[s] += cs.first.opp[s]; }
+        clk.first.teamNo += cs.first.teamNo; clk.first.oppNo += cs.first.oppNo; clk.first.games++;
         Object.keys(cs.byPlayer).forEach(pid => {
           if (!clk.byPlayer[pid]) clk.byPlayer[pid] = [0, 1, 2].map(() => ({ poss: 0, pts: 0, fga: 0, fgm: 0, p3a: 0, p3m: 0, fta: 0, ftm: 0, fd: 0, tov: 0 }));
           addBlk(clk.byPlayer[pid], cs.byPlayer[pid]);
@@ -1884,4 +1909,4 @@ function reply(code, body, ttl) {
 }
 
 /* exported for the offline checks in /tmp — no effect at runtime */
-module.exports._t = { normTeam, normStanding, normGame, fourFactors, decodeFeed, mapRow, pack, rosterIndex, whenParts, berlinOffsetMin };
+module.exports._t = { normTeam, normStanding, normGame, fourFactors, decodeFeed, mapRow, pack, rosterIndex, whenParts, berlinOffsetMin, possessions, clockSplit };

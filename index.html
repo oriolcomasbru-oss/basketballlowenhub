@@ -10843,6 +10843,8 @@ function _preSeasonBlock(tid){
   /* Europe when they play in it - decided each time the block is drawn, and read here
      when this browser has not read the European games yet */
   panels.push(L=>_prePlaysEuro(tid)? _lgEuroClub(L, tid) : h("span",{}));
+  /* their pace: how fast they shoot, and how fast they let the other side shoot */
+  panels.push(L=>_prePace(L, tid));
   { const L0=leagueState(); if(!(L0.euro||[]).length && !_lgEuroBusy && typeof syncEuro==="function"){ try{ syncEuro(false).then(()=>{ try{ _lgRerender(); }catch(e){} }); }catch(e){} } }
   return _preBlock("THEIR SEASON", _lgEmbed(tid, panels, "emb-cols"));
 }
@@ -14620,7 +14622,7 @@ let _gpLivePick="auto", _gpLiveAll=false;
 function _gpDur(s){ s=Math.max(0,Math.round(s)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
 function _gpLiveWin(feed, uc, inWin, names){
   const mk=()=>({ pts:0, fgm:0, fga:0, p3m:0, p3a:0, ftm:0, fta:0, or:0, dr:0, tov:0, pf:0, ast:0, sc:0, pto:0, fast:0,
-    clk:[{ n:0, pts:0 },{ n:0, pts:0 },{ n:0, pts:0 }], men:{} });
+    clk:[{ n:0, pts:0 },{ n:0, pts:0 },{ n:0, pts:0 }], men:{}, first:new Array(25).fill(0) });
   const W={ u:mk(), t:mk(), lastT:0, run:null, five:null };
   const acts=(feed.actions||[]).map((a,i)=>{ const e=_lgGameElapsed(a.quarter, a.time); return { a:a, t:e.t, qi:e.qi, i:i }; })
     .sort((p,q)=>(p.t-q.t)||(p.i-q.i));
@@ -14652,7 +14654,7 @@ function _gpLiveWin(feed, uc, inWin, names){
     if(!cur || cur.team!==c || (cur.done && shot))
       cur=(pend && pend.team===c)? fresh(c,{ t0:pend.t0 }) : fresh(c);
     pend=null;
-    if(cur.b<0 && cur.t0!=null && !cur.oreb){ cur.b=bucket(o.t-cur.t0); if(on) S.clk[cur.b].n++; }
+    if(cur.b<0 && cur.t0!=null && !cur.oreb){ cur.b=bucket(o.t-cur.t0); if(on){ S.clk[cur.b].n++; if(shot) S.first[Math.max(0,Math.min(24,Math.floor(o.t-cur.t0)))]++; } }
     if(on){
       if(k==="P3"){ S.p3a++; S.fga++; } else if(k==="P2") S.fga++; else S.fta++;
       if(made){
@@ -17370,6 +17372,9 @@ function pbVideoPanel(canEd){
 /* 15: the per-game lines (by_game) that the four factors and the shooting trends are
    drawn from. Anything cached under 14, here or on the server, predates them. */
 const LG_DATA_VER=15;
+/* what the server is asked for: moved on when the server adds to an answer (16: when the
+   shot comes in the possession), without throwing away what this browser already has */
+const LG_FETCH_VER=16;
 function leagueState(){
   const L=state.league||(state.league={});
   if(L.dataVer!==LG_DATA_VER){
@@ -19436,6 +19441,8 @@ function _postOverviewDraw(sg, P, Tg, API, K){
     out.appendChild(h("div",{class:"gpo-sub"},"Quarter by quarter · play by play and tagging on one line"));
     out.appendChild(API.table2(head, rows, { sort:false }));
   }
+  /* ---- pace: the second of the possession the shot came in, ours and theirs */
+  if(P){ const pp=_postPace(P, home); if(pp) out.appendChild(pp); }
   const fold=(label, node)=>{ const d=document.createElement("details"); const s=document.createElement("summary"); s.textContent=label; d.appendChild(s); d.appendChild(node); return d; };
   if(sets.length){
     const rows=sets.slice().sort((a,b)=>b.n-a.n).map(s=>{ const per=[0,1,2,3].map(q=>{ const l=s.list.filter(x=>tagQ[x.q]===q); return l.length? l.length+" · "+f2(ppp(l)) : "—"; });
@@ -19591,7 +19598,7 @@ async function _lgAvailX(tid){
     else if((L.lead||{})[tid]) d=L.lead[tid];
     else {
       const j=await fetch("/.netlify/functions/bbl?res=players&id="+encodeURIComponent(tid)+
-        "&season="+encodeURIComponent(L.season||"")+"&v="+LG_DATA_VER).then(r=>r.ok? r.json() : null).catch(()=>null);
+        "&season="+encodeURIComponent(L.season||"")+"&v="+LG_FETCH_VER).then(r=>r.ok? r.json() : null).catch(()=>null);
       if(j && (j.players||[]).length){ L.lead=L.lead||{}; L.lead[tid]=_lgLeadSlim(tid, j, 0); d=L.lead[tid]; }
     }
   }catch(e){}
@@ -19957,6 +19964,7 @@ const _lgLeadTried={};
 function _lgLeadSlim(tid, j, done){
   const tot=(j.team_tot&&j.team_tot.all)||null;
   return { games:j.games||0, done:done||0, at:Date.now(),
+    first:(j.clock && j.clock.first) || null,
     tot: tot? { sec:tot.sec||0, fga:tot.fga||0, fta:tot.fta||0, tov:tot.tov||0 } : null,
     players:(j.players||[]).filter(p=>p && p.all && p.all.gp).map(p=>{ const t=p.all;
       return { id:p.id, pid:p.pid, num:p.num, name:p.name,
@@ -20000,14 +20008,14 @@ function _lgLeadLoad(L){
   if(_lgLeadBusy) return;
   const todo=(L.teams||[]).map(t=>t.id).filter(id=>{
     const have=L.lead[id];
-    const stale=!have || (done[id]||0)>(have.done||0);
+    const stale=!have || (done[id]||0)>(have.done||0) || !have.first;
     return stale && _lgLeadTried[id]!==(done[id]||0);
   });
   if(!todo.length) return;
   const tid=todo[0];
   _lgLeadBusy=true; _lgLeadTried[tid]=(done[tid]||0);
   const ask=round=>fetch("/.netlify/functions/bbl?res=players&id="+encodeURIComponent(tid)+
-      "&season="+encodeURIComponent(L.season||"")+"&v="+LG_DATA_VER)
+      "&season="+encodeURIComponent(L.season||"")+"&v="+LG_FETCH_VER)
     .then(r=>{ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
     .then(j=>{
       /* a read that ran out of time comes back with part of the season; the sheets it
@@ -20697,7 +20705,7 @@ async function syncPbp(force, round){
   _lgPbpBusy=true; _lgPbpTried=true;
   let again=false;
   try{
-    const r=await fetch("/.netlify/functions/bbl?res=pbpall&season="+encodeURIComponent(L.season||"")+"&v="+LG_DATA_VER+((force&&!n)?"&fresh=1":""));
+    const r=await fetch("/.netlify/functions/bbl?res=pbpall&season="+encodeURIComponent(L.season||"")+"&v="+LG_FETCH_VER+((force&&!n)?"&fresh=1":""));
     if(!r.ok) throw new Error(r.status===502||r.status===504
       ? "the league's game sheets took too long to read (HTTP "+r.status+")" : "HTTP "+r.status);
     const j=await r.json();
@@ -21064,7 +21072,7 @@ async function syncRoster(teamId, force){
   _lgRosBusy[teamId]=true; _lgRosTried[teamId]=true;
   try{
     const r=await fetch("/.netlify/functions/bbl?res=roster&id="+encodeURIComponent(teamId)+
-      "&season="+encodeURIComponent(L.season||"")+"&v="+LG_DATA_VER+(force?"&fresh=1":""));
+      "&season="+encodeURIComponent(L.season||"")+"&v="+LG_FETCH_VER+(force?"&fresh=1":""));
     if(!r.ok) throw new Error("HTTP "+r.status);
     const j=await r.json();
     L.roster=L.roster||{};
@@ -21101,7 +21109,7 @@ async function syncPlayers(teamId, force, round){
     const tmo=setTimeout(()=>{ try{ if(ac) ac.abort(); }catch(e){} }, 60000);
     let r;
     try{ r=await fetch("/.netlify/functions/bbl?res=players&id="+encodeURIComponent(teamId)+
-      "&season="+encodeURIComponent(L.season||"")+"&v="+LG_DATA_VER+((force&&!n)?"&fresh=1":""), ac? { signal:ac.signal } : undefined); }
+      "&season="+encodeURIComponent(L.season||"")+"&v="+LG_FETCH_VER+((force&&!n)?"&fresh=1":""), ac? { signal:ac.signal } : undefined); }
     catch(e){ throw new Error(/abort/i.test(String(e&&e.name||e))? "timeout reading the game sheets" : ((e&&e.message)||"network")); }
     finally{ clearTimeout(tmo); }
     if(!r.ok){
@@ -22765,7 +22773,7 @@ function _lgImgUrl(L, kind, id){
   if(!id) return "";
   if(kind==="player" && PLAYER_PHOTOS[String(id)]) return PLAYER_PHOTOS[String(id)];
   return "/.netlify/functions/bbl?res=img&kind="+kind+"&id="+encodeURIComponent(id)
-    +"&season="+encodeURIComponent(L.season||"")+"&v="+LG_DATA_VER;
+    +"&season="+encodeURIComponent(L.season||"")+"&v="+LG_FETCH_VER;
 }
 function _lgCrest(L, teamId, cls){
   const t=(L.teams||[]).filter(x=>x.id===teamId)[0];
@@ -22986,6 +22994,122 @@ function _lgLateSummary(L, c, names, nG, per){
   const wrap=h("div",{class:"lgsum lgsum3"});
   cols.forEach(x=>wrap.appendChild(x));
   return wrap;
+}
+/* PACE - WHEN THE SHOT COMES. For every possession, the second its first shot went up in,
+   counted from the moment the ball changed hands: a defensive rebound, a turnover, a
+   basket at the other end. It is the same reading of the play by play the late clock
+   uses (bbl.js clockSplit), kept second by second. A possession that ended before any
+   shot - a turnover, a foul trip - is counted apart and not in the seconds. */
+const PACE_BINS=[[0,3,"0–3"],[4,7,"4–7"],[8,11,"8–11"],[12,15,"12–15"],[16,19,"16–19"],[20,24,"20–24"]];
+function _paceStats(hist, no){
+  if(!Array.isArray(hist)) return null;
+  const n=hist.reduce((a,b)=>a+(b||0),0); if(!n) return null;
+  let s=0; hist.forEach((c,i)=>{ s+=(c||0)*(i+0.5); });
+  let acc=0, med=0; for(let i=0;i<hist.length;i++){ acc+=hist[i]||0; if(acc>=n/2){ med=i+0.5; break; } }
+  const sh=(a,b)=>{ let c=0; for(let i=a;i<=b;i++) c+=hist[i]||0; return c/n; };
+  return { n:n, avg:s/n, med:med, early:sh(0,7), mid:sh(8,15), late:sh(16,24), no:no||0,
+    bins:PACE_BINS.map(b=>sh(b[0],b[1])) };
+}
+function _paceOf(first, side){ if(!first) return null;
+  return side==="opp"? _paceStats(first.opp, first.oppNo) : _paceStats(first.team, first.teamNo); }
+function _paceFirst(L, tid){
+  const full=(((L.players||{})[tid]||{}).clock||{}).first;
+  return full || ((L.lead||{})[tid]||{}).first || null; }
+/* every club the league has been read for, and the league as one */
+function _paceLeague(L){
+  const rows=[], sumO=new Array(25).fill(0), sumD=new Array(25).fill(0);
+  (L.teams||[]).forEach(t=>{ const f=_paceFirst(L, t.id); const o=_paceOf(f,"team"), d=_paceOf(f,"opp");
+    if(!o) return; rows.push({ id:t.id, name:t.name, o:o, d:d, games:f.games||0 });
+    f.team.forEach((c,i)=>sumO[i]+=c||0); f.opp.forEach((c,i)=>sumD[i]+=c||0); });
+  return { rows:rows, lg:_paceStats(sumO, 0), lgD:_paceStats(sumD, 0) };
+}
+/* one side's pace, drawn: the average second, the share early / mid / late and the six
+   four-second bins, each with the league's share as a tick */
+function _paceEl(title, P, ref, sub){
+  const box=h("div",{class:"pace"}, h("div",{class:"pace-h"}, h("b",{}, title), sub? h("span",{}, sub) : null));
+  if(!P){ box.appendChild(h("div",{class:"lg-empty"},"Not read yet.")); return box; }
+  const f1=v=>v.toFixed(1), pc=v=>Math.round(100*v)+"%";
+  const d=ref? P.avg-ref.avg : null;
+  box.appendChild(h("div",{class:"pace-top"},
+    h("div",{class:"pace-big"}, h("b",{}, f1(P.avg)+" s"), h("i",{},"to the first shot")),
+    h("div",{class:"pace-kv"},
+      h("span",{}, h("i",{},"median"), h("b",{}, f1(P.med)+" s")),
+      ref? h("span",{class:d<=-0.6? "fast" : d>=0.6? "slow" : ""}, h("i",{},"league"), h("b",{}, f1(ref.avg)+" s"), h("em",{}, (d>0? "+" : d<0? "−" : "±")+Math.abs(d).toFixed(1))) : null,
+      h("span",{}, h("i",{},"shots"), h("b",{}, String(P.n))))));
+  box.appendChild(h("div",{class:"pace-3"},
+    [["0–7 s","early",P.early, ref&&ref.early],["8–15 s","middle",P.mid, ref&&ref.mid],["16–24 s","late",P.late, ref&&ref.late]].map(x=>
+      h("div",{class:"pace-3c "+x[1]}, h("i",{}, x[0]), h("b",{}, pc(x[2])), x[3]!=null? h("em",{}, "league "+pc(x[3])) : null))));
+  const mx=Math.max.apply(null, P.bins.concat(ref? ref.bins : []).concat([0.01]));
+  box.appendChild(h("div",{class:"pace-bars"}, PACE_BINS.map((b,i)=>h("div",{class:"pace-bar", title:b[2]+" s: "+pc(P.bins[i])+(ref? " · league "+pc(ref.bins[i]) : "")},
+    h("div",{class:"pace-col"}, h("i",{style:"height:"+Math.round(100*P.bins[i]/mx)+"%"}),
+      ref? h("u",{style:"bottom:"+Math.round(100*ref.bins[i]/mx)+"%"}) : null),
+    h("span",{}, b[2])))));
+  return box;
+}
+/* Pre game: the opponent's pace against the league, ours beside it */
+function _prePace(L, tid){
+  const box=_lgPanel("Pace · when they shoot", null,
+    "The second of the possession their first shot goes up in, counted from the moment the ball changed hands. Offence is how fast they shoot; defence, how fast they let their opponents shoot. The grey tick on each bar is the league.");
+  const R=_paceLeague(L);
+  const f=_paceFirst(L, tid);
+  if(!f){ box.appendChild(h("div",{class:"lg-empty"},"Their season is being read for this; it fills in by itself.")); try{ _lgLeadLoad(L); }catch(e){} return box; }
+  const rank=(k, v)=>{ const vs=R.rows.map(r=>k==="o"? r.o.avg : (r.d? r.d.avg : null)).filter(x=>x!=null).sort((a,b)=>a-b); const i=vs.indexOf(v); return i>=0? (i+1)+" of "+vs.length+" (1 = fastest)" : ""; };
+  const o=_paceOf(f,"team"), d=_paceOf(f,"opp");
+  box.appendChild(h("div",{class:"pace-side two"},
+    _paceEl("Their offence", o, R.lg, o? rank("o", o.avg) : ""),
+    _paceEl("Their defence", d, R.lgD, d? rank("d", d.avg) : "")));
+  try{ const us=_lgOurTeamId(L); const fu=us && String(us)!==String(tid)? _paceFirst(L, us) : null; const ou=_paceOf(fu,"team");
+    if(ou && o) box.appendChild(h("div",{class:"lg-sub", style:"margin-top:6px"}, "Us: first shot at "+ou.avg.toFixed(1)+" s on average, "+Math.round(100*ou.early)+"% in the first seven seconds · them "+o.avg.toFixed(1)+" s, "+Math.round(100*o.early)+"%.")); }catch(e){}
+  return box;
+}
+/* Post game: this game's pace, ours and theirs, against our season */
+function _postPace(P, home){
+  try{
+    const L=leagueState(), M=_lgGameModel(P.G, P.j, null);
+    const uc=home? M.hc : (M.hc==="A"? "B" : "A");
+    const W=_gpLiveWin(P.j.feed, uc, ()=>true, {});
+    const u=_paceStats(W.u.first, 0), t=_paceStats(W.t.first, 0);
+    if(!u && !t) return null;
+    const R=_paceLeague(L), us=_lgOurTeamId(L), season=_paceOf(_paceFirst(L, us),"team");
+    const box=h("div",{class:"lg-panel pace-post"}, h("div",{class:"lg-h"}, h("span",{},"Pace · when the shot came"),
+      h("span",{class:"lg-sub"}, season? "our season: "+season.avg.toFixed(1)+" s to the first shot" : "")));
+    box.appendChild(h("div",{class:"pace-side two"},
+      _paceEl("Us, this game", u, season || R.lg, season? "tick = our season" : "tick = the league"),
+      _paceEl("Them, this game", t, R.lg, "tick = the league")));
+    return box;
+  }catch(e){ try{ console.warn("post pace", e); }catch(_){} return null; }
+}
+/* League: every club, how fast it shoots and how fast it lets the other side shoot */
+let _lgPaceSort={ k:"o", d:1 };
+function _lgPace(L){
+  const box=_lgPanel("Pace · when the shot comes", null,
+    "For every possession, the second its first shot went up in, counted from the moment the ball changed hands (a defensive rebound, a turnover, a basket at the other end). Offence: how fast the club shoots. Defence: how fast its opponents shoot against it. Rebuilt from the play by play; a possession with no shot is not in the seconds.");
+  const R=_paceLeague(L);
+  const sel=_lgPanelClub(L);
+  if(!R.rows.length){ box.appendChild(h("div",{class:"lg-empty"},"The clubs' seasons are being read; this fills in club by club.")); try{ _lgLeadLoad(L); }catch(e){} return box; }
+  const get={ o:r=>r.o.avg, e:r=>r.o.early, l:r=>r.o.late, d:r=>r.d? r.d.avg : 99, de:r=>r.d? r.d.early : 0 };
+  const rows=R.rows.slice().sort((a,b)=>(get[_lgPaceSort.k](a)-get[_lgPaceSort.k](b))*_lgPaceSort.d);
+  const th=(k,lab,tip)=>h("th",{class:_lgPaceSort.k===k? "on" : "", title:tip||"", style:"cursor:pointer",
+    onclick:()=>{ _lgPaceSort=_lgPaceSort.k===k? { k:k, d:-_lgPaceSort.d } : { k:k, d:(k==="o"||k==="d")? 1 : -1 }; _lgRerender(); }},
+    lab+(_lgPaceSort.k===k? (_lgPaceSort.d>0? " ▲" : " ▼") : ""));
+  const t=h("table",{class:"lg-tbl pace-tbl"});
+  t.appendChild(h("tr",{class:"lg-grph"}, h("th",{},""), h("th",{},""), h("th",{colspan:"3", class:"grp"},"Offence"), h("th",{colspan:"2", class:"grp"},"Defence")));
+  t.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Team"),
+    th("o","SEC","average second of the first shot"), th("e","0–7 S","share of first shots in the first seven seconds"), th("l","16–24 S","share of first shots after sixteen seconds"),
+    th("d","SEC","the opponents' average second"), th("de","0–7 S","the opponents' share in the first seven seconds")));
+  const pc=v=>Math.round(100*v)+"%";
+  rows.forEach((r,i)=>t.appendChild(h("tr",{class:(_lgOurs(r.name)? "ours " : "")+(String(r.id)===String(sel)? "sel" : ""), onclick:()=>{ _lgSetClub(L, r.id); persist(); _lgRerender(); }},
+    h("td",{class:"lg-pos"}, String(i+1)), h("td",{class:"l lg-team"}, _lgCrest(L, r.id), h("span",{}, r.name)),
+    h("td",{class:"grp"}, r.o.avg.toFixed(1)), h("td",{}, pc(r.o.early)), h("td",{}, pc(r.o.late)),
+    h("td",{class:"grp"}, r.d? r.d.avg.toFixed(1) : "—"), h("td",{}, r.d? pc(r.d.early) : "—"))));
+  const pick=R.rows.filter(r=>String(r.id)===String(sel))[0] || R.rows.filter(r=>_lgOurs(r.name))[0] || R.rows[0];
+  const side=h("div",{class:"pace-side"},
+    _paceEl(pick.name+" · offence", pick.o, R.lg, "how fast they shoot"),
+    _paceEl(pick.name+" · defence", pick.d, R.lgD, "how fast their opponents shoot"));
+  box.appendChild(h("div",{class:"pace-wrap"}, h("div",{class:"pb-scroll"}, t), side));
+  if(R.rows.length<(L.teams||[]).length){ box.appendChild(h("div",{class:"lg-sub", style:"margin-top:6px"}, R.rows.length+" of "+(L.teams||[]).length+" clubs read so far; the rest fill in as they are read."));
+    try{ _lgLeadLoad(L); }catch(e){} }
+  return box;
 }
 var LG_CLK=[["24-18","first six seconds"],["17-8","the offence running"],["7-0","shot clock under 8"]];
 function _lgClock(L){
@@ -26099,6 +26223,7 @@ function renderLeague(){
   add(_lgRot(L), false);
   add(_lgUnits(L));
   add(_lgClock(L));
+  add(_lgPace(L));
   add(_lgFold(L,"diag","the reader \u2014 what loaded and what did not",()=>_lgDiag(L)));
   if(!(L.four||[]).length && !_lgFourTried && !_lgFourBusy && !L.demo) syncFour(false);
 }
@@ -34388,6 +34513,38 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .modal-hl.key{background:#c6a15b;color:#141821}.modal-hl.stop{background:#d8524e;color:#fff}
 .modal-box.hl-key{box-shadow:0 0 0 3px #c6a15b,0 20px 60px rgba(0,0,0,.35)!important}.modal-box.hl-stop{box-shadow:0 0 0 3px #d8524e,0 20px 60px rgba(0,0,0,.35)!important}
 /* OUT: he will not play - the card in grey, its OUT badge in full colour */
+/* pace: when the shot comes */
+.pace{border:1px solid var(--line,#e6e8ec);border-radius:10px;padding:10px 12px;background:var(--panel,#fff);min-width:0}
+.pace-h{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.pace-h b{font:700 13px 'Oswald',sans-serif;letter-spacing:.05em;text-transform:uppercase}
+.pace-h span{font-size:11px;color:var(--ink-faint,#8a919c)}
+.pace-top{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.pace-big b{display:block;font:700 30px 'Oswald',sans-serif;line-height:1}
+.pace-big i{font-style:normal;font-size:10.5px;color:var(--ink-faint,#8a919c)}
+.pace-kv{display:flex;gap:14px;flex-wrap:wrap}
+.pace-kv span{display:flex;flex-direction:column}
+.pace-kv i{font-style:normal;font:600 9px 'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint,#8a919c)}
+.pace-kv b{font:700 14px 'IBM Plex Mono',monospace}
+.pace-kv em{font-style:normal;font-size:10.5px;color:var(--ink-faint,#8a919c)}
+.pace-kv .fast em{color:#1f8a4c}.pace-kv .slow em{color:#c0392b}
+.pace-3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0 8px}
+.pace-3c{border-radius:8px;padding:6px 8px;background:var(--panel-2,#f6f7f9)}
+.pace-3c i{display:block;font-style:normal;font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a919c)}
+.pace-3c b{font:700 17px 'Oswald',sans-serif}
+.pace-3c em{display:block;font-style:normal;font-size:10px;color:var(--ink-faint,#8a919c)}
+.pace-3c.early{box-shadow:inset 3px 0 0 #1f8a4c}.pace-3c.middle{box-shadow:inset 3px 0 0 #c9a227}.pace-3c.late{box-shadow:inset 3px 0 0 #c0392b}
+.pace-bars{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;align-items:end}
+.pace-bar{display:flex;flex-direction:column;align-items:center;gap:3px}
+.pace-col{position:relative;width:100%;height:64px;background:var(--panel-2,#f6f7f9);border-radius:4px;overflow:hidden}
+.pace-col i{position:absolute;left:0;right:0;bottom:0;background:#c9a227;border-radius:4px 4px 0 0}
+.pace-col u{position:absolute;left:-2px;right:-2px;height:2px;background:#5b6472}
+.pace-bar span{font:600 9px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a919c);white-space:nowrap}
+.pace-side{display:grid;grid-template-columns:1fr;gap:10px;min-width:0}
+.pace-side.two{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.pace-wrap{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(260px,1fr);gap:14px;align-items:start}
+@media (max-width:900px){ .pace-wrap{grid-template-columns:1fr} }
+.pace-tbl th.on{color:var(--ink,#141821)}
+.pace-post{margin-top:12px}
 .gp-court{margin:10px 0 4px}
 .gp-court-t{width:100%;max-width:520px;border-collapse:collapse;font-size:12.5px}
 .gp-court-t th{font:600 9.5px 'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint,#8a919c);padding:3px 6px;text-align:center;border-bottom:1px solid var(--line,#e6e8ec)}
