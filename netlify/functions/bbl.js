@@ -333,6 +333,58 @@ function onCourtTimeline(actions, code, checks) {
   }
   return { spans: spans, end: end };
 }
+/* WHEN A MAN STARTS TO FADE. Every shot, free throw, turnover and foul of his is filed
+   under two clocks: the minutes he has already played in the game when it happens
+   (0-5, 5-10 ... 30+), and the minutes he has been on in a row in that stint (0-2, 2-4 ...
+   8+; a stint goes on across the end of the first and third quarters, not across half
+   time). The seconds he spent in each block are kept as well, so what happened there can
+   be read per ten minutes on the floor and the blocks compared with each other. */
+const FAT_CUM = [300, 600, 900, 1200, 1500, 1800, Infinity];
+const FAT_ST = [120, 240, 360, 480, Infinity];
+function fatLine() { return { sec: 0, fga: 0, fgm: 0, p3a: 0, p3m: 0, fta: 0, ftm: 0, tov: 0, pf: 0, pts: 0 }; }
+function fatigueInto(agg, acts, code, spans) {
+  const mine = Object.create(null);
+  spans.forEach(s => { (mine[s.id] = mine[s.id] || []).push({ from: s.from, to: s.to }); });
+  Object.keys(mine).forEach(id => {
+    const sp = mine[id].sort((a, b) => a.from - b.from);
+    /* each span carries the minutes played before it and the start of its stint */
+    let played = 0, stintFrom = null, prevTo = null;
+    sp.forEach(s => {
+      if (prevTo == null || Math.abs(s.from - prevTo) > 1 || Math.abs(s.from - 1200) < 1) stintFrom = s.from;
+      s.before = played; s.stint = stintFrom; played += s.to - s.from; prevTo = s.to;
+    });
+    const slot = agg[id]; if (!slot) return;
+    const F = slot.fat || (slot.fat = { cum: FAT_CUM.map(fatLine), st: FAT_ST.map(fatLine) });
+    const idx = (lim, v) => { for (let i = 0; i < lim.length; i++) if (v < lim[i]) return i; return lim.length - 1; };
+    /* the seconds, spread over the blocks second by second (cheap: a game is 2,400) */
+    sp.forEach(s => {
+      for (let t = s.from; t < s.to; t++) {
+        F.cum[idx(FAT_CUM, s.before + (t - s.from))].sec++;
+        F.st[idx(FAT_ST, t - s.stint)].sec++;
+      }
+    });
+    mine[id] = sp;
+  });
+  acts.forEach(a => {
+    if (S(a.teamcode) !== code) return;
+    const id = S(a.player_id1); const sp = mine[id]; if (!sp) return;
+    const slot = agg[id]; if (!slot || !slot.fat) return;
+    const t = gameClock(a);
+    const s = sp.filter(x => t >= x.from && t <= x.to)[0]; if (!s) return;
+    const idx = (lim, v) => { for (let i = 0; i < lim.length; i++) if (v < lim[i]) return i; return lim.length - 1; };
+    const L = [slot.fat.cum[idx(FAT_CUM, s.before + (t - s.from))], slot.fat.st[idx(FAT_ST, t - s.stint)]];
+    const made = S(a.result) === "+";
+    L.forEach(x => {
+      switch (a.action) {
+        case "P2": x.fga++; if (made) { x.fgm++; x.pts += 2; } break;
+        case "P3": x.fga++; x.p3a++; if (made) { x.fgm++; x.p3m++; x.pts += 3; } break;
+        case "FT": x.fta++; if (made) { x.ftm++; x.pts++; } break;
+        case "TO": x.tov++; break;
+        case "FOUL": x.pf++; break;
+      }
+    });
+  });
+}
 function onAt(spans, t) {
   const out = [];
   spans.forEach(s => { if (t >= s.from && t < s.to) out.push(s.id); });
@@ -1589,6 +1641,7 @@ exports.handler = async (event) => {
         });
         rot.push({ id: g.id, date: g.date, home: home, opp: home ? g.away : g.home,
                    end: us.end, spans: us.spans });
+        try { fatigueInto(agg, acts, code, us.spans); } catch (e) { }
 
         /* ---- possessions, and what each unit did with them ---- */
         const poss = possessions(acts);
@@ -1909,4 +1962,4 @@ function reply(code, body, ttl) {
 }
 
 /* exported for the offline checks in /tmp — no effect at runtime */
-module.exports._t = { normTeam, normStanding, normGame, fourFactors, decodeFeed, mapRow, pack, rosterIndex, whenParts, berlinOffsetMin, possessions, clockSplit };
+module.exports._t = { normTeam, normStanding, normGame, fourFactors, decodeFeed, mapRow, pack, rosterIndex, whenParts, berlinOffsetMin, possessions, clockSplit, onCourtTimeline, fatigueInto };

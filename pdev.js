@@ -62,6 +62,7 @@
   var MK = {}; M.forEach(function (m) { MK[m.k] = m; });
   var VIEWS = [
     ["goals", "By his goals", null],
+    ["fade", "When he fades", null],
     ["over", "Overview", ["min", "pts", "ts", "ast", "reb", "pir", "net"]],
     ["shoot", "Shooting", ["fga", "fgp", "p3a", "p3p", "ftp", "ts", "efg"]],
     ["create", "Creation", ["ast", "tov", "astto", "usg", "pts", "ts"]],
@@ -421,6 +422,7 @@
         seg(PERIODS, UI.period, function (v) { UI.period = v; }), seg(MODES, UI.mode, function (v) { UI.mode = v; })));
     root.appendChild(head);
     if (UI.view === "goals") return goalsView(root, P);
+    if (UI.view === "fade") return fadeView(root, P);
     var vw = VIEWS.filter(function (v) { return v[0] === UI.view; })[0] || VIEWS[0];
     var tbl = el("div", { class: "pd-tbl" });
     var cols = vw[2];
@@ -453,6 +455,71 @@
     root.appendChild(el("div", { class: "pd-foot" },
       "Each figure is for the period chosen; the arrow is against his own season when the period is shorter, and only when the sample carries it (pale = small sample). " +
       "The little line is the three-game rolling value, the dashed one his season. On-floor measures are the team's, with him on - not his alone."));
+  }
+
+  /* WHEN HE FADES. From the league's play by play, every shot, turnover and foul of his
+     filed by how long he had been on the floor when it happened - minutes already played
+     in the game, or minutes in a row in that stint - with the seconds he spent in each
+     block, so the blocks can be compared per ten minutes. A cell turns red when he is
+     clearly worse there than in his own first blocks (eFG% 8 points lower on 5 shots or
+     more; turnovers plus fouls half again as many per 10 minutes, over 4 minutes or more),
+     and the last column names the block where that first happens. */
+  var FADE = {
+    cum: { l: "Minutes played in the game", b: ["0–5'", "5–10'", "10–15'", "15–20'", "20–25'", "25–30'", "30'+"] },
+    st: { l: "Minutes in a row, this stint", b: ["0–2'", "2–4'", "4–6'", "6–8'", "8'+"] }
+  };
+  var _fadeAsked = false;
+  function fadeView(root, P) {
+    var L = leagueState(), tid = ourId(), PL = (L.players || {})[tid];
+    var mode = UI.fade === "st" ? "st" : "cum", F = FADE[mode];
+    var box = el("div", { class: "pd-mxbox" });
+    box.appendChild(el("div", { class: "pd-h" }, el("b", {}, "When he fades"), el("span", { class: "pd-hs" }, "his shooting, turnovers and fouls by how long he has been on the floor"),
+      el("span", { class: "pd-tools" }, seg([["cum", "In the game"], ["st", "In the stint"]], mode, function (v) { UI.fade = v; }))));
+    var have = PL && (PL.players || []).some(function (p) { return p.fat; });
+    if (!have) {
+      box.appendChild(el("div", { class: "pd-miss" }, "The season is being read again for this, game by game; it fills in by itself."));
+      if (!_fadeAsked && tid && typeof syncPlayers === "function") { _fadeAsked = true; try { Promise.resolve(syncPlayers(tid, true)).then(function () { setTimeout(draw, 400); }); } catch (e) { } }
+      root.appendChild(box); return;
+    }
+    var byId = {}; (PL.players || []).forEach(function (p) { byId[String(p.id)] = p; });
+    var efg = function (x) { return x.fga ? 100 * (x.fgm + 0.5 * x.p3m) / x.fga : null; };
+    var bad = function (x) { return x.sec ? 600 * (x.tov + x.pf) / x.sec : null; };
+    var t = el("div", { class: "pd-mx pd-fade", style: "grid-template-columns:minmax(150px,1.3fr) repeat(" + F.b.length + ",minmax(74px,1fr)) minmax(110px,1fr)" });
+    t.appendChild(el("span", { class: "hd l" }, "Player"));
+    F.b.forEach(function (b) { t.appendChild(el("span", { class: "hd" }, el("b", {}, b), el("i", {}, "eFG · TO+PF/10'"))); });
+    t.appendChild(el("span", { class: "hd" }, el("b", {}, "Starts to fade")));
+    var rows = P.main.concat(P.dl).map(function (p) { var s = byId[String(p.id)]; return s && s.fat ? { p: p, f: s.fat[mode] } : null; })
+      .filter(function (r) { return r && r.f.reduce(function (a, x) { return a + x.sec; }, 0) >= 600; });
+    if (!rows.length) { box.appendChild(el("div", { class: "pd-miss" }, "Nobody has enough minutes read yet.")); root.appendChild(box); return; }
+    rows.forEach(function (r) {
+      var f = r.f;
+      /* his reference: the first two blocks he has, together */
+      var base = { sec: 0, fga: 0, fgm: 0, p3m: 0, tov: 0, pf: 0 };
+      f.slice(0, 2).forEach(function (x) { ["sec", "fga", "fgm", "p3m", "tov", "pf"].forEach(function (k) { base[k] += x[k] || 0; }); });
+      var be = efg(base), bb = bad(base), fadeAt = null;
+      t.appendChild(el("span", { class: "l" }, el("b", {}, (r.p.num ? "#" + r.p.num + " " : "") + r.p.nm),
+        el("i", {}, Math.round(f.reduce(function (a, x) { return a + x.sec; }, 0) / 60) + " min read")));
+      f.forEach(function (x, i) {
+        var e = efg(x), b = bad(x), thin = x.sec < 240;
+        var eDn = i >= 2 && e != null && be != null && x.fga >= 5 && e <= be - 8;
+        var bUp = i >= 2 && b != null && bb != null && x.sec >= 240 && b >= Math.max(bb * 1.5, bb + 1);
+        var eUp = i >= 2 && e != null && be != null && x.fga >= 5 && e >= be + 8;
+        if ((eDn || bUp) && fadeAt == null) fadeAt = i;
+        t.appendChild(el("span", { class: "c" + (eDn || bUp ? " d1" : eUp ? " u1" : "") + (thin ? " sm" : ""),
+          title: F.b[i] + ": " + Math.round(x.sec / 60) + " min · FG " + x.fgm + "/" + x.fga + " · 3P " + x.p3m + "/" + x.p3a + " · TO " + x.tov + " · PF " + x.pf },
+          x.sec ? el("b", {}, e == null ? "—" : Math.round(e) + "%") : el("b", {}, "·"),
+          x.sec ? el("i", {}, b == null ? "" : b.toFixed(1)) : null));
+      });
+      var why = "";
+      if (fadeAt != null) { var x = f[fadeAt], e = efg(x), b = bad(x);
+        why = (e != null && be != null && x.fga >= 5 && e <= be - 8 ? "eFG " + Math.round(be) + "% → " + Math.round(e) + "%" : "") +
+          (b != null && bb != null && b >= Math.max(bb * 1.5, bb + 1) ? (e != null && be != null && x.fga >= 5 && e <= be - 8 ? " · " : "") + "TO+PF " + bb.toFixed(1) + " → " + b.toFixed(1) : ""); }
+      t.appendChild(el("span", { class: "c fade-at" + (fadeAt != null ? " d2" : "") }, fadeAt != null ? el("b", {}, "from " + F.b[fadeAt]) : el("b", {}, "holds up"), why ? el("i", {}, why) : null));
+    });
+    box.appendChild(el("div", { class: "pd-mxw" }, t));
+    box.appendChild(el("div", { class: "pd-foot" }, "Each cell: his eFG% (a three counts one and a half) and his turnovers plus fouls per 10 minutes on the floor in that block. Pale: under 4 minutes there, too little to judge. Red: clearly worse than his first two blocks; green: clearly better. " +
+      (mode === "st" ? "A stint runs on across the end of the first and third quarters, not across half time." : "")));
+    root.appendChild(box);
   }
 
   /* GAME BY GAME, ONE ROW A MEASURE. The table Trends drew for the PIR, made general: every
@@ -1106,6 +1173,7 @@
       ".pd-mx .c.sm{opacity:.45}.pd-mx .c.dnp{background:transparent;color:var(--ink-faint,#cfd4dc)}",
       ".pd-mx .c.seas{background:transparent;border:1px solid var(--line,#e4e7ec)}.pd-mx .c.tr{background:transparent}",
       ".pd-mx .mk{box-shadow:inset 3px 0 0 #c6a15b}",
+      ".pd-fade .c{flex-direction:column;gap:1px;line-height:1.15}.pd-fade .c i{font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;opacity:.85}.pd-fade .c.fade-at{align-items:flex-start;padding:3px 7px;background:transparent;border:1px solid var(--line,#e4e7ec)}.pd-fade .c.fade-at.d2{background:#d8524e;color:#fff;border-color:#d8524e}",
       /* portraits and crests */
       ".lg-bdg.face.pd-f{flex:none;border:1px solid var(--line,#e4e7ec)}",
       ".lg-bdg.face.pd-f.xs{width:20px;height:20px}.lg-bdg.face.pd-f.sm{width:24px;height:24px}.lg-bdg.face.pd-f.md{width:40px;height:40px}.lg-bdg.face.pd-f.lg{width:60px;height:60px;border-width:2px;border-color:#c6a15b}",
