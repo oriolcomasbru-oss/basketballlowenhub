@@ -11868,14 +11868,12 @@ function _preHl(L, card, c, canEd, save, tid){
   const lv=c.hl==="key"? "key" : c.hl==="stop"? "stop" : "";
   /* the tag takes its own place beside the name and the passport line, in the flow, so
      it can never sit on top of either of them however long they are */
+  /* A MARKED MAN HAS TO BE SEEN FIRST. Gold is everywhere on these cards already (the
+     starter chips, the shares, the closeout strip), so a gold frame was one more gold thing.
+     KEY is a deep blue no other part of the card uses, STOP HIM red, each a thick frame and a
+     band across the top of the card with the word in it - and the board dims the others. */
   if(lv){ card.classList.add("hl-"+lv);
-    const tag=h("span",{class:"hl-badge"}, lv==="key"? "KEY" : "STOP HIM");
-    const nm=card.querySelector(".card-body .name");
-    if(nm){ const mt=nm.nextElementSibling && nm.nextElementSibling.classList.contains("meta")? nm.nextElementSibling : null;
-      const row=h("div",{class:"hl-head"}), col=h("div",{class:"hl-head-t"});
-      nm.parentNode.insertBefore(row, nm); col.appendChild(nm); if(mt) col.appendChild(mt);
-      row.appendChild(col); row.appendChild(tag); }
-    else card.appendChild(tag); }
+    card.appendChild(h("div",{class:"hl-rib"}, lv==="key"? "★ KEY PLAYER" : "⛔ STOP HIM")); }
   if(canEd){ const ph=card.querySelector(".photo");
     if(ph){ const b=h("button",{type:"button", class:"hl-tog", title:"Highlight: normal → KEY → STOP HIM"}, lv==="key"? "★ KEY" : lv==="stop"? "⛔ STOP" : "☆ Mark");
       b.addEventListener("click",e=>{ e.stopPropagation(); e.preventDefault(); c.hl=lv===""? "key" : lv==="key"? "stop" : ""; save(); });
@@ -11920,6 +11918,8 @@ function _prePhxBoard(L, C, canEd, redraw){
   const mk=window.PHX_cardHTML;
   if(typeof mk!=="function") return null;
   const host=h("div",{class:"phx pre-phx"});
+  /* a board with marked men dims the others, so the marked ones are seen first */
+  if(PRE_CARD_POS.some(p=>((C.pos||{})[p]||[]).some(c=>c && (c.hl==="key"||c.hl==="stop")))) host.classList.add("has-hl");
   const cols=h("div",{class:"roster-columns"});
   const drag={ from:null, i:-1 };
   PRE_CARD_POS.forEach(pos=>{
@@ -33334,9 +33334,9 @@ body.edit-mode .phx.pre-roles .pre-lock{display:block}
 .phx.pre-roles .vb-min{position:absolute;bottom:4px;right:5px;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:10.5px;line-height:1.35;padding:0 5px;border-radius:5px;color:#fff;background:rgba(0,0,0,.55)}
 body.edit-mode .phx.pre-roles .pre-lock{bottom:24px}
 .phx.pre-roles .vb-hlb{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);font:700 9.5px 'Oswald',sans-serif;letter-spacing:.12em;padding:1px 7px;border-radius:999px;line-height:1.4}
-.phx.pre-roles .vb-tile.vb-key{box-shadow:0 0 0 2px #c6a15b}
-.phx.pre-roles .vb-tile.vb-stop{box-shadow:0 0 0 2px #d8524e}
-.phx.pre-roles .vb-tile.vb-key .vb-hlb{background:#c6a15b;color:#141821}
+.phx.pre-roles .vb-tile.vb-key{box-shadow:0 0 0 3px #1f4e9a}
+.phx.pre-roles .vb-tile.vb-stop{box-shadow:0 0 0 3px #c62828}
+.phx.pre-roles .vb-tile.vb-key .vb-hlb{background:#1f4e9a;color:#fff}
 .phx.pre-roles .vb-tile.vb-stop .vb-hlb{background:#d8524e;color:#fff}
 .phx.pre-phx .pos-col-over{outline:1px dashed var(--gold,#c9a227);outline-offset:3px;border-radius:4px}
 /* Out of the bar, where it was a number nobody reads twenty times a day. It is still
@@ -35125,8 +35125,15 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .dash-kp .c.l{text-align:left}.dash-kp .c.rl{font:500 11px 'Inter',system-ui,sans-serif;color:var(--ink-soft,#5b6472);white-space:normal}
 .dash-set i.kd{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);flex:none}
 /* a roster card: the numbers that stand out, and the frame of a key man - laid over the card */
-.phx .card.hl-key{box-shadow:0 0 0 3px #c6a15b,0 0 0 8px rgba(198,161,91,.25)!important}
-.phx .card.hl-stop{box-shadow:0 0 0 3px #d8524e,0 0 0 8px rgba(216,82,78,.22),0 10px 26px rgba(216,82,78,.25)!important}
+.phx .card.hl-key,.phx .card.hl-stop{position:relative;padding-top:20px!important;z-index:1}
+.phx .card.hl-key{box-shadow:0 0 0 4px #1f4e9a,0 10px 26px rgba(31,78,154,.32)!important}
+.phx .card .hl-rib{position:absolute;top:0;left:0;right:0;height:20px;display:flex;align-items:center;justify-content:center;font:700 11px 'Oswald',sans-serif;letter-spacing:.22em;color:#fff;z-index:6;pointer-events:none}
+.phx .card.hl-key .hl-rib{background:#1f4e9a}
+.phx .card.hl-stop .hl-rib{background:#c62828}
+/* when somebody is marked, the others step back */
+.phx.pre-phx.has-hl .card:not(.hl-key):not(.hl-stop){opacity:.72;filter:saturate(.7)}
+.phx.pre-phx.has-hl .card:not(.hl-key):not(.hl-stop):hover{opacity:1;filter:none}
+.phx .card.hl-stop{box-shadow:0 0 0 4px #c62828,0 10px 26px rgba(198,40,40,.32)!important}
 .phx .card .photo{position:relative}
 .phx .card > .hl-badge{position:absolute;right:8px;top:6px;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;padding:4px 10px;border-radius:999px;color:#fff;z-index:3;pointer-events:none}
 /* the card opened beside its video: the boxes as on the card, at a size that reads */
@@ -35140,8 +35147,8 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .modal-stats .modal-stat-cell.hl-warm{background:rgba(216,82,78,.14)!important;border-radius:6px}
 .modal-stats .modal-stat-cell.hl-warm .modal-stat-value,.modal-stats .modal-stat-cell.hl-warm .modal-stat-why{color:#c0403c!important}
 .modal-hl{display:inline-block;vertical-align:middle;margin-left:10px;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;padding:3px 10px;border-radius:999px}
-.modal-hl.key{background:#c6a15b;color:#141821}.modal-hl.stop{background:#d8524e;color:#fff}
-.modal-box.hl-key{box-shadow:0 0 0 3px #c6a15b,0 20px 60px rgba(0,0,0,.35)!important}.modal-box.hl-stop{box-shadow:0 0 0 3px #d8524e,0 20px 60px rgba(0,0,0,.35)!important}
+.modal-hl.key{background:#1f4e9a;color:#fff}.modal-hl.stop{background:#d8524e;color:#fff}
+.modal-box.hl-key{box-shadow:0 0 0 3px #1f4e9a,0 20px 60px rgba(0,0,0,.35)!important}.modal-box.hl-stop{box-shadow:0 0 0 3px #d8524e,0 20px 60px rgba(0,0,0,.35)!important}
 /* OUT: he will not play - the card in grey, its OUT badge in full colour */
 /* pace: when the shot comes */
 .pace{border:1px solid var(--line,#e6e8ec);border-radius:10px;padding:10px 12px;background:var(--panel,#fff);min-width:0}
@@ -35301,7 +35308,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .phx .card .hl-cell:hover{opacity:1}
 .phx .card .hl-auto{position:absolute;right:4px;bottom:-14px;border:0;background:transparent;font:600 9px 'IBM Plex Mono',monospace;color:#7a5c12;cursor:pointer}
 .phx .card .stat-bar{position:relative}
-.dash-man.hl-key{box-shadow:inset 0 0 0 2px #c6a15b;border-radius:6px}.dash-man.hl-stop{box-shadow:inset 0 0 0 2px #d8524e;border-radius:6px;background:rgba(216,82,78,.06)}
+.dash-man.hl-key{box-shadow:inset 0 0 0 2px #1f4e9a;border-radius:6px}.dash-man.hl-stop{box-shadow:inset 0 0 0 2px #d8524e;border-radius:6px;background:rgba(216,82,78,.06)}
 .dash-man .hlb{font:700 8.5px 'Oswald',sans-serif;letter-spacing:.1em;border-radius:3px;padding:0 4px;color:#fff}.dash-man .hlb.stop{background:#d8524e}.dash-man .hlb.key{background:#c6a15b;color:#141821}
 /* a club's European table */
 .lg-eust{display:grid;gap:6px;margin:6px 0 12px;padding:10px;border:1px solid var(--line,#e4e7ec);border-radius:10px;border-top:3px solid #4a86d8}
