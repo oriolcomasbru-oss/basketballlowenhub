@@ -600,7 +600,11 @@ function parseGamePlan(L) {
       var s = clean(cl.s);
       if (/^DEFEN[SC]E\b/i.test(s)) side = "def";
       if (isBand(s)) {
-        var fill = F.filter(function (f) { return f.x >= boxLeft - 8 && cl.x >= f.x - 4 && cl.x <= f.x + f.w && cl.y >= f.y - 4 && cl.y <= f.y + f.h + 4; })[0];
+        /* the colour the line sits on: the sheet paints one band the whole width of the box and
+           the next one over part of it (green under, yellow on top on the right), so of every
+           coloured box under the line the smallest is the one that shows */
+        var fill = F.filter(function (f) { return f.x >= boxLeft - 8 && cl.x >= f.x - 4 && cl.x <= f.x + f.w && cl.y >= f.y - 4 && cl.y <= f.y + f.h + 4; })
+          .sort(function (a, b) { return (a.w * a.h) - (b.w * b.h); })[0];
         var eq = s.indexOf("=");
         bands.push({ label: (eq > 0 ? s.slice(0, eq) : s).trim(), text: eq > 0 ? s.slice(eq + 1).trim() : "", c: fill ? fill.c : "", raw: s });
       } else gen[side].push(s);

@@ -36175,6 +36175,8 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .gp5 .gp2-st,.gp5 .gp2-nm{font:700 11.5px 'Inter',system-ui,sans-serif!important;letter-spacing:0!important;text-transform:uppercase}
 .gp5 .gp2-tbl td{height:23px!important}
 .gp5 .gp2-rl{font:700 10.5px 'Inter',system-ui,sans-serif!important;letter-spacing:.02em!important;height:21px!important}
+/* a long stretch text wraps inside its band instead of running out of it */
+.gp5 .gp2-rl{white-space:normal!important;height:auto!important;min-height:21px;line-height:1.2;padding:3px 6px!important;overflow-wrap:anywhere;text-overflow:clip!important}
 .gp5 .gp2-lbl,.gp5 .gp2-pos{font:800 11px 'Inter',system-ui,sans-serif!important;letter-spacing:.04em!important;width:30px!important;color:var(--ink,#141821)!important}
 .gp5 .gp2-tick{font:700 10px 'IBM Plex Mono',monospace!important;height:15px!important}
 @keyframes gpSoon{0%,100%{box-shadow:inset 0 0 0 2px rgba(242,194,48,.0);background:rgba(242,194,48,.25)}50%{box-shadow:inset 0 0 0 2px #e0ad2a;background:rgba(242,194,48,.65)}}
