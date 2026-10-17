@@ -14827,7 +14827,7 @@ function _gpAlerts(L){
   if(qi>=3 && left>0 && left<=60 && U.fouls<4) out.push({ k:"give|"+qi, tone:"info", big:"Fouls to give: "+(4-U.fouls), txt:"Before their bonus, in the last minute of "+qn(qi) });
   if(qi===1 && left>0 && left<=120 && U.left>0) out.push({ k:"to1|"+U.left, tone:"warn", big:"Use them or lose them", txt:"We have "+U.left+" timeout"+(U.left>1? "s" : "")+" left in the first half — unused ones are lost at half time" });
   if(qi===3 && left>120 && left<=180 && U.left===3) out.push({ k:"to2", tone:"warn", big:"One timeout is lost at 2:00", txt:"We have 3, and only 2 can be used in the last 2 minutes of the 4th — use one before 2:00" });
-  if(qi>=3 && left<=120 && (qi>3 || left>0)) out.push({ k:"l2m|"+qi, tone:"info", big:"Last 2:00"+(qi>3? " · "+qn(qi) : ""), txt:"Timeouts: we "+U.left+", they "+T.left+(T.left===0? " (none left)" : "")+" · team fouls: we "+U.fouls+", they "+T.fouls+" · see the rules below", rules:true });
+  if(qi>=3 && left<=120 && (qi>3 || left>0)) out.push({ k:"l2m|"+qi, tone:"warn", big:"Last 2:00"+(qi>3? " · "+qn(qi) : ""), txt:"Timeouts: we "+U.left+", they "+T.left+(T.left===0? " (none left)" : "")+" · team fouls: we "+U.fouls+", they "+T.fouls+" · see the rules below", rules:true });
   if(qi>=4 && t-base<60) out.push({ k:"ot|"+qi, tone:"info", big:qn(qi), txt:"1 timeout each, not carried over · team fouls go on from the 4th: we "+U.fouls+", they "+T.fouls });
   /* a tie at the end of the 4th (or of an overtime): the overtime starts with the arrow's team */
   const ptsU=(L.us||[]).reduce((s,p)=>s+(p.pts||0),0), ptsT=(L.them||[]).reduce((s,p)=>s+(p.pts||0),0);
@@ -14859,6 +14859,7 @@ function _gpRulesCard(){
 }
 function _gpAlertBar(){
   const wrap=h("div",{class:"gp5-alerts"});
+  const rulesHost=h("div",{class:"gp5-ruleshost"}); wrap.__rules=rulesHost;
   const paint=()=>{
     const L=_gpLiveNow, list=_gpAlerts(L), now=Date.now();
     const key0=L? (L.rp? "rp|" : "lv|")+(L.G? L.G.id : "")+"|" : "";
@@ -14871,7 +14872,7 @@ function _gpAlertBar(){
     const sig=JSON.stringify(list.map(a=>[a.k, a.txt, a.s.ack, a.s.first && now-a.s.first<90000]))+"|"+(L && L.live? _gpArrow(L.feed)===L.uc : "");
     if(sig===wrap.__sig) return; wrap.__sig=sig;
     wrap.innerHTML="";
-    if(!L || !L.live) { wrap.style.display="none"; return; }
+    if(!L || !L.live) { wrap.style.display="none"; rulesHost.innerHTML=""; return; }
     wrap.style.display="";
     const big=list.filter(a=>!a.s.ack && a.s.first && now-a.s.first<90000), small=list.filter(a=>big.indexOf(a)<0);
     big.forEach(a=>wrap.appendChild(h("button",{type:"button", class:"gp5-al big "+a.tone, title:"tap: seen", onclick:()=>{ a.s.ack=true; wrap.__sig=""; paint(); }},
@@ -14881,7 +14882,8 @@ function _gpAlertBar(){
     if(ar) row.appendChild(h("span",{class:"gp5-al-arrow "+(ar===L.uc? "us" : "them"), title:"alternating possession: the next held ball or quarter start"}, "Arrow → "+(ar===L.uc? "US" : "THEM")));
     small.forEach(a=>row.appendChild(h("span",{class:"gp5-al chip "+a.tone, title:a.txt}, a.big)));
     if(row.children.length) wrap.appendChild(row);
-    if(list.some(a=>a.rules)) wrap.appendChild(_gpRulesCard());
+    /* the rules are read below the bar, in the page, not over the board */
+    rulesHost.innerHTML=""; if(list.some(a=>a.rules)) rulesHost.appendChild(_gpRulesCard());
   };
   paint();
   /* the bar is made before it is on the page and a reading can come in that instant: it lets go
@@ -16720,7 +16722,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
         window.addEventListener("gp-live", onLive);
         addEventListener("resize", ()=>{ if(rotHost.isConnected) marker(); });
         /* the reminders ride at the top of the screen, whatever is scrolled */
-        wrap5.appendChild(safe(()=>_gpAlertBar()));
+        { const ab=safe(()=>_gpAlertBar()); wrap5.appendChild(ab); if(ab.__rules) wrap5.appendChild(ab.__rules); }
         wrap5.appendChild(sect("us rot", "Our rotation", "the quarter being played · its plan on the right", _wipTag(), rotHost));
 
         const row2=h("div",{class:"gp5-row2 gp5-teams"},
@@ -36277,6 +36279,7 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .gp6-cct i.sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:8px;vertical-align:-1px;border:1px solid rgba(0,0,0,.15)}
 .gp6-cct tr.good td.ppp{background:#d9f2e3;color:#0f5132;font-weight:800}
 .gp6-cct tr.bad td.ppp{background:#fbe1df;color:#8a1c17;font-weight:800}
+.gp5-ruleshost{margin:0 0 8px}.gp5-ruleshost:empty{display:none}
 .gp5-rules{background:var(--panel,#fff);border:1px solid var(--line-strong,#cfd4dc);border-radius:10px;padding:0}
 .gp5-rules>summary{padding:8px 12px;font:800 12px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase}
 .gp5-rules ul{margin:0;padding:0 14px 10px 30px;font:500 13px/1.45 Inter,system-ui,sans-serif;color:var(--ink,#141821)}
