@@ -11765,6 +11765,35 @@ function _preHlRanks(L, c, tid){
     const rb=rank(d, pool), rt=rank(d, team); if(rb==null && rt==null) return null;
     return (rb!=null && rb<=25)? { score:rb, why:ord(rb)+" BBL" } : (rt!=null && rt<=3)? { score:100+rt, why:ord(rt)+" "+short } : null; });
 }
+/* A FIFTH BOX. The card asks each position its own four questions - a wing is never
+   asked about his passes - so a wing who is one of the league's best passers had no box
+   to light. The counting numbers the card may not show are ranked too, and when one of
+   them is among the man's two best, it gets a fifth box of its own. */
+const PRE_HL_EXTRA=[["AST/G","ast"],["OREB/G","oreb"],["REB/G","reb"],["STL/G","stl"],["BLK/G","blk"]];
+function _preHlExtra(L, c, tid, ranks){
+  const shown=new Set((c.stats||[]).map(s=>String(s[1]||"").toUpperCase()));
+  const pool=(_lgLeadPool(L).pool||[]);
+  const id=String(c.pid||"");
+  let me=id? pool.filter(x=>String(x.id)===id || String(x.pid||"")===id)[0] : null;
+  if(!me){ const k=_lgNorm(_lgLastName(c.name||"")); me=pool.filter(x=>String(x.tid)===String(tid) && _lgNorm(_lgLastName(x.name||""))===k)[0]||null; }
+  if(!me) return null;
+  const v=(x,k)=>{ const t=x.t||{}, g=t.gp||0; if(!g) return null;
+    const n=k==="reb"? (t.reb!=null? t.reb : (t.oreb||0)+(t.dreb||0)) : t[k]; return n==null? null : n/g; };
+  const ord=n=>n+(n%10===1&&n%100!==11? "st" : n%10===2&&n%100!==12? "nd" : n%10===3&&n%100!==13? "rd" : "th");
+  let best=null;
+  PRE_HL_EXTRA.forEach(([lab,k])=>{
+    if(shown.has(lab)) return;
+    const mine=v(me,k); if(mine==null || mine<=0) return;
+    const rb=1+pool.filter(y=>{ const w=v(y,k); return w!=null && w>mine; }).length;
+    if(rb>25) return;
+    if(!best || rb<best.score) best={ label:lab, value:(Math.round(mine*10)/10).toFixed(1), score:rb, why:ord(rb)+" BBL" };
+  });
+  if(!best) return null;
+  /* only when it would be lit: better than his second best among the boxes he has */
+  const have=(ranks||[]).filter(Boolean).map(r=>r.score).sort((a,b)=>a-b);
+  if(have.length>=2 && best.score>=have[1]) return null;
+  return best;
+}
 function _preHl(L, card, c, canEd, save, tid){
   /* the frame */
   const lv=c.hl==="key"? "key" : c.hl==="stop"? "stop" : "";
@@ -11777,6 +11806,16 @@ function _preHl(L, card, c, canEd, save, tid){
   const cells=[...card.querySelectorAll(".stat-cell")];
   if(!cells.length) return;
   let ranks=null; try{ ranks=_preHlRanks(L, c, tid); }catch(e){ ranks=null; }
+  /* the fifth box, drawn like the others, when a number he is among the best at has none */
+  try{ const ex=_preHlExtra(L, c, tid, ranks);
+    if(ex){ const last=cells[cells.length-1], nc=last.cloneNode(true);
+      nc.querySelectorAll("button").forEach(b=>b.remove());
+      const sv=nc.querySelector(".stat-value"), sl=nc.querySelector(".stat-label");
+      if(sv){ sv.textContent=ex.value; sv.removeAttribute("contenteditable"); }
+      if(sl){ sl.textContent=ex.label; sl.removeAttribute("contenteditable"); }
+      nc.classList.add("hl-extra"); nc.title="Added by the hub: one of his best numbers, which this position's card does not ask";
+      last.parentNode.appendChild(nc); cells.push(nc);
+      ranks=(ranks||cells.slice(0,-1).map(()=>null)).slice(0, cells.length-1).concat([{ score:ex.score, why:ex.why }]); } }catch(e){}
   let pick={};
   const man=c.hlStats && typeof c.hlStats==="object" && Object.keys(c.hlStats).length;
   if(man){ Object.keys(c.hlStats).forEach(k=>{ if(c.hlStats[k]==="hot"||c.hlStats[k]==="warm") pick[k]=c.hlStats[k]; }); }
