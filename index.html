@@ -14792,7 +14792,8 @@ function _gpTeamInfo(feed, code, maxQ, lastT){
   else if(maxQ<=3){ used=to.filter(x=>x.e.qi===2 || x.e.qi===3).length; of=3; left=Math.max(0, of-used);
     if(maxQ===3 && (lastT-1800)>=480){ const late=to.filter(x=>x.e.qi===3 && x.e.t-1800>=480).length; left=Math.min(left, Math.max(0, 2-late)); } }
   else { used=to.filter(x=>x.e.qi===maxQ).length; of=1; left=Math.max(0, of-used); }
-  const fouls=acts.filter(x=>x.e.qi===maxQ && x.a.teamcode===code && x.a.action==="FOUL").length;
+  /* the overtimes are part of the fourth period for team fouls (FIBA): they carry on from it */
+  const fouls=acts.filter(x=>(maxQ>=3? x.e.qi>=3 : x.e.qi===maxQ) && x.a.teamcode===code && x.a.action==="FOUL").length;
   return { left:left, of:of, used:used, fouls:fouls, bonus:fouls>=4, all:to.length };
 }
 function _gpTeamLine(tm, them){
@@ -14813,6 +14814,14 @@ function _gpFoulLv(pf, qi){
   return pf>=4? "hot" : "";
 }
 function _gpMmss(s){ s=Math.max(0, Math.round(s||0)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
+/* the quarter the league's game centre says is being played (its break counts as that quarter):
+   0-3 the quarters, 4 on the overtimes; -1 when it does not say */
+function _gpGcQ(gc){
+  const p=String((gc && gc.progress)||"");
+  const m=/^Q(\d)/i.exec(p); if(m) return (+m[1])-1;
+  const o=/^OT(\d*)/i.exec(p); if(o) return 3+(+(o[1]||1));
+  return -1;
+}
 /* a JSON request that is let go after ms: null when it fails, answers badly or takes too long */
 function _gpFetchJ(url, ms){
   let ctl=null; try{ ctl=new AbortController(); }catch(e){}
@@ -15282,7 +15291,22 @@ function _gpLiveBlock(){
   if(!opp || !date || _gamePlaceholder(opp)){ say("The summary of the game appears here once the opponent and the day are known."); return wrap; }
   const today=(()=>{ try{ return todayISO(); }catch(e){ return ""; } })();
   const draw=()=>{
-    const feed=J && J.feed;
+    /* A PLAY WRITTEN IN THE WRONG QUARTER. In the Ulm - Hagen test the scorer put one foul at
+       "Q3 2:28" during half time: the block took it for the last play, and the clock, the
+       stints, the timeouts and the team fouls all jumped to the third quarter. Live, a quarter
+       later than the one the league's game centre says counts only once the game centre says
+       it too, or once it holds four plays (a quarter that has really started) - one stray play
+       is never enough. */
+    let Jd=J;
+    if(!_gpRP && GC && GC.status==="LIVE" && J && J.feed){
+      const gq=_gpGcQ(GC), a0=J.feed.actions||[];
+      if(gq>=0){
+        const ahead={}; a0.forEach(a=>{ const q=_lgGameElapsed(a.quarter, a.time).qi; if(q>gq) ahead[q]=(ahead[q]||0)+1; });
+        let upTo=gq; Object.keys(ahead).map(Number).sort((x,y)=>x-y).forEach(q=>{ if(q===upTo+1 && ahead[q]>=4) upTo=q; });
+        if(Object.keys(ahead).some(q=>+q>upTo)) Jd=Object.assign({}, J, { feed:Object.assign({}, J.feed, { actions:a0.filter(a=>_lgGameElapsed(a.quarter, a.time).qi<=upTo) }) });
+      }
+    }
+    const feed=Jd && Jd.feed;
     const acts=(feed && feed.actions)||[];
     if(!acts.length){
       say(date>today? "The game has not been played yet. From the tip-off this fills in by itself, quarter by quarter."
@@ -15314,14 +15338,14 @@ function _gpLiveBlock(){
     tab("last","Last 2:00","now");
     const allSel={}; for(let q=0;q<=maxQ;q++) allSel[q]=1;
     const sel=(typeof cur==="number")? (()=>{ const o={}; o[cur]=1; return o; })() : allSel;
-    const M=_lgGameModel(G, J, sel), MG=(typeof cur==="number")? _lgGameModel(G, J, allSel) : M;
+    const M=_lgGameModel(G, Jd, sel), MG=(typeof cur==="number")? _lgGameModel(G, Jd, allSel) : M;
     const U=home?M.H:M.A, T=home?M.A:M.H, UG=home?MG.H:MG.A, TG=home?MG.A:MG.H;
     const uc=home? M.hc : (M.hc==="A"?"B":"A");
     const inWin=(cur==="last")? (o=>o.t>lastT-120) : (cur==="g")? (()=>true) : (o=>o.qi===cur);
     const W=_gpLiveWin(feed, uc, inWin, M.names||{});
     const u=W.u, t=W.t;
     /* the fouls of the quarter being played, and who is carrying too many in the game */
-    const MQ=_lgGameModel(G, J, (()=>{ const o={}; o[maxQ]=1; return o; })());
+    const MQ=_lgGameModel(G, Jd, (()=>{ const o={}; o[maxQ]=1; return o; })());
     const limit=maxQ>=2? 4 : (maxQ>=1? 3 : 2);
     const ourFouls=(home?MQ.H:MQ.A).pf, theirFouls=(home?MQ.A:MQ.H).pf;
     const ourTrouble=live? UG.pl.filter(p=>p.pf>=limit).sort((a,b)=>b.pf-a.pf) : [];
