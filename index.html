@@ -11747,6 +11747,60 @@ function _preFindBox(pos, C, redraw){
   setTimeout(()=>{ try{ inp.focus(); }catch(e){} }, 30);
   return box;
 }
+/* WHAT STANDS OUT ON A CARD, LAID OVER IT. The card is never changed inside. Of the
+   numbers it already shows, the one where the man ranks best is lit solid red and the next
+   light red, each with where he ranks - in the BBL when he is among its 25 best, in his
+   team otherwise. The staff can mark the card KEY (gold frame) or STOP HIM (red frame),
+   and choose the lit numbers by hand; both are kept on the card in the report. */
+const PRE_HL_STAT={ "PTS/G":["pts",false,1], "AST/G":["ast",false,1], "OREB/G":["oreb",false,1], "2PT/G":["p2",true,15], "3PT/G":["p3",true,15], "FT%":["ft",true,10] };
+function _preHlRanks(L, c, tid){
+  const pool=(_lgLeadPool(L).pool||[]);
+  const id=String(c.pid||"");
+  let me=id? pool.filter(x=>String(x.id)===id || String(x.pid||"")===id)[0] : null;
+  if(!me){ const k=_lgNorm(_lgLastName(c.name||"")); me=pool.filter(x=>String(x.tid)===String(tid) && _lgNorm(_lgLastName(x.name||""))===k)[0]||null; }
+  if(!me) return null;
+  const team=pool.filter(x=>String(x.tid)===String(me.tid));
+  const val=(x,s)=>{ const t=x.t, g=t.gp||1;
+    if(s[0]==="pts") return t.pts/g; if(s[0]==="ast") return (t.ast||0)/g; if(s[0]==="oreb") return (t.oreb||0)/g;
+    if(s[0]==="p2") return (t.p2a||0)>=s[2]? t.p2m/t.p2a : null; if(s[0]==="p3") return (t.p3a||0)>=s[2]? t.p3m/t.p3a : null;
+    if(s[0]==="ft") return (t.fta||0)>=s[2]? t.ftm/t.fta : null; return null; };
+  const rank=(s, list)=>{ const v=val(me,s); if(v==null) return null; return 1+list.filter(y=>{ const w=val(y,s); return w!=null && w>v; }).length; };
+  const ord=n=>n+(n%10===1&&n%100!==11? "st" : n%10===2&&n%100!==12? "nd" : n%10===3&&n%100!==13? "rd" : "th");
+  const short=_lgShort((L.teams||[]).filter(t=>String(t.id)===String(me.tid)).map(t=>t.name)[0]||"").slice(0,3).toUpperCase()||"TEAM";
+  return (c.stats||[]).map(s=>{ const d=PRE_HL_STAT[String(s[1]||"").toUpperCase()]; if(!d) return null;
+    const rb=rank(d, pool), rt=rank(d, team); if(rb==null && rt==null) return null;
+    return (rb!=null && rb<=25)? { score:rb, why:ord(rb)+" BBL" } : (rt!=null && rt<=3)? { score:100+rt, why:ord(rt)+" "+short } : null; });
+}
+function _preHl(L, card, c, canEd, save, tid){
+  /* the frame */
+  const lv=c.hl==="key"? "key" : c.hl==="stop"? "stop" : "";
+  if(lv){ card.classList.add("hl-"+lv); const ph=card.querySelector(".photo"); if(ph) ph.appendChild(h("span",{class:"hl-badge"}, lv==="key"? "KEY" : "STOP HIM")); }
+  if(canEd){ const ph=card.querySelector(".photo");
+    if(ph){ const b=h("button",{type:"button", class:"hl-tog", title:"Highlight: normal → KEY → STOP HIM"}, lv==="key"? "★ KEY" : lv==="stop"? "⛔ STOP" : "☆ Mark");
+      b.addEventListener("click",e=>{ e.stopPropagation(); e.preventDefault(); c.hl=lv===""? "key" : lv==="key"? "stop" : ""; save(); });
+      ph.appendChild(b); } }
+  /* the numbers */
+  const cells=[...card.querySelectorAll(".stat-cell")];
+  if(!cells.length) return;
+  let ranks=null; try{ ranks=_preHlRanks(L, c, tid); }catch(e){ ranks=null; }
+  let pick={};
+  const man=c.hlStats && typeof c.hlStats==="object" && Object.keys(c.hlStats).length;
+  if(man){ Object.keys(c.hlStats).forEach(k=>{ if(c.hlStats[k]==="hot"||c.hlStats[k]==="warm") pick[k]=c.hlStats[k]; }); }
+  else if(ranks){ const order=ranks.map((r,i)=>r? { i:i, s:r.score } : null).filter(Boolean).sort((a,b)=>a.s-b.s);
+    if(order[0]) pick[order[0].i]="hot"; if(order[1]) pick[order[1].i]="warm"; }
+  cells.forEach((cell,i)=>{
+    const lvl=pick[i];
+    if(lvl){ cell.classList.add("hl-"+lvl); const why=ranks && ranks[i] && ranks[i].why; if(why) cell.appendChild(h("span",{class:"hl-why"}, why)); }
+    if(canEd){ const t=h("button",{type:"button", class:"hl-cell", title:"Light this number: none → solid → light (your choice replaces the automatic one)"}, lvl==="hot"? "●" : lvl==="warm"? "◐" : "○");
+      t.addEventListener("click",e=>{ e.stopPropagation(); e.preventDefault();
+        const cur=Object.assign({}, man? c.hlStats : pick); const now=cur[i];
+        if(!now) cur[i]="hot"; else if(now==="hot") cur[i]="warm"; else delete cur[i];
+        c.hlStats=Object.keys(cur).length? cur : { _none:"none" }; save(); });
+      cell.appendChild(t); } });
+  if(canEd && man){ const back=h("button",{type:"button", class:"hl-auto", title:"Let the hub choose the numbers again"},"auto");
+    back.addEventListener("click",e=>{ e.stopPropagation(); e.preventDefault(); delete c.hlStats; save(); });
+    const bar=card.querySelector(".stat-bar"); if(bar) bar.appendChild(back); }
+}
 function _prePhxBoard(L, C, canEd, redraw){
   const mk=window.PHX_cardHTML;
   if(typeof mk!=="function") return null;
@@ -11762,6 +11816,7 @@ function _prePhxBoard(L, C, canEd, redraw){
       const card=box.firstElementChild;
       if(!card) return;
       _preWireCard(card, c, pos, i, C, canEd, redraw, drag, redraw);
+      try{ _preHl(L, card, c, canEd, redraw, _preClub()); }catch(e){}
       if(!canEd){
         card.querySelectorAll(".idea-row").forEach(r=>{
           const t=r.querySelector(".idea-line");
@@ -24132,10 +24187,11 @@ function _dashRosterInto(box, g, wide){
     const used={};
     const man=(p, start, cd)=>{ if(cd) used[cd.id||cd.name]=1;
       const ideas=((cd && cd.ideas)||[]).filter(x=>String(x||"").trim()).slice(0, wide? 3 : 2);
-      return h("div",{class:"dash-man"+(start? " start" : ""), style:(cd && CO[cd.co])? "border-left-color:"+CO[cd.co] : ""},
+      return h("div",{class:"dash-man"+(start? " start" : "")+((cd && (cd.hl==="key"||cd.hl==="stop"))? " hl-"+cd.hl : ""), style:(cd && CO[cd.co])? "border-left-color:"+CO[cd.co] : ""},
         h("div",{class:"l1"}, h("u",{}, (p.num||(cd&&cd.num))? "#"+(p.num||cd.num) : ""), h("b",{}, _lgLastName(p.name||(cd&&cd.name)||"")),
           (p.last===false)? h("em",{title:"Did not play their last game"},"?") : null,
           cd && cd.badge==="NEW"? h("span",{class:"new"},"NEW") : null,
+          (cd && cd.hl==="stop")? h("span",{class:"hlb stop"},"STOP HIM") : (cd && cd.hl==="key")? h("span",{class:"hlb key"},"KEY") : null,
           p.min? h("i",{}, Math.round(p.min)+"′"+(start && R? " · S "+p.st+"/"+R.n : "")) : null),
         (cd && String(cd.tag||"").trim())? h("div",{class:"tg"}, cd.tag) : null,
         ideas.length? h("div",{class:"id"}, ideas.join(" · ")) : null); };
@@ -33931,6 +33987,27 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .dash-kp .c.hot{background:rgba(216,82,78,.16);color:#c0403c}.dash-kp .c.cold{background:rgba(74,134,216,.14);color:#2f63a8}
 .dash-kp .c.l{text-align:left}.dash-kp .c.rl{font:500 11px 'Inter',system-ui,sans-serif;color:var(--ink-soft,#5b6472);white-space:normal}
 .dash-set i.kd{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);flex:none}
+/* a roster card: the numbers that stand out, and the frame of a key man - laid over the card */
+.phx .card.hl-key{box-shadow:0 0 0 3px #c6a15b,0 0 0 8px rgba(198,161,91,.25)!important}
+.phx .card.hl-stop{box-shadow:0 0 0 3px #d8524e,0 0 0 8px rgba(216,82,78,.22),0 10px 26px rgba(216,82,78,.25)!important}
+.phx .card .photo{position:relative}
+.phx .card .hl-badge{position:absolute;right:10px;bottom:10px;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;padding:4px 10px;border-radius:999px;color:#fff;z-index:3;pointer-events:none}
+.phx .card.hl-key .hl-badge{background:#c6a15b;color:#141821}.phx .card.hl-stop .hl-badge{background:#d8524e}
+.phx .card .hl-tog{position:absolute;left:8px;bottom:8px;z-index:4;border:0;border-radius:999px;padding:3px 9px;font:700 10px 'Oswald',sans-serif;letter-spacing:.1em;cursor:pointer;background:rgba(20,24,33,.72);color:#fff}
+.phx .card .stat-cell{position:relative}
+.phx .card .stat-cell.hl-hot{background:#d8524e!important;border-radius:8px}
+.phx .card .stat-cell.hl-hot .stat-value,.phx .card .stat-cell.hl-hot .stat-label,.phx .card .stat-cell.hl-hot .sv-pc,.phx .card .stat-cell.hl-hot .sv-sep{color:#fff!important}
+.phx .card .stat-cell.hl-warm{background:rgba(216,82,78,.14)!important;border-radius:8px}
+.phx .card .stat-cell.hl-warm .stat-value{color:#c0403c!important}
+.phx .card .stat-cell .hl-why{display:block;font:700 9px 'IBM Plex Mono',monospace;margin-top:1px;white-space:nowrap}
+.phx .card .stat-cell.hl-hot .hl-why{color:#fff}.phx .card .stat-cell.hl-warm .hl-why{color:#c0403c}
+.phx .card .hl-cell{position:absolute;top:1px;right:2px;border:0;background:transparent;font-size:10px;line-height:1;cursor:pointer;color:#8a93a2;padding:0;opacity:.6}
+.phx .card .stat-cell.hl-hot .hl-cell{color:#fff}
+.phx .card .hl-cell:hover{opacity:1}
+.phx .card .hl-auto{position:absolute;right:4px;bottom:-14px;border:0;background:transparent;font:600 9px 'IBM Plex Mono',monospace;color:#7a5c12;cursor:pointer}
+.phx .card .stat-bar{position:relative}
+.dash-man.hl-key{box-shadow:inset 0 0 0 2px #c6a15b;border-radius:6px}.dash-man.hl-stop{box-shadow:inset 0 0 0 2px #d8524e;border-radius:6px;background:rgba(216,82,78,.06)}
+.dash-man .hlb{font:700 8.5px 'Oswald',sans-serif;letter-spacing:.1em;border-radius:3px;padding:0 4px;color:#fff}.dash-man .hlb.stop{background:#d8524e}.dash-man .hlb.key{background:#c6a15b;color:#141821}
 /* a club's European table */
 .lg-eust{display:grid;gap:6px;margin:6px 0 12px;padding:10px;border:1px solid var(--line,#e4e7ec);border-radius:10px;border-top:3px solid #4a86d8}
 .lg-eust-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
