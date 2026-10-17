@@ -14611,8 +14611,8 @@ function _gpOppFive(opp, date){
     const pos={}; ((ros&&ros.players)||[]).forEach(x=>{ const v={ ix:_gpPosIx(x.pos), h:Number(x.height)||0 }; pos[String(x.id)]=v; if(x.pid) pos[String(x.pid)]=v; });
     const men={}, n=F.rows.length;
     F.rows.forEach((r,gi)=>r.S.pl.forEach(pl=>{ if(!(pl.sec>0)) return;
-      const e=men[pl.id]||(men[pl.id]={ id:pl.id, num:pl.num, name:pl.name, gp:0, st:0, sec:0, last:false });
-      e.gp++; e.sec+=pl.sec; if(pl.st) e.st++; if(gi===0) e.last=true; }));
+      const e=men[pl.id]||(men[pl.id]={ id:pl.id, num:pl.num, name:pl.name, gp:0, st:0, sec:0, last:false, byG:new Array(n).fill(null) });
+      e.gp++; e.sec+=pl.sec; e.byG[gi]=pl.sec/60; if(pl.st) e.st++; if(gi===0) e.last=true; }));
     let list=Object.keys(men).map(k=>{ const e=men[k], q=pos[String(e.id)]||{};
       e.min=e.sec/e.gp/60; e.ix=(q.ix==null)? null : q.ix; e.h=q.h||0; return e; });
     /* a man with no position on the roster is placed by his height among the others */
@@ -14659,7 +14659,42 @@ function _gpOppFive(opp, date){
    our side, the five on the floor and what has happened since it came together.
    What the feed does not say is not guessed: the coverage, the defender and the set are
    not in it. */
-let _gpLivePick="auto", _gpLiveAll=false;
+let _gpLivePick="auto", _gpLiveAll=false, _gpVidOpen={};
+/* THE GAME AS IT STANDS, FOR THE REST OF THE PLAN. The block that reads the play by play
+   (every 2 s while it is live) hands each reading on: who is on the floor, minutes, the
+   stint, fouls and the quarter. Player Status and their roster draw from it - one reading,
+   never typed in twice. */
+let _gpLiveNow=null;
+function _gpLivePublish(o){
+  try{ o.court={ u:_gpCourt(o.feed, o.uc, o.lastT), t:_gpCourt(o.feed, o.uc==="A"? "B" : "A", o.lastT) }; }catch(e){ o.court={ u:{}, t:{} }; }
+  o.at=Date.now(); _gpLiveNow=o;
+  try{ window.dispatchEvent(new CustomEvent("gp-live")); }catch(e){}
+}
+/* FOULS, BY THE QUARTER BEING PLAYED: in the first half red from three, in the third from
+   three, in the fourth and the overtimes from four; five is out, whatever the quarter */
+function _gpFoulLv(pf, qi){
+  pf=Number(pf)||0;
+  if(pf>=5) return "out";
+  if(qi<=1) return pf>2? "hot" : "";
+  if(qi===2) return pf>=3? "hot" : "";
+  return pf>=4? "hot" : "";
+}
+function _gpMmss(s){ s=Math.max(0, Math.round(s||0)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
+/* a name on the plan (DAEDAE, FERDI) to the man in the league's feed - the same reading the faces use */
+function _gpMatchMan(nick, men){
+  const n=_lgNorm(nick).split(" ")[0]||""; if(n.length<2 || !men) return null;
+  const ALIAS={ benny:"benjamin", ferdi:"ferdinand", chris:"christopher", eddy:"eddy", zaba:"zaba", dejour:"de jour", daedae:"de jour", dae:"de jour" };
+  const want=ALIAS[n]||n;
+  let best=null, bestS=0, tie=false;
+  men.forEach(p=>{ const w=_lgNorm(p.name||"").split(" ").filter(Boolean); if(!w.length) return;
+    const first=w[0], last=w[w.length-1], joined=w.join(""); let s=0;
+    if(first===want || first===n) s=5; else if(last===n) s=4;
+    else if(joined.indexOf(want.replace(/ /g,""))===0 || joined.indexOf(n)===0) s=3;
+    else if(first.indexOf(n)===0 || n.indexOf(first)===0 || first.indexOf(want)===0) s=3;
+    else if(n.length>=3 && first.slice(0,3)===n.slice(0,3)) s=1;
+    if(s>bestS){ best=p; bestS=s; tie=false; } else if(s && s===bestS) tie=true; });
+  return (!best || tie)? null : best;
+}
 function _gpDur(s){ s=Math.max(0,Math.round(s)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
 function _gpLiveWin(feed, uc, inWin, names){
   const mk=()=>({ pts:0, fgm:0, fga:0, p3m:0, p3a:0, ftm:0, fta:0, or:0, dr:0, tov:0, pf:0, ast:0, sc:0, pto:0, fast:0,
@@ -14997,8 +15032,9 @@ function _gpLiveBlock(){
     const lastT=acts.map(a=>_lgGameElapsed(a.quarter, a.time).t).reduce((m,v)=>Math.max(m,v),0);
     const cur=(_gpLivePick==="auto")? (live? maxQ : "g") : ((typeof _gpLivePick==="number" && _gpLivePick>maxQ)? "g" : _gpLivePick);
     const tab=(k,lab,cls)=>tabs.appendChild(h("button",{class:"gp-live-tab"+(cur===k?" on":"")+(cls? " "+cls : ""), type:"button", onclick:()=>{ _gpLivePick=k; draw(); }}, lab));
-    for(let q=0;q<=maxQ;q++) tab(q, qn(q));
-    tab("g","Game");
+    /* the four quarters always, the overtimes when there are any, the game and the last two minutes */
+    for(let q=0;q<=Math.max(3,maxQ);q++){ if(q>maxQ){ tabs.appendChild(h("button",{class:"gp-live-tab off", type:"button", disabled:"disabled", title:"not played yet"}, qn(q))); continue; } tab(q, qn(q)); }
+    tab("g","Full game");
     /* the trend right now: only the last two minutes that have been played */
     tab("last","Last 2:00","now");
     const allSel={}; for(let q=0;q<=maxQ;q++) allSel[q]=1;
@@ -15089,8 +15125,9 @@ function _gpLiveBlock(){
     if(ourTrouble.length) al.push(["bad", "OUR FOULS", ourTrouble.map(p=>nm(p)+" "+p.pf).join(" · ")]);
     if(theirTrouble.length) al.push(["good", "THEIR FOULS", theirTrouble.map(p=>"#"+p.num+" "+nm(p)+" "+p.pf).join(" · ")]);
     if(al.length) body.appendChild(h("div",{class:"gp-lv-al"}, al.map(x=>h("span",{class:"gp-lv-a "+x[0]}, h("i",{}, x[1]), x[2]))));
-    /* our minutes, always the whole game so far, whatever stretch is being shown */
-    try{ body.appendChild(_gpCourtEl(feed, uc, lastT, UG.pl, live)); }catch(e){ try{ console.warn("court", e); }catch(_){} }
+    /* our minutes, who is on the floor and the fouls are the plan's Player Status and their
+       roster's now: they are handed the game as it stands, from this one reading */
+    try{ _gpLivePublish({ feed:feed, uc:uc, lastT:lastT, live:live, us:UG.pl, them:TG.pl, maxQ:maxQ, G:G, home:home }); }catch(e){}
     /* WHAT IS DECIDING THIS STRETCH. Every measure is turned into the points it is worth to
        one side or the other in the stretch shown - threes made, twos made, free throws, and
        the points that came off turnovers, second chances and the break - and the ones worth
@@ -15127,15 +15164,21 @@ function _gpLiveBlock(){
         c.note? h("div",{class:"n"}, c.note) : null));
     });
     body.appendChild(ranked.length? fcs : h("div",{class:"gp3-ksn"},"Nothing is deciding this stretch yet."));
-    /* the moments of this stretch, by the game clock, to go to in the video */
-    try{
-      const t0=(cur==="last")? Math.max(0, lastT-120) : (cur==="g")? 0 : qStart(cur);
-      const t1=(cur==="last"||cur==="g")? lastT : Math.min(qStart(cur)+qLen(cur), lastT);
-      body.appendChild(_gpTimelineEl(_gpTimeline(feed, uc, inWin, M.names||{}), t0, Math.max(t1, t0+60)));
-    }catch(e){ try{ console.warn("timeline", e); }catch(_){} }
+    /* all the numbers first, and the video last: closed in a quarter or the whole game, open
+       in the last two minutes, which is where it is used - and either can be opened or shut */
     const tg=h("button",{class:"gp-lv-tg", type:"button", onclick:()=>{ _gpLiveAll=!_gpLiveAll; draw(); }}, _gpLiveAll? "▴ Fewer numbers" : "▾ All the numbers");
     body.appendChild(tg);
     if(_gpLiveAll) body.appendChild(more);
+    try{
+      const t0=(cur==="last")? Math.max(0, lastT-120) : (cur==="g")? 0 : qStart(cur);
+      const t1=(cur==="last"||cur==="g")? lastT : Math.min(qStart(cur)+qLen(cur), lastT);
+      const vk=String(cur), open=(vk in _gpVidOpen)? _gpVidOpen[vk] : (cur==="last");
+      const det=h("details",{class:"gp-vid"}); if(open) det.setAttribute("open","open");
+      det.appendChild(h("summary",{}, "Go to the video"));
+      det.addEventListener("toggle",()=>{ _gpVidOpen[vk]=det.open; });
+      det.appendChild(_gpTimelineEl(_gpTimeline(feed, uc, inWin, M.names||{}), t0, Math.max(t1, t0+60)));
+      body.appendChild(det);
+    }catch(e){ try{ console.warn("timeline", e); }catch(_){} }
     stat.textContent=live? "live · updates every 2 s" : "final";
     stat.className="gp-live-st"+(live?" on":"");
     try{ paintStat(); }catch(e){}
@@ -15237,7 +15280,8 @@ let _gpForPrint=false;
 /* the screen's arrangement, and what the staff last chose in it; the printed sheet is
    built with _gpClassic on, which is the arrangement its sizes were set for */
 let _gpClassic=false;
-const _gpUI=(()=>{ let o={}; try{ o=JSON.parse(localStorage.getItem("lowen-gpui")||"{}")||{}; }catch(e){} return { q:o.q||"Q1", roster:!!o.roster, mins:!!o.mins }; })();
+const _gpUI=(()=>{ let o={}; try{ o=JSON.parse(localStorage.getItem("lowen-gpui")||"{}")||{}; }catch(e){} return { q:o.q||"Q1", q5:o.q5||"both", roster:!!o.roster, mins:!!o.mins }; })();
+let _gpQPick="auto";
 function _gpUISave(){ try{ localStorage.setItem("lowen-gpui", JSON.stringify(_gpUI)); }catch(e){} }
 function _gpNew(){ return !_gpClassic && !_gpForPrint; }
 /* A DEFENSE WRITTEN AS A LINE IS STILL THE DEFENSE STRIP.
@@ -15449,7 +15493,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
      two things worth remembering - is what the staff wrote on his card in the pre game.
      One line a man, under the position his card is filed in; the cards decide the
      position, and where there are no cards yet the play by play does. */
-  function oppFiveBlock(){
+  function oppFiveBlock(tableMode){
     const wrap=h("div",{class:"gp-opp"});
     const opp=_scoutOpponent||"";
     wrap.appendChild(h("div",{class:"gp2-sec",
@@ -15486,6 +15530,48 @@ function renderPlanSection(sec, canEd, save, allSecs){
         slot.appendChild(h("div",{class:"gp3-ksn"}, R===undefined? "Reading their last games…" : "Nothing from the league for this club yet."));
         return;
       }
+      /* THE CONTROL PANEL'S VERSION: one compact table, the history in grey (starter, his
+         minutes a game and their trend over their last games) and this game in full colour
+         (minutes, on the floor in green with the stint, fouls - red by the quarter's rule,
+         OUT at five). The history never changes during the game; the live part does. */
+      if(tableMode){
+        const Lv=_gpLiveNow, qi=Lv? Lv.maxQ : 0, live=!!(Lv && Lv.live);
+        const lmen=(Lv && Lv.them)||[], court=(Lv && Lv.court && Lv.court.t)||{};
+        const byId={}, byNum={}; lmen.forEach(p=>{ byId[String(p.id)]=p; if(p.num!=null && p.num!=="") byNum[String(p.num)]=p; });
+        const t=h("table",{class:"gp5-t gp5-opp"});
+        t.appendChild(h("tr",{}, h("th",{},""), h("th",{},"#"), h("th",{class:"l"},"Player"), h("th",{class:"hist", title:"S = probable starter, with his starts in their last games"},"S"),
+          h("th",{class:"hist", title:"minutes a game in their last games, and the trend game by game (oldest left)"},"Avg"), h("th",{title:"minutes in this game"},"Real"), h("th",{},"Stint"), h("th",{},"PF")));
+        const seenLive={};
+        groups.forEach((g,i)=>{ if(!g.length) return;
+          g.sort((a,b)=>(b.st-a.st)||(b.min-a.min));
+          g.forEach((p,j)=>{
+            const lp=(p.e && byId[String(p.e.id)]) || (p.num? byNum[String(p.num)] : null);
+            const id=lp? String(lp.id) : (p.e? String(p.e.id) : "");
+            if(id) seenLive[id]=1;
+            const c=court[id]||null, pf=lp? (lp.pf||0) : 0, fl=_gpFoulLv(pf, qi), on=!!(c && c.on && live);
+            const spark=(p.e && p.e.byG)? p.e.byG.slice().reverse() : [];
+            const mx=Math.max.apply(null, spark.filter(v=>v!=null).concat([1]));
+            t.appendChild(h("tr",{class:(on? "on " : "")+(fl==="out"? "fout " : "")+(j===0? "pos0" : ""), title:[p.co? "closeout: "+p.co[0] : "", p.tag, p.ideas.slice(0,3).join(" · ")].filter(Boolean).join("\n")},
+              h("td",{class:"ps"}, j===0? GP_POS[i] : ""),
+              h("td",{class:"n"}, p.num? String(p.num) : ""),
+              h("td",{class:"l nm"+(p.co? " co" : ""), style:p.co? "border-left-color:"+p.co[1] : ""}, _lgLastName(p.name), ((p.e && !p.e.last) || p.doubt)? h("em",{class:"q"},"?") : null, fl==="out"? h("em",{class:"out"},"OUT") : null),
+              h("td",{class:"hist"}, p.st? h("b",{class:"s"}, "S"+(R&&p.e? " "+p.e.st+"/"+R.n : "")) : ""),
+              h("td",{class:"hist av"}, p.min? Math.round(p.min)+"′" : "—",
+                spark.length? h("span",{class:"spk"}, spark.map(v=>h("i",{style:"height:"+(v==null? 0 : Math.max(8, Math.round(100*v/mx)))+"%", title:v==null? "did not play" : Math.round(v)+"′"}))) : null),
+              h("td",{class:"rl"}, c && c.sec? _gpMmss(c.sec) : (Lv && Lv.feed? "0:00" : "—")),
+              h("td",{class:"st"+(on && c.stint>=480? " long" : "")}, on? _gpMmss(c.stint) : ""),
+              h("td",{class:"pf "+fl}, pf? String(pf) : (Lv && Lv.feed? "0" : "—"))));
+          }); });
+        /* anybody of theirs on the floor tonight who is not on the list */
+        lmen.forEach(p=>{ const id=String(p.id); if(seenLive[id]) return; const c=court[id]; if(!(c && c.sec>0) && !(p.pf>0)) return;
+          const fl=_gpFoulLv(p.pf||0, qi), on=!!(c && c.on && live);
+          t.appendChild(h("tr",{class:(on? "on " : "")+(fl==="out"? "fout" : "")}, h("td",{class:"ps"},""), h("td",{class:"n"}, String(p.num||"")),
+            h("td",{class:"l nm"}, _lgLastName(p.name||"")), h("td",{class:"hist"},""), h("td",{class:"hist"},"new"),
+            h("td",{class:"rl"}, c? _gpMmss(c.sec) : "0:00"), h("td",{class:"st"}, on? _gpMmss(c.stint) : ""), h("td",{class:"pf "+fl}, String(p.pf||0)))); });
+        slot.appendChild(t);
+        slot.appendChild(h("div",{class:"gp5-note"}, "Grey: their last "+(R? R.n : "")+" games · colour: this game"+(live? ", live" : "")));
+        return;
+      }
       /* the short version: one pill a man - number, name, minutes - under his position,
          the starters in gold, the closeout as the colour of the edge; what is written on
          his card is on the hover and in the full version */
@@ -15520,8 +15606,13 @@ function renderPlanSection(sec, canEd, save, allSecs){
               p.ideas.slice(0,2).join(" · ")) : null)))));
       });
     };
-    paint(undefined);
-    _gpOppFive(opp, _scoutDate).then(R=>paint(R||null)).catch(()=>paint(null));
+    let lastR;
+    const paintR=R=>{ lastR=R; paint(R); };
+    paintR(undefined);
+    _gpOppFive(opp, _scoutDate).then(R=>paintR(R||null)).catch(()=>paintR(null));
+    /* the live columns follow the game */
+    if(tableMode){ const on=()=>{ if(!wrap.isConnected){ window.removeEventListener("gp-live", on); return; } if(lastR!==undefined) paint(lastR); };
+      window.addEventListener("gp-live", on); }
     return wrap;
   }
   function minutesBlock(){
@@ -15560,6 +15651,55 @@ function renderPlanSection(sec, canEd, save, allSecs){
     return wrap;
   }
 
+  /* PLAYER STATUS. Our men in one table: the minutes the plan gives each (the half on the
+     boards, doubled for the game), the minutes he has really played, the five on the floor
+     in green with how long each has been on in this stint, and his fouls - red by the
+     quarter's rule, OUT at five. The plan is the plan's; everything else is the league's
+     play by play of this game, handed on by The game block. Nothing is typed in here. */
+  function playerStatusBlock(){
+    const wrap=h("div",{class:"gp5-ps"});
+    const perQ={}; GP_HALF.forEach(q=>{ perQ[q]={}; (plan.grid[q]||[]).forEach(row=>row.forEach(id=>{ if(id) perQ[q][id]=(perQ[q][id]||0)+1; })); });
+    const paint=()=>{
+      wrap.innerHTML="";
+      const men=_gpOurMen()||[];
+      const L=_gpLiveNow, live=!!(L && L.live), qi=L? L.maxQ : 0;
+      const lmen=(L && L.us)||[], court=(L && L.court && L.court.u)||{};
+      const byId={}; lmen.forEach(p=>{ byId[String(p.id)]=p; });
+      const rows=[]; const used={};
+      plan.pool.forEach(pl=>{ const m=(perQ.Q1[pl.id]||0)+(perQ.Q2[pl.id]||0);
+        const man=_gpMatchMan(pl.name, lmen.length? lmen : men) || _gpMatchMan(pl.name, men);
+        const id=man? String(man.id) : "";
+        if(id) used[id]=1;
+        rows.push({ name:pl.name, plan:m? m*2 : 0, id:id, num:man? (man.num||"") : "" }); });
+      /* anybody who has played and is not on the plan still gets a line */
+      lmen.forEach(p=>{ const id=String(p.id); if(used[id]) return; if(!(court[id] && court[id].sec>0) && !(p.pf>0)) return;
+        rows.push({ name:_lgLastName(p.name||"")||("#"+p.num), plan:0, id:id, num:p.num||"" }); });
+      rows.forEach(r=>{ const c=court[r.id]||null, p=byId[r.id]||null;
+        r.sec=c? c.sec : 0; r.on=!!(c && c.on && live); r.stint=c && c.on? c.stint : 0; r.rest=c && !c.on? c.rest : null; r.pf=p? (p.pf||0) : 0; });
+      const show=rows.filter(r=>r.plan>0 || r.sec>0 || r.pf>0);
+      show.sort((a,b)=>(b.on?1:0)-(a.on?1:0) || (b.plan-a.plan) || (b.sec-a.sec));
+      const t=h("table",{class:"gp5-t"});
+      t.appendChild(h("tr",{}, h("th",{},"#"), h("th",{class:"l"},"Player"), h("th",{title:"minutes the plan gives him for the game (the half on the boards, doubled)"},"Plan"),
+        h("th",{title:"minutes really played, from the league's play by play"},"Real"), h("th",{title:"on the floor: time in this stint"},"Stint"), h("th",{},"PF")));
+      show.forEach(r=>{ const fl=_gpFoulLv(r.pf, qi);
+        const over=r.plan && r.sec/60>r.plan+2;
+        t.appendChild(h("tr",{class:(r.on? "on " : "")+(fl==="out"? "fout" : "")},
+          h("td",{class:"n"}, r.num? String(r.num) : ""),
+          h("td",{class:"l nm"}, r.name, fl==="out"? h("em",{class:"out"},"OUT") : null),
+          h("td",{class:"pl"}, r.plan? r.plan+"′" : "—"),
+          h("td",{class:"rl"+(over? " over" : ""), title:over? "past his planned minutes" : ""}, r.sec? _gpMmss(r.sec) : (L && L.feed? "0:00" : "—")),
+          h("td",{class:"st"+(r.on && r.stint>=480? " long" : "")}, r.on? _gpMmss(r.stint) : ""),
+          h("td",{class:"pf "+fl}, r.pf? String(r.pf) : (L && L.feed? "0" : "—"))));
+      });
+      wrap.appendChild(t);
+      wrap.appendChild(h("div",{class:"gp5-note"}, L && L.feed? (live? "Live from the league's play by play · green = on the floor · amber stint = 8 minutes or more" : "From the league's play by play of this game")
+        : "Plan only until the game starts · the real minutes, the five on the floor and the fouls fill in from the tip-off"));
+    };
+    paint();
+    const on=()=>{ if(!wrap.isConnected){ window.removeEventListener("gp-live", on); return; } paint(); };
+    window.addEventListener("gp-live", on);
+    return wrap;
+  }
   /* THE PLAN OF EACH QUARTER: WHAT IS GENERAL, AND WHAT GOES WITH A COLOUR.
      On the sheet this staff writes by hand a quarter is one box. At the top of it, with
      no colour, are the things that hold for the whole quarter whoever is on the floor -
@@ -15709,10 +15849,15 @@ function renderPlanSection(sec, canEd, save, allSecs){
     const body=h("div",{class:"gp3-ksb"});
     wrap.appendChild(body);
     let tid=""; try{ tid=_preClub()||""; }catch(e){}
-    const edits={};
+    const edits={}, calls={}, splits={};
+    /* THE SAME PLAYBOOK THE PRE GAME SHOWS: its renames, the calls the staff wrote over the
+       tagging's and the plays split out of a mis-tagged one, read from the same report */
     (Array.isArray(allSecs)?allSecs:[]).forEach(s2=>{
       const its=(s2 && Array.isArray(s2.items)) ? s2.items : [];
-      its.forEach(it=>{ if(it && it.pbEdit && typeof it.pbEdit==="object") Object.assign(edits, it.pbEdit); });
+      its.forEach(it=>{ if(!it) return;
+        if(it.pbEdit && typeof it.pbEdit==="object") Object.assign(edits, it.pbEdit);
+        if(it.pbCall && typeof it.pbCall==="object") Object.assign(calls, it.pbCall);
+        if(it.pbSplit && typeof it.pbSplit==="object") Object.keys(it.pbSplit).forEach(k=>{ splits[k]=(splits[k]||[]).concat(it.pbSplit[k]||[]); }); });
     });
     const nameOf=l=>edits[l]||l;
     const stored=()=>{ try{ return tid? _clubKeyLabels(leagueState(), tid) : []; }catch(e){ return []; } };
@@ -15750,8 +15895,8 @@ function renderPlanSection(sec, canEd, save, allSecs){
       order.sort((a,b)=>groups[a].rank-groups[b].rank || sr(groups[a].sub)-sr(groups[b].sub)
         || groups[a].sub.localeCompare(groups[b].sub));
       order.forEach(k=>{ const G=groups[k];
-        /* the sets they run most come first */
-        G.items.sort((a,b)=>(b.n-a.n) || String(a.name).localeCompare(String(b.name), undefined, {numeric:true}));
+        /* by their code, the way the staff names them: H1A, H1B, H1C, H2A ... */
+        G.items.sort((a,b)=>String(a.name).localeCompare(String(b.name), undefined, {numeric:true, sensitivity:"base"}));
         /* as pills: the name, what they shout for it, how often and what it returns */
         if(_gpNew()){
           body.appendChild(h("div",{class:"gp4-setg"}, h("div",{class:"gp4-setl"}, h("b",{}, G.g), G.sub? h("span",{}, G.sub) : null),
@@ -15781,7 +15926,10 @@ function renderPlanSection(sec, canEd, save, allSecs){
     draw();
     try{ if(tid) _clubPull(tid, ()=>{ try{ draw(); }catch(e){} }); }catch(e){}
     if(opp && window.ScoutPre && window.ScoutPre.sets){
-      window.ScoutPre.sets(opp, null).then(res=>{ ROWS=((res&&res.rows)||[]).filter(r=>_pbClass(r).kind!=="Concepts"); draw(); })
+      window.ScoutPre.sets(opp, null).then(res=>{
+        const base=((res&&res.rows)||[]);
+        const all=(window.ScoutPre.pbSplit? window.ScoutPre.pbSplit(base, splits) : base).map(r=>calls[r.label]? Object.assign({}, r, { call:calls[r.label] }) : r);
+        ROWS=all.filter(r=>_pbClass(r).kind!=="Concepts"); draw(); })
         .catch(()=>{ ROWS=[]; FAIL="The tagging could not be read, so the families and the calls are missing."; draw(); });
     } else { ROWS=[]; if(!opp) FAIL=""; draw(); }
     return wrap;
@@ -15840,6 +15988,45 @@ function renderPlanSection(sec, canEd, save, allSecs){
         h("div",{class:"gp4-h"}, h("b",{}, title), sub? h("span",{class:"sub"}, sub) : null, h("span",{class:"gp4-tools"}, tools||null)),
         h("div",{class:"gp4-b"}, bodyEl));
       const safe=fn=>{ try{ return fn(); }catch(e){ try{ console.warn("game plan", e); }catch(_){} return h("div",{class:"gp3-ksn"},"This block could not be drawn."); } };
+      /* THE CONTROL PANEL. One page, one scroll, built for a tablet on its side: our
+         rotation across the top with both quarters of the half side by side; under it, in
+         three columns, our players' status, their roster and their key sets; then the game
+         being played, with the box of the quarter being played beside it. */
+      if(!canEd){
+        const wrap5=h("div",{class:"gp4 dash gp5"});
+        const rq=UI.q5||"both", rotQ=(rq==="Q1"||rq==="Q2")? [rq] : GP_HALF;
+        const rot5=h("div",{class:"gp5-rot"+(rotQ.length===1? " one" : "")}, rotQ.map(q=>h("div",{class:"gp5-board"}, quarterBoard(q))));
+        wrap5.appendChild(sect("us rot", "Our rotation", "offense above · defense below", seg([["both","Q1 + Q2"],["Q1","Q1"],["Q2","Q2"]], rotQ.length===2? "both" : rotQ[0], v=>{ UI.q5=v; }), rot5));
+        const row2=h("div",{class:"gp5-row3"},
+          sect("us", "Player status", "plan · real · on the floor", null, safe(()=>playerStatusBlock())),
+          sect("them", "Their roster", "last games · and live", null, safe(()=>oppFiveBlock(true))),
+          sect("them", "Their key sets", "by code", null, safe(()=>keySetsBlock())));
+        wrap5.appendChild(row2);
+        const lv=safe(()=>_gpLiveBlock());
+        const qbox=h("div",{class:"gp5-qcard"});
+        const paintQ=()=>{ qbox.innerHTML="";
+          const live=_gpLiveNow, qi=live? live.maxQ : 0;
+          const auto=(qi%2===1)? "Q2" : "Q1";
+          const pick=(_gpQPick==="Q1"||_gpQPick==="Q2")? _gpQPick : auto;
+          qbox.appendChild(h("div",{class:"gp5-qtabs"}, [["auto","Auto · "+auto],["Q1","Q1"],["Q2","Q2"]].map(o=>h("button",{type:"button", class:(_gpQPick===o[0] || (o[0]==="auto" && !(_gpQPick==="Q1"||_gpQPick==="Q2")))? "on" : "",
+            onclick:()=>{ _gpQPick=o[0]; paintQ(); }}, o[1]))));
+          const c=safe(()=>quarterCard(pick)); if(c) qbox.appendChild(c); else qbox.appendChild(h("div",{class:"gp3-ksn"},"Nothing written for "+pick+"."));
+        };
+        paintQ();
+        const onLive=()=>{ if(!qbox.isConnected){ window.removeEventListener("gp-live", onLive); return; } if(!(_gpQPick==="Q1"||_gpQPick==="Q2")) paintQ(); };
+        window.addEventListener("gp-live", onLive);
+        wrap5.appendChild(h("div",{class:"gp5-row2"},
+          sect("live", "The game", "", lv.__stat||null, lv),
+          sect("us", "This quarter's plan", "follows the quarter being played", null, qbox)));
+        box.appendChild(wrap5);
+        const foot5=h("div",{class:"gp2-foot"}, h("span",{}, h("i",{class:"gp2-mark"}), "Yellow = the minute a sub comes in"));
+        const pr5=h("button",{class:"btn sm gp2-print"},"🖨 Print A4");
+        pr5.addEventListener("click",()=>{ let ro=null; _gpClassic=true;
+          try{ ro=renderPlanSection(sec, false, ()=>{}, allSecs).querySelector(".gp2-sheet"); }catch(e){ ro=null; }
+          _gpClassic=false; if(ro) gpPrintFit(ro); });
+        foot5.appendChild(pr5); box.appendChild(foot5);
+        return;
+      }
       const wrap4=h("div",{class:"gp4"});
       /* the rotation: one quarter in the space, or both */
       const qs=(UI.q==="both")? GP_HALF : [GP_HALF.indexOf(UI.q)>=0? UI.q : GP_HALF[0]];
@@ -34645,7 +34832,7 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .gp-tl-d.on{box-shadow:0 0 0 3px #c6a15b;z-index:2}
 .gp-tl-r{position:absolute;top:4px;bottom:4px;border-radius:5px;opacity:.35;cursor:pointer}
 .gp-tl-r.good{background:#2f9e86}.gp-tl-r.bad{background:#d8524e}.gp-tl-r.on{opacity:.7}
-.gp-tl-list{display:grid;gap:3px;max-height:360px;overflow:auto}
+.gp-tl-list{display:grid;gap:3px}
 .gp-tl-i{display:grid;grid-template-columns:auto 40px minmax(0,1fr) 34px;gap:10px;align-items:center;text-align:left;border:0;border-left:5px solid #cfd4dc;border-radius:8px;background:var(--panel-2,#f4f5f7);padding:8px 10px;font:inherit;color:var(--ink,#141821);cursor:pointer;min-height:40px}
 .gp-tl-i.good{border-left-color:#2f9e86}.gp-tl-i.bad{border-left-color:#d8524e}
 .gp-tl-i.on{outline:2px solid #c6a15b;background:rgba(198,161,91,.12)}
@@ -35012,6 +35199,64 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 @media print{.scout-min{display:none!important}}
 /* THE GAME PLAN IN SECTIONS: a heading that says what the block is and whose it is */
 .gp4{display:block;margin-top:8px}
+/* ===== GAME PLAN · THE CONTROL PANEL (gp5) =====
+   One scroll for the page, none inside it: rotation across the top, three columns under it,
+   the game with this quarter's plan at the bottom. Sized for a tablet on its side. */
+.gp5.gp4.dash{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;align-items:start}
+.gp5 .gp4-sec{margin:0}
+.gp5 .gp4-right,.gp5 .gp4-b{max-height:none!important;overflow:visible!important;position:static!important}
+.gp5-rot{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.gp5-rot.one{grid-template-columns:minmax(0,1fr)}
+.gp5-row3{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1.15fr) minmax(0,1fr);gap:8px;align-items:start}
+.gp5-row2{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:8px;align-items:start}
+@media (max-width:1000px){ .gp5-row3{grid-template-columns:minmax(0,1fr) minmax(0,1fr)} .gp5-row3 > :last-child{grid-column:1/-1} }
+@media (max-width:760px){ .gp5-rot,.gp5-row3,.gp5-row2{grid-template-columns:minmax(0,1fr)} }
+/* the minute lines: on each cell, so they always sit on a minute */
+.gp5 .gp2-mins{display:none}
+.gp5 .gp2-st{border-right:0!important;box-shadow:inset 1px 0 0 var(--gp-tick)}
+.gp5 .gp2-tbl tr td.gp2-st:nth-child(7){box-shadow:inset 1px 0 0 var(--gp-tick-5)}
+.gp5 .gp2-st.f{box-shadow:inset 1px 0 0 rgba(20,24,31,.14)}
+.gp5 .gp2-tick{box-shadow:inset 1px 0 0 var(--gp-tick)}
+.gp5 .gp2-q .gp2-qh{margin-bottom:1px}
+.gp5 .gp2-tbl td{height:20px!important}
+/* the compact tables: player status and their roster */
+.gp5-t{width:100%;border-collapse:collapse;font-size:11.5px}
+.gp5-t th{font:600 8.5px 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-faint,#8a919c);padding:2px 4px;text-align:center;border-bottom:1px solid var(--line-strong,#d7dbe0);white-space:nowrap}
+.gp5-t th.l,.gp5-t td.l{text-align:left}
+.gp5-t td{padding:2px 4px;text-align:center;border-bottom:1px solid var(--line,#eef0f3);font:600 11px 'IBM Plex Mono',monospace;white-space:nowrap;line-height:1.25}
+.gp5-t td.nm{font:700 11px 'Inter',system-ui,sans-serif;max-width:110px;overflow:hidden;text-overflow:ellipsis}
+.gp5-t td.n,.gp5-t td.ps{color:var(--ink-faint,#8a919c);font-size:10px}
+.gp5-t td.ps{font:700 10px 'Oswald',sans-serif;color:var(--ink,#141821)}
+.gp5-t tr.pos0 td{border-top:1.5px solid var(--line-strong,#d7dbe0)}
+.gp5-t td.hist,.gp5-t td.pl{color:var(--ink-faint,#8a919c);font-weight:500}
+.gp5-t td.hist b.s{color:#8a6829;font-weight:700}
+.gp5-t td.rl{font-weight:800;color:var(--ink,#141821)}
+.gp5-t td.rl.over{color:#c0392b}
+.gp5-t td.st{color:#1f8a4c;font-weight:800}
+.gp5-t td.st.long{color:#a86a00}
+.gp5-t tr.on td{background:rgba(31,138,76,.13)}
+.gp5-t tr.on td.nm{box-shadow:inset 3px 0 0 #1f8a4c}
+.gp5-t td.pf.hot{background:#d8524e;color:#fff;font-weight:800}
+.gp5-t td.pf.out{background:#141821;color:#fff;font-weight:800}
+.gp5-t tr.fout td{opacity:.6}
+.gp5-t tr.fout td.pf{opacity:1}
+.gp5-t em.out{margin-left:5px;font:800 9px 'Oswald',sans-serif;letter-spacing:.08em;font-style:normal;background:#141821;color:#fff;border-radius:3px;padding:0 4px}
+.gp5-t em.q{margin-left:3px;font-style:normal;color:#d8524e;font-weight:800}
+.gp5-t td.co{border-left:3px solid transparent}
+.gp5-t .spk{display:inline-flex;align-items:flex-end;gap:1px;height:12px;margin-left:4px;vertical-align:middle}
+.gp5-t .spk i{display:block;width:3px;background:#b3b9c3;border-radius:1px}
+.gp5-note{font-size:9.5px;color:var(--ink-faint,#8a919c);margin-top:3px;line-height:1.3}
+/* this quarter's plan, beside the game */
+.gp5-qtabs{display:flex;gap:4px;margin-bottom:6px}
+.gp5-qtabs button{border:1px solid var(--line-strong,#d7dbe0);background:var(--panel,#fff);border-radius:6px;padding:2px 9px;font:700 10px 'Oswald',sans-serif;letter-spacing:.08em;cursor:pointer;color:var(--ink-soft,#5b6472)}
+.gp5-qtabs button.on{background:#141821;color:#fff;border-color:#141821}
+.gp5-qcard .gp3-qc{border:0!important;padding:0!important}
+/* The game: tabs that are not played yet, and the video as a fold */
+.gp-live-tab.off{opacity:.35;cursor:default}
+.gp-vid{margin-top:8px;border:1px solid var(--line,#e4e7ec);border-radius:9px;padding:4px 8px}
+.gp-vid > summary{cursor:pointer;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;padding:3px 0}
+.gp-vid .gp-tl-h > b{display:none}
+.gp5 .gp-lv-tg{margin-top:6px}
 .gp4-sec{border:1px solid var(--line,#e4e7ec);border-radius:11px;background:var(--panel,#fff);margin:0 0 10px;overflow:hidden;min-width:0}
 .gp4-h{display:flex;align-items:center;gap:10px;background:#141821;color:#fff;padding:5px 12px;min-height:30px}
 .gp4-h > b{font:700 12px 'Oswald',sans-serif;letter-spacing:.17em;text-transform:uppercase;white-space:nowrap}
