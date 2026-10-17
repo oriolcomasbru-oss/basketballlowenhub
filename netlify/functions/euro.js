@@ -413,6 +413,29 @@ exports.handler = async (event) => {
     out.diag.push({ comp: BCL.name, step: "fetch", error: String((e && e.message) || e) });
   }
 
+  /* THE OFFICIAL TABLES. The games above are only the German clubs', so a table built from
+     them would be wrong for everybody else; the competition publishes its standings by
+     round, group by group. The round asked for is the last one that has started. */
+  out.standings = [];
+  for (const comp of COMPS) {
+    const sc = comp.code + season;
+    try {
+      const rs = await get(EL + "/v2/competitions/" + comp.code + "/seasons/" + sc + "/rounds", true);
+      const now = Date.now();
+      const started = ((rs && rs.data) || []).filter(r => r.phaseTypeCode === "RS" && Date.parse(r.minGameStartDate) <= now)
+        .sort((a, b) => b.round - a.round)[0];
+      if (!started) continue;
+      const st = await get(EL + "/v2/competitions/" + comp.code + "/seasons/" + sc + "/rounds/" + started.round + "/standings", true);
+      (Array.isArray(st) ? st : []).forEach(g => out.standings.push({
+        competition: comp.name, round: started.round, group: String((g.group && (g.group.rawName || g.group.name)) || ""),
+        rows: ((g.standings) || []).map(s => ({ code: String((s.club && s.club.code) || ""), name: String((s.club && s.club.name) || ""),
+          crest: String((s.club && s.club.images && s.club.images.crest) || ""),
+          pos: (s.data && s.data.position) || null, g: (s.data && s.data.gamesPlayed) || 0, w: (s.data && s.data.gamesWon) || 0, l: (s.data && s.data.gamesLost) || 0,
+          pf: (s.data && s.data.pointsFavour) || 0, pa: (s.data && s.data.pointsAgainst) || 0, q: !!(s.data && s.data.qualified) }))
+          .sort((a, b) => (a.pos || 99) - (b.pos || 99)) }));
+    } catch (e) { out.diag.push({ comp: comp.name, step: "standings", error: String((e && e.message) || e) }); }
+  }
+
   out.games.sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.time || "").localeCompare(b.time || ""));
   out.teams = Array.from(new Set(out.clubs)).sort();
   out.ok = out.games.length > 0;
