@@ -15555,8 +15555,10 @@ function _gpLiveBlock(){
         let j=(GC && GC.status==="LIVE")? await _gpFetchJ("/.netlify/functions/bbl?res=live&id="+encodeURIComponent(G.id)+"&b="+Math.floor(Date.now()/2000), 6000) : null;
         /* the connection, as the bench needs to know it: when the live channel last answered with the game, and why not when it did not */
         if(GC && GC.status==="LIVE"){ if(j && j.feed){ CN.ok=Date.now(); CN.err=""; } else CN.err=(navigator.onLine===false)? "this device is offline" : (j && (j.errors||[])[0])? String(j.errors[0]) : "no answer from the league"; }
-        if(!(j && j.feed)) j=await fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(G.id)+((date>=addDays(today,-1))? "&fresh=1" : ""))
-          .then(r=>r.ok? r.json() : null).catch(()=>null);
+        /* the game sheet is written after the game: while the league says LIVE a missed reading of
+           the live channel waits for the next one instead of asking for the whole sheet, which was
+           slow and held the readings behind it */
+        if(!(j && j.feed) && !(GC && GC.status==="LIVE")) j=await _gpFetchJ("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(G.id)+((date>=addDays(today,-1))? "&fresh=1" : ""), 9000);
         /* the league's live channel is read by more than one of our servers, and one can be a few
            seconds behind another: a reading with fewer plays than the one on the screen is let go,
            so the score and the five on the floor never step back - unless it stays that way for
