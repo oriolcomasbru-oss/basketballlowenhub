@@ -14895,6 +14895,8 @@ function _gpAlertBar(){
   fixTop();
   const onScroll=()=>{ if(gone()){ removeEventListener("scroll", onScroll, true); removeEventListener("resize", onScroll); return; } fixTop(); };
   addEventListener("scroll", onScroll, { passive:true, capture:true }); addEventListener("resize", onScroll);
+  /* the menu slides away with an animation when the page scrolls: measured again as it moves */
+  const tTop=setInterval(()=>{ if(gone()){ clearInterval(tTop); return; } fixTop(); }, 250);
   const on=()=>{ if(gone()){ window.removeEventListener("gp-live", on); clearInterval(tm); return; } paint(); };
   window.addEventListener("gp-live", on);
   /* the 90 seconds run out between readings too */
