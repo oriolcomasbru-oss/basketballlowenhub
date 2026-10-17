@@ -11906,14 +11906,22 @@ function _preHlRanks(L, c, tid){
   const team=pool.filter(x=>String(x.tid)===String(me.tid));
   const val=(x,s)=>{ const t=x.t, g=t.gp||1;
     if(s[0]==="pts") return t.pts/g; if(s[0]==="ast") return (t.ast||0)/g; if(s[0]==="oreb") return (t.oreb||0)/g;
-    if(s[0]==="p2") return (t.p2a||0)>=s[2]? t.p2m/t.p2a : null; if(s[0]==="p3") return (t.p3a||0)>=s[2]? t.p3m/t.p3a : null;
+    /* A SHOT IS A THREAT BY WHAT GOES IN. Ranked by percentage alone, a man at 38% on 16 threes
+       came out 2nd of Hagen ahead of men who make twice as many, and the card lit him red while
+       it still showed his 25% of a game before. So the threes and the twos are ranked by what
+       he makes a game, among the men with 15 attempts who shoot it decently - 33% from three,
+       50% from two; under that a shot is not lit, whatever its volume. */
+    if(s[0]==="p2") return ((t.p2a||0)>=s[2] && t.p2m/t.p2a>=0.5)? t.p2m/g : null;
+    if(s[0]==="p3") return ((t.p3a||0)>=s[2] && t.p3m/t.p3a>=0.33)? t.p3m/g : null;
     if(s[0]==="ft") return (t.fta||0)>=s[2]? t.ftm/t.fta : null; return null; };
   const rank=(s, list)=>{ const v=val(me,s); if(v==null) return null; return 1+list.filter(y=>{ const w=val(y,s); return w!=null && w>v; }).length; };
   const ord=n=>n+(n%10===1&&n%100!==11? "st" : n%10===2&&n%100!==12? "nd" : n%10===3&&n%100!==13? "rd" : "th");
   const short=_lgShort((L.teams||[]).filter(t=>String(t.id)===String(me.tid)).map(t=>t.name)[0]||"").slice(0,3).toUpperCase()||"TEAM";
   return (c.stats||[]).map(s=>{ const d=PRE_HL_STAT[String(s[1]||"").toUpperCase()]; if(!d) return null;
     const rb=rank(d, pool), rt=rank(d, team); if(rb==null && rt==null) return null;
-    return (rb!=null && rb<=25)? { score:rb, why:ord(rb)+" BBL" } : (rt!=null && rt<=3)? { score:100+rt, why:ord(rt)+" "+short } : null; });
+    /* the season's numbers the rank stands on, when the card may show older ones */
+    const t=me.t||{}, basis=d[0]==="p3"? " · "+(t.p3m||0)+"/"+(t.p3a||0) : d[0]==="p2"? " · "+(t.p2m||0)+"/"+(t.p2a||0) : d[0]==="ft"? " · "+(t.ftm||0)+"/"+(t.fta||0) : "";
+    return (rb!=null && rb<=25)? { score:rb, why:ord(rb)+" BBL"+basis } : (rt!=null && rt<=3)? { score:100+rt, why:ord(rt)+" "+short+basis } : null; });
 }
 /* A FIFTH BOX. The card asks each position its own four questions - a wing is never
    asked about his passes - so a wing who is one of the league's best passers had no box
@@ -14963,7 +14971,9 @@ function _gpAlertBar(){
     if(!L || !L.live) { wrap.style.display="none"; rulesHost.innerHTML=""; return; }
     wrap.style.display="";
     const big=list.filter(a=>!a.s.ack && a.s.first && now-a.s.first<90000), small=list.filter(a=>big.indexOf(a)<0);
-    big.forEach(a=>wrap.appendChild(h("button",{type:"button", class:"gp5-al big "+a.tone, title:"tap: seen", onclick:()=>{ a.s.ack=true; wrap.__sig=""; paint(); }},
+    /* the big ones hang under the bar, over the page: they come and go without moving what is below */
+    const bigHost=h("div",{class:"gp5-al-big"});
+    big.forEach(a=>bigHost.appendChild(h("button",{type:"button", class:"gp5-al big "+a.tone, title:"tap: seen", onclick:()=>{ a.s.ack=true; wrap.__sig=""; paint(); }},
       h("b",{}, a.big), h("span",{}, a.txt), h("em",{},"OK ✓"))));
     const row=h("div",{class:"gp5-al-row"});
     const ar=_gpArrow(L.feed);
@@ -14975,6 +14985,7 @@ function _gpAlertBar(){
     row.appendChild(h("button",{type:"button", class:"gp5-al-btn"+(_gpUI.gameMode? " on" : ""), title:"show only the reminders, the rotation, both teams and the score",
       onclick:()=>{ _gpUI.gameMode=!_gpUI.gameMode; _gpUISave(); applyMode(); wrap.__sig=""; paint(); }}, _gpUI.gameMode? "Game mode · on" : "Game mode"));
     wrap.appendChild(row);
+    if(big.length) wrap.appendChild(bigHost);
     /* the rules are read below the bar, in the page, not over the board */
     rulesHost.innerHTML=""; if(list.some(a=>a.rules)) rulesHost.appendChild(_gpRulesCard());
   };
@@ -36462,7 +36473,12 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .gp5-al.big em{font:800 12px Inter,system-ui,sans-serif;font-style:normal;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,.25)}
 .gp5-al.bad{background:#c0392b;color:#fff}.gp5-al.good{background:#1f8a5b;color:#fff}.gp5-al.warn{background:#e8a317;color:#2a1a00}.gp5-al.info{background:#141821;color:#fff}
 @keyframes gpAlert{0%,100%{filter:none}50%{filter:brightness(1.18)}}
-.gp5-al-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.gp5-al-row{display:flex;flex-wrap:nowrap;gap:6px;align-items:center;min-height:40px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.gp5-al-row>*{flex:none}
+/* the big reminders hang under the bar, over the page, so they never move what is below */
+.gp5-al-big{position:absolute;left:0;right:0;top:100%;display:flex;flex-direction:column;gap:6px;padding-top:6px;z-index:31}
+/* the panel redraws parts of itself every reading: the browser is not to move the page to make up for it */
+.gp5{overflow-anchor:none}
 .gp5-al.chip{display:inline-flex;align-items:center;min-height:34px;padding:4px 12px;border-radius:999px;font:800 11.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase}
 .gp5-al-arrow{display:inline-flex;align-items:center;min-height:34px;padding:4px 12px;border-radius:999px;font:800 11.5px 'Oswald',sans-serif;letter-spacing:.08em;border:2px solid currentColor;background:var(--panel,#fff)}
 .gp5-al-arrow.us{color:#1f8a5b}.gp5-al-arrow.them{color:#c0392b}
