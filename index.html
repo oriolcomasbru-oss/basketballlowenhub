@@ -11246,7 +11246,17 @@ function _preCardsFresh(L, tid, C){
 }
 /* one card worked out again from the league, the way the draft works it out */
 function _preCardFreshOf(c, L, tid){
-  const rows=_preRosterRows(L, tid).filter(p=>p && (p.name || p.num));
+  /* THE NEWEST LINE THERE IS. The club's roster is kept in the browser and was read once; the
+     league's player table is read again more often. Garino's card read the roster (4 games)
+     while the rank beside it read the table (5): the card said 25%, the rank said 2nd. Each man's
+     line is the one with more games of the two, so the card and its rank stand on the same game. */
+  let pool=[]; try{ pool=(_lgLeadPool(L).pool||[]).filter(x=>String(x.tid)===String(tid)); }catch(e){}
+  const pnorm=s=>_lgNorm(_lgLastName(String(s||"")));
+  const fresh=p=>{ const a=_preLine(p), nm=p.name||((p.first||"")+" "+(p.last||""));
+    const q=pool.filter(x=>(p.pid && String(x.pid||x.id||"")===String(p.pid)) || (p.id && String(x.id)===String(p.id)))[0] || pool.filter(x=>pnorm(x.name)===pnorm(nm))[0];
+    if(q && q.t && (q.t.gp||0)>((a&&a.gp)||0)) return Object.assign({}, p, { off:Object.assign({}, a||{}, q.t), all:null });
+    return p; };
+  const rows=_preRosterRows(L, tid).filter(p=>p && (p.name || p.num)).map(fresh);
   const norm=s=>_lgNorm(String(s||""));
   const p=rows.filter(x=>c.pid && String(x.pid||x.id||"")===String(c.pid))[0]
     || rows.filter(x=>norm(x.name||((x.first||"")+" "+(x.last||"")))===norm(c.name))[0]
@@ -12799,7 +12809,11 @@ function _preCardsBlock(L, tid, rep, canEd, save){
   blk.appendChild(ban);
   let C=_preCardsStore(rep);
   const ros=(L.roster||{})[tid];
-  if(!ros && !_lgRosBusy[tid] && !_lgRosTried[tid] && !L.demo) syncRoster(tid,false);
+  /* the roster is read again when what the browser keeps is more than two hours old (it was
+     read once and kept for good, so the cards stayed on the numbers of the day they were read);
+     once a visit, in the background, and the cards are drawn again when it lands */
+  const rosOld=!!ros && (!ros.updated || Date.now()-Date.parse(ros.updated)>2*3600e3);
+  if((!ros || rosOld) && !_lgRosBusy[tid] && !_lgRosTried[tid] && !L.demo) syncRoster(tid, rosOld);
   if(!C){
     const draft=_preCardsDraft(L, tid);
     if(draft){ rep.data.cards=draft; C=draft; if(canEd) try{ save(); }catch(e){} }
