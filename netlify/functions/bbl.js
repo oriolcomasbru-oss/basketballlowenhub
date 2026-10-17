@@ -1412,8 +1412,43 @@ exports.handler = async (event) => {
          (PRE / LIVE / POST), where the game is (Q1, Q1_break, Q2 ...) and the game clock.
          The play by play of gameStats is written after the game; this says when to read it,
          and whether what has been read is still moving. Fresh every call, held 15 s. */
-      const raw = await api("/v2/gamecenter", key).catch(e => ({ _error: e.message }));
+      /* THE LEAGUE ANSWERS FROM MORE THAN ONE SERVER, and one can be seconds behind another (in
+         the Ulm - Hagen test the clock was up to 21 s late in one answer in seven). It is asked
+         twice at once and, game by game, the answer furthest into the game is kept - and never
+         one behind what this function already gave, unless that lasts half a minute (a
+         correction of the league's). */
+      const [r1, r2] = await Promise.all([api("/v2/gamecenter", key).catch(e => ({ _error: e.message })), api("/v2/gamecenter", key).catch(e => ({ _error: e.message }))]);
+      const raw = (r1 && !r1._error) ? r1 : r2;
       if (raw && raw._error) return reply(502, Object.assign(meta, { ok: false, errors: [raw._error] }), 0);
+      const other = (raw === r1 && r2 && !r2._error) ? r2 : null;
+      const gcAt = (g) => {
+        const st = S(g.status || g.gameStatus), p = S(g.gameProgress || g.gameProgess || g.progress), tm = S(g.gameTime || g.time || "");
+        if (/^(POST|OFFICIAL)$/.test(st)) return 1e6 + (st === "OFFICIAL" ? 1 : 0);
+        if (st !== "LIVE") return -1;
+        const m = /^Q(\d)/i.exec(p), o = /^OT(\d*)/i.exec(p);
+        const qi = m ? (+m[1]) - 1 : o ? 3 + (+(o[1] || 1)) : -1; if (qi < 0) return 0;
+        const base = qi < 4 ? qi * 600 : 2400 + (qi - 4) * 300, len = qi < 4 ? 600 : 300;
+        if (/_break/i.test(p)) return base + len + 0.5;
+        const t = tm.split(":").map(Number), left = t.length >= 2 ? t[t.length - 2] * 60 + t[t.length - 1] : NaN;
+        return isFinite(left) ? base + Math.max(0, Math.min(len, len - left)) : base;
+      };
+      const GCB = global.__gcBest || (global.__gcBest = {});
+      ["past", "present", "future"].forEach(k => {
+        if (!Array.isArray(raw[k])) return;
+        raw[k] = raw[k].map(g => {
+          const id = S(g.id || g.gameId);
+          let best = g;
+          const twin = other && ["past", "present", "future"].map(k2 => (Array.isArray(other[k2]) ? other[k2] : []).filter(x => S(x.id || x.gameId) === id)[0]).filter(Boolean)[0];
+          if (twin && gcAt(twin) > gcAt(best)) best = twin;
+          const kept = GCB[id], now = Date.now();
+          if (kept && gcAt(kept.g) > gcAt(best)) {
+            if (!kept.back) kept.back = now;
+            if (now - kept.back < 30000) return kept.g;
+          }
+          GCB[id] = { g: best, back: 0 };
+          return best;
+        });
+      });
       const pick = g => {
         const t = (x) => x && (x.name || x.teamName || x.shortName || x.fullName) || "";
         const h = g.homeTeam || g.home || {}, a = g.guestTeam || g.awayTeam || g.away || g.guest || {};
