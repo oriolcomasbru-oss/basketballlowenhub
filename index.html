@@ -15558,7 +15558,9 @@ function _gpLiveBlock(){
           if(n && Date.now()-lastChange>12*60000) over=true;
         }
         /* every 2 s: draw again only when the game has moved, so the screen does not flicker */
-        const sg=n+"|"+((J&&J.feed&&J.feed.players)||[]).map(p=>p.PTS+"/"+p.SP).join(",")+"|"+(GC? GC.status+GC.progress : "");
+        /* the league's clock is part of it: between two plays the clock, the stints and the line
+           on the rotation still run, as they do in a replay */
+        const sg=n+"|"+((J&&J.feed&&J.feed.players)||[]).map(p=>p.PTS+"/"+p.SP).join(",")+"|"+(GC? GC.status+GC.progress+(GC.status==="LIVE"? GC.time : "") : "");
         if(sg===sig && timer){ paintStat(); return; } sig=sg;
         if(wrap.isConnected || !timer){
           if(!n && GC && (GC.status==="PRE" || GC.status==="LIVE")) sayLive(); else draw();
