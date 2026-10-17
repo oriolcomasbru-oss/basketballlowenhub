@@ -14960,13 +14960,13 @@ function _gpLiveBlock(){
     stat.className="gp-live-st"+(live?" on":"");
     try{ paintStat(); }catch(e){}
   };
-  let GC=null, postSeen=0;
+  let GC=null, postSeen=0, gcAt=0, sig="";
   const prog=p=>{ const m=/^Q(\d)(_break)?$/i.exec(String(p||"")), o=/^OT(\d*)(_break)?$/i.exec(String(p||""));
     return m? (m[2]? "break after Q"+m[1] : "Q"+m[1]) : o? (o[2]? "break after OT"+(o[1]||"") : "OT"+(o[1]||"")) : String(p||""); };
   /* the line beside the title: where the game is, as the league says it */
   const paintStat=()=>{ if(!GC) return;
     const t=String(GC.time||"").replace(/^00:/,"");
-    stat.textContent=GC.status==="LIVE"? "LIVE · "+prog(GC.progress)+(t && t!=="00:00"? " · "+t : "") + " · updates every 30 s"
+    stat.textContent=GC.status==="LIVE"? "LIVE · "+prog(GC.progress)+(t && t!=="00:00"? " · "+t : "") + " · updates every 2 s"
       : GC.status==="PRE"? "starts "+String(GC.start||"").slice(11,16)+" UTC"
       : GC.status==="POST"? "final · the league is still correcting it"+(over? "" : " — read again every minute")
       : GC.status==="OFFICIAL"? "final · official" : GC.status;
@@ -14976,7 +14976,7 @@ function _gpLiveBlock(){
     body.appendChild(h("div",{class:"gp-lv-wait"},
       h("b",{}, GC.status==="LIVE"? "LIVE · "+prog(GC.progress)+((String(GC.time||"").replace(/^00:/,"")||"00:00")!=="00:00"? " · "+String(GC.time).replace(/^00:/,"") : "") : "Before the game"),
       h("span",{}, GC.status==="LIVE"
-        ? "The league writes its play by play after the game, so the stretch summary and the moments for the video fill in at the final buzzer. The live channel (the league's websocket) is being set up with the BBL; when it is, this fills in during the game."
+        ? "Waiting for the first plays from the league's live channel. It is read every 2 seconds; the summary and the moments for the video fill in as the game goes."
         : "From the tip-off the block shows where the game is; the summary arrives with the play by play.")));
     wrap.classList.remove("empty"); };
   const read=async fresh=>{
@@ -14999,7 +14999,7 @@ function _gpLiveBlock(){
          does not move, so the block says where the game is instead of showing an empty
          stretch; after it, the league keeps correcting for some 10-20 minutes, so it is read
          again every minute until the game is OFFICIAL or half an hour has gone by. */
-      if(date>=addDays(today,-1)){
+      if(date>=addDays(today,-1) && (!GC || GC.status!=="LIVE" || Date.now()-gcAt>30000)){ gcAt=Date.now();
         try{ const g2=await fetch("/.netlify/functions/bbl?res=gamecenter").then(r=>r.ok? r.json() : null).catch(()=>null);
           const all=g2? [].concat(g2.present||[], g2.past||[], g2.future||[]) : [];
           const hit=all.filter(x=>String(x.id)===String(G.id))[0];
@@ -15008,7 +15008,10 @@ function _gpLiveBlock(){
       const keep=_gpLiveMemo[G.id];
       if(keep && !fresh){ J=keep; draw(); }
       if(!keep || fresh || !over){
-        const j=await fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(G.id)+((date>=addDays(today,-1))? "&fresh=1" : ""))
+        /* LIVE: the league's live channel, through our function (held 2 s, shared by all) */
+        let j=(GC && GC.status==="LIVE")? await fetch("/.netlify/functions/bbl?res=live&id="+encodeURIComponent(G.id)+"&b="+Math.floor(Date.now()/2000))
+          .then(r=>r.ok? r.json() : null).catch(()=>null) : null;
+        if(!(j && j.feed)) j=await fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(G.id)+((date>=addDays(today,-1))? "&fresh=1" : ""))
           .then(r=>r.ok? r.json() : null).catch(()=>null);
         if(j && j.feed){ J=j; _gpLiveMemo[G.id]=j; }
         const n=(J && J.feed && (J.feed.actions||[]).length)||0;
@@ -15023,6 +15026,9 @@ function _gpLiveBlock(){
             if(la && la.qi>=3 && la.t>=2400 && (la.t-2400)%300===0) over=true; } }catch(e){}
           if(n && Date.now()-lastChange>12*60000) over=true;
         }
+        /* every 2 s: draw again only when the game has moved, so the screen does not flicker */
+        const sg=n+"|"+((J&&J.feed&&J.feed.players)||[]).map(p=>p.PTS+"/"+p.SP).join(",")+"|"+(GC? GC.status+GC.progress : "");
+        if(sg===sig && timer){ paintStat(); return; } sig=sg;
         if(wrap.isConnected || !timer){
           if(!n && GC && (GC.status==="PRE" || GC.status==="LIVE")) sayLive(); else draw();
           paintStat();
@@ -15034,12 +15040,16 @@ function _gpLiveBlock(){
   say("Reading the play by play…");
   read(false).then(()=>{ if(G) _gpLiveMemo.__last={ key:opp+"|"+date, G:G, home:home, over:over }; });
   /* while the game is on - the day of the game, until it has gone quiet - read it again */
+  /* every 2 s while the league says LIVE, every 30 s otherwise; one reading at a time */
   if(date===today){
-    timer=setInterval(()=>{
-      if(!wrap.isConnected || over){ clearInterval(timer); timer=0; if(over && wrap.isConnected) draw(); return; }
-      if(document.visibilityState && document.visibilityState!=="visible") return;
-      read(true);
-    }, 30000);
+    let busy=false;
+    const tick=async()=>{
+      if(!wrap.isConnected || over){ timer=0; if(over && wrap.isConnected) draw(); return; }
+      if(!busy && !(document.visibilityState && document.visibilityState!=="visible")){
+        busy=true; try{ await read(true); }catch(e){} busy=false; }
+      timer=setTimeout(tick, (GC && GC.status==="LIVE")? 2000 : (GC && GC.status==="PRE")? 10000 : 30000);
+    };
+    timer=setTimeout(tick, (GC && GC.status==="LIVE")? 2000 : (GC && GC.status==="PRE")? 10000 : 30000);
   }
   return wrap;
 }

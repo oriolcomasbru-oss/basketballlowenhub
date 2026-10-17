@@ -926,6 +926,9 @@ function mapRow(arr) {
   if (!Array.isArray(arr) || !arr.length) return null;
   const t = Number(arr[0]);
   const cols = FEED_COLS[t]; if (!cols) return null;
+  /* a live player row (29 or 31 fields) carries its minutes again at index 25: drop it,
+     so live and history rows read the same (the league's own helper does this) */
+  if (t === 4 && (arr.length === 29 || arr.length === 31)) { arr = arr.slice(); arr.splice(25, 1); }
   const maps = FEED_MAP[t] || {};
   const o = {};
   cols.forEach((k, i) => {
@@ -1021,6 +1024,53 @@ function demoPayload() {
   }
   return { teams, standings, games: games.concat(cup), cup: cup, euro: [], four };
 }
+
+/* ---------- the live channel ----------
+   During the game the league writes nothing to gameStats: the play by play travels over
+   its socket.io channel. A Netlify function cannot sit on a socket, but socket.io also
+   speaks plain HTTP ("polling" transport), so every call opens a session with our key,
+   asks for the game's history - the whole game so far, in the same rows as gameStats -
+   reads until the server says the history is complete (seven [20] rows, one per kind)
+   and hangs up. Two seconds per answer at most; the key never leaves this function. */
+async function sockHistory(gameId, key, budget) {
+  const base = apiBase() + "/socket.io/?EIO=4&transport=polling";
+  const hdr = { "x-api-key": key };
+  const t0 = Date.now(), left = () => budget - (Date.now() - t0);
+  const get = async (sid) => {
+    const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), Math.max(300, left()));
+    try { const r = await fetch(base + (sid ? "&sid=" + sid + "&t=" + Date.now() : "&t=" + Date.now()), { headers: hdr, signal: ac.signal }); return r.ok ? await r.text() : ""; }
+    catch (e) { return ""; } finally { clearTimeout(tm); }
+  };
+  const post = (sid, body) => fetch(base + "&sid=" + sid, { method: "POST", headers: Object.assign({ "content-type": "text/plain;charset=UTF-8" }, hdr), body: body }).then(r => r.ok).catch(() => false);
+  const open = await get("");
+  const m = /^0(\{.*\})/.exec(open || "");
+  if (!m) throw new Error("live channel: no session (" + S(open).slice(0, 80) + ")");
+  const sid = JSON.parse(m[1]).sid;
+  const gid = /^\d+$/.test(S(gameId)) ? Number(gameId) : S(gameId);
+  await post(sid, "40");
+  const rows = []; let ends = 0, joined = false, refused = "", asked = false;
+  while (left() > 0 && ends < 7) {
+    const txt = await get(sid);
+    if (!txt) break;
+    for (const pk of txt.split("\x1e")) {
+      if (pk === "2") { post(sid, "3"); continue; }
+      if (pk.startsWith("40")) { joined = true; continue; }
+      if (pk.startsWith("44") || pk === "41" || pk === "1") { refused = pk.slice(0, 160) || "closed"; continue; }
+      if (!pk.startsWith("42")) continue;
+      let msg; try { msg = JSON.parse(pk.slice(2)); } catch (e) { continue; }
+      if (!Array.isArray(msg) || String(msg[0]) !== String(gid)) continue;
+      const d = msg[1];
+      const list = Array.isArray(d) && Array.isArray(d[0]) ? d : [d];
+      list.forEach(r => { if (!Array.isArray(r)) return; if (Number(r[0]) === 20) ends++; else rows.push(r); });
+    }
+    if (joined && !asked) { asked = true; await post(sid, '42["history",' + JSON.stringify(gid) + "]"); }
+    if (refused) break;
+  }
+  post(sid, "41").catch(() => {});
+  if (!rows.length && refused) throw new Error("live channel refused: " + refused);
+  return { rows, complete: ends >= 7, ms: Date.now() - t0 };
+}
+const liveMemo = {};
 
 /* ---------- handler ---------- */
 exports.handler = async (event) => {
@@ -1214,6 +1264,30 @@ exports.handler = async (event) => {
       }
       out = Object.assign(meta, { found: found });
       return reply(200, out, 0);
+
+    } else if (res === "live") {
+      /* the game while it is being played: the sheet (names, numbers) from cache, the play
+         by play from the live channel. Held two seconds, so a whole staff watching shares
+         one reading of the league instead of each asking for it. */
+      const id = S(q.id);
+      if (!id) return reply(400, { ok: false, errors: ["res=live needs &id=<gameId>"] }, 0);
+      const lm = liveMemo[id];
+      if (lm && Date.now() - lm.t < 1800) return reply(200, Object.assign({}, lm.d, { cached: true }), 2000);
+      const sk = "sheet|" + id;
+      let sheet = getCache(sk, TTL.game);
+      const [sh, live] = await Promise.all([
+        sheet ? Promise.resolve(sheet) : api("/v2/game/" + encodeURIComponent(id), key).catch(e => ({ _error: e.message })),
+        sockHistory(id, key, 7000).catch(e => ({ _error: e.message }))
+      ]);
+      if (sh && !sh._error) { sheet = sh; if (!getCache(sk, TTL.game)) setCache(sk, sh); } else if (sh && sh._error) meta.errors.push("game: " + sh._error);
+      if (live._error) meta.errors.push(live._error);
+      out = Object.assign(meta, {
+        game: sheet || null,
+        feed: (live && !live._error && live.rows.length) ? decodeFeed(live.rows) : null,
+        live: { complete: !!live.complete, rows: live.rows ? live.rows.length : 0, ms: live.ms || 0 }
+      });
+      if (out.feed) liveMemo[id] = { t: Date.now(), d: out };
+      return reply(200, out, out.feed ? 2000 : 0);
 
     } else if (res === "game") {
       const id = S(q.id);
