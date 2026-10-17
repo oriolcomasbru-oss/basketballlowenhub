@@ -15169,7 +15169,10 @@ function _gpCourt(feed, uc, now){
   Object.keys(P).forEach(id=>{ const p=P[id];
     p.on=on.has(id) && p.last>=now-1;
     /* the stint he is in: back from now while the segments touch */
-    if(p.on){ let t=now; for(let i=p.segs.length-1;i>=0;i--){ const g=p.segs[i]; if(g[1]>=t-1){ t=Math.min(t,g[0]); } else break; } p.stint=now-t; }
+    /* half time is a rest: a man on the floor at the end of the second quarter and again from
+       the start of the third begins a new stint at the third (the short breaks between the
+       other quarters are not a rest, so a stint runs through them) */
+    if(p.on){ let t=now; for(let i=p.segs.length-1;i>=0;i--){ const g=p.segs[i]; if(g[1]>=t-1){ t=Math.min(t,g[0]); } else break; } if(now>1200 && t<1200) t=1200; p.stint=now-t; }
     else p.rest=now-p.last; });
   return P;
 }
