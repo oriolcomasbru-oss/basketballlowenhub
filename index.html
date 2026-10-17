@@ -9388,6 +9388,43 @@ function _prescFit(){
    from two places, so they belong on the same line. One is drawn here and the other inside
    the tagging's own report, which lands later and asynchronously, so the panel is moved
    into the tagging's first row when that row appears. */
+/* THE PRE GAME'S TEAM STATS, ONE PLACE FOR THE CLUB'S NUMBERS. Three pieces are added to
+   the tagging's own tabs: the overview opens with their pace and their last games from the
+   play by play (which used to be a section of its own), their offense tab gets the pace of
+   their offense and their defense tab the pace of their defense. The tabs show a piece by
+   its data-tabs, so the pieces are put inside the tagging report; when there is no tagging
+   for this club yet they sit in the TEAM STATS block on their own. They are kept as nodes,
+   so a redraw of the tagging that empties its report finds them and puts them back. */
+let _preInjCtx=null;
+setInterval(()=>{ try{ const v=document.getElementById("viewOppScout"); if(v && v.style.display!=="none") _preInj(); }catch(e){} }, 3000);
+function _preInj(){
+  const X=_preInjCtx; if(!X || !X.tid) return;
+  const view=document.getElementById("viewOppScout"); if(!view) return;
+  const anchor=view.querySelector(".sxp") || view.querySelector(".scoutpre-slot");
+  const blk=anchor && anchor.closest(".rs-block"); if(!blk) return;
+  let I=blk.__inj;
+  if(!I || I.key!==X.key){
+    const part=(tab, title, node)=>{ const p=h("div",{class:"pre-inj-p sxp-blk sxp-card", "data-tabs":tab}); if(title) p.appendChild(h("div",{class:"sxp-sub"}, h("b",{}, title))); p.appendChild(node); return p; };
+    const ov=h("div",{class:"pre-inj-p", "data-tabs":"over"});
+    ov.appendChild(part("over", "", _lgEmbed(X.tid, [ L=>_prePaceSummary(L, X.tid) ])));
+    if(!X.pv && X.g){ try{ ov.appendChild(part("over", "Their last games · from the play by play", _preRecentForm(X.g))); }catch(e){} }
+    I=blk.__inj={ key:X.key, parts:[ ov,
+      part("off", "", _lgEmbed(X.tid, [ L=>_prePaceSide(L, X.tid, "o") ])),
+      part("def", "", _lgEmbed(X.tid, [ L=>_prePaceSide(L, X.tid, "d") ])) ] };
+  }
+  const sxp=blk.querySelector(".sxp");
+  if(sxp){
+    if(I.parts.every(p=>p.parentNode===sxp)) return;
+    /* after the overview's own dashboard if it has one, else right under the tab bar */
+    const kids=Array.from(sxp.children);
+    let ref=kids.filter(k=>k.getAttribute && k.getAttribute("data-tabs")==="over")[0] || kids.filter(k=>k.classList.contains("sxp-tabs"))[0] || null;
+    I.parts.forEach(p=>{ sxp.insertBefore(p, ref? ref.nextSibling : sxp.firstChild); ref=p; });
+  } else {
+    let fb=blk.querySelector(":scope > .pre-inj-fb");
+    if(!fb){ fb=h("div",{class:"pre-inj-fb"}); blk.appendChild(fb); }
+    I.parts.forEach(p=>{ if(p.parentNode!==fb) fb.appendChild(p); });
+  }
+}
 function _tsRelocate(){
   /* The league's team analysis belongs beside second chance, not beside game by game:
      both are claims about the whole season, and the tagging rows above them are claims
@@ -10006,6 +10043,7 @@ function _fitAll(){
       document.querySelectorAll(FIT_SEL).forEach(_fitGrid);
     }catch(e){}
     try{ _tsRelocate(); }catch(e){}
+    try{ _preInj(); }catch(e){}
     try{ _pbRelocate(); }catch(e){}
     try{ _prescFit(); }catch(e){}
     try{ _hlInit(); }catch(e){}
@@ -10371,7 +10409,7 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
       /* Their last five games, read from the play by play - a section of its own, after the
          season it is the close-up of. Staff only: it is working material, not one of the
          four blocks a player is given. */
-      if(!PV) wrap.appendChild(_preSafe("PLAY BY PLAY STATS", ()=>_preBlock("PLAY BY PLAY STATS", _preRecentForm(g))));
+      /* their last games from the play by play now open the TEAM STATS overview (see _preInj) */
     }
   }
   /* A report on disk was written by whichever build was live the day it was written, and
@@ -10551,6 +10589,8 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
   /* TEAM STATS holds two things that are now chosen separately: the league's four factors
      and the tagging of the opponent. The section exists if either half does, and not at
      all if neither - an empty banner reading TEAM STATS over nothing is not a report. */
+  /* what the TEAM STATS pieces of the pre game are about (see _preInj) */
+  if(kind==="pregame" && !ONLY){ try{ _preInjCtx={ tid:_preClub(), g:g, key:String(key||"")+"|"+String(_preClub()||""), pv:!!PV }; [400,1500,4000,9000].forEach(t=>setTimeout(()=>{ try{ _preInj(); }catch(e){} }, t)); }catch(e){} }
   const _wantFF = playerBlockOk("fourfactors"), _wantTag = playerBlockOk("tagging");
   if(kind==="pregame" && !ONLY && (_wantFF || _wantTag) && _scoutOpponent && !wrap.querySelector(".scoutpre-slot")){
     const blk=h("div",{class:"rs-block rs-block-stats"});
@@ -10843,8 +10883,6 @@ function _preSeasonBlock(tid){
   /* Europe when they play in it - decided each time the block is drawn, and read here
      when this browser has not read the European games yet */
   panels.push(L=>_prePlaysEuro(tid)? _lgEuroClub(L, tid) : h("span",{}));
-  /* their pace: how fast they shoot, and how fast they let the other side shoot */
-  panels.push(L=>_prePace(L, tid));
   { const L0=leagueState(); if(!(L0.euro||[]).length && !_lgEuroBusy && typeof syncEuro==="function"){ try{ syncEuro(false).then(()=>{ try{ _lgRerender(); }catch(e){} }); }catch(e){} } }
   return _preBlock("THEIR SEASON", _lgEmbed(tid, panels, "emb-cols"));
 }
@@ -23052,20 +23090,35 @@ function _paceEl(title, P, ref, sub){
     h("span",{}, b[2])))));
   return box;
 }
-/* Pre game: the opponent's pace against the league, ours beside it */
-function _prePace(L, tid){
-  const box=_lgPanel("Pace · when they shoot", null,
-    "The second of the possession their first shot goes up in, counted from the moment the ball changed hands. Offence is how fast they shoot; defence, how fast they let their opponents shoot. The grey tick on each bar is the league.");
-  const R=_paceLeague(L);
-  const f=_paceFirst(L, tid);
+/* Pre game: the opponent's pace. One side at a time (their offense, their defense) for the
+   team stats tabs, and a summary of both, with ours beside it, for the overview. */
+function _prePaceRank(R, side, v){
+  const vs=R.rows.map(r=>side==="o"? r.o.avg : (r.d? r.d.avg : null)).filter(x=>x!=null).sort((a,b)=>a-b);
+  const i=vs.indexOf(v); return i>=0? { n:i+1, of:vs.length } : null; }
+function _prePaceSide(L, tid, side){
+  const R=_paceLeague(L), f=_paceFirst(L, tid);
+  const box=h("div",{class:"lg-panel pre-pace"});
   if(!f){ box.appendChild(h("div",{class:"lg-empty"},"Their season is being read for this; it fills in by itself.")); try{ _lgLeadLoad(L); }catch(e){} return box; }
-  const rank=(k, v)=>{ const vs=R.rows.map(r=>k==="o"? r.o.avg : (r.d? r.d.avg : null)).filter(x=>x!=null).sort((a,b)=>a-b); const i=vs.indexOf(v); return i>=0? (i+1)+" of "+vs.length+" (1 = fastest)" : ""; };
+  const P=_paceOf(f, side==="o"? "team" : "opp"), rk=P? _prePaceRank(R, side, P.avg) : null;
+  box.appendChild(_paceEl(side==="o"? "Pace · their offense" : "Pace · their defense", P, side==="o"? R.lg : R.lgD,
+    (side==="o"? "how fast they shoot" : "how fast they let you shoot")+(rk? " · "+rk.n+" of "+rk.of+" (1 = fastest)" : "")));
+  return box;
+}
+function _prePaceSummary(L, tid){
+  const R=_paceLeague(L), f=_paceFirst(L, tid);
+  const box=h("div",{class:"lg-panel pre-pace-sum"}, h("div",{class:"lg-h"}, h("span",{},"Pace · when the shot comes"),
+    h("span",{class:"lg-sub"},"the second of the possession the first shot goes up in")));
+  if(!f){ box.appendChild(h("div",{class:"lg-empty"},"Their season is being read for this; it fills in by itself.")); try{ _lgLeadLoad(L); }catch(e){} return box; }
   const o=_paceOf(f,"team"), d=_paceOf(f,"opp");
-  box.appendChild(h("div",{class:"pace-side two"},
-    _paceEl("Their offence", o, R.lg, o? rank("o", o.avg) : ""),
-    _paceEl("Their defence", d, R.lgD, d? rank("d", d.avg) : "")));
-  try{ const us=_lgOurTeamId(L); const fu=us && String(us)!==String(tid)? _paceFirst(L, us) : null; const ou=_paceOf(fu,"team");
-    if(ou && o) box.appendChild(h("div",{class:"lg-sub", style:"margin-top:6px"}, "Us: first shot at "+ou.avg.toFixed(1)+" s on average, "+Math.round(100*ou.early)+"% in the first seven seconds · them "+o.avg.toFixed(1)+" s, "+Math.round(100*o.early)+"%.")); }catch(e){}
+  let u=null; try{ const us=_lgOurTeamId(L); if(us && String(us)!==String(tid)) u=_paceOf(_paceFirst(L, us),"team"); }catch(e){}
+  const pc=v=>Math.round(100*v)+"%";
+  const row=(lab, P, ref, side)=>{ if(!P) return null; const rk=side? _prePaceRank(R, side, P.avg) : null;
+    return h("div",{class:"pps-r"}, h("b",{}, lab),
+      h("span",{class:"pps-avg"}, P.avg.toFixed(1)+" s", ref? h("em",{class:P.avg-ref.avg<=-0.6? "fast" : P.avg-ref.avg>=0.6? "slow" : ""}, (P.avg-ref.avg>0? "+" : P.avg-ref.avg<0? "−" : "±")+Math.abs(P.avg-ref.avg).toFixed(1)+" vs league") : null),
+      h("span",{class:"pps-rk"}, rk? rk.n+" of "+rk.of : ""),
+      h("span",{class:"pps-3"}, [["0–7",P.early,"e"],["8–15",P.mid,"m"],["16–24",P.late,"l"]].map(x=>h("i",{class:x[2], style:"flex:"+Math.max(0.05,x[1])}, x[0]+" "+pc(x[1]))))); };
+  box.appendChild(h("div",{class:"pps"},
+    row("Their offense", o, R.lg, "o"), row("Their defense", d, R.lgD, "d"), u? row("Us · offense", u, R.lg, "o") : null));
   return box;
 }
 /* Post game: this game's pace, ours and theirs, against our season */
@@ -23085,34 +23138,64 @@ function _postPace(P, home){
     return box;
   }catch(e){ try{ console.warn("post pace", e); }catch(_){} return null; }
 }
-/* League: every club, how fast it shoots and how fast it lets the other side shoot */
+/* League: one table, every club, offense and defense side by side, the three ranges of the
+   shot clock in each, and every cell ranked - the best three of each column marked */
 let _lgPaceSort={ k:"o", d:1 };
 function _lgPace(L){
   const box=_lgPanel("Pace · when the shot comes", null,
-    "For every possession, the second its first shot went up in, counted from the moment the ball changed hands (a defensive rebound, a turnover, a basket at the other end). Offence: how fast the club shoots. Defence: how fast its opponents shoot against it. Rebuilt from the play by play; a possession with no shot is not in the seconds.");
+    "For every possession, the second its first shot went up in, counted from the moment the ball changed hands (a defensive rebound, a turnover, a basket at the other end). Offense: how fast the club shoots. Defense: how fast its opponents shoot against it. Every column is ranked; the gold chips are the top three of that column. Rebuilt from the play by play; a possession with no shot is not in the seconds.");
   const R=_paceLeague(L);
   const sel=_lgPanelClub(L);
   if(!R.rows.length){ box.appendChild(h("div",{class:"lg-empty"},"The clubs' seasons are being read; this fills in club by club.")); try{ _lgLeadLoad(L); }catch(e){} return box; }
-  const get={ o:r=>r.o.avg, e:r=>r.o.early, l:r=>r.o.late, d:r=>r.d? r.d.avg : 99, de:r=>r.d? r.d.early : 0 };
-  const rows=R.rows.slice().sort((a,b)=>(get[_lgPaceSort.k](a)-get[_lgPaceSort.k](b))*_lgPaceSort.d);
-  const th=(k,lab,tip)=>h("th",{class:_lgPaceSort.k===k? "on" : "", title:tip||"", style:"cursor:pointer",
-    onclick:()=>{ _lgPaceSort=_lgPaceSort.k===k? { k:k, d:-_lgPaceSort.d } : { k:k, d:(k==="o"||k==="d")? 1 : -1 }; _lgRerender(); }},
-    lab+(_lgPaceSort.k===k? (_lgPaceSort.d>0? " ▲" : " ▼") : ""));
+  /* each column: how to read it, and which way is "first" (fastest, or most of their shots) */
+  const COLS=[
+    { k:"o",  g:"o", lab:"Avg", get:r=>r.o.avg, asc:true, tip:"average second of their first shot - 1 is the fastest offense" },
+    { k:"oe", g:"o", lab:"0–7 s", get:r=>r.o.early, share:true, tip:"share of their first shots in the first seven seconds" },
+    { k:"om", g:"o", lab:"8–15 s", get:r=>r.o.mid, share:true, tip:"share of their first shots between eight and fifteen seconds" },
+    { k:"ol", g:"o", lab:"16–24 s", get:r=>r.o.late, share:true, tip:"share of their first shots after sixteen seconds" },
+    { k:"d",  g:"d", lab:"Avg", get:r=>r.d? r.d.avg : null, asc:false, tip:"average second their opponents shoot - 1 makes the other side wait the longest" },
+    { k:"de", g:"d", lab:"0–7 s", get:r=>r.d? r.d.early : null, share:true, asc:true, tip:"share of their opponents' first shots in the first seven seconds - 1 allows the fewest" },
+    { k:"dm", g:"d", lab:"8–15 s", get:r=>r.d? r.d.mid : null, share:true, tip:"share of their opponents' first shots between eight and fifteen seconds" },
+    { k:"dl", g:"d", lab:"16–24 s", get:r=>r.d? r.d.late : null, share:true, tip:"share of their opponents' first shots after sixteen seconds - 1 forces the most late shots" }
+  ];
+  /* ranks per column */
+  const RK={};
+  COLS.forEach(c=>{ const vals=R.rows.map(r=>c.get(r)).filter(v=>v!=null).sort((a,b)=>c.asc? a-b : b-a);
+    RK[c.k]=r=>{ const v=c.get(r); if(v==null) return null; return 1+vals.findIndex(x=>x===v); }; });
+  const sc=COLS.filter(c=>c.k===_lgPaceSort.k)[0]||COLS[0];
+  const rows=R.rows.slice().sort((a,b)=>((RK[sc.k](a)||99)-(RK[sc.k](b)||99))*_lgPaceSort.d);
   const t=h("table",{class:"lg-tbl pace-tbl"});
-  t.appendChild(h("tr",{class:"lg-grph"}, h("th",{},""), h("th",{},""), h("th",{colspan:"3", class:"grp"},"Offence"), h("th",{colspan:"2", class:"grp"},"Defence")));
-  t.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Team"),
-    th("o","SEC","average second of the first shot"), th("e","0–7 S","share of first shots in the first seven seconds"), th("l","16–24 S","share of first shots after sixteen seconds"),
-    th("d","SEC","the opponents' average second"), th("de","0–7 S","the opponents' share in the first seven seconds")));
+  t.appendChild(h("tr",{class:"lg-grph"}, h("th",{},""), h("th",{},""),
+    h("th",{colspan:"4", class:"grp pace-go"},"Their offense · how fast they shoot"),
+    h("th",{colspan:"4", class:"grp pace-gd"},"Their defense · how fast they let you shoot")));
+  const hr=h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Team"));
+  COLS.forEach(c=>hr.appendChild(h("th",{class:(c.k===sc.k? "on " : "")+(c.k==="o"||c.k==="d"? "grp" : ""), title:c.tip, style:"cursor:pointer",
+    onclick:()=>{ _lgPaceSort=_lgPaceSort.k===c.k? { k:c.k, d:-_lgPaceSort.d } : { k:c.k, d:1 }; _lgRerender(); }},
+    c.lab+(c.k===sc.k? (_lgPaceSort.d>0? " ▲" : " ▼") : ""))));
+  t.appendChild(hr);
+  /* the league's spread of each share column, for the bars */
+  const span={}; COLS.filter(c=>c.share).forEach(c=>{ const v=R.rows.map(c.get).filter(x=>x!=null); span[c.k]=[Math.min.apply(null,v), Math.max.apply(null,v)]; });
   const pc=v=>Math.round(100*v)+"%";
-  rows.forEach((r,i)=>t.appendChild(h("tr",{class:(_lgOurs(r.name)? "ours " : "")+(String(r.id)===String(sel)? "sel" : ""), onclick:()=>{ _lgSetClub(L, r.id); persist(); _lgRerender(); }},
-    h("td",{class:"lg-pos"}, String(i+1)), h("td",{class:"l lg-team"}, _lgCrest(L, r.id), h("span",{}, r.name)),
-    h("td",{class:"grp"}, r.o.avg.toFixed(1)), h("td",{}, pc(r.o.early)), h("td",{}, pc(r.o.late)),
-    h("td",{class:"grp"}, r.d? r.d.avg.toFixed(1) : "—"), h("td",{}, r.d? pc(r.d.early) : "—"))));
-  const pick=R.rows.filter(r=>String(r.id)===String(sel))[0] || R.rows.filter(r=>_lgOurs(r.name))[0] || R.rows[0];
-  const side=h("div",{class:"pace-side"},
-    _paceEl(pick.name+" · offence", pick.o, R.lg, "how fast they shoot"),
-    _paceEl(pick.name+" · defence", pick.d, R.lgD, "how fast their opponents shoot"));
-  box.appendChild(h("div",{class:"pace-wrap"}, h("div",{class:"pb-scroll"}, t), side));
+  rows.forEach((r,i)=>{
+    const tr=h("tr",{class:(_lgOurs(r.name)? "ours " : "")+(String(r.id)===String(sel)? "sel" : ""), onclick:()=>{ _lgSetClub(L, r.id); persist(); _lgRerender(); }},
+      h("td",{class:"lg-pos"}, String(i+1)), h("td",{class:"l lg-team"}, _lgCrest(L, r.id), h("span",{}, r.name)));
+    COLS.forEach(c=>{ const v=c.get(r), rk=RK[c.k](r);
+      if(v==null){ tr.appendChild(h("td",{class:c.k==="o"||c.k==="d"? "grp" : ""},"—")); return; }
+      const top=rk!=null && rk<=3;
+      const cell=h("td",{class:"pace-c"+(c.k==="o"||c.k==="d"? " grp avg" : "")+(c.g==="d"? " def" : ""), title:c.tip+" · "+rk+" of "+R.rows.length});
+      if(c.share){ const sp=span[c.k], w=sp[1]>sp[0]? (v-sp[0])/(sp[1]-sp[0]) : 1;
+        cell.appendChild(h("span",{class:"pace-cb"}, h("i",{style:"width:"+Math.round(18+82*w)+"%"}))); }
+      cell.appendChild(h("b",{}, c.share? pc(v) : v.toFixed(1)+" s"));
+      cell.appendChild(h("em",{class:top? "top" : ""}, String(rk)));
+      tr.appendChild(cell); });
+    t.appendChild(tr);
+  });
+  /* the league as one line under the clubs */
+  if(R.lg){ const lt=h("tr",{class:"pace-lg"}, h("td",{}), h("td",{class:"l"},"League"));
+    [R.lg.avg, R.lg.early, R.lg.mid, R.lg.late].forEach((v,i)=>lt.appendChild(h("td",{class:i===0? "grp" : ""}, i===0? v.toFixed(1)+" s" : pc(v))));
+    [R.lgD? R.lgD.avg : null, R.lgD? R.lgD.early : null, R.lgD? R.lgD.mid : null, R.lgD? R.lgD.late : null].forEach((v,i)=>lt.appendChild(h("td",{class:i===0? "grp" : ""}, v==null? "—" : (i===0? v.toFixed(1)+" s" : pc(v)))));
+    t.appendChild(lt); }
+  box.appendChild(h("div",{class:"pb-scroll"}, t));
   if(R.rows.length<(L.teams||[]).length){ box.appendChild(h("div",{class:"lg-sub", style:"margin-top:6px"}, R.rows.length+" of "+(L.teams||[]).length+" clubs read so far; the rest fill in as they are read."));
     try{ _lgLeadLoad(L); }catch(e){} }
   return box;
@@ -34550,6 +34633,30 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .pace-wrap{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(260px,1fr);gap:14px;align-items:start}
 @media (max-width:900px){ .pace-wrap{grid-template-columns:1fr} }
 .pace-tbl th.on{color:var(--ink,#141821)}
+.pace-tbl th.pace-go{color:#1f6f9a}.pace-tbl th.pace-gd{color:#8a4b14}
+.pace-tbl td.pace-c{position:relative;text-align:left;min-width:74px;padding:4px 6px}
+.pace-tbl td.pace-c b{position:relative;font:700 12px 'IBM Plex Mono',monospace}
+.pace-tbl td.pace-c em{position:relative;float:right;margin-left:6px;font:700 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a919c);min-width:16px;text-align:center;border-radius:999px;padding:0 4px}
+.pace-tbl td.pace-c em.top{background:#c9a227;color:#141821}
+.pace-cb{position:absolute;left:4px;right:4px;top:4px;bottom:4px;pointer-events:none}
+.pace-cb i{display:block;height:100%;border-radius:4px;background:rgba(31,111,154,.16)}
+.pace-tbl td.pace-c.def .pace-cb i{background:rgba(138,75,20,.15)}
+.pace-tbl td.pace-c.avg b{font-size:12.5px}
+.pace-tbl tr.pace-lg td{font:600 11px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);border-top:2px solid var(--line-strong,#d7dbe0);background:var(--panel-2,#f6f7f9)}
+.pps{display:grid;gap:6px}
+.pps-r{display:grid;grid-template-columns:120px 150px 60px minmax(0,1fr);gap:10px;align-items:center;font-size:12.5px}
+.pps-r > b{font:700 12px 'Oswald',sans-serif;letter-spacing:.05em;text-transform:uppercase}
+.pps-avg{font:700 15px 'IBM Plex Mono',monospace;display:flex;flex-direction:column}
+.pps-avg em{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a919c)}
+.pps-avg em.fast{color:#1f8a4c}.pps-avg em.slow{color:#c0392b}
+.pps-rk{font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a919c)}
+.pps-3{display:flex;gap:2px;min-width:0}
+.pps-3 i{font-style:normal;font:700 10px 'IBM Plex Mono',monospace;padding:4px 5px;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.pps-3 i.e{background:rgba(31,138,76,.18);color:#17603f}.pps-3 i.m{background:rgba(201,162,39,.22);color:#7a5c12}.pps-3 i.l{background:rgba(192,57,43,.16);color:#9e302c}
+@media (max-width:700px){ .pps-r{grid-template-columns:1fr 1fr} .pps-3{grid-column:1/-1} }
+.pre-inj-fb{display:grid;gap:12px;margin-top:12px}
+.pre-inj-p{min-width:0}
+.pre-inj-p > .pre-inj-p{margin-top:10px}
 .pace-post{margin-top:12px}
 .gp-court{margin:10px 0 4px}
 .gp-court-t{width:100%;max-width:520px;border-collapse:collapse;font-size:12.5px}

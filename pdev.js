@@ -480,7 +480,7 @@
     var bad = function (x) { return x.sec ? 600 * (x.tov + x.pf) / x.sec : null; };
     var base = { sec: 0, fga: 0, fgm: 0, p3m: 0, tov: 0, pf: 0 };
     f.slice(0, 2).forEach(function (x) { ["sec", "fga", "fgm", "p3m", "tov", "pf"].forEach(function (k) { base[k] += x[k] || 0; }); });
-    var be = efg(base), bb = bad(base), first = null, firstAmber = null;
+    var be = efg(base), bb = bad(base), first = null, firstAmber = null, soft = null, last = null;
     var out = f.map(function (x, i) {
       var e = efg(x), b = bad(x), o = { e: e, b: b, x: x, lv: "", why: "" };
       if (x.sec < 600) { o.lv = "thin"; return o; }
@@ -494,9 +494,12 @@
       if (bRise >= 1.35 && b - bb >= 0.8) o.why += (o.why ? " · " : "") + "TO+fouls " + bb.toFixed(1) + " → " + b.toFixed(1);
       if (o.lv === "red" && first == null) first = i;
       if (o.lv === "amber" && firstAmber == null) firstAmber = i;
+      /* the first sign of a drop, however small, and the last block there is evidence for */
+      if (soft == null && (eDrop > 2 || (bRise > 1.1 && b - bb > 0.3))) soft = i;
+      last = i;
       return o;
     });
-    return { blocks: out, red: first, amber: firstAmber, be: be, bb: bb };
+    return { blocks: out, red: first, amber: firstAmber, soft: soft, last: last, be: be, bb: bb };
   }
   function fadeStrip(F, R) {
     return el("div", { class: "fd-strip" }, R.blocks.map(function (o, i) {
@@ -546,10 +549,12 @@
       var say = [];
       if (S.red != null) say.push(el("div", { class: "fd-say red" }, el("b", {}, verb + " after " + FADE.st.at[S.red] + "' in a row"), el("i", {}, S.blocks[S.red].why)));
       else if (S.amber != null) say.push(el("div", { class: "fd-say amber" }, el("b", {}, "Dips after " + FADE.st.at[S.amber] + "' in a row"), el("i", {}, S.blocks[S.amber].why)));
-      else say.push(el("div", { class: "fd-say green" }, el("b", {}, "Holds up in long stints")));
+      else say.push(el("div", { class: "fd-say green" }, el("b", {}, S.soft != null ? "Holds up · first signs of a drop from " + FADE.st.b[S.soft] + " in a row"
+        : S.last != null ? "Holds up · no drop seen up to " + FADE.st.b[S.last] + " in a row" : "Holds up · not enough long stints read yet")));
       if (C.red != null) say.push(el("div", { class: "fd-say red" }, el("b", {}, (mine ? "Fades" : "Tires") + " after " + FADE.cum.at[C.red] + "' in the game"), el("i", {}, C.blocks[C.red].why)));
       else if (C.amber != null) say.push(el("div", { class: "fd-say amber" }, el("b", {}, "Dips after " + FADE.cum.at[C.amber] + "' in the game"), el("i", {}, C.blocks[C.amber].why)));
-      else say.push(el("div", { class: "fd-say green" }, el("b", {}, "Keeps his level all game")));
+      else say.push(el("div", { class: "fd-say green" }, el("b", {}, C.soft != null ? "Keeps his level · first signs of a drop from " + FADE.cum.b[C.soft] + " in the game"
+        : C.last != null ? "Keeps his level · no drop seen up to " + FADE.cum.b[C.last] + " in the game" : "Keeps his level · not enough minutes read yet")));
       cards.appendChild(el("div", { class: "fd-card" },
         el("div", { class: "fd-h" }, el("b", {}, (r.num ? "#" + r.num + " " : "") + r.nm), el("span", {}, mins + " min read")),
         el("div", { class: "fd-says" }, say),
