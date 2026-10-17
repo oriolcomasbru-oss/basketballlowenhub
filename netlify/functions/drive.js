@@ -931,7 +931,9 @@ exports.handler = async (event) => {
         const Ld = pdfLayout(pb, zlib, PDFX);
         const hit = Ld.texts.filter(function (t) { return /FIRST|NEXT|LAST|ALL|GtoG|POP|SIDE|SPECIAL|=/.test(String(t.s || "")); })
           .map(function (t) { return { x: Math.round(t.x * 10) / 10, y: Math.round(t.y * 10) / 10, s: String(t.s || "") }; });
-        return json(200, { id: p.plan, dbg: hit.slice(0, 200) });
+        const fl = Ld.fills.filter(function (f) { return f.w > 8 && f.h > 4 && f.x > 480; })
+          .map(function (f) { return { x: Math.round(f.x), y: Math.round(f.y), w: Math.round(f.w), h: Math.round(f.h), c: gpColour(f), tint: gpIsTint(gpColour(f)) }; });
+        return json(200, { id: p.plan, dbg: hit.slice(0, 200), fills: fl.slice(0, 120) });
       }
       let got;
       try { got = parseGamePlan(pdfLayout(pb, zlib, PDFX)); }
