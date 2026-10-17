@@ -592,7 +592,7 @@ function parseGamePlan(L) {
         var glue = /^[^A-Za-z0-9(]*=/.test(t.s);
         var fresh = !cur || (!glue && (isBand(t.s) || (t.s.indexOf("=") > 0 && cur.s.indexOf("=") >= 0)));
         if (fresh) { cur = { x: t.x, y: t.y, s: t.s }; clusters.push(cur); }
-        else cur.s += " " + t.s;
+        else { cur.s += " " + t.s; if (cur.x2 == null) cur.x2 = t.x; }
       });
     });
     var side = "off", gen = { off: [], def: [] }, bands = [];
@@ -600,10 +600,13 @@ function parseGamePlan(L) {
       var s = clean(cl.s);
       if (/^DEFEN[SC]E\b/i.test(s)) side = "def";
       if (isBand(s)) {
-        /* the colour the line sits on: the sheet paints one band the whole width of the box and
-           the next one over part of it (green under, yellow on top on the right), so of every
-           coloured box under the line the smallest is the one that shows */
-        var fill = F.filter(function (f) { return f.x >= boxLeft - 8 && cl.x >= f.x - 4 && cl.x <= f.x + f.w && cl.y >= f.y - 4 && cl.y <= f.y + f.h + 4; })
+        /* the colour the line sits on, read where its text is and not at its label: on the
+           Chemnitz sheet "NEXT 4" starts at x 656, still over the green box (517-670), and its
+           text "= 7POP..." at 677, on the yellow one (669-772) - read at the label, the yellow
+           stretch got nothing and its text went into the green. Of two boxes there, the
+           smaller one shows. */
+        var px = (cl.x2 != null ? cl.x2 + 2 : cl.x + 15);
+        var fill = F.filter(function (f) { return f.x >= boxLeft - 8 && px >= f.x - 1 && px <= f.x + f.w && cl.y >= f.y - 4 && cl.y <= f.y + f.h + 4; })
           .sort(function (a, b) { return (a.w * a.h) - (b.w * b.h); })[0];
         var eq = s.indexOf("=");
         bands.push({ label: (eq > 0 ? s.slice(0, eq) : s).trim(), text: eq > 0 ? s.slice(eq + 1).trim() : "", c: fill ? fill.c : "", raw: s });
