@@ -464,61 +464,99 @@
      clearly worse there than in his own first blocks (eFG% 8 points lower on 5 shots or
      more; turnovers plus fouls half again as many per 10 minutes, over 4 minutes or more),
      and the last column names the block where that first happens. */
+  /* Two clocks, said plainly on the page:
+       IN A ROW - how long he has been on since he last checked in: when to take him off.
+       IN THE GAME - everything he has played tonight so far: how many minutes he can give.
+     Each block is coloured against his own first two blocks: green holds up, amber dips,
+     red clearly worse, grey too little time there to say. The sentence on top is the
+     first red block - for us when to rotate him, for an opponent when to go at him. */
   var FADE = {
-    cum: { l: "Minutes played in the game", b: ["0–5'", "5–10'", "10–15'", "15–20'", "20–25'", "25–30'", "30'+"] },
-    st: { l: "Minutes in a row, this stint", b: ["0–2'", "2–4'", "4–6'", "6–8'", "8'+"] }
+    st: { l: "Minutes in a row on the floor", s: "since he checked in · tells you when to take him off", b: ["0–2'", "2–4'", "4–6'", "6–8'", "8'+"], at: [0, 2, 4, 6, 8] },
+    cum: { l: "Minutes in the whole game", s: "everything he has played tonight · tells you how many minutes he can give", b: ["0–5'", "5–10'", "10–15'", "15–20'", "20–25'", "25–30'", "30'+"], at: [0, 5, 10, 15, 20, 25, 30] }
   };
-  var _fadeAsked = false;
-  function fadeView(root, P) {
-    var L = leagueState(), tid = ourId(), PL = (L.players || {})[tid];
-    var mode = UI.fade === "st" ? "st" : "cum", F = FADE[mode];
-    var box = el("div", { class: "pd-mxbox" });
-    box.appendChild(el("div", { class: "pd-h" }, el("b", {}, "When he fades"), el("span", { class: "pd-hs" }, "his shooting, turnovers and fouls by how long he has been on the floor"),
-      el("span", { class: "pd-tools" }, seg([["cum", "In the game"], ["st", "In the stint"]], mode, function (v) { UI.fade = v; }))));
-    var have = PL && (PL.players || []).some(function (p) { return p.fat; });
-    if (!have) {
-      box.appendChild(el("div", { class: "pd-miss" }, "The season is being read again for this, game by game; it fills in by itself."));
-      if (!_fadeAsked && tid && typeof syncPlayers === "function") { _fadeAsked = true; try { Promise.resolve(syncPlayers(tid, true)).then(function () { setTimeout(draw, 400); }); } catch (e) { } }
-      root.appendChild(box); return;
-    }
-    var byId = {}; (PL.players || []).forEach(function (p) { byId[String(p.id)] = p; });
+  var _fadeAsked = {};
+  function fadeLevels(f) {
     var efg = function (x) { return x.fga ? 100 * (x.fgm + 0.5 * x.p3m) / x.fga : null; };
     var bad = function (x) { return x.sec ? 600 * (x.tov + x.pf) / x.sec : null; };
-    var t = el("div", { class: "pd-mx pd-fade", style: "grid-template-columns:minmax(150px,1.3fr) repeat(" + F.b.length + ",minmax(74px,1fr)) minmax(110px,1fr)" });
-    t.appendChild(el("span", { class: "hd l" }, "Player"));
-    F.b.forEach(function (b) { t.appendChild(el("span", { class: "hd" }, el("b", {}, b), el("i", {}, "eFG · TO+PF/10'"))); });
-    t.appendChild(el("span", { class: "hd" }, el("b", {}, "Starts to fade")));
-    var rows = P.main.concat(P.dl).map(function (p) { var s = byId[String(p.id)]; return s && s.fat ? { p: p, f: s.fat[mode] } : null; })
-      .filter(function (r) { return r && r.f.reduce(function (a, x) { return a + x.sec; }, 0) >= 600; });
-    if (!rows.length) { box.appendChild(el("div", { class: "pd-miss" }, "Nobody has enough minutes read yet.")); root.appendChild(box); return; }
-    rows.forEach(function (r) {
-      var f = r.f;
-      /* his reference: the first two blocks he has, together */
-      var base = { sec: 0, fga: 0, fgm: 0, p3m: 0, tov: 0, pf: 0 };
-      f.slice(0, 2).forEach(function (x) { ["sec", "fga", "fgm", "p3m", "tov", "pf"].forEach(function (k) { base[k] += x[k] || 0; }); });
-      var be = efg(base), bb = bad(base), fadeAt = null;
-      t.appendChild(el("span", { class: "l" }, el("b", {}, (r.p.num ? "#" + r.p.num + " " : "") + r.p.nm),
-        el("i", {}, Math.round(f.reduce(function (a, x) { return a + x.sec; }, 0) / 60) + " min read")));
-      f.forEach(function (x, i) {
-        var e = efg(x), b = bad(x), thin = x.sec < 240;
-        var eDn = i >= 2 && e != null && be != null && x.fga >= 5 && e <= be - 8;
-        var bUp = i >= 2 && b != null && bb != null && x.sec >= 240 && b >= Math.max(bb * 1.5, bb + 1);
-        var eUp = i >= 2 && e != null && be != null && x.fga >= 5 && e >= be + 8;
-        if ((eDn || bUp) && fadeAt == null) fadeAt = i;
-        t.appendChild(el("span", { class: "c" + (eDn || bUp ? " d1" : eUp ? " u1" : "") + (thin ? " sm" : ""),
-          title: F.b[i] + ": " + Math.round(x.sec / 60) + " min · FG " + x.fgm + "/" + x.fga + " · 3P " + x.p3m + "/" + x.p3a + " · TO " + x.tov + " · PF " + x.pf },
-          x.sec ? el("b", {}, e == null ? "—" : Math.round(e) + "%") : el("b", {}, "·"),
-          x.sec ? el("i", {}, b == null ? "" : b.toFixed(1)) : null));
-      });
-      var why = "";
-      if (fadeAt != null) { var x = f[fadeAt], e = efg(x), b = bad(x);
-        why = (e != null && be != null && x.fga >= 5 && e <= be - 8 ? "eFG " + Math.round(be) + "% → " + Math.round(e) + "%" : "") +
-          (b != null && bb != null && b >= Math.max(bb * 1.5, bb + 1) ? (e != null && be != null && x.fga >= 5 && e <= be - 8 ? " · " : "") + "TO+PF " + bb.toFixed(1) + " → " + b.toFixed(1) : ""); }
-      t.appendChild(el("span", { class: "c fade-at" + (fadeAt != null ? " d2" : "") }, fadeAt != null ? el("b", {}, "from " + F.b[fadeAt]) : el("b", {}, "holds up"), why ? el("i", {}, why) : null));
+    var base = { sec: 0, fga: 0, fgm: 0, p3m: 0, tov: 0, pf: 0 };
+    f.slice(0, 2).forEach(function (x) { ["sec", "fga", "fgm", "p3m", "tov", "pf"].forEach(function (k) { base[k] += x[k] || 0; }); });
+    var be = efg(base), bb = bad(base), first = null, firstAmber = null;
+    var out = f.map(function (x, i) {
+      var e = efg(x), b = bad(x), o = { e: e, b: b, x: x, lv: "", why: "" };
+      if (x.sec < 240) { o.lv = "thin"; return o; }
+      if (i < 2) { o.lv = "base"; return o; }
+      var eDrop = (e != null && be != null && x.fga >= 5) ? be - e : 0;
+      var bRise = (b != null && bb != null) ? b / Math.max(bb, 0.5) : 1;
+      if (eDrop >= 8 || (bRise >= 1.5 && b - bb >= 1)) o.lv = "red";
+      else if (eDrop >= 4 || (bRise >= 1.25 && b - bb >= 0.5)) o.lv = "amber";
+      else o.lv = "green";
+      if (eDrop >= 4) o.why = "shoots " + Math.round(be) + "% → " + Math.round(e) + "%";
+      if (bRise >= 1.25 && b - bb >= 0.5) o.why += (o.why ? " · " : "") + "TO+fouls " + bb.toFixed(1) + " → " + b.toFixed(1);
+      if (o.lv === "red" && first == null) first = i;
+      if (o.lv === "amber" && firstAmber == null) firstAmber = i;
+      return o;
     });
-    box.appendChild(el("div", { class: "pd-mxw" }, t));
-    box.appendChild(el("div", { class: "pd-foot" }, "Each cell: his eFG% (a three counts one and a half) and his turnovers plus fouls per 10 minutes on the floor in that block. Pale: under 4 minutes there, too little to judge. Red: clearly worse than his first two blocks; green: clearly better. " +
-      (mode === "st" ? "A stint runs on across the end of the first and third quarters, not across half time." : "")));
+    return { blocks: out, red: first, amber: firstAmber, be: be, bb: bb };
+  }
+  function fadeStrip(F, R) {
+    return el("div", { class: "fd-strip" }, R.blocks.map(function (o, i) {
+      var x = o.x;
+      return el("div", { class: "fd-b " + o.lv, title: F.b[i] + ": " + Math.round(x.sec / 60) + " min there · FG " + x.fgm + "/" + x.fga + " · 3P " + x.p3m + "/" + x.p3a + " · turnovers " + x.tov + " · fouls " + x.pf + (o.why ? " · " + o.why : "") },
+        el("i", {}, F.b[i]),
+        el("b", {}, o.lv === "thin" ? "·" : (o.e == null ? "—" : Math.round(o.e) + "%")),
+        el("em", {}, o.lv === "thin" ? "too little" : (o.b == null ? "" : o.b.toFixed(1) + " TO+F")));
+    }));
+  }
+  function fadeView(root, P) {
+    var L = leagueState(), ours = ourId();
+    var tid = UI.fadeTeam && (L.teams || []).some(function (t) { return String(t.id) === String(UI.fadeTeam); }) ? String(UI.fadeTeam) : ours;
+    var mine = String(tid) === String(ours);
+    var PL = (L.players || {})[tid];
+    var box = el("div", { class: "pd-mxbox" });
+    var pick = el("select", { class: "fd-team" });
+    (L.teams || []).slice().sort(function (a, b) { return (a.name || "").localeCompare(b.name || ""); }).forEach(function (t) {
+      var o = el("option", { value: t.id }, (String(t.id) === String(ours) ? "Us · " : "") + t.name); if (String(t.id) === String(tid)) o.selected = true; pick.appendChild(o); });
+    pick.onchange = function () { UI.fadeTeam = pick.value; draw(); };
+    box.appendChild(el("div", { class: "pd-h" }, el("b", {}, "When he fades"),
+      el("span", { class: "pd-hs" }, mine ? "when to rotate each of ours" : "when to go at each of theirs"), el("span", { class: "pd-tools" }, pick)));
+    box.appendChild(el("div", { class: "fd-key" },
+      el("span", {}, el("u", { class: "base" }), "his first minutes (the reference)"), el("span", {}, el("u", { class: "green" }), "holds up"),
+      el("span", {}, el("u", { class: "amber" }), "dips"), el("span", {}, el("u", { class: "red" }), "clearly worse"), el("span", {}, el("u", { class: "thin" }), "too little time to say"),
+      el("span", { class: "fd-key-n" }, "In each block: his shooting (eFG%) and his turnovers + fouls per 10 minutes.")));
+    var have = PL && (PL.players || []).some(function (p) { return p.fat; });
+    if (!have) {
+      box.appendChild(el("div", { class: "pd-miss" }, "Reading this club's season game by game for this; it fills in by itself."));
+      if (!_fadeAsked[tid] && tid && typeof syncPlayers === "function") { _fadeAsked[tid] = true; try { Promise.resolve(syncPlayers(tid, true)).then(function () { setTimeout(draw, 400); }); } catch (e) { } }
+      root.appendChild(box); return;
+    }
+    /* our players in the order the page lists them; theirs by minutes */
+    var list = [];
+    if (mine) { var byId = {}; (PL.players || []).forEach(function (p) { byId[String(p.id)] = p; });
+      P.main.concat(P.dl).forEach(function (p) { var s = byId[String(p.id)]; if (s && s.fat) list.push({ nm: p.nm, num: p.num, fat: s.fat }); }); }
+    else (PL.players || []).filter(function (p) { return p.fat; }).forEach(function (p) { list.push({ nm: p.name || ("#" + p.num), num: p.num, fat: p.fat, sec: (p.all && p.all.sec) || 0 }); });
+    list = list.filter(function (r) { return r.fat.st.reduce(function (a, x) { return a + x.sec; }, 0) >= 600; });
+    if (!mine) list.sort(function (a, b) { return b.sec - a.sec; });
+    if (!list.length) { box.appendChild(el("div", { class: "pd-miss" }, "Nobody has enough minutes read yet.")); root.appendChild(box); return; }
+    var verb = mine ? "Rotate him" : "Attack him";
+    var cards = el("div", { class: "fd-cards" });
+    list.forEach(function (r) {
+      var S = fadeLevels(r.fat.st), C = fadeLevels(r.fat.cum);
+      var mins = Math.round(r.fat.st.reduce(function (a, x) { return a + x.sec; }, 0) / 60);
+      var say = [];
+      if (S.red != null) say.push(el("div", { class: "fd-say red" }, el("b", {}, verb + " after " + FADE.st.at[S.red] + "' in a row"), el("i", {}, S.blocks[S.red].why)));
+      else if (S.amber != null) say.push(el("div", { class: "fd-say amber" }, el("b", {}, "Dips after " + FADE.st.at[S.amber] + "' in a row"), el("i", {}, S.blocks[S.amber].why)));
+      else say.push(el("div", { class: "fd-say green" }, el("b", {}, "Holds up in long stints")));
+      if (C.red != null) say.push(el("div", { class: "fd-say red" }, el("b", {}, (mine ? "Fades" : "Tires") + " after " + FADE.cum.at[C.red] + "' in the game"), el("i", {}, C.blocks[C.red].why)));
+      else if (C.amber != null) say.push(el("div", { class: "fd-say amber" }, el("b", {}, "Dips after " + FADE.cum.at[C.amber] + "' in the game"), el("i", {}, C.blocks[C.amber].why)));
+      else say.push(el("div", { class: "fd-say green" }, el("b", {}, "Keeps his level all game")));
+      cards.appendChild(el("div", { class: "fd-card" },
+        el("div", { class: "fd-h" }, el("b", {}, (r.num ? "#" + r.num + " " : "") + r.nm), el("span", {}, mins + " min read")),
+        el("div", { class: "fd-says" }, say),
+        el("div", { class: "fd-l" }, el("b", {}, FADE.st.l), el("span", {}, FADE.st.s)), fadeStrip(FADE.st, S),
+        el("div", { class: "fd-l" }, el("b", {}, FADE.cum.l), el("span", {}, FADE.cum.s)), fadeStrip(FADE.cum, C)));
+    });
+    box.appendChild(cards);
+    box.appendChild(el("div", { class: "pd-foot" }, "From the league's play by play: every shot, turnover and foul is filed by how long he had been on the floor when it happened. A stint runs on across the end of the first and third quarters, not across half time. Hover a block for the detail."));
     root.appendChild(box);
   }
 
@@ -1174,6 +1212,18 @@
       ".pd-mx .c.seas{background:transparent;border:1px solid var(--line,#e4e7ec)}.pd-mx .c.tr{background:transparent}",
       ".pd-mx .mk{box-shadow:inset 3px 0 0 #c6a15b}",
       ".pd-fade .c{flex-direction:column;gap:1px;line-height:1.15}.pd-fade .c i{font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;opacity:.85}.pd-fade .c.fade-at{align-items:flex-start;padding:3px 7px;background:transparent;border:1px solid var(--line,#e4e7ec)}.pd-fade .c.fade-at.d2{background:#d8524e;color:#fff;border-color:#d8524e}",
+      ".fd-team{font:600 12px Inter,system-ui,sans-serif;padding:4px 8px;border:1px solid var(--line-strong,#cfd4dc);border-radius:7px;background:var(--panel,#fff);color:var(--ink,#141821)}",
+      ".fd-key{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:11.5px;color:var(--ink-soft,#5b6472);margin:2px 0 10px}.fd-key span{display:inline-flex;align-items:center;gap:5px}.fd-key u{display:inline-block;width:14px;height:10px;border-radius:3px}.fd-key-n{flex-basis:100%;color:var(--ink-faint,#8a93a2)}",
+      ".fd-key u.base,.fd-b.base{background:#e7eaef}.fd-key u.green,.fd-b.green{background:rgba(47,158,134,.22)}.fd-key u.amber,.fd-b.amber{background:rgba(217,165,33,.3)}.fd-key u.red,.fd-b.red{background:#d8524e}.fd-key u.thin,.fd-b.thin{background:repeating-linear-gradient(45deg,#f1f2f4 0 4px,#e7eaef 4px 8px)}",
+      ".fd-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:10px}",
+      ".fd-card{border:1px solid var(--line,#e4e7ec);border-radius:11px;background:var(--panel,#fff);padding:10px 12px;display:grid;gap:6px;min-width:0}",
+      ".fd-h{display:flex;align-items:baseline;gap:8px}.fd-h b{font:700 15px 'Oswald',sans-serif;letter-spacing:.04em;text-transform:uppercase}.fd-h span{margin-left:auto;font:600 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}",
+      ".fd-says{display:grid;gap:4px}.fd-say{border-radius:8px;padding:5px 9px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}.fd-say b{font:700 13px 'Oswald',sans-serif;letter-spacing:.04em}.fd-say i{font-style:normal;font-size:11px}",
+      ".fd-say.red{background:#d8524e;color:#fff}.fd-say.amber{background:rgba(217,165,33,.2);color:#7a5c12}.fd-say.green{background:rgba(47,158,134,.14);color:#17603f}",
+      ".fd-l{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;margin-top:4px}.fd-l b{font:700 10.5px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em}.fd-l span{font-size:10.5px;color:var(--ink-faint,#8a93a2)}",
+      ".fd-strip{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:3px}",
+      ".fd-b{border-radius:6px;padding:4px 2px;display:flex;flex-direction:column;align-items:center;min-width:0;line-height:1.15}.fd-b i{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}.fd-b b{font:700 13px 'IBM Plex Mono',monospace}.fd-b em{font:600 8.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472);white-space:nowrap}",
+      ".fd-b.red,.fd-b.red i,.fd-b.red em{color:#fff}",
       /* portraits and crests */
       ".lg-bdg.face.pd-f{flex:none;border:1px solid var(--line,#e4e7ec)}",
       ".lg-bdg.face.pd-f.xs{width:20px;height:20px}.lg-bdg.face.pd-f.sm{width:24px;height:24px}.lg-bdg.face.pd-f.md{width:40px;height:40px}.lg-bdg.face.pd-f.lg{width:60px;height:60px;border-width:2px;border-color:#c6a15b}",
@@ -1283,5 +1333,7 @@
     document.head.appendChild(s);
   }
   css();
-  window.PDev = { render: render, dash: dash, compact: compact, reload: function () { D.R = null; D.doc = null; } };
+  window.PDev = { render: render, dash: dash, compact: compact, reload: function () { D.R = null; D.doc = null; },
+    /* for checking the fade cards of one club without the season page */
+    fadeOf: function (root, tid) { UI.fadeTeam = tid; fadeView(root, { main: [], dl: [] }); } };
 })();

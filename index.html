@@ -17213,7 +17213,13 @@ function defaultPlaybook(kind){
 let _pbDrag=null;
 function pbData(kind){
   if(kind==="def"){ if(!Array.isArray(state.playbookDef)||!state.playbookDef.length) state.playbookDef=defaultPlaybook("def"); return state.playbookDef; }
-  if(!Array.isArray(state.playbookOff)||!state.playbookOff.length) state.playbookOff=defaultPlaybook("off"); return state.playbookOff;
+  if(!Array.isArray(state.playbookOff)||!state.playbookOff.length) state.playbookOff=defaultPlaybook("off");
+  /* the after-time-out plays have a section of their own, added once and then the staff's */
+  if(!state.pbAto && !state.playbookOff.some(s=>/^\s*ATO/i.test(s.title||""))){
+    state.playbookOff.push({ id:uid(), title:"ATO's", color:"gold", entries:[{ id:uid(), label:"", detail:"" }] });
+    state.pbAto=1; try{ persist(); }catch(e){}
+  }
+  return state.playbookOff;
 }
 let _pbPasteEn=null;
 function _pbReadImg(f, en){ const rd=new FileReader(); rd.onload=async ()=>{ const small=await shrinkPhoto(rd.result); commit(()=>{ en.img=small; }); persist(); renderPlaybook(); }; rd.readAsDataURL(f); }
