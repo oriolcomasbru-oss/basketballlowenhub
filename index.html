@@ -5519,12 +5519,12 @@ const SECT_KEYS=["league","planification","teamscout","trends","oppscout","gamep
    is untouched, so bringing one back is deleting its name from this line. What this list
    does is keep anyone from LANDING on one: not from a saved view, not from a tab, not
    from the first-screen fallback. */
-const SECT_HIDDEN=["playerdb","rooster","prob"];
+const SECT_HIDDEN=["playerdb","rooster"];
 function sectHidden(k){ return SECT_HIDDEN.indexOf(k)>=0; }
 /* The sections that are still being built. A user may see the tab and the notice; going
    past the notice is a permission of its own, WIP_KEY, so a half-finished screen is not
    something the staff can wander into and take for finished work. */
-const WIP_SECTS=["playerdb","prob"];
+const WIP_SECTS=["playerdb"];
 const WIP_KEY="wip";
 const SECT_LABELS={dashboard:"Dashboard",planification:"Planning",calendar:"Calendar",league:"League",teamscout:"Post game/practice",oppscout:"Pre game",gameplan:"Game plan",playbook:"Playbook",playerdev:"Player development",playerdb:"Player database",rooster:"Rooster",prob:"PROB",trends:"Trends"};
 function defaultPerms(){
@@ -6285,17 +6285,11 @@ function addAccountDlg(scope, body){
 }
 
 /* ===== Player development ===== */
-/* PROB. Nothing is built behind this yet — it is a tab so the work has somewhere to land,
-   and the notice is the whole screen until it does. */
+/* PROB. Our second team in its league: the screen itself is renderProB */
 function renderProb(){
   const root=$("#viewProb"); if(!root) return;
-  if(!gateOk.prob){ root.innerHTML="";
-    renderGate(root,"PROB \u2014 under construction",()=>{ gateOk.prob=true; renderProb(); });
-    return; }
-  if(root.querySelector(".prob-body")) return;
   root.innerHTML="";
-  root.appendChild(h("div",{class:"prob-body"},
-    h("div",{class:"empty-state"},"PROB \u2014 nothing here yet.")));
+  try{ renderProB(root); }catch(e){ root.appendChild(h("div",{class:"lg-warn err"},"The ProB screen failed: "+e.message)); }
 }
 function renderPlayerDev(){
   const root=$("#viewPlayerDev"); root.innerHTML="";
@@ -25705,6 +25699,176 @@ function renderDashboard(){
   D.cards.forEach(k=>{ try{ builders[k](); }catch(e){ try{ console.warn("dashboard", k, e); }catch(_){} } });
 }
 let _lgClubOpen=false;
+/* PROB - our second team (SG Braunschweig) in its league, from the ProB API through
+   /.netlify/functions/prob (the key stays there). A team key reads the whole league's
+   schedule, table and live scores, and only our own roster and stats. */
+let _pb=null, _pbBusy=false, _pbAt=0, _pbDay=null, _pbSort={k:"pts", d:-1};
+function _pbLoad(fresh){
+  if(_pbBusy) return; _pbBusy=true;
+  fetch("/.netlify/functions/prob?res=all"+(fresh? "&fresh=1" : ""))
+    .then(r=>r.json()).then(j=>{ _pb=j; _pbAt=Date.now(); })
+    .catch(e=>{ _pb={ ok:false, errors:["The ProB reader could not be reached: "+e.message] }; })
+    .finally(()=>{ _pbBusy=false; _pbRedraw(); });
+}
+function _pbRedraw(){ if(state.ui && state.ui.view==="prob") renderProb(); }
+function _pbWhen(ts, withDay){
+  if(!ts) return "—";
+  const d=new Date(ts);
+  const o={ timeZone:"Europe/Berlin", day:"2-digit", month:"2-digit" };
+  if(withDay) o.weekday="short";
+  return d.toLocaleDateString("en-GB", o)+" "+d.toLocaleTimeString("en-GB",{ timeZone:"Europe/Berlin", hour:"2-digit", minute:"2-digit" });
+}
+function _pbAge(ymd){ const m=/^(\d{4})-(\d\d)-(\d\d)/.exec(ymd||""); if(!m) return "";
+  const n=new Date(), b=new Date(+m[1], +m[2]-1, +m[3]); let a=n.getFullYear()-b.getFullYear();
+  if(n.getMonth()<b.getMonth() || (n.getMonth()===b.getMonth() && n.getDate()<b.getDate())) a--; return String(a); }
+function renderProB(root){
+  const P=_pb;
+  const head=h("div",{class:"plan-head"},
+    h("div",{class:"week-label"},"PROB · "+((P&&P.team&&P.team.name)? P.team.name+" · " : "")+((P&&P.league)||"ProB")),
+    h("div",{class:"spacer"}),
+    P&&P.updated? h("span",{class:"ro-badge"}, (_pbBusy? "refreshing… " : "")+_lgAgo(P.updated)) : null,
+    h("button",{class:"btn primary", type:"button", onclick:()=>_pbLoad(true)},"↻ Sync"));
+  root.appendChild(head);
+  if(!P){ root.appendChild(h("div",{class:"lg-empty"},"Reading the ProB league…")); if(!_pbBusy) _pbLoad(false); return; }
+  if(Date.now()-_pbAt>5*60000 && !_pbBusy) _pbLoad(false);
+  if(P.nokey){ root.appendChild(h("div",{class:"lg-warn"},"The ProB key is not set yet. In Netlify → Site configuration → Environment variables add PROB_API_KEY with the key from the league, then publish again.")); return; }
+  if((P.errors||[]).length) root.appendChild(h("div",{class:"lg-warn err"},"Feed warnings: "+P.errors.join(" · ")));
+  if(!P.ok) return;
+  const us=String((P.team&&P.team.id)||"");
+  const isUs=id=>us && String(id)===us;
+  const games=P.games||[];
+  const now=Date.now();
+
+  /* --- top row: our next game, our last game, what is on now ---------------------- */
+  const mine=games.filter(g=>isUs(g.homeId)||isUs(g.guestId));
+  const played=mine.filter(g=>g.hp!=null && g.gp!=null);
+  const next=mine.filter(g=>g.hp==null && g.ts && g.ts>now-3*3600e3)[0];
+  const last=played[played.length-1];
+  const card=(title, g)=>{
+    const box=h("div",{class:"lg-panel pb-card"}, h("div",{class:"lg-h"}, h("span",{}, title)));
+    if(!g){ box.appendChild(h("div",{class:"lg-empty"},"None.")); return box; }
+    const home=isUs(g.homeId);
+    const res=g.hp!=null? (home? g.hp-g.gp : g.gp-g.hp) : null;
+    box.appendChild(h("div",{class:"pb-match"},
+      h("span",{class:"pb-t"+(isUs(g.homeId)?" us":"")}, g.home),
+      h("b",{class:"pb-sc"+(res==null? "" : res>0? " w" : " l")}, g.hp!=null? g.hp+" : "+g.gp : "vs"),
+      h("span",{class:"pb-t"+(isUs(g.guestId)?" us":"")}, g.guest)));
+    box.appendChild(h("div",{class:"pb-meta"},
+      "Matchday "+g.day+" · "+_pbWhen(g.ts, true)+(g.arena? " · "+g.arena+(g.city? ", "+g.city : "") : ""),
+      g.refs&&g.refs.length? h("div",{}, "Referees: "+g.refs.join(", ")) : null,
+      g.stream? h("a",{href:g.stream, target:"_blank", rel:"noopener", class:"pb-link"}, "Livestream ↗") : null));
+    return box;
+  };
+  const liveBox=h("div",{class:"lg-panel pb-card"}, h("div",{class:"lg-h"}, h("span",{},"Scores · ProB Nord"), h("span",{class:"lg-sub"},"from the league's live centre")));
+  const lv=(P.live||[]).filter(g=>g.l==="n" || isUs(g.homeId) || isUs(g.awayId));
+  const onNow=lv.filter(g=>!/^(E|Q0)$/.test(g.q));
+  const show=(onNow.length? onNow : lv).slice().sort((a,b)=>(a.date.split(".").reverse().join("")+a.time).localeCompare(b.date.split(".").reverse().join("")+b.time));
+  if(!show.length) liveBox.appendChild(h("div",{class:"lg-empty"},"No games in the live centre."));
+  show.forEach(g=>{
+    const st=g.q==="E"? "Final" : g.q==="Q0"? g.date.slice(0,5)+" "+g.time : g.q+(g.clock? " "+g.clock : "");
+    liveBox.appendChild(h("div",{class:"pb-live"+((isUs(g.homeId)||isUs(g.awayId))?" us":"")+(/^(E|Q0)$/.test(g.q)? "" : " on")},
+      h("span",{class:"pb-st"}, st),
+      h("span",{class:"pb-t"}, g.home), h("b",{}, g.hp!=null? g.hp+" : "+g.ap : "–"), h("span",{class:"pb-t"}, g.away)));
+  });
+  root.appendChild(h("div",{class:"pb-row"}, card("Next game", next), card("Last game", last), liveBox));
+
+  /* --- the table and our season, side by side --------------------------------------- */
+  const tb=h("div",{class:"lg-panel"}, h("div",{class:"lg-h"}, h("span",{},"Standings"), h("span",{class:"lg-sub"}, P.tableUpdated? "updated "+P.tableUpdated.slice(0,16) : "")));
+  if(!(P.table||[]).length) tb.appendChild(h("div",{class:"lg-empty"},"No table in the feed."));
+  else {
+    const t=h("table",{class:"lg-tbl lg-std"});
+    t.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Team"), h("th",{},"GP"), h("th",{},"W"), h("th",{},"L"), h("th",{},"PTS"), h("th",{},"DIFF"), h("th",{},"HOME"), h("th",{},"AWAY"), h("th",{title:"Positive: games won in a row. Negative: lost in a row."},"STREAK")));
+    P.table.forEach(r=>t.appendChild(h("tr",{class:isUs(r.id)? "ours" : ""},
+      h("td",{class:"lg-pos"}, String(r.pos||"")), h("td",{class:"l lg-team"}, r.team),
+      h("td",{}, String(r.gp??"—")), h("td",{}, String(r.w??"—")), h("td",{}, String(r.l??"—")), h("td",{}, String(r.pts??"—")),
+      h("td",{class:r.diff>0?"pos":r.diff<0?"neg":""}, r.diff!=null? (r.diff>0?"+":"")+r.diff : "—"),
+      h("td",{}, r.home||"—"), h("td",{}, r.away||"—"),
+      h("td",{class:r.streak>0?"pos":r.streak<0?"neg":""}, r.streak? (r.streak>0? "W"+r.streak : "L"+(-r.streak)) : "—"))));
+    tb.appendChild(h("div",{class:"pb-scroll"}, t));
+  }
+  const ours=h("div",{class:"lg-panel"}, h("div",{class:"lg-h"}, h("span",{},"Our season · "+((P.team&&P.team.name)||"")), h("span",{class:"lg-sub"}, played.length? played.filter(g=>(isUs(g.homeId)? g.hp-g.gp : g.gp-g.hp)>0).length+"–"+played.filter(g=>(isUs(g.homeId)? g.hp-g.gp : g.gp-g.hp)<0).length : "")));
+  if(!mine.length) ours.appendChild(h("div",{class:"lg-empty"},"Our games are not in the schedule."));
+  else {
+    const t=h("table",{class:"lg-tbl"});
+    t.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"MD"), h("th",{class:"l"},"Date"), h("th",{},""), h("th",{class:"l"},"Opponent"), h("th",{},"Result")));
+    mine.forEach(g=>{
+      const home=isUs(g.homeId), opp=home? g.guest : g.home;
+      const d=g.hp!=null? (home? g.hp-g.gp : g.gp-g.hp) : null;
+      t.appendChild(h("tr",{class:g===next? "sel" : ""},
+        h("td",{class:"lg-pos"}, String(g.day)), h("td",{class:"l"}, _pbWhen(g.ts)), h("td",{}, home? "vs" : "@"),
+        h("td",{class:"l lg-team"}, opp),
+        h("td",{class:d==null? "" : d>0? "pos" : "neg"}, d==null? "—" : (d>0? "W " : "L ")+(home? g.hp+"-"+g.gp : g.gp+"-"+g.hp))));
+    });
+    ours.appendChild(h("div",{class:"pb-scroll"}, t));
+  }
+  root.appendChild(h("div",{class:"lg-grid"}, tb, ours));
+
+  /* --- our roster with its season averages ------------------------------------------ */
+  const ro=(P.roster||[]).filter(p=>!p.coach), coaches=(P.roster||[]).filter(p=>p.coach);
+  const rbox=h("div",{class:"lg-panel", style:"margin-top:14px"}, h("div",{class:"lg-h"}, h("span",{},"Roster · season averages"), h("span",{class:"lg-sub"},(coaches.length? "Coach: "+coaches.map(c=>(c.first+" "+c.last).trim()).join(", ")+" · " : "")+"main round · click a heading to sort")));
+  if(!ro.length) rbox.appendChild(h("div",{class:"lg-empty"},"No roster in the feed."));
+  else {
+    const f1=v=>v==null? "—" : (Math.round(v*10)/10).toFixed(1);
+    const pc=(m,a)=>a? (Math.round(m/a*1000)/10).toFixed(1) : "—";
+    const cols=[
+      ["num","#",p=>p.num, p=>Number(p.num)||99],
+      ["name","Player",p=>(p.first+" "+p.last).trim()+(p.captain? " (C)" : ""), p=>p.last.toLowerCase()],
+      ["pos","Pos",p=>p.pos||"—", p=>p.pos],
+      ["ht","Ht",p=>p.height? p.height.toFixed(2) : "—", p=>p.height||0],
+      ["age","Age",p=>_pbAge(p.born)||"—", p=>Number(_pbAge(p.born))||0],
+      ["nat","Nat",p=>p.nat||"—", p=>p.nat],
+      ["gp","GP",p=>p.avg? String(p.avg.gp??"—") : "—", p=>p.avg? p.avg.gp||0 : -1],
+      ["min","MIN",p=>p.avg? p.avg.min||"—" : "—", p=>{ const m=/^(\d+):(\d+)/.exec((p.avg&&p.avg.min)||""); return m? +m[1]*60+ +m[2] : -1; }],
+      ["pts","PTS",p=>p.avg? f1(p.avg.pts) : "—", p=>p.avg? p.avg.pts : -1],
+      ["reb","REB",p=>p.avg? f1(p.avg.reb) : "—", p=>p.avg? p.avg.reb : -1],
+      ["oreb","OREB",p=>p.avg? f1(p.avg.oreb) : "—", p=>p.avg? p.avg.oreb : -1],
+      ["ast","AST",p=>p.avg? f1(p.avg.ast) : "—", p=>p.avg? p.avg.ast : -1],
+      ["stl","STL",p=>p.avg? f1(p.avg.stl) : "—", p=>p.avg? p.avg.stl : -1],
+      ["tov","TOV",p=>p.avg? f1(p.avg.tov) : "—", p=>p.avg? p.avg.tov : -1],
+      ["p2","2P",p=>p.tot&&p.tot.p2a? p.tot.p2m+"/"+p.tot.p2a+" "+pc(p.tot.p2m,p.tot.p2a)+"%" : "—", p=>p.tot&&p.tot.p2a? p.tot.p2m/p.tot.p2a : -1],
+      ["p3","3P",p=>p.tot&&p.tot.p3a? p.tot.p3m+"/"+p.tot.p3a+" "+pc(p.tot.p3m,p.tot.p3a)+"%" : "—", p=>p.tot&&p.tot.p3a? p.tot.p3m/p.tot.p3a : -1],
+      ["ft","FT",p=>p.tot&&p.tot.fta? p.tot.ftm+"/"+p.tot.fta+" "+pc(p.tot.ftm,p.tot.fta)+"%" : "—", p=>p.tot&&p.tot.fta? p.tot.ftm/p.tot.fta : -1],
+      ["eff","EFF",p=>p.avg? f1(p.avg.eff) : "—", p=>p.avg? p.avg.eff : -1]
+    ];
+    const t=h("table",{class:"lg-tbl pb-ro"});
+    const hr=h("tr",{class:"lg-tbl-h"});
+    cols.forEach(c=>hr.appendChild(h("th",{class:(c[0]==="name"? "l " : "")+(_pbSort.k===c[0]? "on" : ""), style:"cursor:pointer",
+      onclick:()=>{ _pbSort=_pbSort.k===c[0]? {k:c[0], d:-_pbSort.d} : {k:c[0], d:(c[0]==="name"||c[0]==="num"||c[0]==="pos"||c[0]==="nat")? 1 : -1}; _pbRedraw(); }},
+      c[1]+(_pbSort.k===c[0]? (_pbSort.d>0? " ▲" : " ▼") : ""))));
+    t.appendChild(hr);
+    const sc=cols.filter(c=>c[0]===_pbSort.k)[0]||cols[8];
+    ro.slice().sort((a,b)=>{ const x=sc[3](a), y=sc[3](b); return (x<y? -1 : x>y? 1 : 0)*_pbSort.d; })
+      .forEach(p=>{ const tr=h("tr",{class:p.gone? "pb-gone" : ""});
+        cols.forEach(c=>tr.appendChild(h("td",{class:c[0]==="name"? "l lg-team" : ""}, c[2](p)))); t.appendChild(tr); });
+    rbox.appendChild(h("div",{class:"pb-scroll"}, t));
+    rbox.appendChild(h("div",{class:"lg-sub", style:"margin-top:6px"},"Shooting is made/attempted over the season. Players in grey have played for us but are no longer on the roster sheet."));
+  }
+  root.appendChild(rbox);
+
+  /* --- the whole league, matchday by matchday --------------------------------------- */
+  const days=Array.from(new Set(games.map(g=>g.day))).sort((a,b)=>a-b);
+  if(days.length){
+    const cur=_pbDay!=null && days.includes(_pbDay)? _pbDay : (P.day && days.includes(P.day)? P.day : days[0]);
+    const nav=h("div",{class:"pb-days"},
+      h("button",{class:"lg-seg-b", type:"button", disabled:cur===days[0], onclick:()=>{ _pbDay=days[Math.max(0, days.indexOf(cur)-1)]; _pbRedraw(); }},"‹"),
+      h("b",{},"Matchday "+cur),
+      h("button",{class:"lg-seg-b", type:"button", disabled:cur===days[days.length-1], onclick:()=>{ _pbDay=days[Math.min(days.length-1, days.indexOf(cur)+1)]; _pbRedraw(); }},"›"));
+    const box=h("div",{class:"lg-panel", style:"margin-top:14px"}, h("div",{class:"lg-h"}, h("span",{},"Schedule · every game"), nav));
+    const t=h("table",{class:"lg-tbl"});
+    games.filter(g=>g.day===cur).forEach(g=>{
+      if(!g.guestId || g.guestId==="0" || !g.homeId || g.homeId==="0") return;
+      t.appendChild(h("tr",{class:(isUs(g.homeId)||isUs(g.guestId))? "ours" : ""},
+        h("td",{class:"l"}, _pbWhen(g.ts, true)),
+        h("td",{class:"l lg-team"}, g.home), h("td",{}, g.hp!=null? g.hp+" : "+g.gp : "–"), h("td",{class:"l lg-team"}, g.guest),
+        h("td",{class:"l pb-ar"}, g.city||""),
+        h("td",{}, g.stream? h("a",{href:g.stream, target:"_blank", rel:"noopener", class:"pb-link"},"stream ↗") : "")));
+    });
+    box.appendChild(h("div",{class:"pb-scroll"}, t));
+    root.appendChild(box);
+  }
+  root.appendChild(h("div",{class:"lg-sub", style:"margin:12px 2px"},"The ProB key reads the whole league's schedule, table and scores, but only our own roster and stats: the other clubs' players are not open to it."));
+}
+
 function renderLeague(){
   const root=$("#viewLeague"); if(!root) return;
   const L=leagueState();
@@ -30777,6 +30941,25 @@ body.edit-mode .phx .card .extra-block:has(.extra-line:empty)::before{display:bl
 .lg-warn{margin:10px 0 0;padding:8px 12px;border-radius:10px;background:rgba(228,193,88,.14);border:1px solid rgba(228,193,88,.45);color:var(--ink);font-size:12px}
 .lg-warn.err{background:rgba(216,82,78,.12);border-color:rgba(216,82,78,.45)}
 .lg-grid{display:grid;grid-template-columns:minmax(360px,1fr) minmax(420px,1.25fr);gap:14px;margin-top:14px;align-items:start}
+.pb-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:12px;align-items:stretch}
+.pb-match{display:flex;align-items:center;justify-content:center;gap:12px;padding:10px 0 6px;font-weight:700;text-align:center}
+.pb-match .pb-t{flex:1;font-size:13px}
+.pb-t.us{color:var(--accent-ink,#8a6a12)}
+.pb-sc{font-family:'Oswald',sans-serif;font-size:22px;white-space:nowrap}
+.pb-sc.w{color:#1f8a4c}.pb-sc.l{color:#c0392b}
+.pb-meta{font-size:11.5px;color:var(--ink-faint,#8a919c);text-align:center;display:flex;flex-direction:column;gap:3px}
+.pb-link{color:inherit;text-decoration:underline;font-size:11.5px}
+.pb-live{display:grid;grid-template-columns:70px 1fr auto 1fr;gap:8px;align-items:center;font-size:12px;padding:5px 2px;border-bottom:1px solid var(--line,#eef0f3)}
+.pb-live .pb-st{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-faint,#8a919c)}
+.pb-live.on .pb-st{color:#c0392b;font-weight:700}
+.pb-live b{font-family:'IBM Plex Mono',monospace;white-space:nowrap}
+.pb-live.us{background:rgba(236,208,138,.32);font-weight:700}
+.pb-scroll{overflow-x:auto}
+.pb-ro td,.pb-ro th{white-space:nowrap}
+.pb-ro th.on{color:var(--ink,#141821)}
+.pb-ro tr.pb-gone td{opacity:.5}
+.pb-days{display:flex;align-items:center;gap:8px;font-size:12px}
+.pb-ar{color:var(--ink-faint,#8a919c);font-size:11px}
 .lg-grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;align-items:start}
 @media(max-width:1100px){.lg-grid,.lg-grid2{grid-template-columns:1fr}}
 .lg-panel{background:var(--panel,#fff);border:1px solid var(--line,#e6e8ec);border-radius:14px;padding:12px 14px 14px;box-shadow:0 1px 3px rgba(16,24,40,.05)}
