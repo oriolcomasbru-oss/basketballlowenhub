@@ -1719,7 +1719,7 @@
       { t: "Where the possession ends", span: used.length, cls: "grpd" }];
     var TPL = tableShell(h6);
     var r6 = el("tr");
-    ["Poss", "Use", "PPP", "xPPP", "Luck", "eFG%", "3PAr", "TOV%"].forEach(function (x, i) {
+    ["Poss", "Use", "Pts/shot", "xPts/shot", "Luck", "eFG%", "3PAr", "TOV%"].forEach(function (x, i) {
       r6.appendChild(el("th", "n" + (i === 7 ? " sep" : ""), x));
     });
     used.forEach(function (x) { r6.appendChild(el("th", "n rot", x)); });
@@ -1743,7 +1743,7 @@
       TPL.body.appendChild(tr);
     });
     b6.appendChild(TPL.wrap);
-    tnote(b6, "Luck is PPP minus xPPP, coloured like everything else — green favours us. Role counts " +
+    tnote(b6, "Pts/shot and xPts/shot are per possession he finished with a shot or free throws: the tagging does not put every turnover on a player, so possessions he lost are mostly missing and these read higher than a real PPP (the roster table carries his PPP from the league, turnovers in). Luck is Pts/shot minus xPts/shot, coloured like everything else — green favours us. Role counts " +
       "come from the " + M.tag.player + "% of offensive clips that carry a player tag, so they are a " +
       "share, not a full box score.");
 

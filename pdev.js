@@ -510,18 +510,22 @@
     firstAmber = lasting(["red", "amber"]);
     return { blocks: out, red: first, amber: firstAmber, soft: soft, last: last, be: be, bb: bb };
   }
-  function fadeStrip(F, R) {
-    var col = function (o) {
-      var hgt = o.lv === "thin" || o.e == null ? 6 : Math.max(8, Math.min(100, Math.round(100 * o.e / 80)));
+  /* A TRAFFIC LIGHT ON A TIME LINE. Left is the moment he checks in (or the tip-off), each
+     segment a minute, its colour how he is doing against his own first minutes: grey his
+     first minutes (the reference), green holding his level, amber starting to drop, red
+     clearly worse; striped, not enough minutes there to say. The ▼ is the minute the
+     sentence above is about. The numbers are on the hover. */
+  function fadeStrip(F, R, mark) {
+    var seg = function (o) {
       var x = o.x;
-      return el("div", { class: "fd-m " + o.lv, title: F.lab(o.m) + " " + F.how + ": " + Math.round((x.sec || 0) / 60) + " min there · read with the minutes either side: " +
-          (o.e == null ? "no shots" : "eFG " + Math.round(o.e) + "%") + (o.b == null ? "" : " · TO+fouls " + o.b.toFixed(1) + " per 10'") + (o.why ? " · " + o.why : "") + (o.lv === "thin" ? " · too little to say" : "") },
-        el("i", { style: "height:" + hgt + "%" }));
+      return el("span", { class: "fd-s " + o.lv, title: F.lab(o.m) + " " + F.how + " · " + Math.round((x.sec || 0) / 60) + " min of his season here · " +
+          (o.e == null ? "no shots" : "shooting (eFG) " + Math.round(o.e) + "%") + (o.b == null ? "" : " · turnovers + fouls " + o.b.toFixed(1) + " per 10'") + (o.why ? " · " + o.why : "") + (o.lv === "thin" ? " · too little to say" : "") });
     };
-    var axis = el("div", { class: "fd-ax" }, R.blocks.map(function (o) { return el("span", {}, o.m % F.tick === 0 ? F.lab(o.m) : ""); }));
-    /* the reference line: his shooting in his first minutes */
-    var ref = R.be != null ? el("u", { class: "fd-ref", style: "bottom:" + Math.max(8, Math.min(100, Math.round(100 * R.be / 80))) + "%", title: "his first minutes: eFG " + Math.round(R.be) + "%" }) : null;
-    return el("div", { class: "fd-mm" }, el("div", { class: "fd-cols", style: "grid-template-columns:repeat(" + R.blocks.length + ",1fr)" }, R.blocks.map(col), ref), axis);
+    var n = R.blocks.length;
+    var bar = el("div", { class: "fd-bar" }, R.blocks.map(seg));
+    if (mark != null) bar.appendChild(el("i", { class: "fd-mk", style: "left:" + (100 * mark / n) + "%", title: "the minute in the sentence above" }, "▼"));
+    var axis = el("div", { class: "fd-axis" }, R.blocks.map(function (o) { return el("span", {}, o.m % F.tick === 0 ? F.lab(o.m) : ""); }));
+    return el("div", { class: "fd-tl" }, bar, axis);
   }
   function fadeView(root, P) {
     var L = leagueState(), ours = ourId();
@@ -533,12 +537,13 @@
     (L.teams || []).slice().sort(function (a, b) { return (a.name || "").localeCompare(b.name || ""); }).forEach(function (t) {
       var o = el("option", { value: t.id }, (String(t.id) === String(ours) ? "Us · " : "") + t.name); if (String(t.id) === String(tid)) o.selected = true; pick.appendChild(o); });
     pick.onchange = function () { UI.fadeTeam = pick.value; draw(); };
-    box.appendChild(el("div", { class: "pd-h" }, el("b", {}, "When he fades"),
+    box.appendChild(el("div", { class: "pd-h" }, el("b", {}, "When he fades"), (typeof _wipTag === "function" ? _wipTag() : null),
       el("span", { class: "pd-hs" }, mine ? "when to rotate each of ours" : "when to go at each of theirs"), el("span", { class: "pd-tools" }, pick)));
     box.appendChild(el("div", { class: "fd-key" },
+      el("span", { class: "fd-key-h" }, "How to read it"),
+      el("span", { class: "fd-key-n" }, "Each bar is a time line: on the left the moment he checks in (or the tip-off), then minute by minute. The colour compares his shooting and his turnovers + fouls with his own first minutes. 25bc marks the minute in the sentence."),
       el("span", {}, el("u", { class: "base" }), "his first minutes (the reference)"), el("span", {}, el("u", { class: "green" }), "holds up"),
-      el("span", {}, el("u", { class: "amber" }), "dips"), el("span", {}, el("u", { class: "red" }), "clearly worse"), el("span", {}, el("u", { class: "thin" }), "too little time to say"),
-      el("span", { class: "fd-key-n" }, "One column a minute, read with the minutes either side: its height is his shooting (eFG%), its colour whether he holds up - shooting and turnovers + fouls. The dashed line is his shooting in his first minutes. Hover a minute for the detail.")));
+      el("span", {}, el("u", { class: "amber" }), "dips"), el("span", {}, el("u", { class: "red" }), "clearly worse"), el("span", {}, el("u", { class: "thin" }), "too little time to say")));
     var have = PL && (PL.players || []).some(function (p) { return p.fat && p.fat.st1; });
     if (!have) {
       box.appendChild(el("div", { class: "pd-miss" }, "Reading this club's season game by game for this; it fills in by itself."));
@@ -571,8 +576,8 @@
       cards.appendChild(el("div", { class: "fd-card" },
         el("div", { class: "fd-h" }, el("b", {}, (r.num ? "#" + r.num + " " : "") + r.nm), el("span", {}, mins + " min read")),
         el("div", { class: "fd-says" }, say),
-        el("div", { class: "fd-l" }, el("b", {}, FADE.st.l), el("span", {}, FADE.st.s)), fadeStrip(FADE.st, S),
-        el("div", { class: "fd-l" }, el("b", {}, FADE.cum.l), el("span", {}, FADE.cum.s)), fadeStrip(FADE.cum, C)));
+        el("div", { class: "fd-l" }, el("b", {}, FADE.st.l), el("span", {}, FADE.st.s)), fadeStrip(FADE.st, S, S.red != null ? S.red : S.amber != null ? S.amber : S.soft),
+        el("div", { class: "fd-l" }, el("b", {}, FADE.cum.l), el("span", {}, FADE.cum.s)), fadeStrip(FADE.cum, C, C.red != null ? C.red : C.amber != null ? C.amber : C.soft)));
     });
     box.appendChild(cards);
     box.appendChild(el("div", { class: "pd-foot" }, "From the league's play by play: every shot, turnover and foul is filed by how long he had been on the floor when it happened. A stint runs on across the end of the first and third quarters, not across half time. Hover a block for the detail."));
@@ -1240,6 +1245,13 @@
       ".fd-says{display:grid;gap:4px}.fd-say{border-radius:8px;padding:5px 9px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}.fd-say b{font:700 13px 'Oswald',sans-serif;letter-spacing:.04em}.fd-say i{font-style:normal;font-size:11px}",
       ".fd-say.red{background:#d8524e;color:#fff}.fd-say.amber{background:rgba(217,165,33,.2);color:#7a5c12}.fd-say.green{background:rgba(47,158,134,.14);color:#17603f}",
       ".fd-l{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;margin-top:4px}.fd-l b{font:700 10.5px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em}.fd-l span{font-size:10.5px;color:var(--ink-faint,#8a93a2)}",
+      ".fd-tl{margin:2px 0 4px}.fd-bar{position:relative;display:flex;height:16px;border-radius:5px;overflow:visible;gap:1px}",
+      ".fd-s{flex:1 1 0;min-width:0;height:100%}.fd-s:first-child{border-radius:5px 0 0 5px}.fd-s:last-child{border-radius:0 5px 5px 0}",
+      ".fd-s.base{background:#c9ced6}.fd-s.green{background:#2f9e86}.fd-s.amber{background:#e0ad2a}.fd-s.red{background:#d8524e}.fd-s.thin{background:repeating-linear-gradient(45deg,#e7eaef 0 3px,#f6f7f9 3px 6px)}",
+      ".fd-mk{position:absolute;top:-13px;margin-left:-5px;font-style:normal;font-size:11px;color:#141821;line-height:1}",
+      ".fd-axis{display:flex;gap:1px}.fd-axis span{flex:1 1 0;min-width:0;font:600 8.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);white-space:nowrap;overflow:visible}",
+      ".fd-key-h{flex-basis:100%;font:700 10px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink,#141821)}",
+      ".fd-l{margin-top:12px!important}",
       ".fd-mm{position:relative}.fd-cols{position:relative;display:grid;gap:1px;align-items:end;height:64px;background:var(--panel-2,#f4f5f7);border-radius:6px;padding:0 2px}",
       ".fd-m{height:100%;display:flex;align-items:flex-end}.fd-m i{display:block;width:100%;border-radius:2px 2px 0 0}",
       ".fd-m.base i{background:#c3c9d2}.fd-m.green i{background:#2f9e86}.fd-m.amber i{background:#d9a521}.fd-m.red i{background:#d8524e}.fd-m.thin i{background:repeating-linear-gradient(45deg,#e7eaef 0 3px,#f6f7f9 3px 6px)}",
