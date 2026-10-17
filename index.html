@@ -15532,6 +15532,15 @@ function _gpLiveBlock(){
         if(GC && GC.status==="LIVE"){ if(j && j.feed){ CN.ok=Date.now(); CN.err=""; } else CN.err=(navigator.onLine===false)? "this device is offline" : (j && (j.errors||[])[0])? String(j.errors[0]) : "no answer from the league"; }
         if(!(j && j.feed)) j=await fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(G.id)+((date>=addDays(today,-1))? "&fresh=1" : ""))
           .then(r=>r.ok? r.json() : null).catch(()=>null);
+        /* the league's live channel is read by more than one of our servers, and one can be a few
+           seconds behind another: a reading with fewer plays than the one on the screen is let go,
+           so the score and the five on the floor never step back - unless it stays that way for
+           half a minute (the league took a play away) */
+        if(j && j.feed && J && J.feed && GC && GC.status==="LIVE"){
+          const nNew=(j.feed.actions||[]).length, nOld=(J.feed.actions||[]).length;
+          if(nNew<nOld){ if(!read.backSince) read.backSince=Date.now(); if(Date.now()-read.backSince<30000) j=null; else read.backSince=0; }
+          else read.backSince=0;
+        }
         if(j && j.feed){ J=j; _gpLiveMemo[G.id]=j; }
         const n=(J && J.feed && (J.feed.actions||[]).length)||0;
         if(n!==lastN){ lastN=n; lastChange=Date.now(); }
