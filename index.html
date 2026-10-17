@@ -14884,10 +14884,13 @@ function _gpAlertBar(){
     if(list.some(a=>a.rules)) wrap.appendChild(_gpRulesCard());
   };
   paint();
-  const on=()=>{ if(!wrap.isConnected){ window.removeEventListener("gp-live", on); clearInterval(tm); return; } paint(); };
+  /* the bar is made before it is on the page and a reading can come in that instant: it lets go
+     only once it has been on the page and has left it */
+  const gone=()=>{ if(wrap.isConnected){ wrap.__was=1; return false; } return !!wrap.__was; };
+  const on=()=>{ if(gone()){ window.removeEventListener("gp-live", on); clearInterval(tm); return; } paint(); };
   window.addEventListener("gp-live", on);
   /* the 90 seconds run out between readings too */
-  const tm=setInterval(()=>{ if(!wrap.isConnected){ clearInterval(tm); return; } paint(); }, 5000);
+  const tm=setInterval(()=>{ if(gone()){ clearInterval(tm); window.removeEventListener("gp-live", on); return; } paint(); }, 5000);
   return wrap;
 }
 /* THE FOUR NUMBERS AFTER THE FOULS: points, valoración (PIR), assists and offensive rebounds of
@@ -16224,7 +16227,8 @@ function renderPlanSection(sec, canEd, save, allSecs){
       wrap.appendChild(h("div",{class:"gp5-note"},"Offense: our possessions in the minutes of each idea · defense: theirs against us · green works, red does not (from 4 possessions)"));
     };
     paint();
-    const on=()=>{ if(!wrap.isConnected){ window.removeEventListener("gp-live", on); return; } paint(); };
+    /* let go only once it has been on the page and has left it (a reading can come in before it is placed) */
+    const on=()=>{ if(!wrap.isConnected){ if(wrap.__was) window.removeEventListener("gp-live", on); return; } wrap.__was=1; paint(); };
     window.addEventListener("gp-live", on);
     return wrap;
   }
