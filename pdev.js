@@ -483,15 +483,15 @@
     var be = efg(base), bb = bad(base), first = null, firstAmber = null;
     var out = f.map(function (x, i) {
       var e = efg(x), b = bad(x), o = { e: e, b: b, x: x, lv: "", why: "" };
-      if (x.sec < 240) { o.lv = "thin"; return o; }
+      if (x.sec < 600) { o.lv = "thin"; return o; }
       if (i < 2) { o.lv = "base"; return o; }
-      var eDrop = (e != null && be != null && x.fga >= 5) ? be - e : 0;
+      var eDrop = (e != null && be != null && x.fga >= 10 && base.fga >= 10) ? be - e : 0;
       var bRise = (b != null && bb != null) ? b / Math.max(bb, 0.5) : 1;
-      if (eDrop >= 8 || (bRise >= 1.5 && b - bb >= 1)) o.lv = "red";
-      else if (eDrop >= 4 || (bRise >= 1.25 && b - bb >= 0.5)) o.lv = "amber";
+      if (eDrop >= 10 || (bRise >= 1.6 && b - bb >= 1.5)) o.lv = "red";
+      else if (eDrop >= 6 || (bRise >= 1.35 && b - bb >= 0.8)) o.lv = "amber";
       else o.lv = "green";
-      if (eDrop >= 4) o.why = "shoots " + Math.round(be) + "% → " + Math.round(e) + "%";
-      if (bRise >= 1.25 && b - bb >= 0.5) o.why += (o.why ? " · " : "") + "TO+fouls " + bb.toFixed(1) + " → " + b.toFixed(1);
+      if (eDrop >= 6) o.why = "shoots " + Math.round(be) + "% → " + Math.round(e) + "%";
+      if (bRise >= 1.35 && b - bb >= 0.8) o.why += (o.why ? " · " : "") + "TO+fouls " + bb.toFixed(1) + " → " + b.toFixed(1);
       if (o.lv === "red" && first == null) first = i;
       if (o.lv === "amber" && firstAmber == null) firstAmber = i;
       return o;
@@ -529,6 +529,7 @@
       if (!_fadeAsked[tid] && tid && typeof syncPlayers === "function") { _fadeAsked[tid] = true; try { Promise.resolve(syncPlayers(tid, true)).then(function () { setTimeout(draw, 400); }); } catch (e) { } }
       root.appendChild(box); return;
     }
+    box.appendChild(el("div", { class: "pd-hs", style: "margin:-4px 0 8px" }, (PL.games || "?") + " games read · a block needs 10 minutes and a shooting verdict 10 shots, so early in the season many blocks stay grey; it sharpens with every game"));
     /* our players in the order the page lists them; theirs by minutes */
     var list = [];
     if (mine) { var byId = {}; (PL.players || []).forEach(function (p) { byId[String(p.id)] = p; });
