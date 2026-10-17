@@ -15469,7 +15469,10 @@ function _gpLiveBlock(){
     const age=CN.ok? Math.round((Date.now()-CN.ok)/1000) : null;
     const bad=isLive && (age==null || age>10 || navigator.onLine===false);
     connBar.className="gp-conn "+(bad? "bad" : isLive? "ok" : "wait");
-    connTxt.textContent=!isLive? (navigator.onLine===false? "● This device is offline" : "● "+(GC && GC.status? GC.status : "Waiting for the league")+" · the live channel opens at the tip-off")
+    /* a reconnection forgets where the game was for a moment: it says so, not "before the tip-off" */
+    const rec=!isLive && !GC && CN.rec && Date.now()-CN.rec<20000;
+    if(rec) connBar.className="gp-conn bad";
+    connTxt.textContent=!isLive? (navigator.onLine===false? "● This device is offline" : rec? "● Reconnecting to the league…" : "● "+(GC && GC.status? GC.status : "Waiting for the league")+" · the live channel opens at the tip-off")
       : bad? "● Connection lost · "+(age==null? "no live data yet" : "last data "+age+" s ago")+" · "+(CN.err||"waiting for the league")+" · trying again every 2 s"
       : "● Live · connected · updated "+age+" s ago";
     if(bad && !CN.lost && age!=null){ CN.lost=true; try{ toast("Live connection lost — trying again"); }catch(e){} }
@@ -15584,7 +15587,7 @@ function _gpLiveBlock(){
       timer=setTimeout(tick, next());
     };
     timer=setTimeout(tick, next());
-    reconnectFn=()=>{ try{ clearTimeout(timer); }catch(e){} busy=false; gcAt=0; sig="";
+    reconnectFn=()=>{ try{ clearTimeout(timer); }catch(e){} busy=false; gcAt=0; sig=""; if(!_gpRP) CN.rec=Date.now();
       if(!_gpRP){ G=null; J=null; GC=null; CN.ok=0; CN.err=""; over=false; postSeen=0; }
       timer=setTimeout(tick, 50); };
     const onVis=()=>{ if(!wrap.isConnected){ document.removeEventListener("visibilitychange", onVis); return; }
