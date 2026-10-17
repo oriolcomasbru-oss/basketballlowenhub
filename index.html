@@ -15217,7 +15217,7 @@ function _gpLiveBlock(){
     scrub.addEventListener("input",()=>{ if(!RP) return; RP.T=+scrub.value; const p=RP.playing; RP.playing=false; step(); RP.playing=p; });
     const jump=h("button",{type:"button", class:"gp-rp-b", title:"jump four minutes on", onclick:()=>{ if(RP){ RP.T=Math.min(RP.end, RP.T+240); const p=RP.playing; RP.playing=false; step(); RP.playing=p; } }}, "+4′");
     bar.appendChild(h("span",{class:"gp-rp-l"},"Test · replay a game"));
-    if(past.length){ bar.appendChild(sel); bar.appendChild(spd); bar.appendChild(rew); bar.appendChild(play); bar.appendChild(ff); bar.appendChild(jump); bar.appendChild(stopB); bar.appendChild(scrub); bar.appendChild(clk); bar.appendChild(h("span",{class:"gp-rp-n", title:"In a replay the live part of Their team is the replayed opponent; the grey history stays the planned opponent's"},"· their team's history stays the planned opponent's")); }
+    if(past.length){ bar.appendChild(sel); bar.appendChild(spd); bar.appendChild(rew); bar.appendChild(play); bar.appendChild(ff); bar.appendChild(jump); bar.appendChild(stopB); bar.appendChild(scrub); bar.appendChild(clk); bar.appendChild(h("span",{class:"gp-rp-n"},"· their team: the replayed club, its last games and this game")); }
     else bar.appendChild(h("span",{class:"gp-rp-n"},"no finished game of ours read yet"));
     wrap.insertBefore(bar, tabs);
   }
