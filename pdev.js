@@ -503,6 +503,11 @@
       last = m;
       return o;
     });
+    /* a verdict needs the drop to last: two minutes running, not one bad minute */
+    var lasting = function (lvls) { for (var m = F.base; m < out.length - 1; m++) {
+      if (lvls.indexOf(out[m].lv) >= 0 && ["red", "amber"].indexOf(out[m + 1].lv) >= 0) return m; } return null; };
+    first = (function () { for (var m = F.base; m < out.length - 1; m++) { if (out[m].lv === "red" && ["red", "amber"].indexOf(out[m + 1].lv) >= 0) return m; } return null; })();
+    firstAmber = lasting(["red", "amber"]);
     return { blocks: out, red: first, amber: firstAmber, soft: soft, last: last, be: be, bb: bb };
   }
   function fadeStrip(F, R) {
