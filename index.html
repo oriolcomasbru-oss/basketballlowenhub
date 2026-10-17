@@ -12198,12 +12198,18 @@ function _preRoleBoardOthers(L, tid){
   });
   return out;
 }
+/* the surname on a tile: "Phlandrous Fleming Jr." is FLEMING, not JR. */
+function _preTileName(n){
+  const w=String(n||"").trim().split(/\s+/).filter(Boolean);
+  while(w.length>1 && /^(jr|sr|ii|iii|iv|v)\.?$/i.test(w[w.length-1])) w.pop();
+  return w.pop()||"";
+}
 function _preRoleTiles(C){
   const out=[];
   PRE_CARD_POS.forEach(pos=>{
     (C.pos[pos]||[]).forEach(c=>{
       out.push({ key:_preRoleKey(c), card:c, pos:c.pos||pos, hand:String(c.hand||""),
-                 num:String(c.num||""), last:String(c.name||"").trim().split(/\s+/).pop()||"" });
+                 num:String(c.num||""), last:_preTileName(c.name) });
     });
   });
   return out;
@@ -12268,6 +12274,10 @@ function _preRolesBoardBlock(L, tid, C, canEd, save){
     if(hd === "R" || hd === "L")
       ph.appendChild(h("span",{ class:"vb-hand" + (hd === "L" ? " vb-hl" : ""),
         title: hd === "L" ? "Left handed" : "Right handed" }, hd));
+    /* the minutes, bottom right, and KEY / STOP HIM from the card, small */
+    { const mm=/(\d+(?:[.,]\d+)?)/.exec(String(t.card.minutes||"")); if(mm) ph.appendChild(h("span",{class:"vb-min", title:"Minutes per game"}, mm[1].replace(",",".")+"'")); }
+    if(t.card.hl==="key" || t.card.hl==="stop"){ el.classList.add("vb-"+t.card.hl);
+      ph.appendChild(h("span",{class:"vb-hlb"}, t.card.hl==="key"? "KEY" : "STOP")); }
     el.appendChild(ph);
     el.appendChild(h("div",{class:"vb-nm"}, t.last));
     /* the same popup the card opens: one player, one view */
@@ -12478,6 +12488,14 @@ function _preRolesBoardBlock(L, tid, C, canEd, save){
     areas.appendChild(box);
   });
   host.appendChild(areas);
+  /* ONE ROW, ONE LINE OF FACES. Each area's heading was as tall as its own name and note,
+     so the photographs of one area started lower than the next one's. The headings of the
+     areas that share a row are made as tall as the tallest of them. */
+  const eq=()=>{ try{ const hs=[...areas.querySelectorAll(":scope > .vb-area > .vb-head")]; hs.forEach(x=>x.style.minHeight="");
+    const rows={}; hs.forEach(x=>{ const k=Math.round(x.parentNode.offsetTop/8); (rows[k]=rows[k]||[]).push(x); });
+    Object.values(rows).forEach(r=>{ const m=Math.max(...r.map(x=>x.offsetHeight)); r.forEach(x=>x.style.minHeight=m+"px"); }); }catch(e){} };
+  requestAnimationFrame(()=>{ eq(); setTimeout(eq, 400); });
+  if(!areas.__eqWired){ areas.__eqWired=1; addEventListener("resize", ()=>{ if(areas.isConnected) eq(); }); }
   };
   paint();
   /* the cards above call this when one of them is deleted, duplicated or added */
@@ -32439,6 +32457,21 @@ body.edit-mode .phx.pre-roles .pre-lock{display:block}
   text-transform:uppercase;text-align:center;padding:5px 3px 6px;color:var(--cream,#1a1d23);
   text-shadow:none;border-top:2px solid var(--tc)}
 .phx.pre-roles .vb-empty{font-size:12px;color:var(--muted);padding:10px 2px}
+/* A SOLID BOARD. The areas of a row stand as tall as each other, their headings line up
+   (see the board's eq), and each man wears his area's colour on the strip with his name. */
+.phx.pre-roles .vb-areas{align-items:stretch}
+.phx.pre-roles .vb-area{display:flex;flex-direction:column}
+.phx.pre-roles .vb-area > .vb-body{flex:1 1 auto;align-content:start}
+.phx.pre-roles .vb-tile{border-color:color-mix(in srgb, var(--tc) 45%, var(--line,#e6e8ec))}
+.phx.pre-roles .vb-nm{border-top:4px solid var(--tc);background:color-mix(in srgb, var(--tc) 22%, var(--panel-2,#f6f7f9))}
+.phx.pre-roles .vb-photo{border-bottom:0}
+.phx.pre-roles .vb-min{position:absolute;bottom:4px;right:5px;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:10.5px;line-height:1.35;padding:0 5px;border-radius:5px;color:#fff;background:rgba(0,0,0,.55)}
+body.edit-mode .phx.pre-roles .pre-lock{bottom:24px}
+.phx.pre-roles .vb-hlb{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);font:700 9.5px 'Oswald',sans-serif;letter-spacing:.12em;padding:1px 7px;border-radius:999px;line-height:1.4}
+.phx.pre-roles .vb-tile.vb-key{box-shadow:0 0 0 2px #c6a15b}
+.phx.pre-roles .vb-tile.vb-stop{box-shadow:0 0 0 2px #d8524e}
+.phx.pre-roles .vb-tile.vb-key .vb-hlb{background:#c6a15b;color:#141821}
+.phx.pre-roles .vb-tile.vb-stop .vb-hlb{background:#d8524e;color:#fff}
 .phx.pre-phx .pos-col-over{outline:1px dashed var(--gold,#c9a227);outline-offset:3px;border-radius:4px}
 /* Out of the bar, where it was a number nobody reads twenty times a day. It is still
    written into the element and still shown in Settings, under "App build", which is
@@ -34231,6 +34264,19 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .phx .card .photo{position:relative}
 .phx .card > .hl-badge{position:absolute;right:8px;top:6px;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;padding:4px 10px;border-radius:999px;color:#fff;z-index:3;pointer-events:none}
 body.edit-mode .phx .card > .hl-badge{top:36px}
+/* the card opened beside its video: the boxes as on the card, at a size that reads */
+.modal-stats .modal-stat-cell{position:relative;padding:7px 4px 6px!important}
+.modal-stats .modal-stat-value{font-size:17px!important;line-height:1.1}
+.modal-stats .modal-stat-label{font-size:9px!important;letter-spacing:.06em;margin-top:2px}
+.modal-stats .modal-stat-value .sv-pc,.modal-stats .modal-stat-value .pct{color:var(--gold-soft,#c9a227);font-style:normal}
+.modal-stats .modal-stat-why{display:block;font:700 9px 'IBM Plex Mono',monospace;margin-top:2px;white-space:nowrap}
+.modal-stats .modal-stat-cell.hl-hot{background:#d8524e!important;border-radius:6px}
+.modal-stats .modal-stat-cell.hl-hot *{color:#fff!important}
+.modal-stats .modal-stat-cell.hl-warm{background:rgba(216,82,78,.14)!important;border-radius:6px}
+.modal-stats .modal-stat-cell.hl-warm .modal-stat-value,.modal-stats .modal-stat-cell.hl-warm .modal-stat-why{color:#c0403c!important}
+.modal-hl{display:inline-block;vertical-align:middle;margin-left:10px;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;padding:3px 10px;border-radius:999px}
+.modal-hl.key{background:#c6a15b;color:#141821}.modal-hl.stop{background:#d8524e;color:#fff}
+.modal-box.hl-key{box-shadow:0 0 0 3px #c6a15b,0 20px 60px rgba(0,0,0,.35)!important}.modal-box.hl-stop{box-shadow:0 0 0 3px #d8524e,0 20px 60px rgba(0,0,0,.35)!important}
 .phx .card.hl-key .name{padding-right:48px}.phx .card.hl-stop .name{padding-right:84px}
 .phx .card.hl-key .hl-badge{background:#c6a15b;color:#141821}.phx .card.hl-stop .hl-badge{background:#d8524e}
 .phx .card .hl-tog{position:absolute;left:8px;bottom:8px;z-index:4;border:0;border-radius:999px;padding:3px 9px;font:700 10px 'Oswald',sans-serif;letter-spacing:.1em;cursor:pointer;background:rgba(20,24,33,.72);color:#fff}
@@ -35944,16 +35990,29 @@ function _deadFetch(url){
 
     var mStats = document.getElementById('modalStats');
     mStats.innerHTML = '';
+    /* the boxes as the card has them: the lit ones lit, with their rank, the share in gold */
     card.querySelectorAll('.stat-cell').forEach(function(cell){
-      var v = cell.querySelector('.stat-value').textContent;
-      var l = cell.querySelector('.stat-label').textContent;
+      var sv = cell.querySelector('.stat-value'), sl = cell.querySelector('.stat-label');
+      if(!sv) return;
       var div = document.createElement('div');
-      div.className = 'modal-stat-cell';
-      div.innerHTML = '<span class="modal-stat-value"></span><span class="modal-stat-label"></span>';
-      div.querySelector('.modal-stat-value').textContent = v;
-      div.querySelector('.modal-stat-label').textContent = l;
+      div.className = 'modal-stat-cell' + (cell.classList.contains('hl-hot') ? ' hl-hot' : cell.classList.contains('hl-warm') ? ' hl-warm' : '');
+      div.innerHTML = '<span class="modal-stat-value stat-value"></span><span class="modal-stat-label"></span>';
+      var mv = div.querySelector('.modal-stat-value');
+      if(sv.querySelector('.sv-pc') || sv.querySelector('.pct')) mv.innerHTML = sv.innerHTML; else mv.textContent = sv.textContent;
+      div.querySelector('.modal-stat-label').textContent = sl ? sl.textContent : '';
+      var why = cell.querySelector('.hl-why');
+      if(why){ var w = document.createElement('span'); w.className = 'modal-stat-why'; w.textContent = why.textContent; div.appendChild(w); }
       mStats.appendChild(div);
     });
+    /* KEY / STOP HIM travels with the card */
+    try{
+      var mName = document.getElementById('modalName'), old = document.getElementById('modalHl');
+      if(old) old.remove();
+      var hl = card.classList.contains('hl-key') ? 'key' : card.classList.contains('hl-stop') ? 'stop' : '';
+      var mb = mName.closest('.modal-box');
+      if(mb){ mb.classList.remove('hl-key','hl-stop'); if(hl) mb.classList.add('hl-' + hl); }
+      if(hl){ var tag = document.createElement('span'); tag.id = 'modalHl'; tag.className = 'modal-hl ' + hl; tag.textContent = hl === 'key' ? 'KEY' : 'STOP HIM'; mName.appendChild(tag); }
+    }catch(_e){}
 
     var closeoutEl = card.querySelector('.closeout-bar');
     var mCloseout = document.getElementById('modalCloseout');
