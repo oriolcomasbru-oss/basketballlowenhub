@@ -11799,7 +11799,7 @@ function _preHlExtra(L, c, tid, ranks){
 function _preHl(L, card, c, canEd, save, tid){
   /* the frame */
   const lv=c.hl==="key"? "key" : c.hl==="stop"? "stop" : "";
-  if(lv){ card.classList.add("hl-"+lv); const ph=card.querySelector(".photo"); if(ph) ph.appendChild(h("span",{class:"hl-badge"}, lv==="key"? "KEY" : "STOP HIM")); }
+  if(lv){ card.classList.add("hl-"+lv); card.appendChild(h("span",{class:"hl-badge"}, lv==="key"? "KEY" : "STOP HIM")); }
   if(canEd){ const ph=card.querySelector(".photo");
     if(ph){ const b=h("button",{type:"button", class:"hl-tog", title:"Highlight: normal → KEY → STOP HIM"}, lv==="key"? "★ KEY" : lv==="stop"? "⛔ STOP" : "☆ Mark");
       b.addEventListener("click",e=>{ e.stopPropagation(); e.preventDefault(); c.hl=lv===""? "key" : lv==="key"? "stop" : ""; save(); });
@@ -34229,7 +34229,8 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .phx .card.hl-key{box-shadow:0 0 0 3px #c6a15b,0 0 0 8px rgba(198,161,91,.25)!important}
 .phx .card.hl-stop{box-shadow:0 0 0 3px #d8524e,0 0 0 8px rgba(216,82,78,.22),0 10px 26px rgba(216,82,78,.25)!important}
 .phx .card .photo{position:relative}
-.phx .card .hl-badge{position:absolute;right:10px;bottom:10px;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;padding:4px 10px;border-radius:999px;color:#fff;z-index:3;pointer-events:none}
+.phx .card > .hl-badge{position:absolute;right:8px;top:6px;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;padding:4px 10px;border-radius:999px;color:#fff;z-index:3;pointer-events:none}
+body.edit-mode .phx .card > .hl-badge{top:36px}
 .phx .card.hl-key .hl-badge{background:#c6a15b;color:#141821}.phx .card.hl-stop .hl-badge{background:#d8524e}
 .phx .card .hl-tog{position:absolute;left:8px;bottom:8px;z-index:4;border:0;border-radius:999px;padding:3px 9px;font:700 10px 'Oswald',sans-serif;letter-spacing:.1em;cursor:pointer;background:rgba(20,24,33,.72);color:#fff}
 .phx .card .stat-cell{position:relative}
