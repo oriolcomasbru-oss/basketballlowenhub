@@ -15289,7 +15289,7 @@ function _gpLiveBlock(){
        stints and the line on the rotation run between plays and do not wait for the next one. */
     const evT=acts.map(a=>_lgGameElapsed(a.quarter, a.time).t).reduce((m,v)=>Math.max(m,v),0);
     const gcT=(()=>{ if(_gpRP || !GC || GC.status!=="LIVE" || /_break/i.test(String(GC.progress||""))) return 0;
-      const m=/^Q(d)/i.exec(String(GC.progress||"")), o=/^OT(d*)/i.exec(String(GC.progress||""));
+      const m=/^Q(\d)/i.exec(String(GC.progress||"")), o=/^OT(\d*)/i.exec(String(GC.progress||""));
       const qi=m? (+m[1])-1 : o? 3+(+(o[1]||1)) : -1; if(qi<0) return 0;
       const base=qi<4? qi*600 : 2400+(qi-4)*300, len=qi<4? 600 : 300;
       const tm=String(GC.time||"").split(":").map(Number); const left=tm.length>=2? tm[tm.length-2]*60+tm[tm.length-1] : NaN;
@@ -16396,13 +16396,14 @@ function renderPlanSection(sec, canEd, save, allSecs){
               const real=onAt(t); if(real.length!==5) continue;
               const rowPid=GP_ROWS.map((pos,r)=>((plan.grid[qn]||[])[r]||[])[c]||"");
               const planned=rowPid.filter(Boolean);
+              if(!planned.length) continue;   /* a minute the plan leaves empty is not compared */
               if(planned.some(pid=>!known[pid])) continue;   /* a name of the plan not read at all: nothing is claimed */
               const plannedIds=rowPid.map(pid=>pid? (idOf[pid]||"") : "");
               if(planned.length===5 && real.every(id=>plannedIds.indexOf(id)>=0)) continue;   /* the plan's five */
               /* not the plan's five: the five on the floor seated by the positions they play,
                  and every row whose man is not the plan's is marked with the man playing it */
               const seat=_gpSeat(plannedIds, real, posOf);
-              GP_ROWS.forEach((pos,r)=>{ const id=seat[r]; if(!id || id===plannedIds[r]) return;
+              GP_ROWS.forEach((pos,r)=>{ const id=seat[r]; if(!id || !rowPid[r] || id===plannedIds[r]) return;
                 const td=w.querySelector('td.gp2-st[data-c="'+c+'"][data-r="'+r+'"]'); if(!td) return;
                 const was=rowPid[r]? _gpById(plan, rowPid[r]) : null;
                 td.classList.add("diff");
