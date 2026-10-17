@@ -14810,6 +14810,77 @@ function _gpArrow(feed){
   });
   return arrow;
 }
+/* the points a play of the league's feed scores */
+function _gpPts(a){ if(String(a && a.result)!=="+") return 0; return a.action==="P3"? 3 : a.action==="P2"? 2 : a.action==="FT"? 1 : 0; }
+function _gpActs(feed, lastT){ return ((feed && feed.actions)||[]).map((a,i)=>({ a:a, t:_lgGameElapsed(a.quarter, a.time).t, i:i })).filter(o=>o.t<=lastT).sort((p,q)=>(p.t-q.t)||(p.i-q.i)); }
+/* THE RUN BEING PLAYED: the points one side has scored in a row, from when, and the partial of
+   the last three minutes */
+function _gpRun(feed, uc, lastT){
+  const A=_gpActs(feed, lastT).filter(o=>_gpPts(o.a)>0);
+  if(!A.length) return null;
+  const side=A[A.length-1].a.teamcode; let pts=0, t0=A[A.length-1].t;
+  for(let k=A.length-1;k>=0;k--){ if(A[k].a.teamcode!==side) break; pts+=_gpPts(A[k].a); t0=A[k].t; }
+  let u=0, th=0; A.forEach(o=>{ if(o.t>lastT-180){ if(o.a.teamcode===uc) u+=_gpPts(o.a); else th+=_gpPts(o.a); } });
+  return { us:side===uc, pts:pts, t0:t0, u:u, th:th };
+}
+/* THE FIVES OF TONIGHT. The game is cut wherever one of ours comes in or goes out; each five
+   gets the minutes it played and, in those minutes, the points and possessions both ways */
+function _gpFives(L){
+  const segs={}; Object.keys((L.court && L.court.u)||{}).forEach(id=>{ segs[id]=L.court.u[id].segs||[]; });
+  const cuts={}; Object.values(segs).forEach(s=>s.forEach(g=>{ cuts[g[0]]=1; cuts[g[1]]=1; }));
+  const T=Object.keys(cuts).map(Number).sort((a,b)=>a-b), F={};
+  for(let k=0;k<T.length-1;k++){ const a=T[k], b=T[k+1]; if(b-a<1) continue; const m=(a+b)/2;
+    const on=Object.keys(segs).filter(id=>segs[id].some(g=>m>=g[0] && m<g[1])); if(on.length!==5) continue;
+    const key=on.sort().join("|"); (F[key]=F[key]||{ ids:on, win:[], sec:0 }).win.push([a,b]); F[key].sec+=b-a; }
+  return Object.values(F).map(f=>{
+    const inW=o=>f.win.some(w=>o.t>=w[0] && o.t<w[1]);
+    const W=_gpLiveWin(L.feed, L.uc, inW, {});
+    const pos=S=>S.fga-S.or+S.tov+0.44*S.fta;
+    return Object.assign(f, { pf:W.u.pts, pa:W.t.pts, pu:pos(W.u), pt:pos(W.t) });
+  }).sort((a,b)=>b.sec-a.sec);
+}
+/* THE TIMEOUT CARD. What the staff talks about in a timeout, readable in twenty seconds: what
+   happened since the timeout before (or the tip-off) - the partial, points a possession both ways,
+   turnovers, offensive rebounds, free throws, who scored - and how things stand now: their tired
+   men and ours, our men in foul trouble with the minutes the plan still gives them, timeouts,
+   team fouls and the arrow. */
+function _gpToCard(L, onClose){
+  const A=_gpActs(L.feed, L.lastT), tos=A.filter(o=>o.a.action==="TIMEO");
+  const last=tos[tos.length-1]||null, prev=tos.length>1? tos[tos.length-2] : null;
+  const tEnd=L.lastT, tStart=prev && last && last.t>=L.lastT-60? prev.t : (last? last.t : 0);
+  const inW=o=>o.t>tStart && o.t<=tEnd;
+  const W=_gpLiveWin(L.feed, L.uc, inW, {});
+  const pos=S=>S.fga-S.or+S.tov+0.44*S.fta, ppp=S=>pos(S)>=1? (S.pts/pos(S)).toFixed(2) : "—";
+  const byId={}, ours={}; (L.us||[]).forEach(p=>{ byId[String(p.id)]=p; ours[String(p.id)]=1; }); (L.them||[]).forEach(p=>{ byId[String(p.id)]=p; });
+  const sc={}; A.filter(inW).forEach(o=>{ const v=_gpPts(o.a); if(v){ const id=String(o.a.player_id1||""); if(id) sc[id]=(sc[id]||0)+v; } });
+  const top=us=>Object.keys(sc).filter(id=>byId[id] && !!ours[id]===us).sort((a,b)=>sc[b]-sc[a]).slice(0,3).map(id=>_lgLastName(byId[id].name||"")+" "+sc[id]);
+  const tiredOf=(side, list)=>(list||[]).map(p=>({ p:p, c:((L.court||{})[side]||{})[String(p.id)] })).filter(x=>x.c && x.c.on && (x.c.stint||0)>=270).sort((a,b)=>b.c.stint-a.c.stint).map(x=>_lgLastName(x.p.name||"")+" "+_gpMmss(x.c.stint));
+  const qi=L.maxQ||0, U=(L.tm||{}).u||{}, T=(L.tm||{}).t||{};
+  let left={}; try{ if(_gpPlanHook && _gpPlanHook.plan===L.plan) left=_gpPlanHook.left(L)||{}; }catch(e){}
+  const trouble=(L.us||[]).filter(p=>{ const lv=_gpFoulLv(p.pf, qi); return lv==="hot" || lv==="out"; }).map(p=>_lgLastName(p.name||"")+" "+p.pf+" PF"+(left[String(p.id)]? " · plan "+left[String(p.id)]+"′ more" : ""));
+  const arrow=_gpArrow(L.feed);
+  const who=last && last.t>=L.lastT-60? (last.a.teamcode===L.uc? "Our timeout" : "Their timeout") : "Timeout card";
+  const kp=(k,a,b,good)=>h("div",{class:"gp7-k"}, h("i",{},k), h("b",{class:good==null? "" : good? "good" : "bad"}, a), h("em",{},"–"), h("b",{}, b));
+  const line=(k,v,cls)=>h("div",{class:"gp7-l "+(cls||"")}, h("b",{},k), h("span",{}, v && v.length? v.join(" · ") : "—"));
+  const pu=pos(W.u)>=1? W.u.pts/pos(W.u) : null, pt=pos(W.t)>=1? W.t.pts/pos(W.t) : null;
+  return h("div",{class:"gp7-card"},
+    h("div",{class:"gp7-h"}, h("b",{}, who+" · "+_lgGameClock(L.lastT)), h("span",{}, "since "+(tStart? "the timeout at "+_lgGameClock(tStart) : "the tip-off")),
+      h("button",{type:"button", class:"gp7-x", onclick:onClose}, "Close ✕")),
+    h("div",{class:"gp7-kpis"},
+      kp("Partial", String(W.u.pts), String(W.t.pts), W.u.pts===W.t.pts? null : W.u.pts>W.t.pts),
+      kp("Points / poss", ppp(W.u), ppp(W.t), pu==null || pt==null || pu===pt? null : pu>pt),
+      kp("Turnovers", String(W.u.tov), String(W.t.tov), W.u.tov===W.t.tov? null : W.u.tov<W.t.tov),
+      kp("Off. rebounds", String(W.u.or), String(W.t.or), W.u.or===W.t.or? null : W.u.or>W.t.or),
+      kp("Free throws", W.u.ftm+"/"+W.u.fta, W.t.ftm+"/"+W.t.fta, W.u.fta===W.t.fta? null : W.u.fta>W.t.fta)),
+    h("div",{class:"gp7-ls"},
+      line("Scored for us", top(true)), line("Scored for them", top(false)),
+      line("Attack · their tired", tiredOf("t", L.them), "warn"), line("Our long stints", tiredOf("u", L.us)),
+      line("Our foul trouble", trouble, trouble.length? "bad" : ""),
+      line("Now", ["timeouts: we "+(U.left!=null? U.left : "—")+", they "+(T.left!=null? T.left : "—"), "team fouls: we "+(U.fouls||0)+", they "+(T.fouls||0)+(U.fouls>=4? " (their bonus)" : "")+(T.fouls>=4? " (our bonus)" : ""), arrow? "arrow → "+(arrow===L.uc? "us" : "them") : ""].filter(Boolean))));
+}
+/* the plan's side of the bench reminders - the minutes each of ours still has on the plan - is
+   given by the plan that is on the page (renderPlanSection), for its own game */
+let _gpPlanHook=null;
 /* REMINDERS ON THE BENCH. The bench is not always looking at the iPad, so what matters now
    comes up big, in colour and blinking, for a minute and a half - a tap says "seen" - and stays
    as a small chip for as long as it holds. FIBA: team fouls from the 5th = free throws, the
@@ -14833,6 +14904,23 @@ function _gpAlerts(L){
   const ptsU=(L.us||[]).reduce((s,p)=>s+(p.pts||0),0), ptsT=(L.them||[]).reduce((s,p)=>s+(p.pts||0),0);
   if(ballUs!=null && qi>=3 && left<=30 && ptsU===ptsT) out.push({ k:"possOT|"+qi, tone:ballUs? "good" : "warn", big:"Overtime would start with "+(ballUs? "our ball" : "their ball"), txt:"Tied with "+_gpMmss(left)+" left · alternating possession arrow" });
   if(ballUs!=null && qi<3 && left<=(qi===1? 60 : 30)) out.push({ k:"poss|"+qi, tone:ballUs? "good" : "warn", big:qn(qi+1)+" starts with "+(ballUs? "our ball" : "their ball"), txt:"Alternating possession arrow"+(qi===1? " · after half time" : "") });
+  /* A RUN: 7 points or more in a row by one side, or a partial of 8 or more in the last three
+     minutes - theirs asks whether to stop the game */
+  const run=_gpRun(L.feed, usC, t);
+  if(run){
+    const since=_lgGameClock(run.t0);
+    if(!run.us && run.pts>=7) out.push({ k:"runT|"+run.t0, tone:"bad", big:"Their run "+run.pts+"–0", txt:"since "+since+(U.left>0? " — a timeout? we have "+U.left : " — no timeouts left") });
+    else if(run.th-run.u>=8) out.push({ k:"partT|"+qi, tone:"bad", big:"Partial "+run.u+"–"+run.th, txt:"in the last 3:00"+(U.left>0? " — a timeout? we have "+U.left : "") });
+    if(run.us && run.pts>=7) out.push({ k:"runU|"+run.t0, tone:"good", big:"Our run "+run.pts+"–0", txt:"since "+since+(T.left>0? " — they have "+T.left+" timeout"+(T.left>1? "s" : "")+" left" : "") });
+  }
+  /* FOULS AGAINST THE PLAN: one of ours in foul trouble for the quarter, with the minutes the plan
+     still gives him tonight */
+  if(_gpPlanHook && _gpPlanHook.plan===L.plan){
+    let left2={}; try{ left2=_gpPlanHook.left(L)||{}; }catch(e){}
+    (L.us||[]).forEach(p=>{ const lv=_gpFoulLv(p.pf, qi), m=left2[String(p.id)]||0;
+      if((lv==="hot" || lv==="out") && m>0) out.push({ k:"pfPlan|"+p.id+"|"+p.pf, tone:lv==="out"? "bad" : "warn",
+        big:_lgLastName(p.name||"")+" · "+p.pf+" PF", txt:(lv==="out"? "fouled out" : "in foul trouble for "+qn(qi))+" — the plan still gives him "+m+"′ tonight" }); });
+  }
   return out.map(a=>Object.assign(a, { arrow:ballUs }));
 }
 /* THE LAST TWO MINUTES, AS THE RULES ARE: FIBA Official Basketball Rules 2026 (in force from
@@ -14881,11 +14969,34 @@ function _gpAlertBar(){
     const ar=_gpArrow(L.feed);
     if(ar) row.appendChild(h("span",{class:"gp5-al-arrow "+(ar===L.uc? "us" : "them"), title:"alternating possession: the next held ball or quarter start"}, "Arrow → "+(ar===L.uc? "US" : "THEM")));
     small.forEach(a=>row.appendChild(h("span",{class:"gp5-al chip "+a.tone, title:a.txt}, a.big)));
-    if(row.children.length) wrap.appendChild(row);
+    /* the timeout card at hand, and game mode: only what decides during the game */
+    row.appendChild(h("span",{class:"gp5-al-sp"}));
+    row.appendChild(h("button",{type:"button", class:"gp5-al-btn", onclick:()=>openCard()}, "⏱ Timeout card"));
+    row.appendChild(h("button",{type:"button", class:"gp5-al-btn"+(_gpUI.gameMode? " on" : ""), title:"show only the reminders, the rotation, both teams and the score",
+      onclick:()=>{ _gpUI.gameMode=!_gpUI.gameMode; _gpUISave(); applyMode(); wrap.__sig=""; paint(); }}, _gpUI.gameMode? "Game mode · on" : "Game mode"));
+    wrap.appendChild(row);
     /* the rules are read below the bar, in the page, not over the board */
     rulesHost.innerHTML=""; if(list.some(a=>a.rules)) rulesHost.appendChild(_gpRulesCard());
   };
-  paint();
+  /* GAME MODE: the panel keeps the reminders, our rotation, both teams and one line of score;
+     the rest folds away (their sets open with a tap on their heading) */
+  const applyMode=()=>{ const p=wrap.closest(".gp5"); if(p) p.classList.toggle("gm", !!_gpUI.gameMode); };
+  /* the timeout card opens by itself when a timeout comes in (ours or theirs, live or replayed),
+     over the page, and closes with a tap or two minutes later */
+  let card=null, cardAt=0;
+  const closeCard=()=>{ if(card){ try{ card.remove(); }catch(e){} card=null; } };
+  const openCard=()=>{ const L=_gpLiveNow; if(!L || !L.live || !L.feed) return; closeCard(); cardAt=Date.now();
+    card=h("div",{class:"gp7-ov", onclick:e=>{ if(e.target===card) closeCard(); }}, _gpToCard(L, closeCard)); document.body.appendChild(card); };
+  const refreshCard=()=>{ if(!card) return; if(Date.now()-cardAt>120000){ closeCard(); return; } const L=_gpLiveNow; if(!L || !L.live) { closeCard(); return; }
+    try{ card.replaceChildren(_gpToCard(L, closeCard)); }catch(e){} };
+  const watchTo=()=>{ const L=_gpLiveNow; if(!L || !L.live || !L.feed) return;
+    const A=_gpActs(L.feed, L.lastT).filter(o=>o.a.action==="TIMEO"), x=A[A.length-1];
+    if(!x || x.t<L.lastT-60) return;
+    const k=(L.rp? "rp|" : "lv|")+(L.G? L.G.id : "")+"|to|"+(x.a.id||x.t);
+    if(!_gpAlertSeen[k]){ _gpAlertSeen[k]={ first:Date.now() }; openCard(); } };
+  const paint0=paint;
+  const paintAll=()=>{ paint0(); applyMode(); watchTo(); refreshCard(); };
+  paintAll();
   /* the bar is made before it is on the page and a reading can come in that instant: it lets go
      only once it has been on the page and has left it */
   const gone=()=>{ if(wrap.isConnected){ wrap.__was=1; return false; } return !!wrap.__was; };
@@ -14897,10 +15008,10 @@ function _gpAlertBar(){
   addEventListener("scroll", onScroll, { passive:true, capture:true }); addEventListener("resize", onScroll);
   /* the menu slides away with an animation when the page scrolls: measured again as it moves */
   const tTop=setInterval(()=>{ if(gone()){ clearInterval(tTop); return; } fixTop(); }, 250);
-  const on=()=>{ if(gone()){ window.removeEventListener("gp-live", on); clearInterval(tm); return; } paint(); };
+  const on=()=>{ if(gone()){ window.removeEventListener("gp-live", on); clearInterval(tm); closeCard(); return; } paintAll(); };
   window.addEventListener("gp-live", on);
   /* the 90 seconds run out between readings too */
-  const tm=setInterval(()=>{ if(gone()){ clearInterval(tm); window.removeEventListener("gp-live", on); return; } paint(); }, 5000);
+  const tm=setInterval(()=>{ if(gone()){ clearInterval(tm); window.removeEventListener("gp-live", on); closeCard(); return; } paintAll(); }, 2000);
   return wrap;
 }
 /* THE FOUR NUMBERS AFTER THE FOULS: points, valoración (PIR), assists and offensive rebounds of
@@ -16242,6 +16353,36 @@ function renderPlanSection(sec, canEd, save, allSecs){
     window.addEventListener("gp-live", on);
     return wrap;
   }
+  /* EVERY FIVE OF OURS THAT HAS PLAYED TONIGHT: its minutes, the points it scored and allowed, the
+     +/- and the points a possession both ways - who to put back on the floor */
+  function fivesBlock(){
+    const wrap=h("div",{class:"gp6-cc"});
+    const paint=()=>{
+      const L=_gpLiveNow;
+      const sig=JSON.stringify([L && L.feed? (L.feed.actions||[]).length : 0, L? Math.floor((L.lastT||0)/20) : -1]);
+      if(sig===wrap.__sig) return; wrap.__sig=sig;
+      wrap.innerHTML="";
+      if(!L || !L.feed || !L.court){ wrap.appendChild(h("div",{class:"gp3-ksn"},"Every five that plays tonight, from the tip-off: minutes, points both ways, +/- and points a possession.")); return; }
+      const F=_gpFives(L).filter(f=>f.sec>=30);
+      if(!F.length){ wrap.appendChild(h("div",{class:"gp3-ksn"},"No five has played half a minute yet.")); return; }
+      const nameOf={}; (L.us||[]).forEach(p=>{ nameOf[String(p.id)]=_lgLastName(p.name||"")||("#"+p.num); });
+      const onNow=Object.keys((L.court && L.court.u)||{}).filter(id=>L.court.u[id].on).sort().join("|");
+      const tb=h("table",{class:"gp6-cct"});
+      tb.appendChild(h("tr",{}, h("th",{class:"l"},"Five"), h("th",{},"Min"), h("th",{},"Pts"), h("th",{},"+/-"), h("th",{title:"our points a possession"},"Off PPP"), h("th",{title:"their points a possession"},"Def PPP")));
+      F.slice(0,10).forEach(f=>{ const d=f.pf-f.pa, po=f.pu>=1? f.pf/f.pu : null, pd=f.pt>=1? f.pa/f.pt : null;
+        const tone=(f.pu+f.pt)<6? "" : d>=4? "good" : d<=-4? "bad" : "";
+        tb.appendChild(h("tr",{class:tone+(f.ids.slice().sort().join("|")===onNow && L.live? " now" : "")},
+          h("td",{class:"l"}, f.ids.map(id=>nameOf[id]||"?").join(" · ")),
+          h("td",{}, _gpMmss(f.sec)), h("td",{}, f.pf+"–"+f.pa), h("td",{class:"pm"}, (d>0? "+" : "")+d),
+          h("td",{}, po==null? "—" : po.toFixed(2)), h("td",{}, pd==null? "—" : pd.toFixed(2)))); });
+      wrap.appendChild(tb);
+      wrap.appendChild(h("div",{class:"gp5-note"},"The ten fives with most minutes · the one on the floor now is outlined · green / red from 4 points either way (6+ possessions)"));
+    };
+    paint();
+    const on=()=>{ if(!wrap.isConnected){ if(wrap.__was) window.removeEventListener("gp-live", on); return; } wrap.__was=1; paint(); };
+    window.addEventListener("gp-live", on);
+    return wrap;
+  }
   function playerStatusBlock(){
     const wrap=h("div",{class:"gp5-ps"});
     const perQ={}; GP_HALF.forEach(q=>{ perQ[q]={}; (plan.grid[q]||[]).forEach(row=>row.forEach(id=>{ if(id) perQ[q][id]=(perQ[q][id]||0)+1; })); });
@@ -16631,6 +16772,16 @@ function renderPlanSection(sec, canEd, save, allSecs){
       if(!canEd){
         const wrap5=h("div",{class:"gp4 dash gp5"});
         try{ _wipArea(wrap5, "gameplan"); }catch(e){}
+        /* what the reminders ask the plan: the minutes each of ours still has on it tonight, from
+           the minute being played on (Q1 and Q3 on the Q1 board, Q2 and Q4 on the Q2 board) */
+        _gpPlanHook={ plan:(_scoutOpponent||"")+"|"+(_scoutDate||""), left:L=>{
+          const out={}, qi=L.maxQ||0; if(qi>3) return out;
+          const cur=Math.floor(((L.lastT||0)-qi*600)/60), M=_gpMatchAll(plan.pool.map(p=>p.name), L.us||[]);
+          plan.pool.forEach(p=>{ const man=M[p.name]; if(!man) return; let m=0;
+            for(let q=qi;q<4;q++){ const g=plan.grid[(q%2===1)? "Q2" : "Q1"]||[];
+              for(let c=0;c<GP_COLS;c++){ if(q===qi && c<=cur) continue; if(g.some(row=>(row||[])[c]===p.id)) m++; } }
+            out[String(man.id)]=m; });
+          return out; } };
         /* OUR ROTATION FOLLOWS THE GAME. Auto: the board of the quarter being played (Q1 and
            Q3 read the Q1 board, Q2 and Q4 the Q2 board; before the tip-off, Q1), with that
            quarter's plan beside it and a line on the board at the minute being played. Q1 + Q2
@@ -16737,11 +16888,15 @@ function renderPlanSection(sec, canEd, save, allSecs){
           sect("us", "Our team", "timeouts · fouls · players", null, safe(()=>playerStatusBlock())),
           sect("them", "Their team", "timeouts · fouls · players, last games and live", null, safe(()=>oppFiveBlock(true))));
         wrap5.appendChild(row2);
-        wrap5.appendChild(sect("them", "Their key sets", "see the call, find the play", null, safe(()=>keySetsBlock())));
+        { const setsSec=sect("them sets", "Their key sets", "see the call, find the play", null, safe(()=>keySetsBlock()));
+          /* in game mode their sets fold to their heading: one tap opens them, another closes them */
+          const hd=setsSec.querySelector(".gp4-h"); if(hd) hd.addEventListener("click", ()=>{ if(wrap5.classList.contains("gm")) setsSec.classList.toggle("open"); });
+          wrap5.appendChild(setsSec); }
         const lv=safe(()=>_gpLiveBlock());
         if(rq==="both") wrap5.appendChild(h("div",{class:"gp5-row2"}, sect("live", "The game", "", lv.__stat||null, lv), sect("us", "This quarter's plan", "", null, qbox)));
         else wrap5.appendChild(sect("live", "The game", "", lv.__stat||null, lv));
-        wrap5.appendChild(sect("us", "Our plan, idea by idea", "each colour of the offense and defense rails · what it returned", null, safe(()=>conceptBlock())));
+        wrap5.appendChild(sect("us ideas", "Our plan, idea by idea", "each colour of the offense and defense rails · what it returned", null, safe(()=>conceptBlock())));
+        wrap5.appendChild(sect("us fives", "Our fives tonight", "every five that has played · points and possessions both ways", null, safe(()=>fivesBlock())));
         box.appendChild(wrap5);
         const foot5=h("div",{class:"gp2-foot"}, h("span",{}, h("i",{class:"gp2-mark"}), "Yellow = the minute a sub comes in"));
         const pr5=h("button",{class:"btn sm gp2-print"},"🖨 Print A4");
@@ -36287,6 +36442,37 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .gp6-cct td.l{font-weight:700}
 .gp6-cct td.who{font-weight:500;color:var(--ink-soft,#5b6472);font-size:12px}
 .gp6-cct i.sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:8px;vertical-align:-1px;border:1px solid rgba(0,0,0,.15)}
+.gp6-cct tr.good td.pm{background:#d9f2e3;color:#0f5132;font-weight:800}
+.gp6-cct tr.bad td.pm{background:#fbe1df;color:#8a1c17;font-weight:800}
+.gp6-cct tr.now td{box-shadow:inset 0 2px 0 #1f8a5b,inset 0 -2px 0 #1f8a5b}
+/* the bar's two buttons: the timeout card and game mode */
+.gp5-al-sp{flex:1}
+.gp5-al-btn{min-height:38px;padding:6px 14px;border:1px solid var(--line-strong,#cfd4dc);background:var(--panel,#fff);color:var(--ink,#141821);border-radius:8px;font:700 11.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;touch-action:manipulation}
+.gp5-al-btn.on{background:var(--ink,#141821);color:var(--panel,#fff);border-color:var(--ink,#141821)}
+/* GAME MODE: the reminders, our rotation, both teams and the line of score; the rest folds */
+.gp5.gm .gp4-sec.ideas,.gp5.gm .gp4-sec.fives{display:none}
+.gp5.gm .gp4-sec.live .gp-live-tabs,.gp5.gm .gp4-sec.live .gp-live-b > :not(.gp-lv-top){display:none!important}
+.gp5.gm .gp4-sec.sets:not(.open) .gp4-b{display:none}
+.gp5.gm .gp4-sec.sets .gp4-h{cursor:pointer}
+.gp5.gm .gp4-sec.sets:not(.open) .gp4-h .sub::after{content:" · tap to open"}
+/* the timeout card, over the page */
+.gp7-ov{position:fixed;inset:0;z-index:200;background:rgba(10,12,16,.45);display:flex;align-items:flex-start;justify-content:center;padding:max(70px,env(safe-area-inset-top,0px)) 14px 20px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.gp7-card{width:100%;max-width:920px;background:var(--panel,#fff);color:var(--ink,#141821);border-radius:14px;box-shadow:0 18px 48px rgba(0,0,0,.35);overflow:hidden}
+.gp7-h{display:flex;align-items:center;gap:12px;padding:12px 16px;background:#141821;color:#fff}
+.gp7-h b{font:800 20px 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.gp7-h span{font:600 13px Inter,system-ui,sans-serif;opacity:.8;flex:1}
+.gp7-x{min-height:42px;padding:8px 16px;border:0;border-radius:8px;background:#fff;color:#141821;font:800 13px Inter,system-ui,sans-serif;cursor:pointer;touch-action:manipulation}
+.gp7-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;padding:14px 16px 6px}
+.gp7-k{display:grid;grid-template-columns:1fr auto 1fr;align-items:baseline;gap:4px;padding:10px;border:1px solid var(--line,#e3e6ea);border-radius:10px;text-align:center}
+.gp7-k i{grid-column:1/-1;font:700 10.5px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;font-style:normal;color:var(--ink-soft,#5b6472)}
+.gp7-k b{font:800 22px Inter,system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.gp7-k b.good{color:#1f8a5b}.gp7-k b.bad{color:#c0392b}
+.gp7-k em{font-style:normal;color:var(--ink-soft,#8a919c)}
+.gp7-ls{padding:6px 16px 16px;display:grid;gap:6px}
+.gp7-l{display:grid;grid-template-columns:180px 1fr;gap:10px;align-items:baseline;padding:8px 10px;border-radius:8px;background:#f5f6f8;font:600 14.5px Inter,system-ui,sans-serif}
+.gp7-l b{font:800 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}
+.gp7-l.warn{background:#fff4e0}.gp7-l.bad{background:#fbe1df}
+@media (max-width:820px){ .gp7-kpis{grid-template-columns:repeat(2,minmax(0,1fr))} .gp7-l{grid-template-columns:1fr} }
 .gp6-cct tr.good td.ppp{background:#d9f2e3;color:#0f5132;font-weight:800}
 .gp6-cct tr.bad td.ppp{background:#fbe1df;color:#8a1c17;font-weight:800}
 .gp5-ruleshost{margin:0 0 8px}.gp5-ruleshost:empty{display:none}
