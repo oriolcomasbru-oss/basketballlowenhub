@@ -1028,63 +1028,146 @@ function demoPayload() {
 /* ---------- the live channel ----------
    During the game the league writes nothing to gameStats: the play by play travels over
    its socket.io channel. A Netlify function cannot sit on a socket, but socket.io also
-   speaks plain HTTP ("polling" transport), so every call opens a session with our key,
-   asks for the game's history - the whole game so far, in the same rows as gameStats -
-   reads until the server says the history is complete (seven [20] rows, one per kind)
-   and hangs up. Two seconds per answer at most; the key never leaves this function. */
-async function sockTry(gameId, key, budget, trace) {
-  const base = apiBase() + "/socket.io/?EIO=4&transport=polling";
-  const hdr = { "x-api-key": key };
-  const t0 = Date.now(), left = () => budget - (Date.now() - t0);
-  const tr = (w, s, x) => { if (trace.length < 40) trace.push((Date.now() - t0) + "ms " + w + " " + s + " " + S(x).slice(0, 140)); };
-  const get = async (sid) => {
-    const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), Math.max(300, left()));
-    try { const r = await fetch(base + (sid ? "&sid=" + sid + "&t=" + Date.now() : "&t=" + Date.now()), { headers: hdr, signal: ac.signal }); const tx = await r.text(); tr("GET", r.status, tx); return r.ok ? tx : ""; }
-    catch (e) { tr("GET", "x", e.name); return ""; } finally { clearTimeout(tm); }
-  };
-  const post = (sid, body) => fetch(base + "&sid=" + sid, { method: "POST", headers: Object.assign({ "content-type": "text/plain;charset=UTF-8" }, hdr), body: body }).then(async r => { tr("POST " + body.slice(0, 40), r.status, await r.text()); return r.ok; }).catch(e => { tr("POST", "x", e.message); return false; });
-  const open = await get("");
-  const m = /^0(\{.*\})/.exec(open || "");
-  if (!m) throw new Error("live channel: no session (" + S(open).slice(0, 80) + ")");
-  const sid = JSON.parse(m[1]).sid;
+   speaks plain HTTP ("polling" transport), and that is what this does, with our key, so
+   the key never leaves the function.
+
+   Three things learnt the hard way:
+   - api.basketball-bundesliga.de is three servers behind one name, and a session lives on
+     one of them only. Every request of a session is sent to the same address (pinned), or
+     the next one lands elsewhere and is told "Session ID unknown".
+   - The league has a behaviour filter that answers 403 when it is asked too much. So the
+     session is KEPT between calls while this instance is warm: the first call joins the
+     game and reads its history (the whole game so far, the same rows as gameStats); every
+     call after that is two small requests - a join with an answer asked for, which makes
+     the server reply at once, and the read that brings that answer plus every row pushed
+     since the last call. The rows are merged here into the game as it stands.
+   - On a 403 the channel rests for a minute and the screen falls back to gameStats. */
+const https = require("https");
+const dns = require("dns");
+const LIVE = { s: null, block: 0, ips: null, ipsAt: 0, agents: {} };
+
+async function liveIps() {
+  if (LIVE.ips && Date.now() - LIVE.ipsAt < 10 * 60e3) return LIVE.ips;
+  const host = new URL(apiBase()).hostname;
+  const ips = await dns.promises.resolve4(host).catch(() => []);
+  LIVE.ips = ips.length ? ips : null; LIVE.ipsAt = Date.now();
+  return LIVE.ips;
+}
+
+/* one request to one of the league's servers, by address, with the name kept for TLS */
+function pinned(ip, method, query, body, key, timeout) {
+  const u = new URL(apiBase());
+  const agent = LIVE.agents[ip] || (LIVE.agents[ip] = new https.Agent({ keepAlive: true, maxSockets: 2 }));
+  return new Promise((resolve) => {
+    const headers = { "x-api-key": key, accept: "*/*" };
+    if (body != null) { headers["content-type"] = "text/plain;charset=UTF-8"; headers["content-length"] = Buffer.byteLength(body); }
+    const req = https.request({
+      host: u.hostname, servername: u.hostname, port: 443, method: method,
+      path: "/socket.io/?EIO=4&transport=polling" + query, headers: headers, agent: agent,
+      lookup: (h, o, cb) => (o && o.all) ? cb(null, [{ address: ip, family: 4 }]) : cb(null, ip, 4)
+    }, (r) => {
+      const chunks = []; r.on("data", c => chunks.push(c));
+      r.on("end", () => { clearTimeout(tm); resolve({ status: r.statusCode, text: Buffer.concat(chunks).toString("utf8") }); });
+    });
+    const tm = setTimeout(() => { req.destroy(); resolve({ status: 0, text: "timeout" }); }, timeout);
+    req.on("error", (e) => { clearTimeout(tm); resolve({ status: 0, text: e.message }); });
+    if (body != null) req.write(body);
+    req.end();
+  });
+}
+
+/* the game as it stands, from history and pushes; deletes are applied */
+function liveState() { return { score: new Map(), act: new Map(), team: new Map(), time: new Map(), ply: new Map(), plyRow: new Map(), start: new Map() }; }
+function liveApply(st, r) {
+  if (!Array.isArray(r)) return;
+  const t = Number(r[0]);
+  if (t === 4 && (r.length === 29 || r.length === 31)) { r = r.slice(); r.splice(25, 1); }
+  switch (t) {
+    case 0: st.score.set(S(r[1]), r); break;
+    case 1: st.act.set(S(r[1]), r); break;
+    case 2: st.team.set(S(r[2]), r); break;
+    case 3: st.time.set(S(r[1]), r); break;
+    case 4: st.ply.set(S(r[3]), r); st.plyRow.set(S(r[1]), S(r[3])); break;
+    case 5: st.score.delete(S(r[1])); break;
+    case 6: st.act.delete(S(r[1])); break;
+    case 7: st.start.set(S(r[1]) + "|" + S(r[2]), r); break;
+    case 8: { const p = st.plyRow.get(S(r[1])); st.ply.delete(p != null ? p : S(r[1])); break; }
+  }
+}
+function liveRows(st) {
+  const byId = (m) => Array.from(m.values()).sort((a, b) => Number(a[1]) - Number(b[1]));
+  return [].concat(byId(st.score), byId(st.act), Array.from(st.team.values()), byId(st.time), Array.from(st.ply.values()), Array.from(st.start.values()));
+}
+
+async function liveRead(gameId, key) {
+  const t0 = Date.now(), trace = [];
+  const tr = (w, r) => { if (trace.length < 30) trace.push((Date.now() - t0) + "ms " + w + " " + r.status + " " + S(r.text).slice(0, 120)); };
+  if (Date.now() < LIVE.block) return { rows: [], complete: false, ms: 0, trace, error: "the league is holding the live channel back for a minute (403)" };
   const gid = /^\d+$/.test(S(gameId)) ? Number(gameId) : S(gameId);
-  await post(sid, "40");
-  const rows = []; let ends = 0, joined = false, refused = "", asked = false;
-  while (left() > 0 && ends < 7) {
-    const txt = await get(sid);
-    if (!txt) break;
-    for (const pk of txt.split("\x1e")) {
-      if (pk === "2") { post(sid, "3"); continue; }
-      if (pk.startsWith("40")) { joined = true; continue; }
-      if (pk.startsWith("44") || pk === "41" || pk === "1") { refused = pk.slice(0, 160) || "closed"; continue; }
+  const blocked = (r) => { if (r.status === 403) { LIVE.block = Date.now() + 60e3; LIVE.s = null; return true; } return false; };
+  /* read the packets of one answer into the session */
+  const eat = (s, text) => {
+    let ack = false, closed = false;
+    for (const pk of S(text).split("\x1e")) {
+      if (pk === "2") { s.pong = true; continue; }
+      if (pk.startsWith("40")) { s.joined = true; continue; }
+      if (pk.startsWith("43")) { ack = true; continue; }
+      if (pk.startsWith("44") || pk === "41" || pk === "1") { closed = true; continue; }
       if (!pk.startsWith("42")) continue;
       let msg; try { msg = JSON.parse(pk.slice(2)); } catch (e) { continue; }
-      if (!Array.isArray(msg) || String(msg[0]) !== String(gid)) continue;
+      if (!Array.isArray(msg) || String(msg[0]) !== String(s.gid)) continue;
       const d = msg[1];
-      const list = Array.isArray(d) && Array.isArray(d[0]) ? d : [d];
-      list.forEach(r => { if (!Array.isArray(r)) return; if (Number(r[0]) === 20) ends++; else rows.push(r); });
+      (Array.isArray(d) && Array.isArray(d[0]) ? d : [d]).forEach(r => {
+        if (Array.isArray(r) && Number(r[0]) === 20) s.ends++; else liveApply(s.st, r);
+      });
     }
-    if (joined && !asked) { asked = true; await post(sid, '42["history",' + JSON.stringify(gid) + "]"); }
-    if (refused) break;
+    return { ack, closed };
+  };
+  const send = async (s, body) => { const r = await pinned(s.ip, "POST", "&sid=" + s.sid, (s.pong ? "3\x1e" : "") + body, key, 2000); s.pong = false; tr("POST " + body.slice(0, 30), r); return r; };
+  const read = async (s, ms) => { const r = await pinned(s.ip, "GET", "&sid=" + s.sid + "&t=" + Date.now(), null, key, ms); tr("GET", r); return r; };
+
+  let s = LIVE.s;
+  if (s && (String(s.gid) !== String(gid) || Date.now() - s.used > 40e3)) { pinned(s.ip, "POST", "&sid=" + s.sid, "41", key, 1000); s = LIVE.s = null; }
+
+  /* a session that is still open: ask, and read what has come since */
+  if (s) {
+    s.ack = (s.ack || 0) + 1;
+    const p = await send(s, "42" + s.ack + '["join",' + JSON.stringify(gid) + "]");
+    if (blocked(p)) return { rows: [], complete: false, ms: Date.now() - t0, trace, error: "403" };
+    if (p.status === 200) {
+      const g = await read(s, 2500);
+      if (blocked(g)) return { rows: [], complete: false, ms: Date.now() - t0, trace, error: "403" };
+      if (g.status === 200) {
+        const e = eat(s, g.text);
+        if (!e.closed) { s.used = Date.now(); return { rows: liveRows(s.st), complete: s.ends >= 7, ms: Date.now() - t0, trace, kept: true }; }
+      }
+    }
+    LIVE.s = s = null;   /* the session is gone: open a new one below */
   }
-  post(sid, "41").catch(() => {});
-  if (!rows.length && refused) { const e = new Error("live channel refused: " + refused); e.trace = trace; throw e; }
-  return { rows, complete: ends >= 7, ms: Date.now() - t0, trace };
-}
-/* the league runs several servers and our calls are not pinned to one, so a session may
-   land on a server that does not know it ("Session ID unknown"): try again at once with
-   a new session, each try held to 2.5 s, until one brings the whole history */
-async function sockHistory(gameId, key, budget) {
-  const t0 = Date.now(), trace = [];
-  let best = { rows: [], complete: false };
-  for (let i = 0; i < 6 && Date.now() - t0 < budget - 400; i++) {
-    const r = await sockTry(gameId, key, Math.min(2500, budget - (Date.now() - t0)), trace).catch(e => ({ rows: [], complete: false, err: e.message }));
-    if (r.rows.length > best.rows.length || r.complete) best = r;
-    if (best.complete) break;
+
+  /* a new session, on one server, held there */
+  const ips = await liveIps();
+  const ip = ips ? ips[Math.floor(Math.random() * ips.length)] : new URL(apiBase()).hostname;
+  const o = await pinned(ip, "GET", "&t=" + Date.now(), null, key, 2000); tr("OPEN " + ip, o);
+  if (blocked(o)) return { rows: [], complete: false, ms: Date.now() - t0, trace, error: "403" };
+  const m = /^0(\{.*\})/.exec(o.text || "");
+  if (!m) return { rows: [], complete: false, ms: Date.now() - t0, trace, error: "live channel: no session" };
+  s = { ip: ip, sid: JSON.parse(m[1]).sid, gid: gid, st: liveState(), ends: 0, joined: false, pong: false, ack: 0, used: Date.now() };
+  await send(s, "40");
+  const c = await read(s, 2000); eat(s, c.text);
+  if (!s.joined) return { rows: [], complete: false, ms: Date.now() - t0, trace, error: blocked(c) ? "403" : "live channel: not let in" };
+  await send(s, '42["join",' + JSON.stringify(gid) + ']\x1e42["history",' + JSON.stringify(gid) + "]");
+  while (s.ends < 7 && Date.now() - t0 < 6500) {
+    const g = await read(s, Math.max(500, 6500 - (Date.now() - t0)));
+    if (g.status !== 200) { blocked(g); break; }
+    if (eat(s, g.text).closed) break;
   }
-  return { rows: best.rows, complete: !!best.complete, ms: Date.now() - t0, trace };
+  if (s.ends >= 7) { s.used = Date.now(); LIVE.s = s; }
+  else pinned(s.ip, "POST", "&sid=" + s.sid, "41", key, 1000);
+  return { rows: liveRows(s.st), complete: s.ends >= 7, ms: Date.now() - t0, trace };
 }
 const liveMemo = {};
+
 
 /* ---------- handler ---------- */
 exports.handler = async (event) => {
@@ -1291,14 +1374,14 @@ exports.handler = async (event) => {
       let sheet = getCache(sk, TTL.game);
       const [sh, live] = await Promise.all([
         sheet ? Promise.resolve(sheet) : api("/v2/game/" + encodeURIComponent(id), key).catch(e => ({ _error: e.message })),
-        sockHistory(id, key, 7000).catch(e => ({ _error: e.message, trace: e.trace }))
+        liveRead(id, key).catch(e => ({ rows: [], error: e.message }))
       ]);
       if (sh && !sh._error) { sheet = sh; if (!getCache(sk, TTL.game)) setCache(sk, sh); } else if (sh && sh._error) meta.errors.push("game: " + sh._error);
-      if (live._error) meta.errors.push(live._error);
+      if (live.error) meta.errors.push(live.error);
       out = Object.assign(meta, {
         game: sheet || null,
-        feed: (live && !live._error && live.rows.length) ? decodeFeed(live.rows) : null,
-        live: { complete: !!live.complete, rows: live.rows ? live.rows.length : 0, ms: live.ms || 0, trace: q.debug === "1" ? live.trace : undefined }
+        feed: (live.complete && live.rows && live.rows.length) ? decodeFeed(live.rows) : null,
+        live: { complete: !!live.complete, rows: live.rows ? live.rows.length : 0, ms: live.ms || 0, kept: !!live.kept, trace: q.debug === "1" ? live.trace : undefined }
       });
       if (out.feed) liveMemo[id] = { t: Date.now(), d: out };
       return reply(200, out, out.feed ? 2000 : 0);
