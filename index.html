@@ -14813,6 +14813,13 @@ function _gpFoulLv(pf, qi){
   return pf>=4? "hot" : "";
 }
 function _gpMmss(s){ s=Math.max(0, Math.round(s||0)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
+/* a JSON request that is let go after ms: null when it fails, answers badly or takes too long */
+function _gpFetchJ(url, ms){
+  let ctl=null; try{ ctl=new AbortController(); }catch(e){}
+  const t=setTimeout(()=>{ try{ ctl && ctl.abort(); }catch(e){} }, ms||6000);
+  const p=fetch(url, ctl? { signal:ctl.signal } : undefined).then(r=>r.ok? r.json() : null).catch(()=>null);
+  return Promise.race([p, new Promise(r=>setTimeout(()=>r(null), (ms||6000)+500))]).then(v=>{ clearTimeout(t); return v; });
+}
 /* a name on the plan (DAEDAE, FERDI) to the man in the league's feed - the same reading the faces use */
 /* how well a plan's name (DAEDAE, FERDI) fits one of the league's men: 5 his first name
    (or the alias of it), 4 his surname, 3 the name the joined first and last start with,
@@ -15519,18 +15526,24 @@ function _gpLiveBlock(){
          does not move, so the block says where the game is instead of showing an empty
          stretch; after it, the league keeps correcting for some 10-20 minutes, so it is read
          again every minute until the game is OFFICIAL or half an hour has gone by. */
-      if(date>=addDays(today,-1) && (!GC || GC.status!=="LIVE" || Date.now()-gcAt>2500)){ gcAt=Date.now();
-        try{ const g2=await fetch("/.netlify/functions/bbl?res=gamecenter").then(r=>r.ok? r.json() : null).catch(()=>null);
+      /* A REQUEST THAT HANGS MUST NOT STOP THE OTHERS. During the game the league's clock is
+         asked beside the live channel, not before it, and each request is let go after a few
+         seconds: one slow answer of the game centre had held every reading for 18 seconds. */
+      if(date>=addDays(today,-1) && (!GC || GC.status!=="LIVE" || Date.now()-gcAt>2500) && !read.gcBusy){ gcAt=Date.now();
+        const gid=G.id;
+        const ask=_gpFetchJ("/.netlify/functions/bbl?res=gamecenter&b="+Math.floor(Date.now()/2000), 5000).then(g2=>{
           const all=g2? [].concat(g2.present||[], g2.past||[], g2.future||[]) : [];
-          const hit=all.filter(x=>String(x.id)===String(G.id))[0];
-          if(hit){ GC=hit; if(/^(POST|OFFICIAL)$/.test(GC.status) && !postSeen) postSeen=Date.now(); } }catch(e){}
+          const hit=all.filter(x=>String(x.id)===String(gid))[0];
+          if(hit && G && String(G.id)===String(gid)){ GC=hit; if(/^(POST|OFFICIAL)$/.test(GC.status) && !postSeen) postSeen=Date.now(); } })
+          .catch(()=>{}).then(()=>{ read.gcBusy=false; });
+        read.gcBusy=true;
+        if(!(GC && GC.status==="LIVE")) await ask;   /* before the game the answer decides what is read next */
       }
       const keep=_gpLiveMemo[G.id];
       if(keep && !fresh){ J=keep; draw(); }
       if(!keep || fresh || !over){
         /* LIVE: the league's live channel, through our function (held 2 s, shared by all) */
-        let j=(GC && GC.status==="LIVE")? await fetch("/.netlify/functions/bbl?res=live&id="+encodeURIComponent(G.id)+"&b="+Math.floor(Date.now()/2000))
-          .then(r=>r.ok? r.json() : null).catch(()=>null) : null;
+        let j=(GC && GC.status==="LIVE")? await _gpFetchJ("/.netlify/functions/bbl?res=live&id="+encodeURIComponent(G.id)+"&b="+Math.floor(Date.now()/2000), 6000) : null;
         /* the connection, as the bench needs to know it: when the live channel last answered with the game, and why not when it did not */
         if(GC && GC.status==="LIVE"){ if(j && j.feed){ CN.ok=Date.now(); CN.err=""; } else CN.err=(navigator.onLine===false)? "this device is offline" : (j && (j.errors||[])[0])? String(j.errors[0]) : "no answer from the league"; }
         if(!(j && j.feed)) j=await fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(G.id)+((date>=addDays(today,-1))? "&fresh=1" : ""))
