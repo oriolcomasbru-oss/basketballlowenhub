@@ -16646,12 +16646,18 @@ function renderPlanSection(sec, canEd, save, allSecs){
         const all=[]; order.forEach(k=>{ const G=groups[k]; G.items.forEach(it=>all.push(Object.assign({ band:G.g, sub:G.sub }, it))); });
         const byCode=(a,b)=>String(a.name).localeCompare(String(b.name), undefined, {numeric:true, sensitivity:"base"});
         const byUse=(a,b)=>(b.n-a.n) || byCode(a,b);
-        const tile=it=>h("div",{class:"gp6-set b-"+String(it.band||"").replace(/\W+/g,"").toLowerCase(), title:(it.n? it.n+" run"+(it.n===1?"":"s")+" in the tagging" : "not in the tagging")+(it.ppp!=null? " · "+it.ppp.toFixed(2)+" points per possession" : "")+(it.sub? " · "+it.sub : "")},
-          h("div",{class:"gp6-sl"}, h("b",{}, it.name), it.call? h("q",{}, it.call) : null),
-          h("div",{class:"gp6-sr"}, it.n? h("u",{}, String(it.n)+"×") : null,
-            it.ppp!=null? h("em",{class:(it.ppp>=1.1? "hi" : it.ppp<=0.85? "lo" : "mid")}, it.ppp.toFixed(2)) : null));
-        const grid=(list, sort)=>h("div",{class:"gp6-grid"}, list.slice().sort(sort).map(tile));
+        /* one line a set: their call first and big (what the bench sees), the set's name after it
+           in grey, how often they run it as a bar and a number, and what it returns (points a
+           possession) as a coloured figure - in columns that read top to bottom */
+        const row=it=>h("div",{class:"gp8-r b-"+String(it.band||"").replace(/\W+/g,"").toLowerCase(), title:(it.n? it.n+" run"+(it.n===1?"":"s")+" in the tagging" : "not in the tagging")+(it.ppp!=null? " · "+it.ppp.toFixed(2)+" points per possession" : "")+(it.sub? " · "+it.sub : "")},
+          h("b",{class:"c"+(it.call? "" : " none")}, it.call || it.name),
+          h("span",{class:"nm"}, it.call? it.name : ""),
+          h("span",{class:"v"}, it.n? h("i",{style:"width:"+Math.max(6,Math.round(100*it.n/maxN))+"%"}) : null),
+          h("u",{}, it.n? String(it.n) : ""),
+          h("em",{class:it.ppp==null? "" : (it.ppp>=1.1? "hi" : it.ppp<=0.85? "lo" : "mid")}, it.ppp==null? "" : it.ppp.toFixed(2)));
+        const grid=(list, sort)=>h("div",{class:"gp8-list"}, list.slice().sort(sort).map(row));
         const seg=h("div",{class:"gp6-seg"}, [["use","By use"],["cat","By category"],["code","By code"]].map(o=>h("button",{type:"button", class:o[0]===mode? "on" : "", onclick:()=>{ _gpUI.ksMode=o[0]; _gpUISave(); draw(); }}, o[1])));
+        seg.appendChild(h("span",{class:"gp8-key"}, h("b",{},"Call"), " set · use · ", h("em",{},"PPP")));
         body.appendChild(seg);
         const isOob=it=>it.band==="SLOB" || it.band==="BLOB";
         const live=all.filter(it=>!isOob(it)), slob=all.filter(it=>it.band==="SLOB"), blob=all.filter(it=>it.band==="BLOB");
@@ -16790,6 +16796,9 @@ function renderPlanSection(sec, canEd, save, allSecs){
         const rq="auto";
         const qOf=()=>{ const lv=_gpLiveNow, qi=lv? lv.maxQ : 0; return { qi:qi, board:(qi%2===1)? "Q2" : "Q1", live:!!(lv && lv.live), lv:lv }; };
         const rotHost=h("div",{});
+        /* the plan beside the board folds from the section's heading */
+        const planBtn=h("button",{type:"button", class:"gp5-planbtn", title:"show or hide the quarter's plan beside the board",
+          onclick:()=>{ UI.q5side=!UI.q5side; _gpUISave(); shownMode=""; paintRot(); }}, UI.q5side? "Show plan ▸" : "◂ Hide plan");
         const qbox=h("div",{class:"gp5-qcard"});
         const paintQ=(pick)=>{ qbox.innerHTML="";
           const c=safe(()=>quarterCard(pick)); if(c) qbox.appendChild(c); else qbox.appendChild(h("div",{class:"gp3-ksn"},"Nothing written for "+pick+".")); };
@@ -16868,10 +16877,12 @@ function renderPlanSection(sec, canEd, save, allSecs){
           } else {
             const b=h("div",{class:"gp5-board"}, quarterBoard(q)); b.dataset.q=q;
             paintQ(q);
-            /* the plan beside the board can be folded away, and the board takes the width */
-            const side=h("div",{class:"gp5-side"}, h("div",{class:"gp5-side-h"}, h("span",{}, qName(q)+" plan"+(mode==="auto"? " · follows the game" : "")),
-              h("button",{type:"button", class:"gp5-fold", title:"Fold the plan away and give the board the width", onclick:()=>{ UI.q5side=!UI.q5side; _gpUISave(); shownMode=""; paintRot(); }}, UI.q5side? "◀ plan" : "plan ▶")), UI.q5side? null : qbox);
-            rotHost.appendChild(h("div",{class:"gp5-rot1"+(UI.q5side? " folded" : "")}, b, side));
+            /* the plan beside the board can be folded away from the heading's button, and the
+               board then takes the whole width - no strip is left where the plan was */
+            if(UI.q5side) rotHost.appendChild(h("div",{class:"gp5-rot1 folded"}, b));
+            else rotHost.appendChild(h("div",{class:"gp5-rot1"}, b, h("div",{class:"gp5-side"},
+              h("div",{class:"gp5-side-h"}, h("span",{}, qName(q)+" plan"+(mode==="auto"? " · follows the game" : ""))), qbox)));
+            if(planBtn) planBtn.textContent=UI.q5side? "Show plan ▸" : "◂ Hide plan";
           }
           rotHost.appendChild(onNow);
           requestAnimationFrame(marker);
@@ -16882,7 +16893,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
         addEventListener("resize", ()=>{ if(rotHost.isConnected) marker(); });
         /* the reminders ride at the top of the screen, whatever is scrolled */
         { const ab=safe(()=>_gpAlertBar()); wrap5.appendChild(ab); if(ab.__rules) wrap5.appendChild(ab.__rules); }
-        wrap5.appendChild(sect("us rot", "Our rotation", "the quarter being played · its plan on the right", _wipTag(), rotHost));
+        wrap5.appendChild(sect("us rot", "Our rotation", "the quarter being played · its plan on the right", [planBtn, _wipTag()], rotHost));
 
         const row2=h("div",{class:"gp5-row2 gp5-teams"},
           sect("us", "Our team", "timeouts · fouls · players", null, safe(()=>playerStatusBlock())),
@@ -36385,11 +36396,33 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .gp6-sr u{text-decoration:none;font:700 11px Inter,system-ui,sans-serif;color:var(--ink-soft,#8a919c)}
 .gp6-sr em{font:800 12px Inter,system-ui,sans-serif;font-style:normal;padding:1px 6px;border-radius:4px}
 .gp6-sr em.hi{background:#fbe1df;color:#8a1c17}.gp6-sr em.lo{background:#d9f2e3;color:#0f5132}.gp6-sr em.mid{background:#eef0f3;color:#5b6472}
+/* THEIR SETS, COMPACT: one line a set, in columns read top to bottom - the call big, the set's
+   name in grey, the use as a bar and a number, the points a possession as a figure */
+.gp5 .gp6-seg{align-items:center;gap:4px;margin:0 0 6px}
+.gp5 .gp6-seg button{min-height:34px;padding:4px 12px;font-size:10.5px}
+.gp8-key{margin-left:auto;font:600 11px Inter,system-ui,sans-serif;color:var(--ink-soft,#8a919c)}
+.gp8-key b{font-weight:800;color:var(--ink,#141821)}.gp8-key em{font-style:normal;font-weight:800}
+.gp5 .gp6-blk{margin:0 0 8px}
+.gp5 .gp6-bh{font-size:10px;margin:0 0 2px;padding-bottom:2px}
+.gp8-list{columns:3 300px;column-gap:18px}
+.gp8-r{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) 46px 22px 40px;align-items:center;gap:6px;min-height:30px;padding:2px 6px 2px 8px;border-left:3px solid #8a919c;border-bottom:1px solid var(--line,#eceef1);break-inside:avoid}
+.gp8-r.b-opencourt{border-left-color:#2f9e86}.gp8-r.b-halfcourt{border-left-color:#3b6fd8}.gp8-r.b-slob{border-left-color:#8a5cc7}.gp8-r.b-blob{border-left-color:#c75c9a}
+.gp8-r .c{font:800 14px Inter,system-ui,sans-serif;color:var(--ink,#141821);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gp8-r .c.none{font-weight:700;color:#3d4450}
+.gp8-r .nm{font:500 11.5px Inter,system-ui,sans-serif;color:var(--ink-soft,#7a818c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gp8-r .v{height:6px;border-radius:3px;background:#eef0f3;overflow:hidden}
+.gp8-r .v i{display:block;height:100%;background:#5b6472;border-radius:3px}
+.gp8-r u{text-decoration:none;font:700 11px Inter,system-ui,sans-serif;color:var(--ink-soft,#5b6472);text-align:right;font-variant-numeric:tabular-nums}
+.gp8-r em{font:800 12px Inter,system-ui,sans-serif;font-style:normal;text-align:center;border-radius:4px;padding:1px 0;font-variant-numeric:tabular-nums}
+.gp8-r em.hi{background:#fbe1df;color:#8a1c17}.gp8-r em.lo{background:#d9f2e3;color:#0f5132}.gp8-r em.mid{background:#eef0f3;color:#5b6472}
 .gp5-now{position:absolute;top:0;bottom:0;width:0;border-left:2.5px solid #d8524e;z-index:6;pointer-events:none}
 @keyframes gpBlink{0%,100%{background:transparent}50%{background:rgba(214,150,30,.45)}}
 .gp5-t td.st.blink{animation:gpBlink 1.1s ease-in-out infinite;border-radius:4px;color:#8a4b00}
 .gp5-onp.blink{animation:gpBlink 1.1s ease-in-out infinite}
-.gp5-rot1.folded{grid-template-columns:minmax(0,1fr) 92px}
+.gp5-rot1.folded{grid-template-columns:minmax(0,1fr)}
+/* the plan's fold, in the dark heading of Our rotation */
+.gp5-planbtn{min-height:34px;padding:5px 14px;margin-right:8px;border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.08);color:#fff;border-radius:999px;font:700 11px "Oswald",sans-serif;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;touch-action:manipulation}
+.gp5-planbtn:active{background:rgba(255,255,255,.22)}
 .gp5-side-h{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .gp5-fold{border:1px solid var(--line-strong,#d7dbe0);background:var(--panel,#fff);border-radius:6px;padding:1px 7px;font:700 9.5px 'Oswald',sans-serif;letter-spacing:.08em;cursor:pointer;color:var(--ink-soft,#5b6472)}
 .gp5-onnow{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:6px}
