@@ -15534,6 +15534,15 @@ function _gpLiveBlock(){
         const ask=_gpFetchJ("/.netlify/functions/bbl?res=gamecenter&b="+Math.floor(Date.now()/2000), 5000).then(g2=>{
           const all=g2? [].concat(g2.present||[], g2.past||[], g2.future||[]) : [];
           const hit=all.filter(x=>String(x.id)===String(gid))[0];
+          /* the league answers from more than one server and one can be seconds behind: within the
+             same quarter the clock only runs down, so an answer with more time left than the one
+             already read is let go (unless it stays that way for half a minute - a correction) */
+          const left=x=>{ const tm=String((x&&x.time)||"").split(":").map(Number); return tm.length>=2? tm[tm.length-2]*60+tm[tm.length-1] : NaN; };
+          if(hit && GC && hit.status==="LIVE" && GC.status==="LIVE" && hit.progress===GC.progress && left(hit)>left(GC)){
+            if(!read.gcBack) read.gcBack=Date.now();
+            if(Date.now()-read.gcBack<30000) return;
+          }
+          read.gcBack=0;
           if(hit && G && String(G.id)===String(gid)){ GC=hit; if(/^(POST|OFFICIAL)$/.test(GC.status) && !postSeen) postSeen=Date.now(); } })
           .catch(()=>{}).then(()=>{ read.gcBusy=false; });
         read.gcBusy=true;
