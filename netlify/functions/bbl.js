@@ -1032,10 +1032,10 @@ function demoPayload() {
    asks for the game's history - the whole game so far, in the same rows as gameStats -
    reads until the server says the history is complete (seven [20] rows, one per kind)
    and hangs up. Two seconds per answer at most; the key never leaves this function. */
-async function sockHistory(gameId, key, budget) {
+async function sockTry(gameId, key, budget, trace) {
   const base = apiBase() + "/socket.io/?EIO=4&transport=polling";
   const hdr = { "x-api-key": key };
-  const t0 = Date.now(), left = () => budget - (Date.now() - t0), trace = [];
+  const t0 = Date.now(), left = () => budget - (Date.now() - t0);
   const tr = (w, s, x) => { if (trace.length < 40) trace.push((Date.now() - t0) + "ms " + w + " " + s + " " + S(x).slice(0, 140)); };
   const get = async (sid) => {
     const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), Math.max(300, left()));
@@ -1070,6 +1070,19 @@ async function sockHistory(gameId, key, budget) {
   post(sid, "41").catch(() => {});
   if (!rows.length && refused) { const e = new Error("live channel refused: " + refused); e.trace = trace; throw e; }
   return { rows, complete: ends >= 7, ms: Date.now() - t0, trace };
+}
+/* the league runs several servers and our calls are not pinned to one, so a session may
+   land on a server that does not know it ("Session ID unknown"): try again at once with
+   a new session, each try held to 2.5 s, until one brings the whole history */
+async function sockHistory(gameId, key, budget) {
+  const t0 = Date.now(), trace = [];
+  let best = { rows: [], complete: false };
+  for (let i = 0; i < 6 && Date.now() - t0 < budget - 400; i++) {
+    const r = await sockTry(gameId, key, Math.min(2500, budget - (Date.now() - t0)), trace).catch(e => ({ rows: [], complete: false, err: e.message }));
+    if (r.rows.length > best.rows.length || r.complete) best = r;
+    if (best.complete) break;
+  }
+  return { rows: best.rows, complete: !!best.complete, ms: Date.now() - t0, trace };
 }
 const liveMemo = {};
 
