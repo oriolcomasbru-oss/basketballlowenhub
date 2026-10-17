@@ -9435,21 +9435,32 @@ function _prescFit(){
 function _wipTag(small){
   return h("span",{class:"wip-tag"+(small? " sm" : ""), title:"In development: this part is being adjusted and may still change"}, small? "dev" : "In development · being adjusted");
 }
-/* AN AREA UNDER CONSTRUCTION, SHOWN AS ONE. The first time it is opened (again after ten
-   minutes away) the whole area goes softly yellow and pulses three times, then the yellow
-   shrinks into its corner and stays there as a dot: the area is marked without being in
-   the way. */
+/* AN AREA UNDER CONSTRUCTION, SHOWN AS ONE. When the area comes into sight (scrolled to, not
+   merely opened - an area further down would play it unseen), the first time in ten minutes,
+   it goes softly yellow and pulses three times; then the yellow shrinks into the area's own
+   "In development" tag and is gone into it, the tag answering with a short glow. Nothing
+   else is left on the area. tag: the tag to shrink into, when it is not inside the area. */
 const _wipSeen={};
-function _wipArea(el, key){
+function _wipArea(el, key, tag){
   if(!el || el.__wip) return; el.__wip=1;
   el.classList.add("wip-area");
-  el.appendChild(h("span",{class:"wip-dot", title:"In development: this area is being adjusted and may still change"}));
   let last=0; try{ last=+sessionStorage.getItem("wip:"+key)||0; }catch(e){ last=_wipSeen[key]||0; }
   if(Date.now()-last<10*60000) return;
-  try{ sessionStorage.setItem("wip:"+key, String(Date.now())); }catch(e){ _wipSeen[key]=Date.now(); }
-  const fx=h("span",{class:"wip-flash"}, h("b",{},"In development · being adjusted"));
-  el.appendChild(fx);
-  setTimeout(()=>{ try{ fx.remove(); }catch(e){} }, 3600);
+  const play=()=>{
+    try{ sessionStorage.setItem("wip:"+key, String(Date.now())); }catch(e){ _wipSeen[key]=Date.now(); }
+    const t=tag || el.querySelector(".wip-tag");
+    const fx=h("span",{class:"wip-flash"});
+    /* the yellow shrinks towards the tag */
+    try{ if(t){ const a=el.getBoundingClientRect(), b=t.getBoundingClientRect();
+      fx.style.transformOrigin=Math.round(b.left-a.left+b.width/2)+"px "+Math.round(b.top-a.top+b.height/2)+"px"; } }catch(e){}
+    el.appendChild(fx);
+    setTimeout(()=>{ try{ fx.remove(); }catch(e){} if(t){ t.classList.add("wip-got"); setTimeout(()=>t.classList.remove("wip-got"), 1300); } }, 3400);
+  };
+  /* played when at least a quarter of it is on the screen */
+  if(typeof IntersectionObserver==="function"){
+    const io=new IntersectionObserver(es=>{ es.forEach(en=>{ if(en.isIntersecting){ io.disconnect(); play(); } }); }, { threshold:0.25 });
+    io.observe(el);
+  } else play();
 }
 window._wipArea=_wipArea;
 let _preInjCtx=null;
@@ -16388,7 +16399,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
         const onLive=()=>{ if(!rotHost.isConnected){ window.removeEventListener("gp-live", onLive); return; } paintRot(); };
         window.addEventListener("gp-live", onLive);
         addEventListener("resize", ()=>{ if(rotHost.isConnected) marker(); });
-        wrap5.appendChild(sect("us rot", "Our rotation", "the quarter being played · its plan on the right", null, rotHost));
+        wrap5.appendChild(sect("us rot", "Our rotation", "the quarter being played · its plan on the right", _wipTag(), rotHost));
 
         const row2=h("div",{class:"gp5-row3"},
           sect("us", "Our team", "timeouts · fouls · players", null, safe(()=>playerStatusBlock())),
@@ -18083,7 +18094,7 @@ function renderPlaybook(){
     grid.appendChild(card);
   });
   wrap.appendChild(grid);
-  if(kind==="ato"){ try{ _wipArea(grid, "ato"); }catch(e){} }
+  if(kind==="ato"){ try{ _wipArea(grid, "ato", wrap.querySelector(".pb-tg.active .wip-tag")); }catch(e){} }
   wrap.appendChild(pbVideoPanel(canEd));
   root.appendChild(wrap);
 }
@@ -27197,7 +27208,8 @@ function renderLeague(){
   add(_lgEuro(L));
   root.appendChild(L2("How the teams play"));
   add(_lgFour(L), false);
-  add(_lgLeaders(L));
+  root.appendChild(L2("League leaders"));
+  add(_lgLeaders(L), false);
   root.appendChild(L2("Players and shots"));
   add(_lgRoster(L), false);
   add(_lgShots(L));
@@ -35794,7 +35806,9 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .view-wait-ld{position:absolute;top:60px;left:0;right:0;display:flex;justify-content:center;z-index:40}
 .wip-area{position:relative}
 .wip-dot{position:absolute;top:6px;left:6px;width:11px;height:11px;border-radius:50%;background:#f2c230;box-shadow:0 0 0 3px rgba(242,194,48,.3);z-index:20;pointer-events:auto;cursor:help}
-.wip-flash{position:absolute;inset:0;z-index:19;border-radius:12px;background:rgba(242,194,48,.28);box-shadow:inset 0 0 0 3px rgba(242,194,48,.85);pointer-events:none;display:flex;align-items:flex-start;justify-content:center;transform-origin:12px 12px;animation:wipPulse 2.6s ease-in-out 0s 1 both,wipShrink .8s ease-in 2.6s 1 forwards}
+.wip-flash{position:absolute;inset:0;z-index:19;border-radius:12px;background:rgba(242,194,48,.28);box-shadow:inset 0 0 0 3px rgba(242,194,48,.85);pointer-events:none;transform-origin:50% 0;animation:wipPulse 2.6s ease-in-out 0s 1 both,wipShrink .8s ease-in 2.6s 1 forwards}
+.wip-tag.wip-got{animation:wipGot 1.2s ease-out 1}
+@keyframes wipGot{0%{box-shadow:0 0 0 0 rgba(242,194,48,.9);background:#f2c230}100%{box-shadow:0 0 0 10px rgba(242,194,48,0)}}
 .wip-flash b{margin-top:10px;font:700 11px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;background:#f2c230;color:#3b2a00;border-radius:999px;padding:3px 12px}
 @keyframes wipPulse{0%{opacity:0}15%{opacity:1}30%{opacity:.35}48%{opacity:1}64%{opacity:.35}82%{opacity:1}100%{opacity:.9}}
 @keyframes wipShrink{to{transform:scale(0);opacity:.6}}
