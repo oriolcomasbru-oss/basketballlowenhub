@@ -147,6 +147,22 @@ exports.handler = async (event) => {
       cache[ck] = { t: Date.now(), d: out };
       return reply(200, out, 60e3);
     }
+    /* ?res=file&f=2006342Q4.JSN  one Swiss Timing file of one of our games, as the league
+       gives it (the name only: letters, digits, dot, dash, underscore - never a path) */
+    if (res === "file") {
+      const f = S(q.f);
+      if (!/^[A-Za-z0-9_.-]{1,40}$/.test(f)) return reply(400, { ok: false, errors: ["bad file name"] }, 0);
+      const ck = "file|" + f, hit = getCache(ck, 10 * 60e3);
+      if (hit) return reply(200, hit, 60e3);
+      const r = await fetch(BASE + "/livedata/" + f + "/" + key, { headers: { accept: "application/json" } });
+      const txt = await r.text();
+      if (!r.ok) return reply(200, { ok: false, f: f, status: r.status, errors: [clean("HTTP " + r.status)] }, 0);
+      if (!txt.trim()) return reply(200, { ok: false, f: f, status: r.status, errors: ["empty answer (no such file, or not open to our key)"] }, 0);
+      let data = null; try { data = JSON.parse(clean(txt)); } catch (e) {}
+      const out = data != null ? { ok: true, f: f, data: data } : { ok: true, f: f, text: clean(txt).slice(0, 200000) };
+      cache[ck] = { t: Date.now(), d: out };
+      return reply(200, out, 60e3);
+    }
     return reply(400, { ok: false, errors: ["unknown res"] }, 0);
   } catch (e) {
     return reply(502, { ok: false, errors: [clean(e.message)] }, 0);
