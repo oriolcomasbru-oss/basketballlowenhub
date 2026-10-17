@@ -5914,6 +5914,7 @@ function canEdit(sect){ if(!currentUser) return false; if(typeof _viewAs!=="unde
   const p=state.perms&&state.perms[currentUser]; return p?!!(p.edit&&p.edit[sect]):false; }
 function phxPark(){ try{ var p=document.getElementById("phxRoot"), park=document.getElementById("phxPark"); if(p&&park&&p.parentElement!==park){ park.appendChild(p); p.style.display="none"; } }catch(e){} }
 function phxHideSub(){ var s=document.getElementById("preSubmenu"); var phx=document.getElementById("phxRoot"); var ctr=s?s.querySelector(".controls"):null; if(ctr&&phx){ phx.appendChild(ctr); } if(s){ s.style.display="none"; } phxPark(); }
+let _apSig="";
 function applyPerms(){
   document.querySelectorAll(".tb-tab[data-view]").forEach(b=>{ b.style.display = canView(b.dataset.view)?"":"none"; });
   const ab=$("#adminBtn"); if(ab) ab.style.display=isAdmin()?"":"none";
@@ -5924,7 +5925,14 @@ function applyPerms(){
     try{ state.ui.dash=_dashFor(currentUser)||null; }catch(e){}
     if(canView("dashboard") && state.ui.view!=="dashboard"){ setView("dashboard"); return; } }
   if(currentUser && !canView(state.ui.view)){ const first=SECT_KEYS.find(k=>canView(k)); if(first){ setView(first); return; } }
-  phxHideSub(); applyView(state.ui.view); syncPrintBtn();
+  /* ONE DRAW FOR ONE ANSWER. The permissions are applied when the session is restored, again
+     when the players' view is read and again when the server's permissions arrive - and each
+     time the page was drawn from scratch, so a page opened on a reload drew itself two or
+     three times. It is drawn again only when what decides it changed: who, with what
+     permissions, on which view. */
+  { const sig=JSON.stringify([currentUser||"", (typeof SB_SCOPE!=="undefined")? SB_SCOPE : "", (state.perms && state.perms[currentUser])||null, state.ui.view, (typeof _viewAs!=="undefined" && _viewAs)? _viewAs.name : ""]);
+    if(sig===_apSig) syncPrintBtn();
+    else { _apSig=sig; phxHideSub(); applyView(state.ui.view); syncPrintBtn(); } }
   /* the league feed starts loading with the app, whatever view opened */
   try{ _lgWarm(); }catch(e){}
   try{ _introMaybe(); }catch(e){}
@@ -6313,7 +6321,10 @@ function addAccountDlg(scope, body){
 function renderProb(){
   const root=$("#viewProb"); if(!root) return;
   root.innerHTML="";
-  try{ renderProB(root); }catch(e){ root.appendChild(h("div",{class:"lg-warn err"},"The ProB screen failed: "+e.message)); }
+  /* the whole section is under construction: it says so, the yellow way */
+  const inner=h("div",{class:"prob-in"}); root.appendChild(inner);
+  try{ renderProB(inner); }catch(e){ inner.appendChild(h("div",{class:"lg-warn err"},"The ProB screen failed: "+e.message)); }
+  try{ _wipArea(inner, "prob"); const wl=inner.querySelector(".week-label"); if(wl) wl.appendChild(_wipTag()); }catch(e){}
 }
 function renderPlayerDev(){
   const root=$("#viewPlayerDev"); root.innerHTML="";
@@ -10385,21 +10396,28 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
   if(kind==="pregame" && !ONLY) _preLive={ el:body, redraw:reRender, sig:_preSig() };
   /* OPENED ONCE, WHEN IT IS READY. The first time a pre game is opened in a visit it waits
      behind a loading line while the club, its roster and its players' season land and the
-     report is drawn with them; then it is shown, once. Twelve seconds at the most. */
-  if(kind==="pregame" && !ONLY && !_preWaited[key]){
-    _preWaited[key]=1;
-    const t0=Date.now();
-    body.classList.add("pre-wait");
-    const ld=h("div",{class:"pre-wait-ld"}, h("div",{class:"ld"},"Loading the pre game…", h("span",{class:"ld-bar"})));
-    body.appendChild(ld);
-    const tm=setInterval(()=>{
-      const L=leagueState(), tid=_preClub();
-      const pl=tid? (L.players||{})[tid] : null, ros=tid? (L.roster||{})[tid] : null;
-      const have=!!(tid && pl && (pl.players||[]).length && !pl.partial && ros);
-      const calm=Date.now()-_preRefAt>1200 && !_preRefT;
-      if(!body.isConnected || (have && calm && Date.now()-t0>800) || Date.now()-t0>12000){
-        clearInterval(tm); body.classList.remove("pre-wait"); try{ ld.remove(); }catch(e){} }
-    }, 250);
+     report is drawn with them; then it is shown, once. A redraw while it is still waiting -
+     a new page body included - waits behind the same line. Twelve seconds at the most, and
+     the report must have been quiet (no redraw) for a second and a half before it shows. */
+  if(kind==="pregame" && !ONLY){
+    let W=_preWaited[key];
+    if(!W){ W=_preWaited[key]={ t0:Date.now(), done:false, last:Date.now() }; }
+    W.last=Date.now();
+    if(!W.done){
+      body.classList.add("pre-wait");
+      if(!body.querySelector(":scope > .pre-wait-ld")) body.appendChild(h("div",{class:"pre-wait-ld"}, h("div",{class:"ld"},"Loading the pre game…", h("span",{class:"ld-bar"}))));
+      if(W.tm) clearInterval(W.tm);
+      W.tm=setInterval(()=>{
+        const L=leagueState(), tid=_preClub();
+        const pl=tid? (L.players||{})[tid] : null, ros=tid? (L.roster||{})[tid] : null;
+        const have=!!(tid && pl && (pl.players||[]).length && !pl.partial && ros);
+        const calm=Date.now()-_preRefAt>1500 && !_preRefT && Date.now()-W.last>1500;
+        if(!body.isConnected){ clearInterval(W.tm); W.tm=0; return; }
+        if((have && calm) || Date.now()-W.t0>12000){
+          clearInterval(W.tm); W.tm=0; W.done=true;
+          document.querySelectorAll(".pre-wait").forEach(b=>{ b.classList.remove("pre-wait"); b.querySelectorAll(":scope > .pre-wait-ld").forEach(n=>n.remove()); }); }
+      }, 250);
+    }
   }
   /* the migration runs for everyone, so a player opening the report sees the
      new shape too; only a coach's session writes the result back */
@@ -35323,7 +35341,6 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .phx .card.hl-stop .hl-rib{background:#c62828}
 /* when somebody is marked, the others step back */
 .phx.pre-phx.has-hl .card:not(.hl-key):not(.hl-stop):not(.is-out){opacity:.9;filter:saturate(.88)}
-.phx.pre-phx.has-hl .card:not(.hl-key):not(.hl-stop):not(.is-out):hover{opacity:1;filter:none}
 .phx .card.hl-stop{box-shadow:0 0 0 4px #c62828,0 10px 26px rgba(198,40,40,.32)!important}
 .phx .card .photo{position:relative}
 .phx .card > .hl-badge{position:absolute;right:8px;top:6px;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;padding:4px 10px;border-radius:999px;color:#fff;z-index:3;pointer-events:none}
@@ -35337,9 +35354,17 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .modal-stats .modal-stat-cell.hl-hot *{color:#fff!important}
 .modal-stats .modal-stat-cell.hl-warm{background:rgba(216,82,78,.14)!important;border-radius:6px}
 .modal-stats .modal-stat-cell.hl-warm .modal-stat-value,.modal-stats .modal-stat-cell.hl-warm .modal-stat-why{color:#c0403c!important}
+.modal-box{position:relative}
+.modal-rib{position:absolute;top:0;left:0;right:0;height:22px;display:flex;align-items:center;justify-content:center;font:700 11px 'Oswald',sans-serif;letter-spacing:.22em;color:#fff;z-index:6;border-radius:inherit;border-bottom-left-radius:0;border-bottom-right-radius:0}
+.modal-box.hl-key .modal-rib{background:#1f4e9a}.modal-box.hl-stop .modal-rib{background:#c62828}
+.modal-box.hl-key,.modal-box.hl-stop{padding-top:22px!important}
+.modal-box.is-out #modalPhoto{filter:grayscale(1)}
+.modal-box.is-out .modal-stats,.modal-box.is-out #modalName{filter:grayscale(1);opacity:.7}
+.modal-doubt{display:inline-block;vertical-align:middle;margin-left:8px;font:700 10px 'Oswald',sans-serif;letter-spacing:.1em;padding:2px 8px;border-radius:5px;background:#d9a521;color:#141821}
+.modal-doubt.out{background:#5b6472;color:#fff}
 .modal-hl{display:inline-block;vertical-align:middle;margin-left:10px;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;padding:3px 10px;border-radius:999px}
 .modal-hl.key{background:#1f4e9a;color:#fff}.modal-hl.stop{background:#d8524e;color:#fff}
-.modal-box.hl-key{box-shadow:0 0 0 3px #1f4e9a,0 20px 60px rgba(0,0,0,.35)!important}.modal-box.hl-stop{box-shadow:0 0 0 3px #d8524e,0 20px 60px rgba(0,0,0,.35)!important}
+.modal-box.hl-key{box-shadow:0 0 0 4px #1f4e9a,0 20px 60px rgba(0,0,0,.35)!important}.modal-box.hl-stop{box-shadow:0 0 0 4px #c62828,0 20px 60px rgba(0,0,0,.35)!important}
 /* OUT: he will not play - the card in grey, its OUT badge in full colour */
 /* pace: when the shot comes */
 .pace{border:1px solid var(--line,#e6e8ec);border-radius:10px;padding:10px 12px;background:var(--panel,#fff);min-width:0}
@@ -37363,8 +37388,16 @@ function _deadFetch(url){
       if(old) old.remove();
       var hl = card.classList.contains('hl-key') ? 'key' : card.classList.contains('hl-stop') ? 'stop' : '';
       var mb = mName.closest('.modal-box');
-      if(mb){ mb.classList.remove('hl-key','hl-stop'); if(hl) mb.classList.add('hl-' + hl); }
-      if(hl){ var tag = document.createElement('span'); tag.id = 'modalHl'; tag.className = 'modal-hl ' + hl; tag.textContent = hl === 'key' ? 'KEY' : 'STOP HIM'; mName.appendChild(tag); }
+      /* THE SAME CARD, BESIDE THE VIDEO. Whatever the card on the board says the opened one says
+         too, in the same way: the KEY / STOP HIM band and frame, OUT in grey, a doubt marked,
+         the lit boxes (above). Change one, change the other. */
+      if(mb){ mb.classList.remove('hl-key','hl-stop','is-out','is-doubt'); if(hl) mb.classList.add('hl-' + hl);
+        if(card.classList.contains('is-out')) mb.classList.add('is-out');
+        var oldR = mb.querySelector(':scope > .modal-rib'); if(oldR) oldR.remove();
+        if(hl){ var rib = document.createElement('div'); rib.className = 'modal-rib'; rib.textContent = hl === 'key' ? '★ KEY PLAYER' : '⛔ STOP HIM'; mb.insertBefore(rib, mb.firstChild); }
+        var db = card.querySelector('.doubt-badge.on');
+        var oldD = document.getElementById('modalDoubt'); if(oldD) oldD.remove();
+        if(db){ var dt = document.createElement('span'); dt.id = 'modalDoubt'; dt.className = 'modal-doubt' + (card.classList.contains('is-out') ? ' out' : ''); dt.textContent = db.textContent; mName.appendChild(dt); } }
     }catch(_e){}
 
     var closeoutEl = card.querySelector('.closeout-bar');
