@@ -1035,13 +1035,14 @@ function demoPayload() {
 async function sockHistory(gameId, key, budget) {
   const base = apiBase() + "/socket.io/?EIO=4&transport=polling";
   const hdr = { "x-api-key": key };
-  const t0 = Date.now(), left = () => budget - (Date.now() - t0);
+  const t0 = Date.now(), left = () => budget - (Date.now() - t0), trace = [];
+  const tr = (w, s, x) => { if (trace.length < 40) trace.push((Date.now() - t0) + "ms " + w + " " + s + " " + S(x).slice(0, 140)); };
   const get = async (sid) => {
     const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), Math.max(300, left()));
-    try { const r = await fetch(base + (sid ? "&sid=" + sid + "&t=" + Date.now() : "&t=" + Date.now()), { headers: hdr, signal: ac.signal }); return r.ok ? await r.text() : ""; }
-    catch (e) { return ""; } finally { clearTimeout(tm); }
+    try { const r = await fetch(base + (sid ? "&sid=" + sid + "&t=" + Date.now() : "&t=" + Date.now()), { headers: hdr, signal: ac.signal }); const tx = await r.text(); tr("GET", r.status, tx); return r.ok ? tx : ""; }
+    catch (e) { tr("GET", "x", e.name); return ""; } finally { clearTimeout(tm); }
   };
-  const post = (sid, body) => fetch(base + "&sid=" + sid, { method: "POST", headers: Object.assign({ "content-type": "text/plain;charset=UTF-8" }, hdr), body: body }).then(r => r.ok).catch(() => false);
+  const post = (sid, body) => fetch(base + "&sid=" + sid, { method: "POST", headers: Object.assign({ "content-type": "text/plain;charset=UTF-8" }, hdr), body: body }).then(async r => { tr("POST " + body.slice(0, 40), r.status, await r.text()); return r.ok; }).catch(e => { tr("POST", "x", e.message); return false; });
   const open = await get("");
   const m = /^0(\{.*\})/.exec(open || "");
   if (!m) throw new Error("live channel: no session (" + S(open).slice(0, 80) + ")");
@@ -1067,8 +1068,8 @@ async function sockHistory(gameId, key, budget) {
     if (refused) break;
   }
   post(sid, "41").catch(() => {});
-  if (!rows.length && refused) throw new Error("live channel refused: " + refused);
-  return { rows, complete: ends >= 7, ms: Date.now() - t0 };
+  if (!rows.length && refused) { const e = new Error("live channel refused: " + refused); e.trace = trace; throw e; }
+  return { rows, complete: ends >= 7, ms: Date.now() - t0, trace };
 }
 const liveMemo = {};
 
@@ -1277,14 +1278,14 @@ exports.handler = async (event) => {
       let sheet = getCache(sk, TTL.game);
       const [sh, live] = await Promise.all([
         sheet ? Promise.resolve(sheet) : api("/v2/game/" + encodeURIComponent(id), key).catch(e => ({ _error: e.message })),
-        sockHistory(id, key, 7000).catch(e => ({ _error: e.message }))
+        sockHistory(id, key, 7000).catch(e => ({ _error: e.message, trace: e.trace }))
       ]);
       if (sh && !sh._error) { sheet = sh; if (!getCache(sk, TTL.game)) setCache(sk, sh); } else if (sh && sh._error) meta.errors.push("game: " + sh._error);
       if (live._error) meta.errors.push(live._error);
       out = Object.assign(meta, {
         game: sheet || null,
         feed: (live && !live._error && live.rows.length) ? decodeFeed(live.rows) : null,
-        live: { complete: !!live.complete, rows: live.rows ? live.rows.length : 0, ms: live.ms || 0 }
+        live: { complete: !!live.complete, rows: live.rows ? live.rows.length : 0, ms: live.ms || 0, trace: q.debug === "1" ? live.trace : undefined }
       });
       if (out.feed) liveMemo[id] = { t: Date.now(), d: out };
       return reply(200, out, out.feed ? 2000 : 0);
