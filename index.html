@@ -14759,6 +14759,7 @@ let _gpLivePick="auto", _gpLiveAll=false, _gpVidOpen={};
    stint, fouls and the quarter. Player Status and their roster draw from it - one reading,
    never typed in twice. */
 let _gpLiveNow=null;
+let _gpRP=null;
 const _ksMemo={};
 function _gpLivePublish(o){
   try{ o.court={ u:_gpCourt(o.feed, o.uc, o.lastT), t:_gpCourt(o.feed, o.uc==="A"? "B" : "A", o.lastT) }; }catch(e){ o.court={ u:{}, t:{} }; }
@@ -15161,10 +15162,11 @@ function _gpLiveBlock(){
      were live: its play by play is cut at a clock that runs at the speed chosen, and the
      whole game plan - the rotation's line, who is on the floor, our team, theirs, timeouts
      and fouls - follows it exactly as it will during a game. Staff only; nothing is saved. */
-  let RP=null;
+  /* the replay is the page's, not this block's: a redraw of the plan (another view of the rotation) picks it up where it was */
   const say=t=>{ tabs.innerHTML=""; body.innerHTML=""; body.appendChild(h("div",{class:"gp3-ksn"}, t)); };
   if(!isPlayerUser()){
-    const bar=h("div",{class:"gp-rp"});
+    const bar=h("div",{class:"gp-rp"}), me={};
+    let myTm=0;
     const L0=leagueState();
     let tidUs=""; try{ tidUs=_lgOurTeamId(L0); }catch(e){}
     const past=((L0.games||[]).concat(L0.cup||[])).filter(x=>_lgDone(x) && tidUs && (String(x.homeId)===String(tidUs)||String(x.awayId)===String(tidUs)))
@@ -15178,48 +15180,54 @@ function _gpLiveBlock(){
       const qNow=T<2400? Math.min(3, Math.floor(T/600)) : 4+Math.floor((T-2400)/300);
       const starters=(f.starters||[]).filter(s=>_lgGameElapsed(s.quarter,0).qi<=qNow);
       return { game:Jf.game, feed:Object.assign({}, f, { actions:acts, starters:starters, shots:(f.shots||[]).filter(s=>_lgGameElapsed(s.q, s.time).t<=T) }) }; };
-    const step=()=>{ if(!RP) return;
-      if(!wrap.isConnected){ clearInterval(RP.tm); RP=null; return; }
+    const step=()=>{ if(!_gpRP) return;
+      /* a block taken off the page stops its own clock and leaves the replay to the one that replaced it */
+      if(!wrap.isConnected || _gpRP.owner!==me){ clearInterval(myTm); return; }
       /* every half second: played forward at the speed chosen, rewound or run on fast */
-      if(RP.playing){ const sp=+spd.value||1, dt=0.5*(RP.mode==="rew"? -Math.max(10, sp*4) : RP.mode==="ff"? Math.max(10, sp*4) : sp); RP.T=Math.max(0, Math.min(RP.end, RP.T+dt)); }
-      try{ scrub.max=String(RP.end); scrub.value=String(Math.round(RP.T)); }catch(e){}
-      J=cut(RP.Jf, RP.T);
-      const left=(()=>{ const t=RP.T, qi=t<2400? Math.min(3,Math.floor(t/600)) : 4+Math.floor((t-2400)/300), base=qi<4? qi*600 : 2400+(qi-4)*300, len=qi<4? 600 : 300; const l=Math.max(0, len-(t-base));
+      if(_gpRP.playing){ const sp=+spd.value||1, dt=0.5*(_gpRP.mode==="rew"? -Math.max(10, sp*4) : _gpRP.mode==="ff"? Math.max(10, sp*4) : sp); _gpRP.T=Math.max(0, Math.min(_gpRP.end, _gpRP.T+dt)); }
+      try{ scrub.max=String(_gpRP.end); scrub.value=String(Math.round(_gpRP.T)); }catch(e){}
+      J=cut(_gpRP.Jf, _gpRP.T);
+      const left=(()=>{ const t=_gpRP.T, qi=t<2400? Math.min(3,Math.floor(t/600)) : 4+Math.floor((t-2400)/300), base=qi<4? qi*600 : 2400+(qi-4)*300, len=qi<4? 600 : 300; const l=Math.max(0, len-(t-base));
         return { qi:qi, s:String(Math.floor(l/60)).padStart(2,"0")+":"+String(Math.round(l%60)).padStart(2,"0") }; })();
       GC={ status:"LIVE", progress:left.qi<4? "Q"+(left.qi+1) : "OT"+(left.qi-3), time:left.s, start:"" };
-      clk.textContent="REPLAY · "+_lgGameClock(RP.T);
+      clk.textContent="REPLAY · "+_lgGameClock(_gpRP.T);
       draw();
-      if(RP.T>=RP.end || (RP.mode==="rew" && RP.T<=0)){ RP.playing=false; RP.mode="play"; play.textContent="▶"; }
+      if(_gpRP.T>=_gpRP.end || (_gpRP.mode==="rew" && _gpRP.T<=0)){ _gpRP.playing=false; _gpRP.mode="play"; play.textContent="▶"; }
     };
     const play=h("button",{type:"button", class:"gp-rp-b", onclick:async ()=>{
-      if(RP && RP.id===sel.value){ if(RP.mode!=="play"){ RP.mode="play"; RP.playing=true; } else RP.playing=!RP.playing; play.textContent=RP.playing? "⏸" : "▶"; return; }
+      if(_gpRP && _gpRP.id===sel.value){ if(_gpRP.mode!=="play"){ _gpRP.mode="play"; _gpRP.playing=true; } else _gpRP.playing=!_gpRP.playing; play.textContent=_gpRP.playing? "⏸" : "▶"; return; }
       const x=past.filter(g=>String(g.id)===sel.value)[0]; if(!x) return;
       play.disabled=true; clk.textContent="reading the game…";
       const Jf=await fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(x.id)).then(r=>r.ok? r.json() : null).catch(()=>null);
       play.disabled=false;
       if(!Jf || !Jf.feed || !(Jf.feed.actions||[]).length){ clk.textContent="this game has no play by play"; return; }
-      if(RP && RP.tm) clearInterval(RP.tm);
+      if(_gpRP && _gpRP.tm) clearInterval(_gpRP.tm);
       const end=(Jf.feed.actions||[]).reduce((m,a)=>Math.max(m, _lgGameElapsed(a.quarter, a.time).t), 0);
-      RP={ id:x.id, Jf:Jf, T:0, end:end, playing:true, mode:"play", tm:0 };
+      _gpRP={ id:x.id, Jf:Jf, T:0, end:end, playing:true, mode:"play", tm:0, G:x, home:String(x.homeId)===String(tidUs) };
       G=x; home=String(x.homeId)===String(tidUs); over=false; postSeen=0;
       wrap.classList.add("replay"); stopB.style.display="";
       play.textContent="⏸";
-      RP.tm=setInterval(step, 500); step(); }}, "▶");
+      _gpRP.owner=me; myTm=_gpRP.tm=setInterval(step, 500); step(); }}, "▶");
     const stopB=h("button",{type:"button", class:"gp-rp-b", style:"display:none", onclick:()=>{
-      if(RP && RP.tm) clearInterval(RP.tm); RP=null; G=null; J=null; GC=null; over=false;
+      if(_gpRP && _gpRP.tm) clearInterval(_gpRP.tm); _gpRP=null; G=null; J=null; GC=null; over=false;
       wrap.classList.remove("replay"); stopB.style.display="none"; play.textContent="▶"; clk.textContent="";
       _gpLiveNow=null; try{ window.dispatchEvent(new CustomEvent("gp-live")); }catch(e){}
       read(false); }}, "■ Stop");
     /* rewind and fast forward, each pressed again to go back to the speed chosen, and a bar to go anywhere in the game */
-    const rew=h("button",{type:"button", class:"gp-rp-b", title:"rewind", onclick:()=>{ if(!RP) return; RP.mode=RP.mode==="rew"? "play" : "rew"; RP.playing=true; play.textContent="⏸"; }}, "⏪");
-    const ff=h("button",{type:"button", class:"gp-rp-b", title:"fast forward", onclick:()=>{ if(!RP) return; RP.mode=RP.mode==="ff"? "play" : "ff"; RP.playing=true; play.textContent="⏸"; }}, "⏩");
+    const rew=h("button",{type:"button", class:"gp-rp-b", title:"rewind", onclick:()=>{ if(!_gpRP) return; _gpRP.mode=_gpRP.mode==="rew"? "play" : "rew"; _gpRP.playing=true; play.textContent="⏸"; }}, "⏪");
+    const ff=h("button",{type:"button", class:"gp-rp-b", title:"fast forward", onclick:()=>{ if(!_gpRP) return; _gpRP.mode=_gpRP.mode==="ff"? "play" : "ff"; _gpRP.playing=true; play.textContent="⏸"; }}, "⏩");
     const scrub=h("input",{type:"range", min:"0", max:"2400", step:"1", value:"0", class:"gp-rp-scrub", title:"go to any moment of the game"});
-    scrub.addEventListener("input",()=>{ if(!RP) return; RP.T=+scrub.value; const p=RP.playing; RP.playing=false; step(); RP.playing=p; });
-    const jump=h("button",{type:"button", class:"gp-rp-b", title:"jump four minutes on", onclick:()=>{ if(RP){ RP.T=Math.min(RP.end, RP.T+240); const p=RP.playing; RP.playing=false; step(); RP.playing=p; } }}, "+4′");
+    scrub.addEventListener("input",()=>{ if(!_gpRP) return; _gpRP.T=+scrub.value; const p=_gpRP.playing; _gpRP.playing=false; step(); _gpRP.playing=p; });
+    const jump=h("button",{type:"button", class:"gp-rp-b", title:"jump four minutes on", onclick:()=>{ if(_gpRP){ _gpRP.T=Math.min(_gpRP.end, _gpRP.T+240); const p=_gpRP.playing; _gpRP.playing=false; step(); _gpRP.playing=p; } }}, "+4′");
     bar.appendChild(h("span",{class:"gp-rp-l"},"Test · replay a game"));
     if(past.length){ bar.appendChild(sel); bar.appendChild(spd); bar.appendChild(rew); bar.appendChild(play); bar.appendChild(ff); bar.appendChild(jump); bar.appendChild(stopB); bar.appendChild(scrub); bar.appendChild(clk); bar.appendChild(h("span",{class:"gp-rp-n"},"· their team: the replayed club, its last games and this game")); }
     else bar.appendChild(h("span",{class:"gp-rp-n"},"no finished game of ours read yet"));
     wrap.insertBefore(bar, tabs);
+    /* a replay already running (the plan was drawn again): this block takes it over, at the same second */
+    if(_gpRP){ try{ if(_gpRP.tm) clearInterval(_gpRP.tm); }catch(e){}
+      _gpRP.owner=me; sel.value=_gpRP.id; G=_gpRP.G; home=_gpRP.home; over=false;
+      wrap.classList.add("replay"); stopB.style.display=""; play.textContent=_gpRP.playing? "⏸" : "▶";
+      myTm=_gpRP.tm=setInterval(step, 500); setTimeout(step, 0); }
   }
   if(!opp || !date || _gamePlaceholder(opp)){ say("The summary of the game appears here once the opponent and the day are known."); return wrap; }
   const today=(()=>{ try{ return todayISO(); }catch(e){ return ""; } })();
@@ -15233,20 +15241,20 @@ function _gpLiveBlock(){
     }
     wrap.classList.remove("empty");
     let maxQ=0; acts.forEach(a=>{ const q=_lgGameElapsed(a.quarter, a.time).qi; if(q>maxQ) maxQ=q; });
-    const live=RP? true : (!over && date===today);
+    const live=_gpRP? true : (!over && date===today);
     const qn=q=>q<4? "Q"+(q+1) : "OT"+(q-3);
     tabs.innerHTML="";
     /* THE CLOCK, NOT THE LAST PLAY. In a replay the clock it is being played at; live, the
        league's own game clock when it is ahead of the last play written - so the minutes, the
        stints and the line on the rotation run between plays and do not wait for the next one. */
     const evT=acts.map(a=>_lgGameElapsed(a.quarter, a.time).t).reduce((m,v)=>Math.max(m,v),0);
-    const gcT=(()=>{ if(RP || !GC || GC.status!=="LIVE" || /_break/i.test(String(GC.progress||""))) return 0;
+    const gcT=(()=>{ if(_gpRP || !GC || GC.status!=="LIVE" || /_break/i.test(String(GC.progress||""))) return 0;
       const m=/^Q(d)/i.exec(String(GC.progress||"")), o=/^OT(d*)/i.exec(String(GC.progress||""));
       const qi=m? (+m[1])-1 : o? 3+(+(o[1]||1)) : -1; if(qi<0) return 0;
       const base=qi<4? qi*600 : 2400+(qi-4)*300, len=qi<4? 600 : 300;
       const tm=String(GC.time||"").split(":").map(Number); const left=tm.length>=2? tm[tm.length-2]*60+tm[tm.length-1] : NaN;
       return isFinite(left)? base+Math.max(0, Math.min(len, len-left)) : 0; })();
-    const lastT=RP? RP.T : Math.max(evT, gcT);
+    const lastT=_gpRP? _gpRP.T : Math.max(evT, gcT);
     const cur=(_gpLivePick==="auto")? (live? maxQ : "g") : ((typeof _gpLivePick==="number" && _gpLivePick>maxQ)? "g" : _gpLivePick);
     const tab=(k,lab,cls)=>tabs.appendChild(h("button",{class:"gp-live-tab"+(cur===k?" on":"")+(cls? " "+cls : ""), type:"button", onclick:()=>{ _gpLivePick=k; draw(); }}, lab));
     /* the four quarters always, the overtimes when there are any, the game and the last two minutes */
@@ -15346,7 +15354,7 @@ function _gpLiveBlock(){
     if(al.length) body.appendChild(h("div",{class:"gp-lv-al"}, al.map(x=>h("span",{class:"gp-lv-a "+x[0]}, h("i",{}, x[1]), x[2]))));
     /* our minutes, who is on the floor and the fouls are the plan's Player Status and their
        roster's now: they are handed the game as it stands, from this one reading */
-    try{ _gpLivePublish({ feed:feed, uc:uc, lastT:lastT, live:live, us:UG.pl, them:TG.pl, maxQ:maxQ, G:G, home:home, rp:RP? { opp:home? G.away : G.home, date:G.date } : null }); }catch(e){}
+    try{ _gpLivePublish({ feed:feed, uc:uc, lastT:lastT, live:live, us:UG.pl, them:TG.pl, maxQ:maxQ, G:G, home:home, rp:_gpRP? { opp:home? G.away : G.home, date:G.date } : null }); }catch(e){}
     /* WHAT IS DECIDING THIS STRETCH. Every measure is turned into the points it is worth to
        one side or the other in the stretch shown - threes made, twos made, free throws, and
        the points that came off turnovers, second chances and the break - and the ones worth
@@ -15403,6 +15411,26 @@ function _gpLiveBlock(){
     try{ paintStat(); }catch(e){}
   };
   let GC=null, postSeen=0, gcAt=0, sig="";
+  /* IS IT WORKING, RIGHT NOW. While the league says the game is live a line under the title
+     says when the live channel last brought the game: green while it is answering, red and
+     blinking when nothing has come for ten seconds - with the reason - and a word on the
+     screen when it is lost and when it is back. */
+  const CN={ ok:0, err:"", lost:false };
+  const connBar=h("div",{class:"gp-conn", style:"display:none"});
+  wrap.insertBefore(connBar, tabs);
+  const connT=setInterval(()=>{
+    if(!wrap.isConnected){ clearInterval(connT); return; }
+    if(_gpRP || !GC || GC.status!=="LIVE"){ connBar.style.display="none"; return; }
+    connBar.style.display="";
+    const age=CN.ok? Math.round((Date.now()-CN.ok)/1000) : null;
+    const bad=age==null || age>10 || navigator.onLine===false;
+    connBar.className="gp-conn "+(bad? "bad" : "ok");
+    connBar.textContent=bad
+      ? "● Connection lost · "+(age==null? "no live data yet" : "last data "+age+" s ago")+" · "+(CN.err||"waiting for the league")+" · trying again every 2 s"
+      : "● Live · connected · updated "+age+" s ago";
+    if(bad && !CN.lost && age!=null){ CN.lost=true; try{ toast("Live connection lost — trying again"); }catch(e){} }
+    if(!bad && CN.lost){ CN.lost=false; try{ toast("Live connection back"); }catch(e){} }
+  }, 1000);
   const prog=p=>{ const m=/^Q(\d)(_break)?$/i.exec(String(p||"")), o=/^OT(\d*)(_break)?$/i.exec(String(p||""));
     return m? (m[2]? "break after Q"+m[1] : "Q"+m[1]) : o? (o[2]? "break after OT"+(o[1]||"") : "OT"+(o[1]||"")) : String(p||""); };
   /* the line beside the title: where the game is, as the league says it */
@@ -15422,7 +15450,7 @@ function _gpLiveBlock(){
         : "From the tip-off the block shows where the game is; the summary arrives with the play by play.")));
     wrap.classList.remove("empty"); };
   const read=async fresh=>{
-    if(RP) return;   /* a replay is being played: the league is not read meanwhile */
+    if(_gpRP) return;   /* a replay is being played: the league is not read meanwhile */
     try{
       if(!G){
         const all=await _lgAll();
@@ -15442,7 +15470,7 @@ function _gpLiveBlock(){
          does not move, so the block says where the game is instead of showing an empty
          stretch; after it, the league keeps correcting for some 10-20 minutes, so it is read
          again every minute until the game is OFFICIAL or half an hour has gone by. */
-      if(date>=addDays(today,-1) && (!GC || GC.status!=="LIVE" || Date.now()-gcAt>30000)){ gcAt=Date.now();
+      if(date>=addDays(today,-1) && (!GC || GC.status!=="LIVE" || Date.now()-gcAt>2500)){ gcAt=Date.now();
         try{ const g2=await fetch("/.netlify/functions/bbl?res=gamecenter").then(r=>r.ok? r.json() : null).catch(()=>null);
           const all=g2? [].concat(g2.present||[], g2.past||[], g2.future||[]) : [];
           const hit=all.filter(x=>String(x.id)===String(G.id))[0];
@@ -15454,6 +15482,8 @@ function _gpLiveBlock(){
         /* LIVE: the league's live channel, through our function (held 2 s, shared by all) */
         let j=(GC && GC.status==="LIVE")? await fetch("/.netlify/functions/bbl?res=live&id="+encodeURIComponent(G.id)+"&b="+Math.floor(Date.now()/2000))
           .then(r=>r.ok? r.json() : null).catch(()=>null) : null;
+        /* the connection, as the bench needs to know it: when the live channel last answered with the game, and why not when it did not */
+        if(GC && GC.status==="LIVE"){ if(j && j.feed){ CN.ok=Date.now(); CN.err=""; } else CN.err=(navigator.onLine===false)? "this device is offline" : (j && (j.errors||[])[0])? String(j.errors[0]) : "no answer from the league"; }
         if(!(j && j.feed)) j=await fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(G.id)+((date>=addDays(today,-1))? "&fresh=1" : ""))
           .then(r=>r.ok? r.json() : null).catch(()=>null);
         if(j && j.feed){ J=j; _gpLiveMemo[G.id]=j; }
@@ -35806,6 +35836,10 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .gp5-qcard .gp3-qc{border:0!important;padding:0!important}
 /* The game: tabs that are not played yet, and the video as a fold */
 .gp-live-tab.off{opacity:.35;cursor:default}
+.gp-conn{margin:0 0 6px;padding:4px 10px;border-radius:7px;font:700 11px 'IBM Plex Mono',monospace}
+.gp-conn.ok{background:rgba(31,138,76,.12);color:#1f8a4c}
+.gp-conn.bad{background:#d8524e;color:#fff;animation:gpConn 1s ease-in-out infinite}
+@keyframes gpConn{0%,100%{opacity:1}50%{opacity:.55}}
 .gp-rp{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 8px;padding:5px 8px;border:1px dashed var(--line-strong,#d7dbe0);border-radius:9px;font-size:11px}
 .gp-rp-l{font:700 9.5px 'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint,#8a919c)}
 .gp-rp-sel{font:600 11px Inter,system-ui,sans-serif;padding:2px 4px;border:1px solid var(--line-strong,#d7dbe0);border-radius:6px;background:var(--panel,#fff);color:var(--ink,#141821)}

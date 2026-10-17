@@ -1426,7 +1426,7 @@ exports.handler = async (event) => {
       const list = k => (Array.isArray(raw && raw[k]) ? raw[k] : []).map(pick);
       out = Object.assign(meta, { past: list("past"), present: list("present"), future: list("future"),
         sample: raw && raw.present && raw.present[0] ? Object.keys(raw.present[0]) : (raw && raw.past && raw.past[0] ? Object.keys(raw.past[0]) : []) });
-      return reply(200, out, 15000);
+      return reply(200, out, 2500);
 
     } else if (res === "livedocs") {
       /* where the live channel is: the API's own documentation, read with our key, and
