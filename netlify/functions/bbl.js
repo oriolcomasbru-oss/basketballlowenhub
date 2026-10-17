@@ -584,7 +584,9 @@ function clockSplit(actions, poss, code) {
     /* WHEN THE SHOT COMES: the second of the possession its first shot goes up in, counted
        from the moment the ball changed hands (0-24), for us and for the side we defended;
        a possession that ended without a shot - a turnover, a foul trip - is counted apart */
-    first: { team: new Array(25).fill(0), opp: new Array(25).fill(0), teamNo: 0, oppNo: 0 } };
+    first: { team: new Array(25).fill(0), opp: new Array(25).fill(0), teamNo: 0, oppNo: 0,
+      /* and quarter by quarter (Q1-Q4, every overtime as the fifth): possessions, first shots and their seconds */
+      q: [0, 1, 2, 3, 4].map(() => ({ tp: 0, ts: 0, tsec: 0, op: 0, os: 0, osec: 0 })) } };
   const pl = id => out.byPlayer[id] || (out.byPlayer[id] = blank3());
   const times = actions.map(gameClock);
   poss.forEach(p => {
@@ -601,6 +603,7 @@ function clockSplit(actions, poss, code) {
         shot = true;
         const el = Math.max(0, Math.min(24, Math.floor(t - p.from)));
         (p.team === code ? out.first.team : out.first.opp)[el]++;
+        { const qq = out.first.q[Math.min(4, qIndex(p.quarter))]; if (p.team === code) { qq.ts++; qq.tsec += el + 0.5; } else { qq.os++; qq.osec += el + 0.5; } }
       }
       if (a.action === "P2" || a.action === "P3") {
         side[b].fga++; if (a.action === "P3") side[b].p3a++;
@@ -625,6 +628,7 @@ function clockSplit(actions, poss, code) {
       }
     }
     if (!shot) { if (p.team === code) out.first.teamNo++; else out.first.oppNo++; }
+    { const qq = out.first.q[Math.min(4, qIndex(p.quarter))]; if (p.team === code) qq.tp++; else qq.op++; }
     const remEnd = Math.max(0, Math.min(len, len - (p.to - ref)));
     const be = clockBlock(remEnd);
     side[be].poss++; side[be].pts += p.pts;
@@ -1651,6 +1655,8 @@ exports.handler = async (event) => {
         /* ---- possessions, and what each unit did with them ---- */
         const poss = possessions(acts);
         const cs = clockSplit(acts, poss, code);
+        /* the game's pace, kept with its line: first-shot seconds, possessions, quarter by quarter */
+        { const bg = byGame[byGame.length - 1]; if (bg && bg.id === g.id) bg.pace = { t: cs.first.team, o: cs.first.opp, tn: cs.first.teamNo, on: cs.first.oppNo, q: cs.first.q }; }
         const addBlk = (dst, src) => { [0, 1, 2].forEach(i => {
           Object.keys(src[i]).forEach(k => { dst[i][k] += src[i][k]; }); }); };
         addBlk(clk.team, cs.team); addBlk(clk.opp, cs.opp);
