@@ -15145,7 +15145,7 @@ function _gpLiveBlock(){
       read(false); }}, "■ Stop");
     const jump=h("button",{type:"button", class:"gp-rp-b", title:"jump four minutes on", onclick:()=>{ if(RP){ RP.T=Math.min(RP.end, RP.T+240); const p=RP.playing; RP.playing=false; step(); RP.playing=p; } }}, "+4′");
     bar.appendChild(h("span",{class:"gp-rp-l"},"Test · replay a game"));
-    if(past.length){ bar.appendChild(sel); bar.appendChild(spd); bar.appendChild(play); bar.appendChild(jump); bar.appendChild(stopB); bar.appendChild(clk); }
+    if(past.length){ bar.appendChild(sel); bar.appendChild(spd); bar.appendChild(play); bar.appendChild(jump); bar.appendChild(stopB); bar.appendChild(clk); bar.appendChild(h("span",{class:"gp-rp-n", title:"In a replay the live part of Their team is the replayed opponent; the grey history stays the planned opponent's"},"· their team's history stays the planned opponent's")); }
     else bar.appendChild(h("span",{class:"gp-rp-n"},"no finished game of ours read yet"));
     wrap.insertBefore(bar, tabs);
   }
@@ -35690,6 +35690,7 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .gp-rp-l{font:700 9.5px 'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint,#8a919c)}
 .gp-rp-sel{font:600 11px Inter,system-ui,sans-serif;padding:2px 4px;border:1px solid var(--line-strong,#d7dbe0);border-radius:6px;background:var(--panel,#fff);color:var(--ink,#141821)}
 .gp-rp-b{border:1px solid #141821;background:#141821;color:#fff;border-radius:6px;padding:2px 9px;font:700 11px Inter,system-ui,sans-serif;cursor:pointer}
+.gp-rp-n{font-size:10px;color:var(--ink-faint,#8a919c)}
 .gp-rp-clk{font:800 11px 'IBM Plex Mono',monospace;color:#c0392b}
 .gp-live.replay{box-shadow:inset 0 0 0 2px rgba(192,57,43,.35);border-radius:10px}
 .gp-vid{margin-top:8px;border:1px solid var(--line,#e4e7ec);border-radius:9px;padding:4px 8px}
