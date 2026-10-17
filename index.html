@@ -23185,8 +23185,7 @@ function _lgPace(L){
       const cell=h("td",{class:"pace-c"+(c.k==="o"||c.k==="d"? " grp avg" : "")+(c.g==="d"? " def" : ""), title:c.tip+" · "+rk+" of "+R.rows.length});
       if(c.share){ const sp=span[c.k], w=sp[1]>sp[0]? (v-sp[0])/(sp[1]-sp[0]) : 1;
         cell.appendChild(h("span",{class:"pace-cb"}, h("i",{style:"width:"+Math.round(18+82*w)+"%"}))); }
-      cell.appendChild(h("b",{}, c.share? pc(v) : v.toFixed(1)+" s"));
-      cell.appendChild(h("em",{class:top? "top" : ""}, String(rk)));
+      cell.appendChild(h("span",{class:"pace-in"}, h("b",{}, c.share? pc(v) : v.toFixed(1)+" s"), h("em",{class:top? "top" : ""}, String(rk))));
       tr.appendChild(cell); });
     t.appendChild(tr);
   });
@@ -34636,7 +34635,8 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .pace-tbl th.pace-go{color:#1f6f9a}.pace-tbl th.pace-gd{color:#8a4b14}
 .pace-tbl td.pace-c{position:relative;text-align:left;min-width:74px;padding:4px 6px}
 .pace-tbl td.pace-c b{position:relative;font:700 12px 'IBM Plex Mono',monospace}
-.pace-tbl td.pace-c em{position:relative;float:right;margin-left:6px;font:700 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a919c);min-width:16px;text-align:center;border-radius:999px;padding:0 4px}
+.pace-in{position:relative;display:flex;align-items:center;justify-content:space-between;gap:6px}
+.pace-tbl td.pace-c em{position:relative;font:700 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a919c);min-width:16px;text-align:center;border-radius:999px;padding:0 4px}
 .pace-tbl td.pace-c em.top{background:#c9a227;color:#141821}
 .pace-cb{position:absolute;left:4px;right:4px;top:4px;bottom:4px;pointer-events:none}
 .pace-cb i{display:block;height:100%;border-radius:4px;background:rgba(31,111,154,.16)}
