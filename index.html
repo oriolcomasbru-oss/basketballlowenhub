@@ -14889,6 +14889,12 @@ function _gpAlertBar(){
   /* the bar is made before it is on the page and a reading can come in that instant: it lets go
      only once it has been on the page and has left it */
   const gone=()=>{ if(wrap.isConnected){ wrap.__was=1; return false; } return !!wrap.__was; };
+  /* the hub's menu is fixed on top of the page (two rows on an iPad, more on a narrow screen):
+     the bar rides just under its bottom edge, wherever that is */
+  const fixTop=()=>{ try{ const tb=document.getElementById("topbar"); const b=tb? Math.max(0, Math.round(tb.getBoundingClientRect().bottom)) : 0; const v=b+"px"; if(wrap.style.top!==v) wrap.style.top=v; }catch(e){} };
+  fixTop();
+  const onScroll=()=>{ if(gone()){ removeEventListener("scroll", onScroll, true); removeEventListener("resize", onScroll); return; } fixTop(); };
+  addEventListener("scroll", onScroll, { passive:true, capture:true }); addEventListener("resize", onScroll);
   const on=()=>{ if(gone()){ window.removeEventListener("gp-live", on); clearInterval(tm); return; } paint(); };
   window.addEventListener("gp-live", on);
   /* the 90 seconds run out between readings too */
