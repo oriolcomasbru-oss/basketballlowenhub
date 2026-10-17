@@ -20489,6 +20489,7 @@ function _lgEuroClub(L, tid){
   const nextI=mine.findIndex(g=>!_lgDone(g) && (g.date||"")>=today);
   const col=h("div",{class:"lg-euro-col"}, h("div",{class:"lg-euro-h"}, "Their European games"));
   mine.forEach((g,i)=>{
+    if(nextI>=0 && i>nextI+2) return;   /* what has been played, and the next three */
     const done=_lgDone(g), home=String(g.homeId)===T;
     const won=done && (home? g.hs>g.as : g.as>g.hs);
     col.appendChild(h("div",{class:"lg-euro-row eu5"+(i===nextI? " next" : "")},
