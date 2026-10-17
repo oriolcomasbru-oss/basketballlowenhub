@@ -16346,6 +16346,8 @@ function renderPlanSection(sec, canEd, save, allSecs){
             const onAt=t=>Object.keys(segs).filter(id=>segs[id].some(g=>t>=g[0] && t<g[1]));
             const nicks=plan.pool.map(p=>p.name), byNick=_gpMatchAll(nicks, lv.us||[]);
             const idOf={}; plan.pool.forEach(p=>{ const m=byNick[p.name]; if(m) idOf[p.id]=String(m.id); });
+            /* a name of the plan who is on our squad but did not play tonight is known to be off the floor */
+            const known={}; { const sq=_gpMatchAll(nicks, _gpOurMen()||[]); plan.pool.forEach(p=>{ if(idOf[p.id] || sq[p.name]) known[p.id]=1; }); }
             const nameOf={}; (lv.us||[]).forEach(p=>{ nameOf[String(p.id)]=_lgLastName(p.name||"")||("#"+p.num); });
             const qn=Q.board;
             for(let c=0;c<10;c++){
@@ -16353,7 +16355,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
               const real=onAt(t); if(real.length<5) continue;
               const planned=GP_ROWS.map((pos,r)=>((plan.grid[qn]||[])[r]||[])[c]).filter(Boolean);
               const plannedIds=planned.map(pid=>idOf[pid]).filter(Boolean);
-              if(plannedIds.length<planned.length) continue;   /* a name of the plan not read: nothing is claimed */
+              if(planned.some(pid=>!known[pid])) continue;   /* a name of the plan not read at all: nothing is claimed */
               const missing=GP_ROWS.map((pos,r)=>({ r:r, pid:((plan.grid[qn]||[])[r]||[])[c] })).filter(x=>x.pid && real.indexOf(idOf[x.pid])<0);
               if(!missing.length) continue;
               const extra=real.filter(id=>plannedIds.indexOf(id)<0);
