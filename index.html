@@ -15297,13 +15297,19 @@ function _gpLiveBlock(){
        later than the one the league's game centre says counts only once the game centre says
        it too, or once it holds four plays (a quarter that has really started) - one stray play
        is never enough. */
+    /* The same for a play written at a clock well ahead of the league's (the stray foul again,
+       once the third quarter had begun): more than 30 s past the game centre's clock, it is left
+       out - while there are three such plays at most; four or more and the plays are right and
+       the game centre is the one behind. */
     let Jd=J;
     if(!_gpRP && GC && GC.status==="LIVE" && J && J.feed){
       const gq=_gpGcQ(GC), a0=J.feed.actions||[];
       if(gq>=0){
-        const ahead={}; a0.forEach(a=>{ const q=_lgGameElapsed(a.quarter, a.time).qi; if(q>gq) ahead[q]=(ahead[q]||0)+1; });
-        let upTo=gq; Object.keys(ahead).map(Number).sort((x,y)=>x-y).forEach(q=>{ if(q===upTo+1 && ahead[q]>=4) upTo=q; });
-        if(Object.keys(ahead).some(q=>+q>upTo)) Jd=Object.assign({}, J, { feed:Object.assign({}, J.feed, { actions:a0.filter(a=>_lgGameElapsed(a.quarter, a.time).qi<=upTo) }) });
+        const base=gq<4? gq*600 : 2400+(gq-4)*300, len=gq<4? 600 : 300;
+        const tm=String(GC.time||"").split(":").map(Number), left=tm.length>=2? tm[tm.length-2]*60+tm[tm.length-1] : NaN;
+        const gEl=/_break/i.test(String(GC.progress||""))? base+len : (isFinite(left)? base+Math.max(0, Math.min(len, len-left)) : base+len);
+        const ahead=a0.filter(a=>_lgGameElapsed(a.quarter, a.time).t>gEl+30);
+        if(ahead.length && ahead.length<=3) Jd=Object.assign({}, J, { feed:Object.assign({}, J.feed, { actions:a0.filter(a=>ahead.indexOf(a)<0) }) });
       }
     }
     const feed=Jd && Jd.feed;
