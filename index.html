@@ -11212,6 +11212,52 @@ function _preCardsDraft(L, tid){
   });
   return { built: todayISO(), pos: out };
 }
+/* THE CARDS FOLLOW THE LEAGUE. A card was written once, from the feed of the day it was
+   drafted, and kept those numbers: Garino's 3PT box still said 25% on 12 a game after he had
+   gone 3 of 4 and stood at 38% on 16, while the lit rank beside it read the new line. Every
+   time the board is drawn each card's numbers are worked out again from the league as it is:
+   the boxes it has (the ones the staff kept, in their order), the minutes a game, and the key
+   ideas the draft writes itself ("3P 25% on 12 — let him shoot it", "Takes 22% of their
+   shots" ...) - rewritten with today's numbers, dropped when they no longer hold, added when
+   one now holds and there is room. A line the staff typed is never touched, and a card brought
+   in from another season or club (NEW) keeps that season's numbers. */
+const PRE_AUTO_IDEA=[["takes",/^Takes \d+% of their shots$/],["creates",/^Creates: [\d.]+ ast\/g$/],["crashes",/^Crashes: [\d.]+ oreb\/g$/],
+  ["hands",/^Hands: [\d.]+ stl\/g$/],["3p",/^3P \d+% on \d+ — (never leave him|let him shoot it)$/],["2p",/^2P \d+% — contest and live with it$/],["ft",/^FT \d+% — foul him late$/]];
+function _preIdeaKind(s){ const t=String(s||"").replace(/<[^>]+>/g,"").replace(/&nbsp;/g," ").trim(); const k=PRE_AUTO_IDEA.filter(x=>x[1].test(t))[0]; return k? k[0] : ""; }
+function _preCardsFresh(L, tid, C){
+  if(!C || !C.pos || !tid) return;
+  PRE_CARD_POS.forEach(pos=>(C.pos[pos]||[]).forEach(c=>{ try{
+    if(!c || c.from) return;
+    const d=_preCardFreshOf(c, L, tid); if(!d) return;
+    /* the boxes the card has, each with today's value */
+    const fresh={}; (d.stats||[]).forEach(s=>{ fresh[String(s[1]||"").toUpperCase()]=s[0]; });
+    if(Array.isArray(c.stats)) c.stats.forEach(s=>{ const k=String((s&&s[1])||"").toUpperCase(); if(k in fresh) s[0]=fresh[k]; });
+    if(!c.min || /^\d+(\.\d+)? min\/g$/.test(String(c.min).trim())) c.min=d.min||c.min;
+    if(d.gp!=null) c.gp=d.gp;
+    /* the ideas the draft writes itself, written again */
+    if(Array.isArray(c.ideas)){
+      const nw={}; (d.ideas||[]).forEach(s=>{ const k=_preIdeaKind(s); if(k) nw[k]=s; });
+      const had={}, out=[];
+      c.ideas.forEach(s=>{ const k=_preIdeaKind(s); if(!k){ out.push(s); return; } had[k]=1; if(nw[k]) out.push(nw[k]); });
+      Object.keys(nw).forEach(k=>{ if(!had[k] && out.filter(x=>String(x||"").trim()).length<4) out.push(nw[k]); });
+      c.ideas=out;
+    }
+  }catch(e){} }));
+}
+/* one card worked out again from the league, the way the draft works it out */
+function _preCardFreshOf(c, L, tid){
+  const rows=_preRosterRows(L, tid).filter(p=>p && (p.name || p.num));
+  const norm=s=>_lgNorm(String(s||""));
+  const p=rows.filter(x=>c.pid && String(x.pid||x.id||"")===String(c.pid))[0]
+    || rows.filter(x=>norm(x.name||((x.first||"")+" "+(x.last||"")))===norm(c.name))[0]
+    || rows.filter(x=>c.num && String(x.num||"")===String(c.num))[0];
+  if(!p || !_preLine(p)) return null;
+  const withLine=rows.filter(x=>_preLine(x)), base=withLine.length? withLine : rows;
+  const per=(x,k)=>{ const a=_preLine(x); return (a&&a.gp)? (a[k]||0)/a.gp : 0; };
+  const ctx={ teamFga: base.reduce((t,x)=>{ const a=_preLine(x); return t+((a&&a.p2a)||0)+((a&&a.p3a)||0); },0),
+    rank:(x,k)=>base.filter(y=>per(y,k)>per(x,k)).length+1 };
+  return _preCardOf(Object.assign({}, p, c.pos? { pos:c.pos } : {}), ctx);
+}
 /* the league's statistics for one card, worked out the way the draft works them out */
 function _preCardStatsAgain(c){
   try{
@@ -12800,6 +12846,8 @@ function _preCardsBlock(L, tid, rep, canEd, save){
     paintCards=()=>{
       board.innerHTML="";
       _preLgForCards=L; _preTidForCards=tid;
+      /* every card with the league's numbers of today */
+      try{ _preCardsFresh(L, tid, C); }catch(e){}
       const phx=_prePhxBoard(L, C, canEd, redraw);
       if(phx) board.appendChild(phx);
       const all=PRE_CARD_POS.reduce((n,k)=>n+(C.pos[k]||[]).length,0);
