@@ -11799,7 +11799,16 @@ function _preHlExtra(L, c, tid, ranks){
 function _preHl(L, card, c, canEd, save, tid){
   /* the frame */
   const lv=c.hl==="key"? "key" : c.hl==="stop"? "stop" : "";
-  if(lv){ card.classList.add("hl-"+lv); card.appendChild(h("span",{class:"hl-badge"}, lv==="key"? "KEY" : "STOP HIM")); }
+  /* the tag takes its own place beside the name and the passport line, in the flow, so
+     it can never sit on top of either of them however long they are */
+  if(lv){ card.classList.add("hl-"+lv);
+    const tag=h("span",{class:"hl-badge"}, lv==="key"? "KEY" : "STOP HIM");
+    const nm=card.querySelector(".card-body .name");
+    if(nm){ const mt=nm.nextElementSibling && nm.nextElementSibling.classList.contains("meta")? nm.nextElementSibling : null;
+      const row=h("div",{class:"hl-head"}), col=h("div",{class:"hl-head-t"});
+      nm.parentNode.insertBefore(row, nm); col.appendChild(nm); if(mt) col.appendChild(mt);
+      row.appendChild(col); row.appendChild(tag); }
+    else card.appendChild(tag); }
   if(canEd){ const ph=card.querySelector(".photo");
     if(ph){ const b=h("button",{type:"button", class:"hl-tog", title:"Highlight: normal → KEY → STOP HIM"}, lv==="key"? "★ KEY" : lv==="stop"? "⛔ STOP" : "☆ Mark");
       b.addEventListener("click",e=>{ e.stopPropagation(); e.preventDefault(); c.hl=lv===""? "key" : lv==="key"? "stop" : ""; save(); });
@@ -34263,7 +34272,6 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .phx .card.hl-stop{box-shadow:0 0 0 3px #d8524e,0 0 0 8px rgba(216,82,78,.22),0 10px 26px rgba(216,82,78,.25)!important}
 .phx .card .photo{position:relative}
 .phx .card > .hl-badge{position:absolute;right:8px;top:6px;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;padding:4px 10px;border-radius:999px;color:#fff;z-index:3;pointer-events:none}
-body.edit-mode .phx .card > .hl-badge{top:36px}
 /* the card opened beside its video: the boxes as on the card, at a size that reads */
 .modal-stats .modal-stat-cell{position:relative;padding:7px 4px 6px!important}
 .modal-stats .modal-stat-value{font-size:17px!important;line-height:1.1}
@@ -34277,7 +34285,9 @@ body.edit-mode .phx .card > .hl-badge{top:36px}
 .modal-hl{display:inline-block;vertical-align:middle;margin-left:10px;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;padding:3px 10px;border-radius:999px}
 .modal-hl.key{background:#c6a15b;color:#141821}.modal-hl.stop{background:#d8524e;color:#fff}
 .modal-box.hl-key{box-shadow:0 0 0 3px #c6a15b,0 20px 60px rgba(0,0,0,.35)!important}.modal-box.hl-stop{box-shadow:0 0 0 3px #d8524e,0 20px 60px rgba(0,0,0,.35)!important}
-.phx .card.hl-key .name{padding-right:48px}.phx .card.hl-stop .name{padding-right:84px}
+.phx .card .hl-head{display:flex;align-items:flex-start;gap:8px}
+.phx .card .hl-head-t{flex:1 1 auto;min-width:0}
+.phx .card .hl-head > .hl-badge{position:static;flex:0 0 auto;margin-top:1px;font-size:10px;padding:3px 8px;white-space:nowrap}
 .phx .card.hl-key .hl-badge{background:#c6a15b;color:#141821}.phx .card.hl-stop .hl-badge{background:#d8524e}
 .phx .card .hl-tog{position:absolute;left:8px;bottom:8px;z-index:4;border:0;border-radius:999px;padding:3px 9px;font:700 10px 'Oswald',sans-serif;letter-spacing:.1em;cursor:pointer;background:rgba(20,24,33,.72);color:#fff}
 .phx .card .stat-cell{position:relative}
