@@ -14851,6 +14851,32 @@ function _gpMatchAll(nicks, men){
     out[c.nk]=c.p; used[id]=1; });
   return out;
 }
+/* THE POSITIONS OUR MEN PLAY. The bench's own list (Oriol, 17 Oct 2026): what matters on the
+   board is not only who came in but at which position he plays. The first number is his
+   main position; 1 is the PG row of the board, 5 the C row. */
+const GP_OURPOS={ DEVIN:[1,2], DEJOUR:[1,2], AYDINOGLU:[1], FERDI:[2,3], SHELDON:[2,3], SCHRODER:[2,3],
+  CHIP:[3,4], NOAH:[2,3], ZABA:[5], THIERS:[5,4], FELIPE:[5,4], EDDY:[5], TAJH:[5,4] };
+/* the positions of each man of the feed, by his id: each name of the list matched on its own */
+function _gpPosOf(men){
+  const out={}; if(!men) return out;
+  Object.keys(GP_OURPOS).forEach(k=>{ const p=_gpMatchMan(k, men); if(p && !out[String(p.id)]) out[String(p.id)]=GP_OURPOS[k]; });
+  return out;
+}
+/* The five really on the floor put on the board's five rows the way they play: a man stays in
+   the row the plan has him in when he can play it, the others go to the rows of their
+   positions (his main one first). planned: the id the plan has in each row (or ""); real: the
+   five ids; pos: id -> positions. Returns the id at each row. */
+function _gpSeat(planned, real, pos){
+  const sc=(id, r)=>{ const ps=pos[id]||null, k=ps? ps.indexOf(r+1) : -1;
+    return (planned[r]===id? 3 : 0) + (k===0? 5 : k>0? 4 : 0); };
+  let best=null, bestS=-1;
+  const go=(r, used, seat, s)=>{
+    if(r===5){ if(s>bestS){ bestS=s; best=seat.slice(); } return; }
+    real.forEach(id=>{ if(used[id]) return; used[id]=1; seat[r]=id; go(r+1, used, seat, s+sc(id, r)); used[id]=0; });
+  };
+  go(0, {}, [], 0);
+  return best||[];
+}
 function _gpDur(s){ s=Math.max(0,Math.round(s)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
 function _gpLiveWin(feed, uc, inWin, names){
   const mk=()=>({ pts:0, fgm:0, fga:0, p3m:0, p3a:0, ftm:0, fta:0, or:0, dr:0, tov:0, pf:0, ast:0, sc:0, pto:0, fast:0,
@@ -15694,10 +15720,13 @@ function renderPlanSection(sec, canEd, save, allSecs){
     return tr;
   }
 
+  /* the second half is played on the first half's boards: from the third quarter on the bench
+     reads them as Q1/3 and Q2/4 */
+  const qName=q=>{ const lv=_gpLiveNow; return (!canEd && lv && lv.maxQ>=2)? (q==="Q1"? "Q1/3" : q==="Q2"? "Q2/4" : q) : q; };
   function quarterBoard(q){
     const wrap=h("div",{class:"gp2-q"});
     wrap.appendChild(h("div",{class:"gp2-qh"},
-      h("span",{class:"gp2-qn"}, q),
+      h("span",{class:"gp2-qn"}, qName(q)),
       h("span",{class:"gp2-qs"}, q==="Q1"?"Offense above · defense below":""),
       h("span",{class:"gp2-qs right"}, _gpChanges(plan,q)+" changes")));
     const tbl=h("table",{class:"gp2-tbl"});
@@ -16026,7 +16055,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
      rotation on the left, what the quarter is about on the right, read in one look */
   function quarterCard(q){
     {
-      const card=h("div",{class:"gp3-qc"}, h("div",{class:"gp3-qh"}, q, h("span",{}, "plan")));
+      const card=h("div",{class:"gp3-qc"}, h("div",{class:"gp3-qh"}, qName(q), h("span",{}, "plan")));
       let any=false;
       [["off","Offense"],["def","Defense"]].forEach(sd=>{
         const side=sd[0];
@@ -16360,27 +16389,33 @@ function renderPlanSection(sec, canEd, save, allSecs){
             /* a name of the plan who is on our squad but did not play tonight is known to be off the floor */
             const known={}; { const sq=_gpMatchAll(nicks, _gpOurMen()||[]); plan.pool.forEach(p=>{ if(idOf[p.id] || sq[p.name]) known[p.id]=1; }); }
             const nameOf={}; (lv.us||[]).forEach(p=>{ nameOf[String(p.id)]=_lgLastName(p.name||"")||("#"+p.num); });
+            const posOf=_gpPosOf(lv.us||[]);
             const qn=Q.board;
             for(let c=0;c<10;c++){
               const t=base+c*60+30; if(t>lv.lastT) break;
-              const real=onAt(t); if(real.length<5) continue;
-              const planned=GP_ROWS.map((pos,r)=>((plan.grid[qn]||[])[r]||[])[c]).filter(Boolean);
-              const plannedIds=planned.map(pid=>idOf[pid]).filter(Boolean);
+              const real=onAt(t); if(real.length!==5) continue;
+              const rowPid=GP_ROWS.map((pos,r)=>((plan.grid[qn]||[])[r]||[])[c]||"");
+              const planned=rowPid.filter(Boolean);
               if(planned.some(pid=>!known[pid])) continue;   /* a name of the plan not read at all: nothing is claimed */
-              const missing=GP_ROWS.map((pos,r)=>({ r:r, pid:((plan.grid[qn]||[])[r]||[])[c] })).filter(x=>x.pid && real.indexOf(idOf[x.pid])<0);
-              if(!missing.length) continue;
-              const extra=real.filter(id=>plannedIds.indexOf(id)<0);
-              missing.forEach((x,k)=>{ const td=w.querySelector('td.gp2-st[data-c="'+c+'"][data-r="'+x.r+'"]'); if(!td) return;
-                td.classList.add("diff"); td.title="planned: not on the floor"+(extra[k]? " · on instead: "+nameOf[extra[k]] : "");
-                if(extra[k]) td.appendChild(h("span",{class:"gp5-real"}, nameOf[extra[k]])); });
+              const plannedIds=rowPid.map(pid=>pid? (idOf[pid]||"") : "");
+              if(planned.length===5 && real.every(id=>plannedIds.indexOf(id)>=0)) continue;   /* the plan's five */
+              /* not the plan's five: the five on the floor seated by the positions they play,
+                 and every row whose man is not the plan's is marked with the man playing it */
+              const seat=_gpSeat(plannedIds, real, posOf);
+              GP_ROWS.forEach((pos,r)=>{ const id=seat[r]; if(!id || id===plannedIds[r]) return;
+                const td=w.querySelector('td.gp2-st[data-c="'+c+'"][data-r="'+r+'"]'); if(!td) return;
+                const was=rowPid[r]? _gpById(plan, rowPid[r]) : null;
+                td.classList.add("diff");
+                td.title=(was? "planned "+was.name : "nobody planned")+" · playing the "+pos+": "+nameOf[id]+(real.indexOf(plannedIds[r])>=0? " ("+(was? was.name : "")+" is on, at another position)" : "");
+                td.appendChild(h("span",{class:"gp5-real"}, nameOf[id])); });
             }
           }); };
         const paintRot=()=>{
           const Q=qOf();
           const mode=(rq==="both"||rq==="Q1"||rq==="Q2")? rq : "auto";
           const q=mode==="Q1"||mode==="Q2"? mode : Q.board;
-          if(mode===shownMode && q===shownQ){ marker(); return; }
-          shownMode=mode; shownQ=q; rotHost.innerHTML="";
+          if(mode===shownMode && q+qName(q)===shownQ){ marker(); return; }
+          shownMode=mode; shownQ=q+qName(q); rotHost.innerHTML="";
           if(mode==="both"){
             rotHost.appendChild(h("div",{class:"gp5-rot"}, GP_HALF.map(x=>{ const b=h("div",{class:"gp5-board"}, quarterBoard(x)); b.dataset.q=x; return b; })));
             paintQ(q);
@@ -16388,7 +16423,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
             const b=h("div",{class:"gp5-board"}, quarterBoard(q)); b.dataset.q=q;
             paintQ(q);
             /* the plan beside the board can be folded away, and the board takes the width */
-            const side=h("div",{class:"gp5-side"}, h("div",{class:"gp5-side-h"}, h("span",{}, q+" plan"+(mode==="auto"? " · follows the game" : "")),
+            const side=h("div",{class:"gp5-side"}, h("div",{class:"gp5-side-h"}, h("span",{}, qName(q)+" plan"+(mode==="auto"? " · follows the game" : "")),
               h("button",{type:"button", class:"gp5-fold", title:"Fold the plan away and give the board the width", onclick:()=>{ UI.q5side=!UI.q5side; _gpUISave(); shownMode=""; paintRot(); }}, UI.q5side? "◀ plan" : "plan ▶")), UI.q5side? null : qbox);
             rotHost.appendChild(h("div",{class:"gp5-rot1"+(UI.q5side? " folded" : "")}, b, side));
           }
