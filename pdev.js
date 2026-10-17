@@ -533,6 +533,7 @@
     var mine = String(tid) === String(ours);
     var PL = (L.players || {})[tid];
     var box = el("div", { class: "pd-mxbox" });
+    try { if (window._wipArea) window._wipArea(box, "fade"); } catch (e) { }
     var pick = el("select", { class: "fd-team" });
     (L.teams || []).slice().sort(function (a, b) { return (a.name || "").localeCompare(b.name || ""); }).forEach(function (t) {
       var o = el("option", { value: t.id }, (String(t.id) === String(ours) ? "Us · " : "") + t.name); if (String(t.id) === String(tid)) o.selected = true; pick.appendChild(o); });

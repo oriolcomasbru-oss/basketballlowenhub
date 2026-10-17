@@ -9401,6 +9401,23 @@ function _prescFit(){
 function _wipTag(small){
   return h("span",{class:"wip-tag"+(small? " sm" : ""), title:"In development: this part is being adjusted and may still change"}, small? "dev" : "In development · being adjusted");
 }
+/* AN AREA UNDER CONSTRUCTION, SHOWN AS ONE. The first time it is opened (again after ten
+   minutes away) the whole area goes softly yellow and pulses three times, then the yellow
+   shrinks into its corner and stays there as a dot: the area is marked without being in
+   the way. */
+const _wipSeen={};
+function _wipArea(el, key){
+  if(!el || el.__wip) return; el.__wip=1;
+  el.classList.add("wip-area");
+  el.appendChild(h("span",{class:"wip-dot", title:"In development: this area is being adjusted and may still change"}));
+  let last=0; try{ last=+sessionStorage.getItem("wip:"+key)||0; }catch(e){ last=_wipSeen[key]||0; }
+  if(Date.now()-last<10*60000) return;
+  try{ sessionStorage.setItem("wip:"+key, String(Date.now())); }catch(e){ _wipSeen[key]=Date.now(); }
+  const fx=h("span",{class:"wip-flash"}, h("b",{},"In development · being adjusted"));
+  el.appendChild(fx);
+  setTimeout(()=>{ try{ fx.remove(); }catch(e){} }, 3600);
+}
+window._wipArea=_wipArea;
 let _preInjCtx=null;
 setInterval(()=>{ try{ const v=document.getElementById("viewOppScout"); if(v && v.style.display!=="none") _preInj(); }catch(e){} }, 3000);
 function _preInj(){
@@ -10343,6 +10360,24 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
   if(canEd) _repHistLive={ el:body, undo:()=>histStep(H.undo, H.redo), redo:()=>histStep(H.redo, H.undo) };
   /* the open pre-game report, so a feed that arrives late can draw it again */
   if(kind==="pregame" && !ONLY) _preLive={ el:body, redraw:reRender, sig:_preSig() };
+  /* OPENED ONCE, WHEN IT IS READY. The first time a pre game is opened in a visit it waits
+     behind a loading line while the club, its roster and its players' season land and the
+     report is drawn with them; then it is shown, once. Twelve seconds at the most. */
+  if(kind==="pregame" && !ONLY && !_preWaited[key]){
+    _preWaited[key]=1;
+    const t0=Date.now();
+    body.classList.add("pre-wait");
+    const ld=h("div",{class:"pre-wait-ld"}, h("div",{class:"ld"},"Loading the pre game…", h("span",{class:"ld-bar"})));
+    body.appendChild(ld);
+    const tm=setInterval(()=>{
+      const L=leagueState(), tid=_preClub();
+      const pl=tid? (L.players||{})[tid] : null, ros=tid? (L.roster||{})[tid] : null;
+      const have=!!(tid && pl && (pl.players||[]).length && !pl.partial && ros);
+      const calm=Date.now()-_preRefAt>1200 && !_preRefT;
+      if(!body.isConnected || (have && calm && Date.now()-t0>800) || Date.now()-t0>12000){
+        clearInterval(tm); body.classList.remove("pre-wait"); try{ ld.remove(); }catch(e){} }
+    }, 250);
+  }
   /* the migration runs for everyone, so a player opening the report sees the
      new shape too; only a coach's session writes the result back */
   { const _before=JSON.stringify(secs.map(s=>s&&(s.kind||s.role||s.title))); ensureCanonical(secs,kind);
@@ -10674,7 +10709,7 @@ function _preClub(){
    It asks now. The club list, the roster and the sheets are requested by the report itself
    when they are missing, and when any of them lands the report is drawn again - unless
    something is being typed into it, which is never interrupted. */
-let _preLive=null, _preRefreshing=false;
+let _preLive=null, _preRefreshing=false, _preWaited={};
 /* WHAT THE REPORT ITSELF IS BUILT FROM, outside the league panels that redraw themselves:
    which club it reads, that club's roster and its players' season. Only a change in one of
    those is a reason to draw the whole report again; every other answer from the league
@@ -15057,7 +15092,63 @@ function _gpLiveBlock(){
   const tabs=h("div",{class:"gp-live-tabs"}), body=h("div",{class:"gp-live-b"});
   wrap.appendChild(tabs); wrap.appendChild(body);
   let pick="auto", G=null, J=null, home=true, timer=0, lastN=-1, lastChange=Date.now(), over=false;
+  /* REPLAY, TO TRY THE PLAN BEFORE A GAME. A finished game of ours is played again as if it
+     were live: its play by play is cut at a clock that runs at the speed chosen, and the
+     whole game plan - the rotation's line, who is on the floor, our team, theirs, timeouts
+     and fouls - follows it exactly as it will during a game. Staff only; nothing is saved. */
+  let RP=null;
   const say=t=>{ tabs.innerHTML=""; body.innerHTML=""; body.appendChild(h("div",{class:"gp3-ksn"}, t)); };
+  if(!isPlayerUser()){
+    const bar=h("div",{class:"gp-rp"});
+    const L0=leagueState();
+    let tidUs=""; try{ tidUs=_lgOurTeamId(L0); }catch(e){}
+    const past=((L0.games||[]).concat(L0.cup||[])).filter(x=>_lgDone(x) && tidUs && (String(x.homeId)===String(tidUs)||String(x.awayId)===String(tidUs)))
+      .sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+    const sel=h("select",{class:"gp-rp-sel"}, past.map(x=>h("option",{value:x.id}, String(x.date).slice(5).split("-").reverse().join("/")+" · "+(String(x.homeId)===String(tidUs)? "vs "+_lgShort(x.away) : "@ "+_lgShort(x.home))+" "+x.hs+"–"+x.as)));
+    const spd=h("select",{class:"gp-rp-sel", title:"game seconds per second"}, [["10","×10"],["30","×30"],["60","×60"],["120","×120"]].map(o=>h("option",{value:o[0]}, o[1])));
+    spd.value="30";
+    const clk=h("b",{class:"gp-rp-clk"},"");
+    const cut=(Jf, T)=>{ const f=Jf.feed||{};
+      const acts=(f.actions||[]).filter(a=>_lgGameElapsed(a.quarter, a.time).t<=T);
+      const qNow=T<2400? Math.min(3, Math.floor(T/600)) : 4+Math.floor((T-2400)/300);
+      const starters=(f.starters||[]).filter(s=>_lgGameElapsed(s.quarter,0).qi<=qNow);
+      return { game:Jf.game, feed:Object.assign({}, f, { actions:acts, starters:starters, shots:(f.shots||[]).filter(s=>_lgGameElapsed(s.q, s.time).t<=T) }) }; };
+    const step=()=>{ if(!RP) return;
+      if(!wrap.isConnected){ clearInterval(RP.tm); RP=null; return; }
+      if(RP.playing) RP.T=Math.min(RP.end, RP.T+(+spd.value||30));
+      J=cut(RP.Jf, RP.T);
+      const left=(()=>{ const t=RP.T, qi=t<2400? Math.min(3,Math.floor(t/600)) : 4+Math.floor((t-2400)/300), base=qi<4? qi*600 : 2400+(qi-4)*300, len=qi<4? 600 : 300; const l=Math.max(0, len-(t-base));
+        return { qi:qi, s:String(Math.floor(l/60)).padStart(2,"0")+":"+String(Math.round(l%60)).padStart(2,"0") }; })();
+      GC={ status:"LIVE", progress:left.qi<4? "Q"+(left.qi+1) : "OT"+(left.qi-3), time:left.s, start:"" };
+      clk.textContent="REPLAY · "+_lgGameClock(RP.T);
+      draw();
+      if(RP.T>=RP.end){ RP.playing=false; play.textContent="▶"; }
+    };
+    const play=h("button",{type:"button", class:"gp-rp-b", onclick:async ()=>{
+      if(RP && RP.id===sel.value){ RP.playing=!RP.playing; play.textContent=RP.playing? "⏸" : "▶"; return; }
+      const x=past.filter(g=>String(g.id)===sel.value)[0]; if(!x) return;
+      play.disabled=true; clk.textContent="reading the game…";
+      const Jf=await fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(x.id)).then(r=>r.ok? r.json() : null).catch(()=>null);
+      play.disabled=false;
+      if(!Jf || !Jf.feed || !(Jf.feed.actions||[]).length){ clk.textContent="this game has no play by play"; return; }
+      if(RP && RP.tm) clearInterval(RP.tm);
+      const end=(Jf.feed.actions||[]).reduce((m,a)=>Math.max(m, _lgGameElapsed(a.quarter, a.time).t), 0);
+      RP={ id:x.id, Jf:Jf, T:0, end:end, playing:true, tm:0 };
+      G=x; home=String(x.homeId)===String(tidUs); over=false; postSeen=0;
+      wrap.classList.add("replay"); stopB.style.display="";
+      play.textContent="⏸";
+      RP.tm=setInterval(step, 1000); step(); }}, "▶");
+    const stopB=h("button",{type:"button", class:"gp-rp-b", style:"display:none", onclick:()=>{
+      if(RP && RP.tm) clearInterval(RP.tm); RP=null; G=null; J=null; GC=null; over=false;
+      wrap.classList.remove("replay"); stopB.style.display="none"; play.textContent="▶"; clk.textContent="";
+      _gpLiveNow=null; try{ window.dispatchEvent(new CustomEvent("gp-live")); }catch(e){}
+      read(false); }}, "■ Stop");
+    const jump=h("button",{type:"button", class:"gp-rp-b", title:"jump four minutes on", onclick:()=>{ if(RP){ RP.T=Math.min(RP.end, RP.T+240); const p=RP.playing; RP.playing=false; step(); RP.playing=p; } }}, "+4′");
+    bar.appendChild(h("span",{class:"gp-rp-l"},"Test · replay a game"));
+    if(past.length){ bar.appendChild(sel); bar.appendChild(spd); bar.appendChild(play); bar.appendChild(jump); bar.appendChild(stopB); bar.appendChild(clk); }
+    else bar.appendChild(h("span",{class:"gp-rp-n"},"no finished game of ours read yet"));
+    wrap.insertBefore(bar, tabs);
+  }
   if(!opp || !date || _gamePlaceholder(opp)){ say("The summary of the game appears here once the opponent and the day are known."); return wrap; }
   const today=(()=>{ try{ return todayISO(); }catch(e){ return ""; } })();
   const draw=()=>{
@@ -15070,7 +15161,7 @@ function _gpLiveBlock(){
     }
     wrap.classList.remove("empty");
     let maxQ=0; acts.forEach(a=>{ const q=_lgGameElapsed(a.quarter, a.time).qi; if(q>maxQ) maxQ=q; });
-    const live=!over && date===today;
+    const live=RP? true : (!over && date===today);
     const qn=q=>q<4? "Q"+(q+1) : "OT"+(q-3);
     tabs.innerHTML="";
     const lastT=acts.map(a=>_lgGameElapsed(a.quarter, a.time).t).reduce((m,v)=>Math.max(m,v),0);
@@ -15247,6 +15338,7 @@ function _gpLiveBlock(){
         : "From the tip-off the block shows where the game is; the summary arrives with the play by play.")));
     wrap.classList.remove("empty"); };
   const read=async fresh=>{
+    if(RP) return;   /* a replay is being played: the league is not read meanwhile */
     try{
       if(!G){
         const all=await _lgAll();
@@ -15324,7 +15416,7 @@ let _gpForPrint=false;
 /* the screen's arrangement, and what the staff last chose in it; the printed sheet is
    built with _gpClassic on, which is the arrangement its sizes were set for */
 let _gpClassic=false;
-const _gpUI=(()=>{ let o={}; try{ o=JSON.parse(localStorage.getItem("lowen-gpui")||"{}")||{}; }catch(e){} return { q:o.q||"Q1", q5:o.q5||"auto", roster:!!o.roster, mins:!!o.mins }; })();
+const _gpUI=(()=>{ let o={}; try{ o=JSON.parse(localStorage.getItem("lowen-gpui")||"{}")||{}; }catch(e){} return { q:o.q||"Q1", q5:o.q5||"auto", q5side:!!o.q5side, roster:!!o.roster, mins:!!o.mins }; })();
 let _gpQPick="auto";
 function _gpUISave(){ try{ localStorage.setItem("lowen-gpui", JSON.stringify(_gpUI)); }catch(e){} }
 function _gpNew(){ return !_gpClassic && !_gpForPrint; }
@@ -16040,7 +16132,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
          being played, with the box of the quarter being played beside it. */
       if(!canEd){
         const wrap5=h("div",{class:"gp4 dash gp5"});
-        wrap5.appendChild(h("div",{class:"gp5-wip"}, _wipTag(), h("span",{},"The game plan is being rebuilt as the bench's control panel: tell the staff what is missing or wrong.")));
+        try{ _wipArea(wrap5, "gameplan"); }catch(e){}
         /* OUR ROTATION FOLLOWS THE GAME. Auto: the board of the quarter being played (Q1 and
            Q3 read the Q1 board, Q2 and Q4 the Q2 board; before the tip-off, Q1), with that
            quarter's plan beside it and a line on the board at the minute being played. Q1 + Q2
@@ -16052,7 +16144,19 @@ function renderPlanSection(sec, canEd, save, allSecs){
         const paintQ=(pick)=>{ qbox.innerHTML="";
           const c=safe(()=>quarterCard(pick)); if(c) qbox.appendChild(c); else qbox.appendChild(h("div",{class:"gp3-ksn"},"Nothing written for "+pick+".")); };
         let shownQ="", shownMode="";
+        /* who is on the floor right now, under the board: each with how long he has been on
+           in this stint and the game clock he came in at */
+        const onNow=h("div",{class:"gp5-onnow"});
+        const paintOn=()=>{ onNow.innerHTML="";
+          const lv=_gpLiveNow; if(!lv || !lv.live || !lv.court) return;
+          const men=(lv.us||[]).map(p=>Object.assign({ c:(lv.court.u||{})[String(p.id)] }, p)).filter(p=>p.c && p.c.on);
+          if(!men.length) return;
+          onNow.appendChild(h("b",{},"On the floor"));
+          men.sort((a,b)=>(b.c.stint||0)-(a.c.stint||0)).forEach(p=>onNow.appendChild(h("span",{class:"gp5-onp"+((p.c.stint||0)>=480? " long" : ""), title:"in since "+_lgGameClock(lv.lastT-(p.c.stint||0))+" · "+_gpMmss(p.c.sec)+" in the game"},
+            (p.num? "#"+p.num+" " : "")+(_lgLastName(p.name||"")||""), h("em",{}, _gpMmss(p.c.stint)), h("i",{}, "in "+_lgGameClock(lv.lastT-(p.c.stint||0))))));
+        };
         const marker=()=>{ rotHost.querySelectorAll(".gp5-now").forEach(n=>n.remove());
+          paintOn();
           const Q=qOf(); if(!Q.live || !Q.lv) return;
           const base=Q.qi<4? Q.qi*600 : 2400+(Q.qi-4)*300, len=Q.qi<4? 600 : 300;
           const el=Q.lv.lastT-base; if(el<0 || el>len) return;
@@ -16072,8 +16176,12 @@ function renderPlanSection(sec, canEd, save, allSecs){
           } else {
             const b=h("div",{class:"gp5-board"}, quarterBoard(q)); b.dataset.q=q;
             paintQ(q);
-            rotHost.appendChild(h("div",{class:"gp5-rot1"}, b, h("div",{class:"gp5-side"}, h("div",{class:"gp5-side-h"}, q+" plan"+(mode==="auto"? " · follows the game" : "")), qbox)));
+            /* the plan beside the board can be folded away, and the board takes the width */
+            const side=h("div",{class:"gp5-side"}, h("div",{class:"gp5-side-h"}, h("span",{}, q+" plan"+(mode==="auto"? " · follows the game" : "")),
+              h("button",{type:"button", class:"gp5-fold", title:"Fold the plan away and give the board the width", onclick:()=>{ UI.q5side=!UI.q5side; _gpUISave(); shownMode=""; paintRot(); }}, UI.q5side? "◀ plan" : "plan ▶")), UI.q5side? null : qbox);
+            rotHost.appendChild(h("div",{class:"gp5-rot1"+(UI.q5side? " folded" : "")}, b, side));
           }
+          rotHost.appendChild(onNow);
           requestAnimationFrame(marker);
         };
         paintRot();
@@ -16408,6 +16516,7 @@ function _trendsPace(){
     h("div",{class:"trp-h"}, h("span",{class:"tr-no"},"PACE"), h("b",{},"Pace — how fast we play, game by game and inside the games"), _wipTag()));
   const body=h("div",{}, h("div",{class:"ld"},"Reading the season, game by game…", h("span",{class:"ld-bar"})));
   box.appendChild(body);
+  try{ _wipArea(box, "pace"); }catch(e){}
   _trgRead().then(R=>{
     body.innerHTML="";
     const G=(R.games||[]).filter(g=>g.pace && g.us);
@@ -16426,6 +16535,32 @@ function _trendsPace(){
       kpi("Our first shot", f1(sUs)+" s", "league "+f1(lgSec)+" s · last "+k+": "+f1(rUs)+" s", rUs!=null && sUs!=null? (rUs<sUs-0.5? "fast" : rUs>sUs+0.5? "slow" : "") : ""),
       kpi("Their first shot", f1(sTh)+" s", "how fast they shoot against us"),
       kpi("Possessions a game", f1(sP), "league "+f1(lgP)+" · last "+k+": "+f1(rP))));
+    /* PACE IN ONE LOOK. Where we sit between the slowest club and the fastest, where we put
+       our opponents, and every game and every quarter as a chip: green faster than the
+       league's average, red slower. The charts and the tables are under it, folded. */
+    { const lgR=Lg.lg && Lg.lg.rAvg, ref=lgSec;
+      const glance=h("div",{class:"trp-glance"});
+      if(lgR && ref!=null){
+        const lo=Math.min(lgR[0], sUs||lgR[0], sTh||lgR[0])-0.3, hi=Math.max(lgR[1], sUs||lgR[1], sTh||lgR[1])+0.3, X=v=>Math.round(100*(hi-v)/(hi-lo));
+        glance.appendChild(h("div",{class:"trp-scale"},
+          h("div",{class:"trp-sc-l"}, h("span",{},"◀ slower"), h("span",{},"faster ▶")),
+          h("div",{class:"trp-sc-t"},
+            h("span",{class:"trk", style:"left:"+X(lgR[1])+"%;right:"+(100-X(lgR[0]))+"%"}),
+            h("u",{style:"left:"+X(ref)+"%", title:"the league's average"}, h("em",{},"league "+ref.toFixed(1)+" s")),
+            sTh!=null? h("i",{class:"them", style:"left:"+X(sTh)+"%", title:"how fast our opponents shoot against us"}, h("em",{},"them "+sTh.toFixed(1))) : null,
+            sUs!=null? h("i",{class:"us", style:"left:"+X(sUs)+"%", title:"how fast we shoot"}, h("em",{},"us "+sUs.toFixed(1))) : null),
+          h("div",{class:"trp-sc-n"}, "the second of the possession the first shot goes up in · the grey band runs from the slowest club ("+lgR[1].toFixed(1)+" s) to the fastest ("+lgR[0].toFixed(1)+" s)")));
+      }
+      const chip=(lab, v, sub, d)=>h("span",{class:"trp-chip "+(d==null? "" : d<=-0.5? "fast" : d>=0.5? "slow" : "even"), title:sub}, h("b",{}, lab), h("em",{}, v==null? "—" : v.toFixed(1)+" s"), h("i",{}, sub));
+      glance.appendChild(h("div",{class:"trp-chips"}, h("span",{class:"trp-cl"},"Game by game"),
+        rows.map(r=>chip(r.code||String(r.d).slice(5), r.us, f1((r.pu+r.pt)/2)+" poss · "+(r.S.pts>r.O.pts? "W" : "L")+" "+r.S.pts+"–"+r.O.pts, (r.us!=null && ref!=null)? r.us-ref : null))));
+      const QN2=["Q1","Q2","Q3","Q4"];
+      const qv=QN2.map((nm,qi)=>{ let n=0, s=0; rows.forEach(r=>{ const q=r.q[qi]; if(q){ n+=q.u.n; s+=q.u.s; } }); return n? s/n : null; });
+      glance.appendChild(h("div",{class:"trp-chips"}, h("span",{class:"trp-cl"},"Inside the games"),
+        QN2.map((nm,qi)=>chip(nm, qv[qi], "our first shot in "+nm+", the season", (qv[qi]!=null && ref!=null)? qv[qi]-ref : null))));
+      glance.appendChild(h("div",{class:"trp-sc-n"}, "Green: faster than the league's average · red: slower · grey: about the same"));
+      body.appendChild(glance); }
+    const more=h("details",{class:"trp-more"}, h("summary",{},"All the numbers: the charts and the tables"));
     /* game by game: two lines on one axis, the league's average dashed */
     const line=(title, sub, series, ref, fmt, lo, hi)=>{
       const W=640, H=150, pl=34, pr=10, pt=10, pb=22, n=rows.length;
@@ -16444,7 +16579,7 @@ function _trendsPace(){
       const s=h("div",{}); s.innerHTML=svg; c.appendChild(s.firstChild);
       c.appendChild(h("div",{class:"pace-leg"}, series.map(x=>h("span",{}, h("i",{class:x.cls}), x.lab)), ref!=null? h("span",{}, h("u",{}), "league average") : null));
       return c; };
-    body.appendChild(h("div",{class:"trp-two"},
+    more.appendChild(h("div",{class:"trp-two"},
       line("Inside the possession", "the second our first shot goes up in, and theirs", [{ lab:"Us", v:rows.map(r=>r.us), cls:"us" }, { lab:"Them", v:rows.map(r=>r.them), cls:"them" }], lgSec, v=>v.toFixed(1)+"s"),
       line("The whole game", "possessions a game, ours and theirs", [{ lab:"Us", v:rows.map(r=>r.pu), cls:"us" }, { lab:"Them", v:rows.map(r=>r.pt), cls:"them" }], lgP, v=>v.toFixed(0))));
     /* WHAT THE PACE COMES WITH. The games where there were more possessions than our average
@@ -16478,13 +16613,13 @@ function _trendsPace(){
           h("td",{}, f1(orb(r))), h("td",{}, f1(drb(r))), h("td",{}, f1(tov(r))), h("td",{}, (won(r)? "W " : "L ")+r.S.pts+"–"+r.O.pts))); });
       ctx.appendChild(h("div",{class:"pb-scroll", style:"margin-top:8px"}, gt));
       ctx.appendChild(h("div",{class:"lg-sub", style:"margin-top:4px"},"Green: better for us in that column. With few games the split is thin; it says what has gone with our pace so far, not what causes what."));
-      body.appendChild(ctx); }
+      more.appendChild(ctx); }
     /* inside the games: quarter by quarter, the season's average and every game */
     const QN=["Q1","Q2","Q3","Q4","OT"];
     const qa=qi=>{ let n=0, s=0, p=0, g=0, tn=0, ts=0; rows.forEach(r=>{ const q=r.q[qi]; if(!q) return; n+=q.u.n; s+=q.u.s; tn+=q.t.n; ts+=q.t.s; p+=q.up; g++; }); return g? { sec:n? s/n : null, them:tn? ts/tn : null, poss:p/g, g:g } : null; };
     const QA=QN.map((x,i)=>qa(i)).filter((x,i)=>x && (i<4 || x.g));
     const qmx=Math.max.apply(null, QA.map(x=>x.sec||0).concat([lgSec||0, 1]));
-    body.appendChild(h("div",{class:"trp-q"}, h("div",{class:"trp-ct"}, h("b",{},"Inside the games"), h("span",{},"the season by quarter: when our first shot comes, and our possessions in the quarter")),
+    more.appendChild(h("div",{class:"trp-q"}, h("div",{class:"trp-ct"}, h("b",{},"Inside the games"), h("span",{},"the season by quarter: when our first shot comes, and our possessions in the quarter")),
       h("div",{class:"trp-qs"}, QA.map((x,i)=>h("div",{class:"trp-qc"},
         h("i",{}, QN[i]),
         h("div",{class:"trp-qb"}, h("span",{style:"height:"+Math.round(100*(x.sec||0)/qmx)+"%"}), lgSec!=null? h("u",{style:"bottom:"+Math.round(100*lgSec/qmx)+"%"}) : null),
@@ -16497,7 +16632,8 @@ function _trendsPace(){
         tr.appendChild(h("td",{class:"trp-c "+(v==null? "" : d<=-1.5? "fast2" : d<=-0.6? "fast" : d>=1.5? "slow2" : d>=0.6? "slow" : ""), title:q? QN[qi]+": "+(q.u.n||0)+" first shots, "+q.up+" possessions" : ""}, v==null? "—" : v.toFixed(1))); }
       tr.appendChild(h("td",{class:"grp"}, f1(r.us))); tr.appendChild(h("td",{}, f1(r.pu)));
       t.appendChild(tr); });
-    body.appendChild(h("div",{class:"trp-tw"}, h("div",{class:"trp-ct"}, h("b",{},"Game by game, quarter by quarter"), h("span",{},"our first-shot second · green faster than our season, red slower")), h("div",{class:"pb-scroll"}, t)));
+    more.appendChild(h("div",{class:"trp-tw"}, h("div",{class:"trp-ct"}, h("b",{},"Game by game, quarter by quarter"), h("span",{},"our first-shot second · green faster than our season, red slower")), h("div",{class:"pb-scroll"}, t)));
+    body.appendChild(more);
   }).catch(()=>{ body.innerHTML=""; body.appendChild(h("div",{class:"lg-empty"},"The season could not be read.")); });
   return box;
 }
@@ -17747,6 +17883,7 @@ function renderPlaybook(){
     grid.appendChild(card);
   });
   wrap.appendChild(grid);
+  if(kind==="ato"){ try{ _wipArea(grid, "ato"); }catch(e){} }
   wrap.appendChild(pbVideoPanel(canEd));
   root.appendChild(wrap);
 }
@@ -25996,27 +26133,42 @@ function renderDashboard(){
       const P=_videoPlan(G, T);
       let reps={}, srv=null, vt={}, practice=null, nRep=0;
       const need=preG.length+postG.length;
+      let showHidden=false;
+      /* OK takes a line off the card, and the hidden lines can be brought back: the staff
+         decides what still needs doing, not only what the reports say */
+      const setHide=async (k, on, label)=>{ const s=(await _staffDocGet(KEY))||{}; s.hide=s.hide||{};
+        if(on) s.hide[k]={ by:currentUser||"", at:new Date().toISOString(), label:label||"" }; else delete s.hide[k];
+        if(k.indexOf("rev:")===0){ s.review=s.review||{}; const id=k.slice(4); if(s.review[id]) s.review[id].done=!!on; }
+        if(await _staffDocPut(KEY, s)){ srv=s; paint(); } else toast("Not saved — check the connection"); };
       const paint=()=>{
         body.innerHTML="";
+        const hide=(srv && srv.hide)||{};
         const col=(title, rows, empty)=>h("div",{class:"dash-pend"}, h("div",{class:"dash-pend-h"}, h("b",{}, title), h("span",{}, rows.length? String(rows.length) : "✓")), rows.length? h("div",{}, rows) : h("div",{class:"dash-miss"}, empty));
         const done=(g,k)=>{ const r=reps[g.id]; if(r===undefined) return null; const m=repDoneMeta(r, k); return !!(m && m.done); };
-        const row=(g, sub, btn, cls)=>h("div",{class:"dash-pend-r "+(cls||"")}, crest(g), h("div",{}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+_lgShort(g.opponent)), h("span",{}, sub)), btn);
         const go=(lbl, fn)=>h("button",{type:"button", class:"dash-gp", onclick:fn}, lbl+" ›");
-        const pre=preG.filter(x=>done(x.g,"pre")===false).map(x=>row(x.g, "pre game · "+_dashFmt(x.g.date)+" · in "+dayDelta(x.g.date)+"d", go("Pre game", ()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:x.g.id } }))));
-        const post=postG.filter(x=>done(x.g,"post")===false).reverse().map(x=>row(x.g, "post game · "+_dashFmt(x.g.date), go("Post game", ()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:x.g.id } }))));
+        const okB=(k, label)=>h("button",{type:"button", class:"dash-gp ok", title:"Done: take it off the card", onclick:()=>setHide(k, true, label)}, "OK ✓");
+        const row=(k, label, g, sub, open, cls)=>h("div",{class:"dash-pend-r "+(cls||"")}, g? crest(g) : null,
+          h("div",{}, h("b",{}, label), h("span",{}, sub)), h("span",{class:"dash-pend-b"}, open, okB(k, label+" · "+sub)));
+        const gl=g=>(g.venue==="Away"? "@ " : "vs ")+_lgShort(g.opponent);
+        const pre=preG.filter(x=>done(x.g,"pre")===false && !hide["pre:"+x.g.id]).map(x=>row("pre:"+x.g.id, gl(x.g), x.g, "pre game · "+_dashFmt(x.g.date)+" · in "+dayDelta(x.g.date)+"d", go("Open", ()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:x.g.id } }))));
+        const post=postG.filter(x=>done(x.g,"post")===false && !hide["post:"+x.g.id]).reverse().map(x=>row("post:"+x.g.id, gl(x.g), x.g, "post game · "+_dashFmt(x.g.date), go("Open", ()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:x.g.id } }))));
         const rv=(srv && srv.review)||{};
-        const review=postG.filter(x=>rv[x.g.id] && !rv[x.g.id].done).reverse().map(x=>row(x.g, "post game · "+_dashFmt(x.g.date)+" · to review",
-          h("span",{class:"dash-pend-b"}, go("Open", ()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:x.g.id } })),
-            h("button",{type:"button", class:"dash-gp ok", onclick:async ()=>{ const s=(await _staffDocGet(KEY))||{}; s.review=s.review||{}; s.review[x.g.id]={ done:true, by:currentUser||"", at:new Date().toISOString() };
-              if(await _staffDocPut(KEY, s)){ srv=s; paint(); } else toast("Not saved — check the connection"); }}, "Reviewed ✓")), "rev"));
-        const tr=(P.train||[]).filter(t=>{ const f=practice? practice.filter(x=>window.LowenPostStats.fileDate(x.name)===t.d)[0] : null; return !f && !vt["train:"+t.d]; })
-          .slice().reverse().map(t=>h("div",{class:"dash-pend-r"}, h("div",{}, h("b",{}, _dashFmt(t.d)), h("span",{}, "training · no CSV in the Drive"+(t.pj && t.pj.md? " · "+t.pj.md : ""))), null));
-        const grid=h("div",{class:"dash-pend-g"},
+        const review=postG.filter(x=>rv[x.g.id] && !rv[x.g.id].done && !hide["rev:"+x.g.id]).reverse().map(x=>row("rev:"+x.g.id, gl(x.g), x.g, "post game · "+_dashFmt(x.g.date)+" · to review", go("Open", ()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:x.g.id } })), "rev"));
+        const tr=(P.train||[]).filter(t=>{ const f=practice? practice.filter(x=>window.LowenPostStats.fileDate(x.name)===t.d)[0] : null; return !f && !vt["train:"+t.d] && !hide["train:"+t.d]; })
+          .slice().reverse().map(t=>row("train:"+t.d, _dashFmt(t.d), null, "training · no CSV in the Drive"+(t.pj && t.pj.md? " · "+t.pj.md : ""), null));
+        body.appendChild(h("div",{class:"dash-pend-g"},
           col("Pre games to hand in", pre, nRep<need? "checking…" : "all handed in"),
           col("Post games to hand in", post, nRep<need? "checking…" : "all handed in"),
-          col("Post games to review", review, srv? "nothing flagged" : "…"),
-          col("Trainings to upload", tr, practice==null? "checking the Drive…" : "all uploaded or ticked"));
-        body.appendChild(grid);
+          col("Post games to review", review, srv? "nothing to review" : "…"),
+          col("Trainings to upload", tr, practice==null? "checking the Drive…" : "all uploaded or ticked")));
+        /* what was taken off, to bring back - a review marked done before this list existed included */
+        const hid=Object.keys(hide).map(k=>({ k:k, label:hide[k].label||k, at:hide[k].at }));
+        postG.forEach(x=>{ if(rv[x.g.id] && rv[x.g.id].done && !hide["rev:"+x.g.id]) hid.push({ k:"rev:"+x.g.id, label:gl(x.g)+" · post game · "+_dashFmt(x.g.date)+" · to review", at:rv[x.g.id].at }); });
+        if(hid.length){
+          body.appendChild(h("button",{type:"button", class:"dash-pend-more", onclick:()=>{ showHidden=!showHidden; paint(); }}, (showHidden? "▴ Hide" : "▾ Show")+" what was marked OK ("+hid.length+")"));
+          if(showHidden) body.appendChild(h("div",{class:"dash-pend-hid"}, hid.map(x=>h("div",{class:"dash-pend-r"}, h("div",{}, h("b",{}, x.label), h("span",{}, x.at? "marked OK "+String(x.at).slice(8,10)+"/"+String(x.at).slice(5,7) : "")),
+            h("button",{type:"button", class:"dash-gp", onclick:()=>setHide(x.k, false)}, "↩ Bring back")))));
+        }
       };
       /* the reports, one by one, as My work reads them */
       preG.concat(postG).forEach(x=>_dashRep(x.g).then(rep=>{ reps[x.g.id]=rep||null; nRep++; paint(); }).catch(()=>{ reps[x.g.id]=null; nRep++; paint(); }));
@@ -35224,6 +35376,28 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .ps-row.lg .ps-l{color:var(--ink-soft,#5b6472)}
 .pace-trio{margin-top:10px}
 .trp{margin-top:14px}
+.trp-glance{display:grid;gap:10px;margin:4px 0 10px}
+.trp-scale{border:1px solid var(--line,#e6e8ec);border-radius:10px;padding:8px 14px 6px;background:var(--panel,#fff)}
+.trp-sc-l{display:flex;justify-content:space-between;font:700 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a919c);text-transform:uppercase;letter-spacing:.06em}
+.trp-sc-t{position:relative;height:54px;margin:2px 6px}
+.trp-sc-t .trk{position:absolute;top:24px;height:8px;border-radius:4px;background:var(--line-strong,#d7dbe0)}
+.trp-sc-t u{position:absolute;top:16px;width:2px;height:24px;margin-left:-1px;background:#5b6472}
+.trp-sc-t u em{position:absolute;top:26px;left:50%;transform:translateX(-50%);font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:#5b6472;white-space:nowrap}
+.trp-sc-t i{position:absolute;top:20px;width:16px;height:16px;margin-left:-8px;border-radius:50%;box-shadow:0 0 0 3px var(--panel,#fff)}
+.trp-sc-t i.us{background:#c9a227}.trp-sc-t i.them{background:#c0392b}
+.trp-sc-t i em{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);font:800 11px 'IBM Plex Mono',monospace;font-style:normal;white-space:nowrap}
+.trp-sc-t i.us em{color:#8a6829}.trp-sc-t i.them em{color:#c0392b}
+.trp-sc-n{font-size:10.5px;color:var(--ink-faint,#8a919c)}
+.trp-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:stretch}
+.trp-cl{align-self:center;font:700 10px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft,#5b6472);min-width:110px}
+.trp-chip{display:flex;flex-direction:column;align-items:flex-start;border-radius:9px;padding:5px 10px;border:1px solid var(--line,#e6e8ec);background:var(--panel-2,#f6f7f9);min-width:92px}
+.trp-chip b{font:700 11px 'Oswald',sans-serif;letter-spacing:.08em}
+.trp-chip em{font:800 16px 'IBM Plex Mono',monospace;font-style:normal}
+.trp-chip i{font-style:normal;font-size:10px;color:var(--ink-faint,#8a919c)}
+.trp-chip.fast{background:rgba(31,138,76,.13);border-color:rgba(31,138,76,.4)}.trp-chip.fast em{color:#1f8a4c}
+.trp-chip.slow{background:rgba(192,57,43,.11);border-color:rgba(192,57,43,.35)}.trp-chip.slow em{color:#c0392b}
+.trp-more{margin-top:6px;border-top:1px solid var(--line,#e6e8ec);padding-top:6px}
+.trp-more > summary{cursor:pointer;font:700 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft,#5b6472);padding:4px 0}
 .trp-h{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}.trp-h b{font:700 15px 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase}
 .trp-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:10px}
 .trp-k{border:1px solid var(--line,#e6e8ec);border-radius:10px;padding:8px 12px;background:var(--panel,#fff)}
@@ -35405,6 +35579,15 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 /* ===== GAME PLAN · THE CONTROL PANEL (gp5) =====
    One scroll for the page, none inside it: rotation across the top, three columns under it,
    the game with this quarter's plan at the bottom. Sized for a tablet on its side. */
+.pre-wait{position:relative;min-height:240px}
+.pre-wait > *:not(.pre-wait-ld){visibility:hidden}
+.pre-wait-ld{position:absolute;top:30px;left:0;right:0;display:flex;justify-content:center;z-index:30}
+.wip-area{position:relative}
+.wip-dot{position:absolute;top:6px;left:6px;width:11px;height:11px;border-radius:50%;background:#f2c230;box-shadow:0 0 0 3px rgba(242,194,48,.3);z-index:20;pointer-events:auto;cursor:help}
+.wip-flash{position:absolute;inset:0;z-index:19;border-radius:12px;background:rgba(242,194,48,.28);box-shadow:inset 0 0 0 3px rgba(242,194,48,.85);pointer-events:none;display:flex;align-items:flex-start;justify-content:center;transform-origin:12px 12px;animation:wipPulse 2.6s ease-in-out 0s 1 both,wipShrink .8s ease-in 2.6s 1 forwards}
+.wip-flash b{margin-top:10px;font:700 11px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;background:#f2c230;color:#3b2a00;border-radius:999px;padding:3px 12px}
+@keyframes wipPulse{0%{opacity:0}15%{opacity:1}30%{opacity:.35}48%{opacity:1}64%{opacity:.35}82%{opacity:1}100%{opacity:.9}}
+@keyframes wipShrink{to{transform:scale(0);opacity:.6}}
 .wip-tag{display:inline-flex;align-items:center;margin-left:8px;font:700 9px 'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;background:#fff4d6;color:#8a5a00;border:1px dashed #d9a521;border-radius:999px;padding:2px 8px;vertical-align:middle;white-space:nowrap}
 .dash-wip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line,#eef0f3)}
 .dash-wip b{font:700 12px 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase}.dash-wip span:not(.wip-tag){display:block;font-size:11px;color:var(--ink-soft,#5b6472)}
@@ -35417,6 +35600,8 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .dash-pend-r > div{flex:1;min-width:0}.dash-pend-r b{display:block;font-size:12px}.dash-pend-r span{font-size:10.5px;color:var(--ink-faint,#8a919c)}
 .dash-pend-r.rev{background:rgba(217,165,33,.08)}
 .dash-pend-b{display:flex;gap:4px;flex-wrap:wrap}
+.dash-pend-more{margin-top:8px;border:0;background:none;color:var(--ink-soft,#5b6472);font:600 11px Inter,system-ui,sans-serif;cursor:pointer;padding:2px 0}
+.dash-pend-hid{border:1px dashed var(--line-strong,#d7dbe0);border-radius:9px;padding:4px 10px;margin-top:4px;opacity:.85}
 .dash-gp.ok{background:#2f9e86;color:#fff;border-color:#2f9e86}
 .wip-tag.sm{margin-left:4px;padding:0 5px;font-size:8px}
 .gp5-wip{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ink-soft,#5b6472)}
@@ -35431,6 +35616,15 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .gp5-side-h{font:700 10px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint,#8a919c);margin-bottom:4px}
 .gp5 .gp2-wrap{position:relative}
 .gp5-now{position:absolute;top:0;bottom:0;width:0;border-left:2.5px solid #d8524e;z-index:6;pointer-events:none}
+.gp5-rot1.folded{grid-template-columns:minmax(0,1fr) 92px}
+.gp5-side-h{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.gp5-fold{border:1px solid var(--line-strong,#d7dbe0);background:var(--panel,#fff);border-radius:6px;padding:1px 7px;font:700 9.5px 'Oswald',sans-serif;letter-spacing:.08em;cursor:pointer;color:var(--ink-soft,#5b6472)}
+.gp5-onnow{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:6px}
+.gp5-onnow > b{font:700 9.5px 'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:#1f8a4c;margin-right:4px}
+.gp5-onp{display:inline-flex;align-items:baseline;gap:6px;border:1px solid rgba(31,138,76,.4);background:rgba(31,138,76,.12);border-radius:7px;padding:2px 8px;font:700 11.5px 'Inter',system-ui,sans-serif}
+.gp5-onp em{font:800 12px 'IBM Plex Mono',monospace;font-style:normal;color:#1f8a4c}
+.gp5-onp i{font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a919c)}
+.gp5-onp.long{border-color:rgba(214,150,30,.6);background:rgba(214,150,30,.14)}.gp5-onp.long em{color:#a86a00}
 .gp5-now b{position:absolute;top:-2px;left:3px;font:800 9px 'IBM Plex Mono',monospace;background:#d8524e;color:#fff;border-radius:3px;padding:0 3px;white-space:nowrap}
 .gp5-tm{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin:0 0 6px;padding:4px 6px;border-radius:7px;background:var(--panel-2,#f4f5f7);font-size:11px}
 .gp5-tm.none{color:var(--ink-faint,#8a919c);font-size:10.5px}
@@ -35492,6 +35686,12 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .gp5-qcard .gp3-qc{border:0!important;padding:0!important}
 /* The game: tabs that are not played yet, and the video as a fold */
 .gp-live-tab.off{opacity:.35;cursor:default}
+.gp-rp{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 8px;padding:5px 8px;border:1px dashed var(--line-strong,#d7dbe0);border-radius:9px;font-size:11px}
+.gp-rp-l{font:700 9.5px 'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint,#8a919c)}
+.gp-rp-sel{font:600 11px Inter,system-ui,sans-serif;padding:2px 4px;border:1px solid var(--line-strong,#d7dbe0);border-radius:6px;background:var(--panel,#fff);color:var(--ink,#141821)}
+.gp-rp-b{border:1px solid #141821;background:#141821;color:#fff;border-radius:6px;padding:2px 9px;font:700 11px Inter,system-ui,sans-serif;cursor:pointer}
+.gp-rp-clk{font:800 11px 'IBM Plex Mono',monospace;color:#c0392b}
+.gp-live.replay{box-shadow:inset 0 0 0 2px rgba(192,57,43,.35);border-radius:10px}
 .gp-vid{margin-top:8px;border:1px solid var(--line,#e4e7ec);border-radius:9px;padding:4px 8px}
 .gp-vid > summary{cursor:pointer;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;padding:3px 0}
 .gp-vid .gp-tl-h > b{display:none}
