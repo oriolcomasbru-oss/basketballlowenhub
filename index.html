@@ -11764,11 +11764,12 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
   });
   if(!canEd) return;
   const on=(sel,fn)=>{ const n=q(sel); if(n) n.addEventListener("click",e=>{ e.preventDefault(); e.stopPropagation(); fn(); }); };
-  on(".card-delete", ()=>{ _preBinCard(C, pos, i); redraw(); });
+  on(".card-delete", ()=>{ _preBinCard(C, pos, i); redraw();
+    try{ toast((c.name||"The card")+" taken off — it is under “Taken off” at the foot of the board, ↩ puts it back"); }catch(e){} });
   on(".card-duplicate", ()=>{
     const copy=JSON.parse(JSON.stringify(c)); copy.id=uid();
     (C.pos[pos]||[]).splice(i+1,0,copy); redraw();
-  });
+    try{ toast((c.name||"The card")+" duplicated — the copy is right under it"); }catch(e){} });
   on(".add-block-btn", ()=>{ c.blocks=c.blocks||[]; c.blocks.push("New note"); redraw(); });
   /* THE STAT BAR COULD BE REMOVED AND NEVER PUT BACK. The cross on it empties the card's
      statistics, and the only way to get the league's numbers again was to rebuild every
@@ -11855,13 +11856,22 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
   const cox=q(".closeout-wrap .rm-x"); if(cox) cox.addEventListener("click",e=>{
     e.preventDefault(); e.stopPropagation(); c.co="off"; redraw(); });
   on(".add-co-btn", ()=>{ c.co="neutral"; redraw(); });
-  /* a card is dragged by its handle, as on the sheet, and dropped into any column */
+  /* A CARD IS DRAGGED BY ITS HANDLE ONLY. The whole card was draggable, so a press on Pub,
+     Duplicate or Delete that moved a hair started a drag instead and the press was lost - on
+     the iPad above all. The card becomes draggable while the handle is held, and only then. */
   const handle=q(".drag-handle");
-  card.setAttribute("draggable","true");
-  const start=()=>{ drag.from=pos; drag.i=i; card.classList.add("dragging"); };
+  card.setAttribute("draggable","false");
+  const arm=()=>card.setAttribute("draggable","true"), disarm=()=>card.setAttribute("draggable","false");
+  if(handle){ handle.addEventListener("pointerdown", arm); handle.addEventListener("mousedown", arm); handle.addEventListener("touchstart", arm, { passive:true }); }
+  ["pointerup","pointercancel","mouseup"].forEach(ev=>document.addEventListener(ev, ()=>{ if(!card.classList.contains("dragging")) disarm(); }));
+  const start=e=>{ if(card.getAttribute("draggable")!=="true"){ e.preventDefault(); return; } drag.from=pos; drag.i=i; card.classList.add("dragging"); };
   card.addEventListener("dragstart",start);
-  if(handle) handle.addEventListener("dragstart",start);
-  card.addEventListener("dragend",()=>card.classList.remove("dragging"));
+  card.addEventListener("dragend",()=>{ card.classList.remove("dragging"); disarm(); });
+  /* the toolbar says what it did: the eye says whether the players see him, and a duplicate
+     or a card taken off is said out loud - both happened before, with nothing to show it */
+  const pbt=q(".publish-toggle");
+  if(pbt){ const hid=c.pub===false; pbt.textContent=hid? "🚫 Hidden" : "👁 Visible"; pbt.classList.toggle("is-hidden", hid);
+    pbt.title=hid? "Players do not see this card - tap to show it to them" : "Players see this card - tap to hide it from them"; }
 }
 function _preRoleColsCap(){
   try{ return matchMedia("(max-width:760px)").matches ? 2 : 3; }catch(e){ return 3; }
@@ -12059,7 +12069,10 @@ function _preHl(L, card, c, canEd, save, tid){
     if(order[0]) pick[order[0].i]="hot"; if(order[1]) pick[order[1].i]="warm"; }
   cells.forEach((cell,i)=>{
     const lvl=pick[i];
-    if(lvl){ cell.classList.add("hl-"+lvl); const why=ranks && ranks[i] && ranks[i].why; if(why) cell.appendChild(h("span",{class:"hl-why"}, why)); }
+    /* the rank on one line and the season numbers it stands on under it, so neither is cut */
+    if(lvl){ cell.classList.add("hl-"+lvl); const why=ranks && ranks[i] && ranks[i].why;
+      if(why){ const k=String(why).indexOf(" · "); cell.appendChild(h("span",{class:"hl-why"}, k>0? why.slice(0,k) : why));
+        if(k>0) cell.appendChild(h("span",{class:"hl-basis"}, why.slice(k+3))); } }
     if(canEd){ const t=h("button",{type:"button", class:"hl-cell", title:"Light this number: none → solid → light (your choice replaces the automatic one)"}, lvl==="hot"? "●" : lvl==="warm"? "◐" : "○");
       t.addEventListener("click",e=>{ e.stopPropagation(); e.preventDefault();
         const cur=Object.assign({}, man? c.hlStats : pick); const now=cur[i];
@@ -31134,6 +31147,12 @@ body.role-player .phx .controls{display:none !important;}
     border:none; cursor:pointer; line-height:1; background:var(--green); color:#0B1210;
   }
 .phx .publish-toggle.is-hidden{background:var(--red); color:#fff;}
+/* the report board: the toolbar is a finger wide - the sheet drew it at 6.6 px */
+.pre-phx .card-toolbar{padding:6px 8px!important;gap:6px!important}
+.pre-phx .card-toolbar .drag-handle,.pre-phx .card-toolbar button{font-size:11px!important;padding:6px 10px!important;min-height:30px;border-radius:6px!important;touch-action:manipulation;cursor:pointer}
+.pre-phx .card-toolbar .drag-handle{cursor:grab}
+@media (pointer:coarse){ .pre-phx .card-toolbar .drag-handle,.pre-phx .card-toolbar button{min-height:38px;font-size:12px!important} }
+.pre-phx .card-toolbar .publish-toggle.is-hidden{background:var(--red,#c0392b)!important;color:#fff!important}
 .phx .card[data-published="false"]{opacity:0.42;}
 body.role-player .phx .card[data-published="false"]{display:none !important;}
 @media (max-width:640px){
@@ -36084,7 +36103,9 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .modal-stats .modal-stat-value{font-size:17px!important;line-height:1.1}
 .modal-stats .modal-stat-label{font-size:9px!important;letter-spacing:.06em;margin-top:2px}
 .modal-stats .modal-stat-value .sv-pc,.modal-stats .modal-stat-value .pct{color:var(--gold-soft,#c9a227);font-style:normal}
-.modal-stats .modal-stat-why{display:block;font:700 9px 'IBM Plex Mono',monospace;margin-top:2px;white-space:nowrap}
+.modal-stats .modal-stat-why{display:block;font:700 9px "IBM Plex Mono",monospace;margin-top:2px;white-space:normal;overflow-wrap:anywhere;line-height:1.15}
+.modal-stats .modal-stat-basis{display:block;font:600 8.5px "IBM Plex Mono",monospace;line-height:1.1;opacity:.85;white-space:normal}
+.modal-stats .modal-stat-cell.hl-hot .modal-stat-basis{color:#fff}.modal-stats .modal-stat-cell.hl-warm .modal-stat-basis{color:#c0403c}
 .modal-stats .modal-stat-cell.hl-hot{background:#d8524e!important;border-radius:6px}
 .modal-stats .modal-stat-cell.hl-hot *{color:#fff!important}
 .modal-stats .modal-stat-cell.hl-warm{background:rgba(216,82,78,.14)!important;border-radius:6px}
@@ -36274,7 +36295,10 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .phx .card .stat-cell.hl-hot .stat-value,.phx .card .stat-cell.hl-hot .stat-label,.phx .card .stat-cell.hl-hot .sv-pc,.phx .card .stat-cell.hl-hot .sv-sep{color:#fff!important}
 .phx .card .stat-cell.hl-warm{background:rgba(216,82,78,.14)!important;border-radius:8px}
 .phx .card .stat-cell.hl-warm .stat-value{color:#c0403c!important}
-.phx .card .stat-cell .hl-why{display:block;font:700 9px 'IBM Plex Mono',monospace;margin-top:1px;white-space:nowrap}
+.phx .card .stat-cell .hl-why{display:block;font:700 9px "IBM Plex Mono",monospace;margin-top:1px;white-space:normal;overflow-wrap:anywhere;line-height:1.15}
+/* the season numbers the rank stands on, under it */
+.phx .card .stat-cell .hl-basis{display:block;font:600 8.5px "IBM Plex Mono",monospace;line-height:1.1;opacity:.85;white-space:normal;overflow-wrap:anywhere}
+.phx .card .stat-cell.hl-hot .hl-basis{color:#fff}.phx .card .stat-cell.hl-warm .hl-basis{color:#c0403c}
 .phx .card .stat-cell.hl-hot .hl-why{color:#fff}.phx .card .stat-cell.hl-warm .hl-why{color:#c0403c}
 .phx .card .hl-cell{position:absolute;top:1px;left:2px;right:auto;z-index:2;border:0;background:transparent;font-size:10px;line-height:1;cursor:pointer;color:#8a93a2;padding:0;opacity:.6}
 .phx .card .stat-cell.hl-hot .hl-cell{color:#fff}
@@ -38277,6 +38301,8 @@ function _deadFetch(url){
       div.querySelector('.modal-stat-label').textContent = sl ? sl.textContent : '';
       var why = cell.querySelector('.hl-why');
       if(why){ var w = document.createElement('span'); w.className = 'modal-stat-why'; w.textContent = why.textContent; div.appendChild(w); }
+      var basis = cell.querySelector('.hl-basis');
+      if(basis){ var bs = document.createElement('span'); bs.className = 'modal-stat-basis'; bs.textContent = basis.textContent; div.appendChild(bs); }
       mStats.appendChild(div);
     });
     /* KEY / STOP HIM travels with the card */
