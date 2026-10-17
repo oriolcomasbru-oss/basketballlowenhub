@@ -921,6 +921,14 @@ exports.handler = async (event) => {
         } catch (e) { why = (e && e.message) || "download failed"; }
       }
       if (!pb) return json(200, { id: p.plan, plan: null, warn: ["could not open the sheet (" + why + ")"] });
+      /* ?dbg=1: the raw text pieces of the coloured-stretch lines with where they sit - to see
+         why a line was read the way it was (staff only, as the rest of this call) */
+      if (p.dbg === "1") {
+        const Ld = pdfLayout(pb, zlib, PDFX);
+        const hit = Ld.texts.filter(function (t) { return /FIRST|NEXT|LAST|ALL|GtoG|POP|SIDE|SPECIAL|=/.test(String(t.s || "")); })
+          .map(function (t) { return { x: Math.round(t.x * 10) / 10, y: Math.round(t.y * 10) / 10, s: String(t.s || "") }; });
+        return json(200, { id: p.plan, dbg: hit.slice(0, 200) });
+      }
       let got;
       try { got = parseGamePlan(pdfLayout(pb, zlib, PDFX)); }
       catch (e) { return json(200, { id: p.plan, plan: null, warn: ["could not read the sheet (" + ((e && e.message) || e) + ")"] }); }
