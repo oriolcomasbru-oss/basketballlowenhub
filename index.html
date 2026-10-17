@@ -11334,7 +11334,7 @@ function _preCardToPhx(L, c){
            minutes:String(c.min||""), tagline:String(c.tag||""),
            stats:(c.stats||[]).map(x=>[String(x[0]),String(x[1])]),
            closeout:c.co||"neutral", hand:String(c.hand||""),
-           doubt:!!c.doubt, doubtWhy:String(c.doubtWhy||""),
+           doubt:!!(c.doubt||c.out), doubtWhy:String(c.doubtWhy||""),
            pub:(c.pub!==false), unlocked:!!c.unlocked,
            photo: c.pid? _lgImgUrl(L,"player",c.pid) : "", px:c.px, py:c.py, ps:c.ps,
            ideas:(c.ideas||[]).slice(), blocks:(c.blocks||[]).slice(), yt:c.yt||"" };
@@ -11613,7 +11613,9 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
   const db=q(".doubt-badge");
   if(db) db.addEventListener("click",e=>{
     e.preventDefault(); e.stopPropagation();
-    c.doubt=!c.doubt; if(!c.doubt) c.doubtWhy=""; redraw();
+    /* ? -> DOUBT -> OUT (he will not play: the card stays, greyed) -> nothing */
+    if(c.out){ c.out=false; c.doubt=false; c.doubtWhy=""; } else if(c.doubt){ c.doubt=false; c.out=true; } else c.doubt=true;
+    redraw();
   });
   put(q(".doubt-why"), ()=>c.doubtWhy, v=>{ c.doubtWhy=v; });
   /* the closeout strip: click it to walk through unrated, shooter, mix, driver */
@@ -11797,6 +11799,10 @@ function _preHlExtra(L, c, tid, ranks){
   return best;
 }
 function _preHl(L, card, c, canEd, save, tid){
+  /* he will not play: the card stays where it is, in grey, the badge saying OUT */
+  if(c.out){ card.classList.add("is-out");
+    const db=card.querySelector(".doubt-badge"); if(db){ db.textContent="OUT"; db.classList.add("on","out"); db.title="Will not play — click to clear"; } }
+  else { const db=card.querySelector(".doubt-badge"); if(db && !c.doubt) db.title="Mark him doubtful (click again: will not play)"; }
   /* the frame */
   const lv=c.hl==="key"? "key" : c.hl==="stop"? "stop" : "";
   /* the tag takes its own place beside the name and the passport line, in the flow, so
@@ -12285,6 +12291,7 @@ function _preRolesBoardBlock(L, tid, C, canEd, save){
         title: hd === "L" ? "Left handed" : "Right handed" }, hd));
     /* the minutes, bottom right, and KEY / STOP HIM from the card, small */
     { const mm=/(\d+(?:[.,]\d+)?)/.exec(String(t.card.min||t.card.minutes||"")); if(mm) ph.appendChild(h("span",{class:"vb-min", title:"Minutes per game"}, mm[1].replace(",",".")+"'")); }
+    if(t.card.out) el.classList.add("vb-out");
     if(t.card.hl==="key" || t.card.hl==="stop"){ el.classList.add("vb-"+t.card.hl);
       ph.appendChild(h("span",{class:"vb-hlb"}, t.card.hl==="key"? "KEY" : "STOP")); }
     el.appendChild(ph);
@@ -14867,6 +14874,58 @@ function _gpLiveIdeas(U, T, X, F, ctx){
   if(ctx.ourTrouble.length) def.push({ k:"bad", t:"Foul trouble: "+ctx.ourTrouble.map(p=>nm(p)+" "+p.pf).join(", ") });
   return { off:off.slice(0,6), def:def.slice(0,6) };
 }
+/* HOW LONG EACH OF OURS HAS BEEN ON THE FLOOR. The five the league names at the start of
+   every period, moved by every substitution of ours, up to the last thing that happened:
+   each man's minutes in the game, and right now either how long he has been on in this
+   stint or how long he has been sitting. The bench reads it to know who needs a rest and
+   who is fresh. */
+function _gpCourt(feed, uc, now){
+  const stq={}; (feed.starters||[]).forEach(s=>{ if(s.teamcode!==uc) return; const q=_lgGameElapsed(s.quarter,0).qi;
+    stq[q]=[1,2,3,4,5].map(n=>String(s["player_id"+n]||"")).filter(v=>v && v!=="0"); });
+  const A=(feed.actions||[]).map((a,i)=>{ const e=_lgGameElapsed(a.quarter, a.time); return { a:a, t:e.t, qi:e.qi, i:i }; })
+    .filter(o=>o.t<=now).sort((p,q)=>(p.t-q.t)||(p.i-q.i));
+  let maxQ=0; A.forEach(o=>{ if(o.qi>maxQ) maxQ=o.qi; });
+  const stints=[]; let on=new Set();
+  for(let q=0;q<=maxQ;q++){
+    const base=q<4? q*600 : 2400+(q-4)*300, len=q<4? 600 : 300, end=Math.min(base+len, now);
+    if(stq[q] && stq[q].length) on=new Set(stq[q]);
+    let cur=base;
+    A.filter(o=>o.qi===q).forEach(o=>{ const a=o.a;
+      if(a.action!=="SUBST" || a.teamcode!==uc) return;
+      if(o.t>cur) stints.push({ t0:cur, t1:o.t, ids:Array.from(on) });
+      on.delete(String(a.player_id1)); const inn=String(a.player_id2||""); if(inn && inn!=="0") on.add(inn);
+      cur=Math.max(cur, o.t); });
+    if(end>cur) stints.push({ t0:cur, t1:end, ids:Array.from(on) });
+  }
+  const P={};
+  stints.forEach(s=>s.ids.forEach(id=>{ const p=P[id]||(P[id]={ sec:0, last:-1, segs:[] }); p.sec+=s.t1-s.t0; p.segs.push([s.t0,s.t1]); p.last=Math.max(p.last, s.t1); }));
+  Object.keys(P).forEach(id=>{ const p=P[id];
+    p.on=on.has(id) && p.last>=now-1;
+    /* the stint he is in: back from now while the segments touch */
+    if(p.on){ let t=now; for(let i=p.segs.length-1;i>=0;i--){ const g=p.segs[i]; if(g[1]>=t-1){ t=Math.min(t,g[0]); } else break; } p.stint=now-t; }
+    else p.rest=now-p.last; });
+  return P;
+}
+function _gpCourtEl(feed, uc, now, men, live){
+  const P=_gpCourt(feed, uc, now);
+  const mm=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
+  const rows=(men||[]).map(m=>Object.assign({ m:m }, P[String(m.id)]||{ sec:0 })).filter(r=>r.sec>0 || r.on);
+  if(!rows.length) return h("span",{});
+  rows.sort((a,b)=>(b.on?1:0)-(a.on?1:0) || (a.on? (b.stint||0)-(a.stint||0) : (b.sec-a.sec)));
+  const box=h("div",{class:"gp-court"}, h("div",{class:"gp-lv-l"}, live? "On the floor · our minutes" : "Our minutes"));
+  const t=h("table",{class:"gp-court-t"});
+  t.appendChild(h("tr",{}, h("th",{},"#"), h("th",{class:"l"},"Player"), h("th",{},"MIN"), h("th",{}, live? "Now" : ""), h("th",{},"PF")));
+  rows.forEach(r=>{ const m=r.m;
+    const now2=!live? "" : r.on? "on "+mm(r.stint||0) : "bench "+mm(r.rest||0);
+    const tired=live && r.on && (r.stint||0)>=480;
+    t.appendChild(h("tr",{class:(r.on && live? "on" : "")+(tired? " tired" : "")},
+      h("td",{class:"n"}, m.num? String(m.num) : ""), h("td",{class:"l"}, _lgLastName(m.name||"")||("#"+m.num)),
+      h("td",{class:"min"}, mm(r.sec)), h("td",{class:"now"}, now2), h("td",{class:(m.pf>=4? "pf bad" : "pf")}, m.pf!=null? String(m.pf) : "")));
+  });
+  box.appendChild(t);
+  if(live) box.appendChild(h("div",{class:"gp-court-n"},"Counted from the league's starting fives and our substitutions. Amber: on for 8 minutes or more in a row."));
+  return box;
+}
 function _gpLiveBlock(){
   const wrap=h("div",{class:"gp-live"});
   const opp=_scoutOpponent||"", date=_scoutDate||"";
@@ -14987,6 +15046,8 @@ function _gpLiveBlock(){
     if(ourTrouble.length) al.push(["bad", "OUR FOULS", ourTrouble.map(p=>nm(p)+" "+p.pf).join(" · ")]);
     if(theirTrouble.length) al.push(["good", "THEIR FOULS", theirTrouble.map(p=>"#"+p.num+" "+nm(p)+" "+p.pf).join(" · ")]);
     if(al.length) body.appendChild(h("div",{class:"gp-lv-al"}, al.map(x=>h("span",{class:"gp-lv-a "+x[0]}, h("i",{}, x[1]), x[2]))));
+    /* our minutes, always the whole game so far, whatever stretch is being shown */
+    try{ body.appendChild(_gpCourtEl(feed, uc, lastT, UG.pl, live)); }catch(e){ try{ console.warn("court", e); }catch(_){} }
     /* WHAT IS DECIDING THIS STRETCH. Every measure is turned into the points it is worth to
        one side or the other in the stretch shown - threes made, twos made, free throws, and
        the points that came off turnovers, second chances and the break - and the ones worth
@@ -15032,7 +15093,7 @@ function _gpLiveBlock(){
     const tg=h("button",{class:"gp-lv-tg", type:"button", onclick:()=>{ _gpLiveAll=!_gpLiveAll; draw(); }}, _gpLiveAll? "▴ Fewer numbers" : "▾ All the numbers");
     body.appendChild(tg);
     if(_gpLiveAll) body.appendChild(more);
-    stat.textContent=live? "live · updates every 30 s" : "final";
+    stat.textContent=live? "live · updates every 2 s" : "final";
     stat.className="gp-live-st"+(live?" on":"");
     try{ paintStat(); }catch(e){}
   };
@@ -24303,7 +24364,7 @@ function _dashRosterInto(box, g, wide){
     const used={};
     const man=(p, start, cd)=>{ if(cd) used[cd.id||cd.name]=1;
       const ideas=((cd && cd.ideas)||[]).filter(x=>String(x||"").trim()).slice(0, wide? 3 : 2);
-      return h("div",{class:"dash-man"+(start? " start" : "")+((cd && (cd.hl==="key"||cd.hl==="stop"))? " hl-"+cd.hl : ""), style:(cd && CO[cd.co])? "border-left-color:"+CO[cd.co] : ""},
+      return h("div",{class:"dash-man"+(start? " start" : "")+((cd && (cd.hl==="key"||cd.hl==="stop"))? " hl-"+cd.hl : "")+((cd && cd.out)? " is-out" : ""), style:(cd && CO[cd.co])? "border-left-color:"+CO[cd.co] : ""},
         h("div",{class:"l1"}, h("u",{}, (p.num||(cd&&cd.num))? "#"+(p.num||cd.num) : ""), h("b",{}, _lgLastName(p.name||(cd&&cd.name)||"")),
           (p.last===false)? h("em",{title:"Did not play their last game"},"?") : null,
           cd && cd.badge==="NEW"? h("span",{class:"new"},"NEW") : null,
@@ -34326,6 +34387,26 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .modal-hl{display:inline-block;vertical-align:middle;margin-left:10px;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;padding:3px 10px;border-radius:999px}
 .modal-hl.key{background:#c6a15b;color:#141821}.modal-hl.stop{background:#d8524e;color:#fff}
 .modal-box.hl-key{box-shadow:0 0 0 3px #c6a15b,0 20px 60px rgba(0,0,0,.35)!important}.modal-box.hl-stop{box-shadow:0 0 0 3px #d8524e,0 20px 60px rgba(0,0,0,.35)!important}
+/* OUT: he will not play - the card in grey, its OUT badge in full colour */
+.gp-court{margin:10px 0 4px}
+.gp-court-t{width:100%;max-width:520px;border-collapse:collapse;font-size:12.5px}
+.gp-court-t th{font:600 9.5px 'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint,#8a919c);padding:3px 6px;text-align:center;border-bottom:1px solid var(--line,#e6e8ec)}
+.gp-court-t th.l,.gp-court-t td.l{text-align:left}
+.gp-court-t td{padding:4px 6px;text-align:center;border-bottom:1px solid var(--line,#eef0f3);font-family:'IBM Plex Mono',monospace}
+.gp-court-t td.l{font-family:'Inter',system-ui,sans-serif;font-weight:600}
+.gp-court-t td.n{color:var(--ink-faint,#8a919c)}
+.gp-court-t tr.on td{background:rgba(31,138,76,.08)}
+.gp-court-t tr.on td.now{color:#1f8a4c;font-weight:700}
+.gp-court-t tr.tired td{background:rgba(214,150,30,.14)}
+.gp-court-t tr.tired td.now{color:#a86a00}
+.gp-court-t td.now{color:var(--ink-soft,#5b6472)}
+.gp-court-t td.pf.bad{color:#c0392b;font-weight:700}
+.gp-court-n{font-size:10.5px;color:var(--ink-faint,#8a919c);margin-top:4px}
+.phx .card.is-out{filter:grayscale(1);opacity:.55}
+.phx .card.is-out:hover{opacity:.8}
+.phx.phx .card .doubt-badge.out{background:#5b6472!important;color:#fff!important;border-color:#5b6472!important}
+.phx.pre-roles .vb-tile.vb-out{filter:grayscale(1);opacity:.5}
+.dash-man.is-out{filter:grayscale(1);opacity:.5}
 .phx .card .hl-head{display:flex;align-items:flex-start;gap:8px}
 .phx .card .hl-head-t{flex:1 1 auto;min-width:0}
 .phx .card .hl-head > .hl-badge{position:static;flex:0 0 auto;margin-top:1px;font:700 10px 'Oswald',sans-serif;letter-spacing:.12em;padding:3px 9px;border-radius:999px;color:#fff;white-space:nowrap;line-height:1.3}
