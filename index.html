@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BL-BasketHub</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>
 :root{
   --bg:#f4f5f7;
@@ -10770,7 +10772,10 @@ let _preLive=null, _preRefreshing=false, _preWaited={};
 function _preSig(){
   try{ const L=leagueState(), tid=_preClub()||"";
     const ros=((L.roster||{})[tid]||{}).players||[], pl=(L.players||{})[tid]||{};
-    return [tid, (L.teams||[]).length? 1 : 0, ros.length, (pl.players||[]).length, pl.partial? 1 : 0, (L.alias||{})[_lgNorm(_scoutOpponent||"")]||""].join("|");
+    /* our tagging of the club is part of what is drawn: when it lands the report is drawn again
+       (it was not, so the roster table said "Our tagging · reading…" until editing was turned on) */
+    let tg=""; try{ tg=_preTagOn? _preTagState() : ""; }catch(e){}
+    return [tid, (L.teams||[]).length? 1 : 0, ros.length, (pl.players||[]).length, pl.partial? 1 : 0, (L.alias||{})[_lgNorm(_scoutOpponent||"")]||"", tg].join("|");
   }catch(e){ return ""; }
 }
 function _preRefresh(){
@@ -22878,7 +22883,9 @@ function _preTagRows(tid){
     if(!_preTagOn || !_scoutOpponent) return null;
     const K=_preTagKeep, opp=_scoutOpponent;
     const SP=window.ScoutPre;
-    const again=()=>{ _lgEmbeds=_lgEmbeds.filter(x=>x.el && document.body.contains(x.el)); _lgEmbeds.forEach(x=>{ try{ x.draw(); }catch(e){} }); };
+    const again=()=>{ _lgEmbeds=_lgEmbeds.filter(x=>x.el && document.body.contains(x.el)); _lgEmbeds.forEach(x=>{ try{ x.draw(); }catch(e){} });
+      /* and the report itself, whose roster table carries the tagging */
+      try{ _preRefresh(); }catch(e){} };
     /* the tagging reader is its own script and can arrive after the report is drawn */
     if(!SP || !SP.playersOf){ if((K.wait=(K.wait||0)+1)<=60) setTimeout(again, 750); return null; }
     const e=K.by[opp];
