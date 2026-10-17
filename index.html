@@ -3544,6 +3544,7 @@ function applyView(v){
     }
   }catch(e){}
   syncPrintBtn();
+  try{ _viewGate(v); }catch(e){}
 }
 /* the fade at the end of the tab strip is only honest while there is something past it */
 function tbFade(){
@@ -3551,6 +3552,28 @@ function tbFade(){
   t.classList.toggle("more", t.scrollWidth - t.clientWidth > 2);
 }
 try{ window.addEventListener("resize", tbFade); }catch(e){}
+/* A PAGE OPENS WHEN IT IS READY. Opening a view hides it behind one loading line while
+   anything on it is still reading (its loading bars); once nothing has been reading for
+   half a second it is shown, all at once - twelve seconds at the most. The game plan is
+   the exception: it opens at once and fills in, because during a game nobody waits. */
+const VIEW_EL={dashboard:"#viewDash",rooster:"#viewRooster",planification:"#viewPlan",calendar:"#viewCal",league:"#viewLeague",teamscout:"#viewTeamScout",oppscout:"#viewOppScout",playbook:"#viewPlaybook",playerdev:"#viewPlayerDev",playerdb:"#viewPlayerDB",trends:"#viewTrends",prob:"#viewProb"};
+let _vgT=0;
+function _viewGate(v){
+  if(v==="gameplan") return;
+  const root=document.querySelector(VIEW_EL[v]||""); if(!root) return;
+  if(_vgT){ clearInterval(_vgT); _vgT=0; }
+  document.querySelectorAll(".view-wait").forEach(x=>{ x.classList.remove("view-wait"); x.querySelectorAll(":scope > .view-wait-ld").forEach(n=>n.remove()); });
+  const busy=()=>Array.from(root.querySelectorAll(".ld, .pre-wait")).some(n=>!n.closest(".view-wait-ld") && (n.offsetParent || n.classList.contains("pre-wait")));
+  if(!busy()) return;
+  root.classList.add("view-wait");
+  root.appendChild(h("div",{class:"view-wait-ld"}, h("div",{class:"ld"},"Loading…", h("span",{class:"ld-bar"}))));
+  const t0=Date.now(); let quiet=0;
+  _vgT=setInterval(()=>{
+    const b=busy(); quiet=b? 0 : (quiet||Date.now());
+    if((quiet && Date.now()-quiet>500) || Date.now()-t0>12000 || root.style.display==="none"){
+      clearInterval(_vgT); _vgT=0; root.classList.remove("view-wait"); root.querySelectorAll(":scope > .view-wait-ld").forEach(n=>n.remove()); }
+  }, 200);
+}
 function setView(v){
   if(viewHist[viewIdx]!==v){ viewHist=viewHist.slice(0,viewIdx+1); viewHist.push(v); viewIdx=viewHist.length-1; }
   try{ useView(v); }catch(e){}
@@ -14718,6 +14741,7 @@ let _gpLivePick="auto", _gpLiveAll=false, _gpVidOpen={};
    stint, fouls and the quarter. Player Status and their roster draw from it - one reading,
    never typed in twice. */
 let _gpLiveNow=null;
+const _ksMemo={};
 function _gpLivePublish(o){
   try{ o.court={ u:_gpCourt(o.feed, o.uc, o.lastT), t:_gpCourt(o.feed, o.uc==="A"? "B" : "A", o.lastT) }; }catch(e){ o.court={ u:{}, t:{} }; }
   try{ o.tm={ u:_gpTeamInfo(o.feed, o.uc, o.maxQ, o.lastT), t:_gpTeamInfo(o.feed, o.uc==="A"? "B" : "A", o.maxQ, o.lastT) }; }catch(e){ o.tm=null; }
@@ -15105,8 +15129,8 @@ function _gpLiveBlock(){
     const past=((L0.games||[]).concat(L0.cup||[])).filter(x=>_lgDone(x) && tidUs && (String(x.homeId)===String(tidUs)||String(x.awayId)===String(tidUs)))
       .sort((a,b)=>String(b.date).localeCompare(String(a.date)));
     const sel=h("select",{class:"gp-rp-sel"}, past.map(x=>h("option",{value:x.id}, String(x.date).slice(5).split("-").reverse().join("/")+" · "+(String(x.homeId)===String(tidUs)? "vs "+_lgShort(x.away) : "@ "+_lgShort(x.home))+" "+x.hs+"–"+x.as)));
-    const spd=h("select",{class:"gp-rp-sel", title:"game seconds per second"}, [["10","×10"],["30","×30"],["60","×60"],["120","×120"]].map(o=>h("option",{value:o[0]}, o[1])));
-    spd.value="30";
+    const spd=h("select",{class:"gp-rp-sel", title:"game seconds per second"}, [["1","×1"],["5","×5"],["10","×10"],["30","×30"],["60","×60"]].map(o=>h("option",{value:o[0]}, o[1])));
+    spd.value="1";
     const clk=h("b",{class:"gp-rp-clk"},"");
     const cut=(Jf, T)=>{ const f=Jf.feed||{};
       const acts=(f.actions||[]).filter(a=>_lgGameElapsed(a.quarter, a.time).t<=T);
@@ -15115,7 +15139,7 @@ function _gpLiveBlock(){
       return { game:Jf.game, feed:Object.assign({}, f, { actions:acts, starters:starters, shots:(f.shots||[]).filter(s=>_lgGameElapsed(s.q, s.time).t<=T) }) }; };
     const step=()=>{ if(!RP) return;
       if(!wrap.isConnected){ clearInterval(RP.tm); RP=null; return; }
-      if(RP.playing) RP.T=Math.min(RP.end, RP.T+(+spd.value||30));
+      if(RP.playing) RP.T=Math.min(RP.end, RP.T+(+spd.value||1));
       J=cut(RP.Jf, RP.T);
       const left=(()=>{ const t=RP.T, qi=t<2400? Math.min(3,Math.floor(t/600)) : 4+Math.floor((t-2400)/300), base=qi<4? qi*600 : 2400+(qi-4)*300, len=qi<4? 600 : 300; const l=Math.max(0, len-(t-base));
         return { qi:qi, s:String(Math.floor(l/60)).padStart(2,"0")+":"+String(Math.round(l%60)).padStart(2,"0") }; })();
@@ -15164,7 +15188,17 @@ function _gpLiveBlock(){
     const live=RP? true : (!over && date===today);
     const qn=q=>q<4? "Q"+(q+1) : "OT"+(q-3);
     tabs.innerHTML="";
-    const lastT=acts.map(a=>_lgGameElapsed(a.quarter, a.time).t).reduce((m,v)=>Math.max(m,v),0);
+    /* THE CLOCK, NOT THE LAST PLAY. In a replay the clock it is being played at; live, the
+       league's own game clock when it is ahead of the last play written - so the minutes, the
+       stints and the line on the rotation run between plays and do not wait for the next one. */
+    const evT=acts.map(a=>_lgGameElapsed(a.quarter, a.time).t).reduce((m,v)=>Math.max(m,v),0);
+    const gcT=(()=>{ if(RP || !GC || GC.status!=="LIVE" || /_break/i.test(String(GC.progress||""))) return 0;
+      const m=/^Q(d)/i.exec(String(GC.progress||"")), o=/^OT(d*)/i.exec(String(GC.progress||""));
+      const qi=m? (+m[1])-1 : o? 3+(+(o[1]||1)) : -1; if(qi<0) return 0;
+      const base=qi<4? qi*600 : 2400+(qi-4)*300, len=qi<4? 600 : 300;
+      const tm=String(GC.time||"").split(":").map(Number); const left=tm.length>=2? tm[tm.length-2]*60+tm[tm.length-1] : NaN;
+      return isFinite(left)? base+Math.max(0, Math.min(len, len-left)) : 0; })();
+    const lastT=RP? RP.T : Math.max(evT, gcT);
     const cur=(_gpLivePick==="auto")? (live? maxQ : "g") : ((typeof _gpLivePick==="number" && _gpLivePick>maxQ)? "g" : _gpLivePick);
     const tab=(k,lab,cls)=>tabs.appendChild(h("button",{class:"gp-live-tab"+(cur===k?" on":"")+(cls? " "+cls : ""), type:"button", onclick:()=>{ _gpLivePick=k; draw(); }}, lab));
     /* the four quarters always, the overtimes when there are any, the game and the last two minutes */
@@ -16003,7 +16037,8 @@ function renderPlanSection(sec, canEd, save, allSecs){
     let ROWS=null, FAIL="";
     const say=t=>{ body.innerHTML=""; body.appendChild(h("div",{class:"gp3-ksn"}, t)); };
     const draw=()=>{
-      if(ROWS===null && !FAIL){ say("Reading the tagging…"); return; }
+      /* still reading the tagging: the starred sets are listed at once, their calls follow */
+      if(ROWS===null && !FAIL && !stored().length){ say("Reading the tagging…"); return; }
       const rows=ROWS||[];
       const marked=rows.filter(r=>{ try{ return _pbKeyRead(r.label); }catch(e){ return false; } });
       /* the club's list keeps the names in small letters and the tagging keeps them as they
@@ -16026,7 +16061,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
       const maxN=Math.max.apply(null, marked.map(r=>r.n||0).concat([1]));
       /* a starred set the tagging no longer lists is still a key set: it is shown, and it
          says why it has no family and no call */
-      extra.forEach(l=>put(FAIL? "Key sets" : "Not in the tagging", "", 9, nameOf(l), ""));
+      extra.forEach(l=>put(FAIL? "Key sets" : ROWS===null? "Key sets · reading the calls…" : "Not in the tagging", "", 9, nameOf(l), ""));
       /* inside a band, what they call comes before what just happens */
       const SUB=["Called set","After timeout","Ball screen, no call","Vs zone","No structure","Early offense","Fastbreak","Press break"];
       const sr=x=>{ const i=SUB.indexOf(x); return i<0? SUB.length : i; };
@@ -16063,12 +16098,15 @@ function renderPlanSection(sec, canEd, save, allSecs){
     };
     draw();
     try{ if(tid) _clubPull(tid, ()=>{ try{ draw(); }catch(e){} }); }catch(e){}
+    /* the tagging's sets are kept for the visit: the second time they are there at once */
+    const fromBase=base=>{ const all=(window.ScoutPre.pbSplit? window.ScoutPre.pbSplit(base, splits) : base).map(r=>calls[r.label]? Object.assign({}, r, { call:calls[r.label] }) : r);
+      return all.filter(r=>_pbClass(r).kind!=="Concepts"); };
     if(opp && window.ScoutPre && window.ScoutPre.sets){
+      if(_ksMemo[opp]){ ROWS=fromBase(_ksMemo[opp]); draw(); }
       window.ScoutPre.sets(opp, null).then(res=>{
-        const base=((res&&res.rows)||[]);
-        const all=(window.ScoutPre.pbSplit? window.ScoutPre.pbSplit(base, splits) : base).map(r=>calls[r.label]? Object.assign({}, r, { call:calls[r.label] }) : r);
-        ROWS=all.filter(r=>_pbClass(r).kind!=="Concepts"); draw(); })
-        .catch(()=>{ ROWS=[]; FAIL="The tagging could not be read, so the families and the calls are missing."; draw(); });
+        const base=((res&&res.rows)||[]); _ksMemo[opp]=base;
+        ROWS=fromBase(base); draw(); })
+        .catch(()=>{ if(ROWS===null){ ROWS=[]; FAIL="The tagging could not be read, so the families and the calls are missing."; draw(); } });
     } else { ROWS=[]; if(!opp) FAIL=""; draw(); }
     return wrap;
   }
@@ -35284,8 +35322,8 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .phx .card.hl-key .hl-rib{background:#1f4e9a}
 .phx .card.hl-stop .hl-rib{background:#c62828}
 /* when somebody is marked, the others step back */
-.phx.pre-phx.has-hl .card:not(.hl-key):not(.hl-stop){opacity:.72;filter:saturate(.7)}
-.phx.pre-phx.has-hl .card:not(.hl-key):not(.hl-stop):hover{opacity:1;filter:none}
+.phx.pre-phx.has-hl .card:not(.hl-key):not(.hl-stop):not(.is-out){opacity:.9;filter:saturate(.88)}
+.phx.pre-phx.has-hl .card:not(.hl-key):not(.hl-stop):not(.is-out):hover{opacity:1;filter:none}
 .phx .card.hl-stop{box-shadow:0 0 0 4px #c62828,0 10px 26px rgba(198,40,40,.32)!important}
 .phx .card .photo{position:relative}
 .phx .card > .hl-badge{position:absolute;right:8px;top:6px;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;padding:4px 10px;border-radius:999px;color:#fff;z-index:3;pointer-events:none}
@@ -35582,6 +35620,9 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .pre-wait{position:relative;min-height:240px}
 .pre-wait > *:not(.pre-wait-ld){visibility:hidden}
 .pre-wait-ld{position:absolute;top:30px;left:0;right:0;display:flex;justify-content:center;z-index:30}
+.view-wait{position:relative;min-height:300px}
+.view-wait > *:not(.view-wait-ld){visibility:hidden}
+.view-wait-ld{position:absolute;top:60px;left:0;right:0;display:flex;justify-content:center;z-index:40}
 .wip-area{position:relative}
 .wip-dot{position:absolute;top:6px;left:6px;width:11px;height:11px;border-radius:50%;background:#f2c230;box-shadow:0 0 0 3px rgba(242,194,48,.3);z-index:20;pointer-events:auto;cursor:help}
 .wip-flash{position:absolute;inset:0;z-index:19;border-radius:12px;background:rgba(242,194,48,.28);box-shadow:inset 0 0 0 3px rgba(242,194,48,.85);pointer-events:none;display:flex;align-items:flex-start;justify-content:center;transform-origin:12px 12px;animation:wipPulse 2.6s ease-in-out 0s 1 both,wipShrink .8s ease-in 2.6s 1 forwards}
