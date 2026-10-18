@@ -17226,7 +17226,39 @@ function renderPlanSection(sec, canEd, save, allSecs){
            themselves; thirty seconds before a change the plan has, the man coming in blinks
            yellow; and every minute already played whose five was not the plan's is marked
            red, with the man who was really on the floor written under the planned one. */
-        const marker=()=>{ rotHost.querySelectorAll(".gp5-now,.gp5-real").forEach(n=>n.remove());
+        /* OUR POINTS A POSSESSION AND THEIRS, MINUTE BY MINUTE, under the board's ten columns: OER
+           ours, DER theirs, in the minutes of the quarter being played - so a minute marked red on
+           the board shows right under it what it gave. A minute has two possessions or so, so each
+           cell says the points too, and the possessions are the box score's estimate (≈). */
+        const rateMemo={};
+        const rateRows=(Q, base)=>{
+          const L=Q.lv, acts=(L.feed && L.feed.actions)||[], el=L.lastT-base;
+          const key=(L.G? L.G.id : "")+"|"+Q.qi+"|"+acts.length+"|"+L.lastT;
+          let M=rateMemo[key];
+          if(!M){ M=[];
+            for(let c=0;c<GP_COLS;c++){
+              if(c*60>el){ M.push(null); continue; }
+              const t0=base+c*60, t1=base+(c+1)*60;
+              const W=_gpLiveWin(L.feed, L.uc, o=>o.qi===Q.qi && o.t>=t0 && (o.t<t1 || c===GP_COLS-1), {});
+              const P=S=>{ const pos=Math.max(0, S.fga-S.or+S.tov+0.44*S.fta); return { pos:pos, pts:S.pts, ppp:pos>=0.5? S.pts/pos : null }; };
+              M.push({ o:P(W.u), d:P(W.t), cur:el<(c+1)*60 && el<GP_COLS*60 });
+            }
+            Object.keys(rateMemo).forEach(k=>delete rateMemo[k]); rateMemo[key]=M; }
+          const qn="Q"+(Q.qi+1);
+          const row=(lab, side, tip)=>{ const tr=h("tr",{class:"gp5-rt "+side}, h("td",{class:"gp2-pos", title:tip}, lab));
+            M.forEach((m,c)=>{ if(!m){ tr.appendChild(h("td",{class:"v"})); return; }
+              const x=m[side], ppp=x.ppp;
+              const tone=ppp==null? "" : side==="o"? (ppp>=1.1? "good" : ppp<=0.85? "bad" : "") : (ppp<=0.85? "good" : ppp>=1.1? "bad" : "");
+              const when=qn+" "+(GP_COLS-c)+"′–"+(GP_COLS-c-1)+"′";
+              tr.appendChild(h("td",{class:"v "+tone+(m.cur? " cur" : "")+(x.pos<1.5? " thin" : ""),
+                  title:when+" · "+(side==="o"? "we scored " : "they scored ")+x.pts+" in ≈"+x.pos.toFixed(1)+" possessions"+(m.cur? " (minute being played)" : "")},
+                h("b",{}, ppp==null? "—" : ppp.toFixed(2)), h("em",{}, x.pts+" pts"))); });
+            return tr; };
+          return [ h("tr",{class:"gp5-rt gap"}, h("td",{colspan:String(GP_COLS+1)})),
+            row("OER", "o", "our points a possession in each minute (possessions ≈ from the box score)"),
+            row("DER", "d", "their points a possession in each minute (possessions ≈ from the box score)") ];
+        };
+        const marker=()=>{ rotHost.querySelectorAll(".gp5-now,.gp5-real,.gp5-rt").forEach(n=>n.remove());
           rotHost.querySelectorAll(".gp2-st.soon,.gp2-st.diff").forEach(n=>n.classList.remove("soon","diff"));
           paintOn();
           const Q=qOf(); if(!Q.live || !Q.lv){ paintNext(null); return; }
@@ -17243,11 +17275,41 @@ function renderPlanSection(sec, canEd, save, allSecs){
             /* thirty seconds before the next minute where the plan brings a man in */
             const nextC=Math.ceil(el/60), toGo=nextC*60-el;
             if(nextC>0 && nextC<10 && toGo<=30) w.querySelectorAll('td.gp2-st.in[data-c="'+nextC+'"]').forEach(td=>td.classList.add("soon"));
+            /* the minutes played: the plan's five against the five really on the floor */
+            const lv=Q.lv, segs={}; Object.keys((lv.court && lv.court.u)||{}).forEach(id=>{ segs[id]=lv.court.u[id].segs||[]; });
+            const onAt=t=>Object.keys(segs).filter(id=>segs[id].some(g=>t>=g[0] && t<g[1]));
+            const nicks=plan.pool.map(p=>p.name), byNick=_gpMatchAll(nicks, lv.us||[]);
+            const idOf={}; plan.pool.forEach(p=>{ const m=byNick[p.name]; if(m) idOf[p.id]=String(m.id); });
+            /* a name of the plan who is on our squad but did not play tonight is known to be off the floor */
+            const known={}; { const sq=_gpMatchAll(nicks, _gpOurMen()||[]); plan.pool.forEach(p=>{ if(idOf[p.id] || sq[p.name]) known[p.id]=1; }); }
+            const nameOf={}; (lv.us||[]).forEach(p=>{ nameOf[String(p.id)]=_lgLastName(p.name||"")||("#"+p.num); });
+            const posOf=_gpPosOf(lv.us||[]);
+            const qn=Q.board;
+            for(let c=0;c<10;c++){
+              const t=base+c*60+30; if(t>lv.lastT) break;
+              const real=onAt(t); if(real.length!==5) continue;
+              const rowPid=GP_ROWS.map((pos,r)=>((plan.grid[qn]||[])[r]||[])[c]||"");
+              const planned=rowPid.filter(Boolean);
+              if(!planned.length) continue;   /* a minute the plan leaves empty is not compared */
+              if(planned.some(pid=>!known[pid])) continue;   /* a name of the plan not read at all: nothing is claimed */
+              const plannedIds=rowPid.map(pid=>pid? (idOf[pid]||"") : "");
+              if(planned.length===5 && real.every(id=>plannedIds.indexOf(id)>=0)) continue;   /* the plan's five */
+              /* not the plan's five: the five on the floor seated by the positions they play,
+                 and every row whose man is not the plan's is marked with the man playing it */
+              const seat=_gpSeat(plannedIds, real, posOf);
+              GP_ROWS.forEach((pos,r)=>{ const id=seat[r]; if(!id || !rowPid[r] || id===plannedIds[r]) return;
+                const td=w.querySelector('td.gp2-st[data-c="'+c+'"][data-r="'+r+'"]'); if(!td) return;
+                const was=rowPid[r]? _gpById(plan, rowPid[r]) : null;
+                td.classList.add("diff");
+                td.title=(was? "planned "+was.name : "nobody planned")+" · playing the "+pos+": "+nameOf[id]+(real.indexOf(plannedIds[r])>=0? " ("+(was? was.name : "")+" is on, at another position)" : "");
+                td.appendChild(h("span",{class:"gp5-real"}, nameOf[id])); });
+            }
+            /* under the board, minute by minute, our points a possession and theirs */
+            const tb=w.querySelector("table.gp2-tbl"); if(tb) rateRows(Q, base).forEach(tr=>tb.appendChild(tr));
           });
           paintNext(Q); };
-        /* THE NEXT CHANGES OF THE PLAN, FROM THE FLOOR AS IT IS. The board used to mark in red every
-           minute played off the plan; the bench breaks the plan when it has to and that told it
-           nothing. What it wants is to be ahead of the next change: the next minute where the plan
+        /* THE NEXT CHANGES OF THE PLAN, FROM THE FLOOR AS IT IS. The red marks say what was played
+           off the plan; this says what comes: the next minute where the plan
            changes its five (this quarter, or how the next quarter starts), how long until then, and
            who has to come in and go out to get from the five on the floor to that one - each one
            paired with the man he replaces by the position he takes. Nothing when the floor is
@@ -36815,6 +36877,17 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .gp5 .gp2-st.soon{animation:gpSoon 1.2s ease-in-out infinite}
 .gp5 .gp2-st.diff{box-shadow:inset 0 0 0 2px #d8524e!important}
 .gp5 .gp2-st .gp5-real{display:block;font:800 9.5px 'Inter',system-ui,sans-serif;color:#c0392b;line-height:1;margin-top:1px;text-transform:uppercase}
+.gp5 tr.gp5-rt.gap td{height:5px;padding:0!important;border:0!important}
+.gp5 tr.gp5-rt td.v{text-align:center;padding:2px 0!important;box-shadow:inset 1px 0 0 var(--gp-tick);border-top:1px solid var(--gp-tick);line-height:1;color:var(--ink,#141821)}
+.gp5 tr.gp5-rt td.v b{display:block;font:800 11px 'IBM Plex Mono',monospace}
+.gp5 tr.gp5-rt td.v em{display:block;font:600 8.5px 'Inter',system-ui,sans-serif;font-style:normal;opacity:.7;margin-top:1px}
+.gp5 tr.gp5-rt td.v.good{background:#d9f2e3;color:#0f5132}
+.gp5 tr.gp5-rt td.v.bad{background:#fbe1df;color:#8a1c17}
+.gp5 tr.gp5-rt td.v.thin{opacity:.6}
+.gp5 tr.gp5-rt td.v.cur{outline:1.5px dashed rgba(216,82,78,.7);outline-offset:-2px}
+.gp5 tr.gp5-rt td.gp2-pos{font-size:10px!important}
+body.dark .gp5 tr.gp5-rt td.v.good{background:rgba(46,160,90,.28);color:#9fe0b8}
+body.dark .gp5 tr.gp5-rt td.v.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 /* THE BENCH'S IPAD (Safari): everything that is tapped is a finger wide - 40 px high at least -
    no grey flash and no double-tap zoom on a tap, and the selects at 16 px so iOS does not zoom
    in on them */
