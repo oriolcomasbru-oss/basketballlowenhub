@@ -11538,6 +11538,9 @@ function _preOpenCard(L, tid, c, canEd, save){
     });
     const tl=card.querySelector(".tagline");
     if(tl && !tl.textContent.trim()){ const w=tl.closest(".tagline-wrap"); (w||tl).remove(); }
+    /* THE SAME CARD AS ON THE BOARD: the KEY / STOP HIM band and frame, OUT, the lit boxes with
+       their rank - the board's card had them and the one opened beside the video did not */
+    try{ _preHl(L, card, c, false, ()=>{}, _preClub()); }catch(e){}
     col.appendChild(card);
   }
   cols.appendChild(col);
