@@ -36720,6 +36720,26 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .gp5 .gp-lv-tg{margin-top:6px}
 .gp4-sec{border:1px solid var(--line,#e4e7ec);border-radius:11px;background:var(--panel,#fff);margin:0 0 10px;overflow:hidden;min-width:0}
 .gp4-h{display:flex;align-items:center;gap:10px;background:#141821;color:#fff;padding:5px 12px;min-height:30px}
+/* PHONES AND SMALL TABLETS: the game plan fits the screen - headings wrap, the board keeps the width its names need and slides under the finger */
+@media (max-width:760px){
+  .gp4-h{flex-wrap:wrap;row-gap:6px;padding:6px 10px}
+  .gp4-h .sub{flex:1 1 100%;order:3}
+  .gp4-tools{margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
+  .gp5 .gp5-board{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .gp5 .gp5-board .gp2-wrap{min-width:640px}
+  .gp5 .gp4-b{padding-left:8px;padding-right:8px}
+  /* the reminders: the title over its text, the whole width for the words, OK on the right */
+  .gp5-al.big{grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:8px 10px}
+  .gp5-al.big b{grid-column:1;font-size:15px;white-space:normal}
+  .gp5-al.big span{grid-column:1;-webkit-line-clamp:3;font-size:13px}
+  .gp5-al.big em{grid-column:2;grid-row:1 / span 2;padding:8px 10px}
+  /* in the bar the arrow and the two buttons first, the chips after them */
+  .gp5-al-arrow{order:-2}.gp5-al-btn{order:-1}.gp5-al-sp{display:none}
+  /* the timeout card heading on two lines */
+  .gp7-h{flex-wrap:wrap}.gp7-h span{flex:1 1 100%;order:3}.gp7-h b{font-size:17px}
+  /* room under the last block for the badge Netlify lays over the corner */
+  #workspace{padding-bottom:84px}
+}
 .gp4-h > b{font:700 12px 'Oswald',sans-serif;letter-spacing:.17em;text-transform:uppercase;white-space:nowrap}
 .gp4-h .sub{font:400 10.5px 'Inter',system-ui,sans-serif;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .gp4-sec.them .gp4-h{background:#8a2f2b}
