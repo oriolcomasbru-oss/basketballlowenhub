@@ -16738,20 +16738,25 @@ function renderPlanSection(sec, canEd, save, allSecs){
         return { S:S, link:link }; };
       const tc=L.uc==="A"? "B" : "A", U=side(L.uc), T=side(tc), tot=X=>G.concat([""]).reduce((n,g)=>n+X.S[g].pts,0);
       const tu=tot(U)||1, tt=tot(T)||1;
-      const tb=h("table",{class:"gp6-cct gp6-pos"});
-      tb.appendChild(h("tr",{}, h("th",{class:"l"},"Position"), h("th",{},"Our pts"), h("th",{},"FG"), h("th",{},"Ast"), h("th",{class:"sep"}), h("th",{},"Their pts"), h("th",{},"FG"), h("th",{},"Ast")));
-      G.concat(U.S[""].pts||T.S[""].pts? [""] : []).forEach(g=>{ const a=U.S[g], b=T.S[g];
-        const share=(x,n)=>Math.round(100*x/n);
-        tb.appendChild(h("tr",{class:(share(b.pts,tt)>=40 && b.pts>=12)? "bad" : ""},
-          h("td",{class:"l"}, g? (g==="1"? "1 · point guards" : g==="2-3"? "2–3 · wings" : g==="4"? "4 · power forwards" : "5 · centres") : "no position"),
-          h("td",{}, a.pts+" ", h("em",{}, share(a.pts,tu)+"%")), h("td",{}, a.fgm+"/"+a.fga), h("td",{}, String(a.ast)), h("td",{class:"sep"}),
-          h("td",{class:"them"}, b.pts+" ", h("em",{}, share(b.pts,tt)+"%")), h("td",{}, b.fgm+"/"+b.fga), h("td",{}, String(b.ast))));
+      /* ONE LINE A GROUP, BOTH TEAMS FACING: our points to the left of the group, theirs to the
+         right, each bar as long as its points against the most any group has scored tonight - who
+         is scoring for whom, read at a glance. A group of theirs with 40% of their points is red. */
+      const rows=G.concat(U.S[""].pts||T.S[""].pts? [""] : []);
+      const mx=Math.max.apply(null, [1].concat(rows.map(g=>Math.max(U.S[g].pts, T.S[g].pts))));
+      const share=(x,n)=>Math.round(100*x/n), fg=s=>s.fga? s.fgm+"/"+s.fga+" FG" : "";
+      const bw=v=>"width:"+Math.round(72*v/mx)+"%";
+      const box=h("div",{class:"gp9-pos"});
+      box.appendChild(h("div",{class:"gp9-ph"}, h("span",{class:"u"},"Us ", h("b",{}, String(tot(U)))), h("span",{}), h("span",{class:"t"},"Them ", h("b",{}, String(tot(T))))));
+      rows.forEach(g=>{ const a=U.S[g], b=T.S[g], hot=share(b.pts,tt)>=40 && b.pts>=12;
+        box.appendChild(h("div",{class:"gp9-pr"+(hot? " hot" : "")},
+          h("div",{class:"u", title:share(a.pts,tu)+"% of our points · "+a.ast+" assists"}, h("span",{class:"n"}, h("b",{}, String(a.pts)), h("em",{}, fg(a))), h("i",{class:"bar", style:bw(a.pts)})),
+          h("div",{class:"g"}, h("b",{}, g||"–"), h("em",{}, g==="1"? "PG" : g==="2-3"? "wings" : g==="4"? "PF" : g==="5"? "C" : "no pos")),
+          h("div",{class:"t", title:share(b.pts,tt)+"% of their points · "+b.ast+" assists"}, h("i",{class:"bar", style:bw(b.pts)}), h("span",{class:"n"}, h("b",{}, String(b.pts)), h("em",{}, fg(b))))));
       });
-      wrap.appendChild(tb);
-      const links=X=>Object.entries(X.link).sort((a,b)=>b[1]-a[1]).slice(0,4).map(e=>e[0]+" ×"+e[1]).join(" · ")||"—";
-      wrap.appendChild(h("div",{class:"gp6-defl"}, h("b",{},"Our assists, from → to · "), links(U)));
-      wrap.appendChild(h("div",{class:"gp6-defl"}, h("b",{},"Their assists, from → to · "), links(T)));
-      wrap.appendChild(h("div",{class:"gp5-note"}, "Ours by the bench's positions (first one) · theirs by their card's column on the pre game board, else the league's position · each man counted once"));
+      wrap.appendChild(box);
+      const links=X=>Object.entries(X.link).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>e[0]+" ×"+e[1]).join(" · ")||"—";
+      wrap.appendChild(h("div",{class:"gp9-ast"}, h("span",{}, h("b",{},"Our assists "), links(U)), h("span",{}, h("b",{},"Theirs "), links(T))));
+      wrap.appendChild(h("div",{class:"gp5-note"}, "Ours by the bench's first position · theirs by their card's column on the pre game board, else the league's · each man counted once"));
     };
     paint();
     const on=()=>{ if(!wrap.isConnected){ if(wrap.__was) window.removeEventListener("gp-live", on); return; } wrap.__was=1; paint(); };
@@ -16773,18 +16778,24 @@ function renderPlanSection(sec, canEd, save, allSecs){
       if(!F.length){ wrap.appendChild(h("div",{class:"gp3-ksn"},"No five has played half a minute yet.")); return; }
       const nameOf={}; (L.us||[]).forEach(p=>{ nameOf[String(p.id)]=_lgLastName(p.name||"")||("#"+p.num); });
       const onNow=Object.keys((L.court && L.court.u)||{}).filter(id=>L.court.u[id].on).sort().join("|");
-      const tb=h("table",{class:"gp6-cct"});
-      tb.appendChild(h("tr",{}, h("th",{class:"l"},"Five"), h("th",{},"Min"), h("th",{},"Pts"), h("th",{},"+/-"), h("th",{title:"our points a possession"},"Off PPP"), h("th",{title:"their points a possession"},"Def PPP")));
-      /* short by default: the three fives with most minutes; all of them on a tap */
+      /* ONE CARD A FIVE: the five names, a bar of its minutes against the five that played most,
+         the +/- big in its colour with the score under it, and the points a possession both ways.
+         Short by default - the three fives with most minutes; all of them on a tap. */
+      const maxSec=Math.max.apply(null, F.map(f=>f.sec));
+      const pill=(lab, v, n, side)=>{ const tn=v==null || n<4? "" : side==="o"? (v>=1.1? "good" : v<=0.85? "bad" : "") : (v<=0.85? "good" : v>=1.1? "bad" : "");
+        return h("span",{class:"pl "+tn, title:(side==="o"? "our" : "their")+" points a possession · ≈"+Math.round(n)+" possessions"}, h("em",{}, lab), v==null? "—" : v.toFixed(2)); };
+      const list=h("div",{class:"gp9-fives"});
       F.slice(0, _fivesAll? 10 : 3).forEach(f=>{ const d=f.pf-f.pa, po=f.pu>=1? f.pf/f.pu : null, pd=f.pt>=1? f.pa/f.pt : null;
         const tone=(f.pu+f.pt)<6? "" : d>=4? "good" : d<=-4? "bad" : "";
-        tb.appendChild(h("tr",{class:tone+(f.ids.slice().sort().join("|")===onNow && L.live? " now" : "")},
-          h("td",{class:"l"}, f.ids.map(id=>nameOf[id]||"?").join(" · ")),
-          h("td",{}, _gpMmss(f.sec)), h("td",{}, f.pf+"–"+f.pa), h("td",{class:"pm"}, (d>0? "+" : "")+d),
-          h("td",{}, po==null? "—" : po.toFixed(2)), h("td",{}, pd==null? "—" : pd.toFixed(2)))); });
-      wrap.appendChild(tb);
+        const isNow=f.ids.slice().sort().join("|")===onNow && L.live;
+        list.appendChild(h("div",{class:"gp9-five "+tone+(isNow? " now" : "")},
+          h("div",{class:"nm"}, f.ids.map(id=>h("span",{}, nameOf[id]||"?")), isNow? h("b",{class:"on"},"On now") : null),
+          h("div",{class:"mn"}, h("span",{class:"tr"}, h("i",{style:"width:"+Math.round(100*f.sec/maxSec)+"%"})), h("span",{class:"t"}, _gpMmss(f.sec))),
+          h("div",{class:"pm"}, h("b",{}, (d>0? "+" : "")+d), h("em",{}, f.pf+"–"+f.pa)),
+          h("div",{class:"pp"}, pill("Off", po, f.pu, "o"), pill("Def", pd, f.pt, "d")))); });
+      wrap.appendChild(list);
       if(F.length>3) wrap.appendChild(h("button",{type:"button", class:"gp6-more", onclick:()=>{ _fivesAll=!_fivesAll; wrap.__sig=""; paint(); }}, _fivesAll? "▴ Fewer" : "▾ All "+Math.min(10,F.length)+" fives"));
-      wrap.appendChild(h("div",{class:"gp5-note"},"Most minutes first · the one on the floor now is outlined · green / red from 4 points either way (6+ possessions) · possessions ≈ from the box score"));
+      wrap.appendChild(h("div",{class:"gp5-note"},"Most minutes first · green / red from 4 points either way (6+ possessions) · Off / Def = points a possession, ≈ from the box score"));
     };
     paint();
     const on=()=>{ if(!wrap.isConnected){ if(wrap.__was) window.removeEventListener("gp-live", on); return; } wrap.__was=1; paint(); };
@@ -37105,6 +37116,55 @@ body.dark .gp5 tr.gp5-rt td.v.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp6-pos th.sep,.gp6-pos td.sep{width:10px;padding:0;border:0}
 .gp6-pos tr.bad td.them{background:#fbe1df;color:#8a1c17;font-weight:800}
 .gp6-more{margin:4px 0 6px;min-height:34px;padding:4px 12px;border:1px solid var(--line-strong,#cfd4dc);background:var(--panel,#fff);border-radius:8px;font:700 11px "Oswald",sans-serif;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+/* Our fives tonight: one card a five */
+.gp9-fives{display:flex;flex-direction:column;gap:8px;margin:0 0 8px}
+.gp9-five{display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"nm pm pp" "mn pm pp";gap:6px 14px;align-items:center;padding:9px 12px;border:1px solid var(--line,#e3e6ea);border-left:5px solid var(--line-strong,#cfd4dc);border-radius:10px;background:var(--panel,#fff)}
+.gp9-five.good{border-left-color:#1f8a5b}
+.gp9-five.bad{border-left-color:#c62828}
+.gp9-five.now{box-shadow:0 0 0 2px #1f8a5b}
+.gp9-five .nm{grid-area:nm;display:flex;flex-wrap:wrap;gap:4px;align-items:center;min-width:0}
+.gp9-five .nm span{font:700 11.5px 'Oswald',sans-serif;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:5px;background:var(--panel-2,#eef0f3);color:var(--ink,#141821)}
+.gp9-five .nm .on{font:800 9.5px Inter,system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#fff;background:#1f8a5b;padding:2px 6px;border-radius:999px}
+.gp9-five .mn{grid-area:mn;display:flex;align-items:center;gap:8px;min-width:0}
+.gp9-five .mn .tr{flex:1 1 auto;height:6px;border-radius:3px;background:var(--panel-2,#eef0f3);overflow:hidden;max-width:260px}
+.gp9-five .mn .tr i{display:block;height:100%;background:var(--ink-soft,#5b6472);border-radius:3px}
+.gp9-five .mn .t{font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.gp9-five .pm{grid-area:pm;text-align:center;min-width:54px}
+.gp9-five .pm b{display:block;font:700 26px/1 'Oswald',sans-serif;color:var(--ink,#141821)}
+.gp9-five.good .pm b{color:#1f8a5b}
+.gp9-five.bad .pm b{color:#c62828}
+.gp9-five .pm em{display:block;font:600 10.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472);margin-top:3px}
+.gp9-five .pp{grid-area:pp;display:flex;flex-direction:column;gap:4px}
+.gp9-five .pl{display:flex;justify-content:space-between;gap:8px;min-width:76px;font:700 12px 'IBM Plex Mono',monospace;padding:2px 7px;border-radius:5px;background:var(--panel-2,#eef0f3);color:var(--ink,#141821)}
+.gp9-five .pl em{font:700 9.5px 'Oswald',sans-serif;font-style:normal;letter-spacing:.08em;text-transform:uppercase;opacity:.75}
+.gp9-five .pl.good{background:#d9f2e3;color:#0f5132}
+.gp9-five .pl.bad{background:#fbe1df;color:#8a1c17}
+@media (max-width:520px){ .gp9-five{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"nm nm" "mn pm" "pp pm"} .gp9-five .pp{flex-direction:row} }
+/* By position: both teams facing, one line a group */
+.gp9-pos{display:flex;flex-direction:column;gap:6px;margin:0 0 10px}
+.gp9-ph,.gp9-pr{display:grid;grid-template-columns:minmax(0,1fr) 58px minmax(0,1fr);align-items:center;gap:8px}
+.gp9-ph{font:700 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}
+.gp9-ph .u{text-align:right}
+.gp9-ph b{font-size:14px;color:var(--ink,#141821);margin-left:3px}
+.gp9-pr .u,.gp9-pr .t{display:flex;align-items:center;gap:8px;min-width:0}
+.gp9-pr .u{justify-content:flex-end}
+.gp9-pr .bar{display:block;height:22px;min-width:3px;border-radius:4px}
+.gp9-pr .u .bar{background:#2b3a55}
+.gp9-pr .t .bar{background:#c98a86}
+.gp9-pr.hot .t .bar{background:#c62828}
+.gp9-pr .n{display:flex;flex-direction:column;line-height:1.05}
+.gp9-pr .u .n{align-items:flex-end}
+.gp9-pr .n b{font:700 18px 'Oswald',sans-serif;color:var(--ink,#141821)}
+.gp9-pr.hot .t .n b{color:#c62828}
+.gp9-pr .n em{font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472);white-space:nowrap}
+.gp9-pr .g{text-align:center;line-height:1.05}
+.gp9-pr .g b{display:block;font:700 16px 'Oswald',sans-serif;color:var(--ink,#141821)}
+.gp9-pr .g em{display:block;font:700 9px Inter,system-ui,sans-serif;font-style:normal;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}
+.gp9-ast{display:flex;flex-wrap:wrap;gap:4px 18px;font:600 12px Inter,system-ui,sans-serif;color:var(--ink-soft,#5b6472);margin:0 0 6px}
+.gp9-ast b{color:var(--ink,#141821);font-weight:800}
+body.dark .gp9-pr .u .bar{background:#8fa3c8}
+body.dark .gp9-five .pl.good{background:rgba(46,160,90,.28);color:#9fe0b8}
+body.dark .gp9-five .pl.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 /* the plan's next changes, from the floor as it is */
 .gp5-next{display:flex;flex-direction:column;gap:4px;margin:0 0 8px}.gp5-next:empty{display:none}
 .gp5-next-h{font:800 10.5px "Oswald",sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}
