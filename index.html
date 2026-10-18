@@ -36600,6 +36600,8 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 @keyframes gpAlert{0%,100%{filter:none}50%{filter:brightness(1.18)}}
 .gp5-al-row{display:flex;flex-wrap:nowrap;gap:6px;align-items:center;min-height:40px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .gp5-al-row>*{flex:none}
+/* the bar has its own ground: what scrolls under it is not seen through it */
+.gp5-al-row{background:var(--bg,#f4f5f7);padding:4px 0;box-shadow:0 6px 8px -8px rgba(0,0,0,.35)}
 /* the big reminders hang under the bar, over the page, so they never move what is below */
 .gp5-al-big{position:absolute;left:0;right:0;top:100%;display:flex;flex-direction:column;gap:6px;padding-top:6px;z-index:31}
 /* the panel redraws parts of itself every reading: the browser is not to move the page to make up for it */
@@ -36739,6 +36741,10 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
   .gp7-h{flex-wrap:wrap}.gp7-h span{flex:1 1 100%;order:3}.gp7-h b{font-size:17px}
   /* room under the last block for the badge Netlify lays over the corner */
   #workspace{padding-bottom:84px}
+  /* their team on a phone: this game's columns before their last games' */
+  @media (max-width:520px){ .gp5 .gp5-opp .hist{display:none} }
+  /* the idea-by-idea and fives tables keep a readable width and slide */
+  .gp6-cct{min-width:560px}.gp6-cct td.l:first-child{min-width:150px}
 }
 .gp4-h > b{font:700 12px 'Oswald',sans-serif;letter-spacing:.17em;text-transform:uppercase;white-space:nowrap}
 .gp4-h .sub{font:400 10.5px 'Inter',system-ui,sans-serif;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
