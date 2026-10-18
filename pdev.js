@@ -1186,6 +1186,7 @@
       ".pd-seg{display:inline-flex;gap:2px;padding:3px;border-radius:9px;background:rgba(20,24,33,.06)}",
       ".pd-seg button{border:0;background:transparent;border-radius:7px;padding:5px 10px;cursor:pointer;font:700 10px 'Oswald',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}",
       ".pd-seg button.on{background:#141821;color:#fff}",
+      "@media (max-width:760px){.pd,.pd-pcb,.pd-pc{grid-template-columns:minmax(0,1fr)}.pd>*,.pd-pcb>*{min-width:0}.pd-tools{margin-left:0;max-width:100%}.pd-seg{flex-wrap:wrap;max-width:100%}.pd-seg button{padding:8px 12px}}",
       ".pd-tbl{display:grid;gap:3px;overflow-x:auto}",
       ".pd-row{display:grid;grid-template-columns:minmax(170px,1.6fr) minmax(150px,1.5fr) repeat(7,minmax(78px,1fr));gap:6px;align-items:center;text-align:left;border:1px solid var(--line,#e4e7ec);border-radius:9px;background:var(--panel,#fff);padding:6px 10px;font:inherit;color:var(--ink,#141821);cursor:pointer;min-width:900px}",
       ".pd-row:hover{border-color:#c6a15b}",

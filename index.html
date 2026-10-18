@@ -32883,7 +32883,9 @@ body.edit-mode .phx .card .extra-block:has(.extra-line:empty)::before{display:bl
 .pb-days{display:flex;align-items:center;gap:8px;font-size:12px}
 .pb-ar{color:var(--ink-faint,#8a919c);font-size:11px}
 .lg-grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;align-items:start}
-@media(max-width:1100px){.lg-grid,.lg-grid2{grid-template-columns:1fr}}
+@media(max-width:1100px){.lg-grid,.lg-grid2{grid-template-columns:minmax(0,1fr)}.lg-grid>*,.lg-grid2>*{min-width:0}}
+/* on a phone a panel never pushes the page wider: what is wider than the screen slides inside it */
+@media(max-width:760px){.lg-panel{min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch}}
 .lg-panel{background:var(--panel,#fff);border:1px solid var(--line,#e6e8ec);border-radius:14px;padding:12px 14px 14px;box-shadow:0 1px 3px rgba(16,24,40,.05)}
 .lg-h{display:flex;align-items:center;justify-content:space-between;gap:10px;font-family:'Oswald',sans-serif;font-weight:700;font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);margin-bottom:10px}
 .lg-sub{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.04em;color:var(--ink-faint,#8a919c);text-transform:none}
