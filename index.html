@@ -27721,6 +27721,19 @@ function renderDashboard(){
         const y=d0.getFullYear(), m=d0.getMonth(), first=isoLocal(new Date(y,m,1)), days=new Date(y,m+1,0).getDate();
         const L=leagueState(), our=((L.teams||[]).filter(t=>_lgOurs(t.name))[0]||{}).id;
         const res=g=>{ try{ const x=_dashGames().past.concat(_dashGames().upcoming).filter(z=>z.g===g)[0]; return x && x.res; }catch(e){ return null; } };
+        /* THE TIP-OFF OF EACH GAME. Our games carry no time of their own: the league's schedule
+           has it for the BBL and the cup (the same day, our club on either side), the ProB feed
+           for the ProB - both read on the German clock */
+        const berlin=ts=>new Date(ts).toLocaleTimeString("en-GB",{ timeZone:"Europe/Berlin", hour:"2-digit", minute:"2-digit" });
+        const berlinDay=ts=>{ const p=new Date(ts).toLocaleDateString("en-GB",{ timeZone:"Europe/Berlin", year:"numeric", month:"2-digit", day:"2-digit" }).split("/"); return p[2]+"-"+p[1]+"-"+p[0]; };
+        const tipOff=g=>{ if(g.time) return g.time;
+          try{
+            if(g.competition==="ProB"){ const P=_pb, us=String((P && P.team && P.team.id)||""); if(!us) return "";
+              const x=((P && P.games)||[]).filter(z=>z.ts && (String(z.homeId)===us || String(z.guestId)===us) && berlinDay(z.ts)===g.date)[0]; return x? berlin(x.ts) : ""; }
+            const x=(L.games||[]).filter(z=>z.date===g.date && our && (String(z.homeId)===String(our) || String(z.awayId)===String(our)))[0];
+            return x? (x.utc? berlin(x.utc) : (x.time||"")) : "";
+          }catch(e){ return ""; } };
+        if(prob && !_pb && !_pbBusy){ try{ _pbLoad(false); }catch(e){} setTimeout(()=>{ if(box.isConnected && _pb) draw(); }, 4000); }
         box.appendChild(h("div",{class:"dash-mh"},
           h("button",{type:"button", class:"dash-mb", onclick:()=>{ off--; draw(); }},"‹"),
           h("b",{}, new Date(y,m,1).toLocaleDateString("en-GB",{ month:"long", year:"numeric" })),
@@ -27736,11 +27749,11 @@ function renderDashboard(){
           const trains=!gms.length && ((pj && !pj.off) || (Array.isArray(sess)? sess.length : !!sess));
           const cellEl=h("div",{class:"dash-day"+(iso===T? " today" : "")+(gms.length? " g" : "")+(iso<T? " past" : "")}, h("em",{}, String(d)));
           if(prob) (state.games||[]).filter(g=>g.date===iso && g.competition==="ProB").forEach(g=>cellEl.appendChild(h("span",{class:"dash-dg pb", title:"ProB · "+(g.opponent||"")},
-            h("i",{}, "ProB "+(g.venue==="Away"? "@" : "vs")+" "+_lgShort(g.opponent||"")), h("u",{}, g.time||g.result||""))));
-          gms.forEach(g=>{ const r=res(g);
-            cellEl.appendChild(h("button",{type:"button", class:"dash-dg "+(r? (r.won? "w" : "l") : ""), title:(g.competition||"")+" · "+g.opponent,
+            h("i",{}, "ProB "+(g.venue==="Away"? "@" : "vs")+" "+_lgShort(g.opponent||"")), h("u",{}, g.result||tipOff(g)))));
+          gms.forEach(g=>{ const r=res(g), tt=tipOff(g);
+            cellEl.appendChild(h("button",{type:"button", class:"dash-dg "+(r? (r.won? "w" : "l") : ""), title:(g.competition||"")+" · "+g.opponent+(tt? " · "+tt : ""),
               onclick:()=>{ if(g.date<T) _dashOpen("teamscout",{ ts:{ mode:"game", gameId:g.id } }); else _dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } }); }},
-              h("i",{}, (g.venue==="Away"? "@" : "vs")+" "+_lgShort(g.opponent||"")), h("u",{}, r? r.us+"–"+r.them : (g.time||g.competition||"")))); });
+              h("i",{}, (g.venue==="Away"? "@" : "vs")+" "+_lgShort(g.opponent||"")), h("u",{}, r? r.us+"–"+r.them : (tt? tt+(g.competition && g.competition!=="BBL"? " · "+g.competition : "") : (g.competition||""))))); });
           if(trains){
             /* the training as the PF planned it: MD, kind of day, start and team minutes */
             const tm=pj? (pj.tp||[]).reduce((s,b)=>s+(+((b&&b.min)||0)),0) : 0;
