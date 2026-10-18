@@ -15024,7 +15024,11 @@ function _gpFives(L){
 function _gpToCard(L, onClose){
   const A=_gpActs(L.feed, L.lastT), tos=A.filter(o=>o.a.action==="TIMEO");
   const last=tos[tos.length-1]||null, prev=tos.length>1? tos[tos.length-2] : null;
-  const tEnd=L.lastT, tStart=prev && last && last.t>=L.lastT-60? prev.t : (last? last.t : 0);
+  /* a timeout just called: from the timeout before it, or from the tip-off when it is the game's
+     first (the first one of the game came out empty - it counted from itself); opened by hand
+     later on: from the last timeout */
+  const recent=!!(last && last.t>=L.lastT-60);
+  const tEnd=L.lastT, tStart=recent? (prev? prev.t : 0) : (last? last.t : 0);
   const inW=o=>o.t>tStart && o.t<=tEnd;
   const W=_gpLiveWin(L.feed, L.uc, inW, {});
   const pos=S=>S.fga-S.or+S.tov+0.44*S.fta, ppp=S=>pos(S)>=1? (S.pts/pos(S)).toFixed(2) : "—";
@@ -17001,9 +17005,9 @@ function renderPlanSection(sec, canEd, save, allSecs){
         const marker=()=>{ rotHost.querySelectorAll(".gp5-now,.gp5-real").forEach(n=>n.remove());
           rotHost.querySelectorAll(".gp2-st.soon,.gp2-st.diff").forEach(n=>n.classList.remove("soon","diff"));
           paintOn();
-          const Q=qOf(); if(!Q.live || !Q.lv) return;
+          const Q=qOf(); if(!Q.live || !Q.lv){ paintNext(null); return; }
           const base=Q.qi<4? Q.qi*600 : 2400+(Q.qi-4)*300, len=Q.qi<4? 600 : 300;
-          const el=Q.lv.lastT-base; if(el<0 || el>len) return;
+          const el=Q.lv.lastT-base; if(el<0 || el>len){ paintNext(Q); return; }
           const f=Math.max(0, Math.min(1, el/len));
           rotHost.querySelectorAll('.gp5-board[data-q="'+Q.board+'"]').forEach(bd=>{
             const w=bd.querySelector(".gp2-wrap"); if(!w) return;
@@ -17015,42 +17019,59 @@ function renderPlanSection(sec, canEd, save, allSecs){
             /* thirty seconds before the next minute where the plan brings a man in */
             const nextC=Math.ceil(el/60), toGo=nextC*60-el;
             if(nextC>0 && nextC<10 && toGo<=30) w.querySelectorAll('td.gp2-st.in[data-c="'+nextC+'"]').forEach(td=>td.classList.add("soon"));
-            /* the minutes played: the plan's five against the five really on the floor */
-            const lv=Q.lv, segs={}; Object.keys((lv.court && lv.court.u)||{}).forEach(id=>{ segs[id]=lv.court.u[id].segs||[]; });
-            const onAt=t=>Object.keys(segs).filter(id=>segs[id].some(g=>t>=g[0] && t<g[1]));
-            const nicks=plan.pool.map(p=>p.name), byNick=_gpMatchAll(nicks, lv.us||[]);
-            const idOf={}; plan.pool.forEach(p=>{ const m=byNick[p.name]; if(m) idOf[p.id]=String(m.id); });
-            /* a name of the plan who is on our squad but did not play tonight is known to be off the floor */
-            const known={}; { const sq=_gpMatchAll(nicks, _gpOurMen()||[]); plan.pool.forEach(p=>{ if(idOf[p.id] || sq[p.name]) known[p.id]=1; }); }
-            const nameOf={}; (lv.us||[]).forEach(p=>{ nameOf[String(p.id)]=_lgLastName(p.name||"")||("#"+p.num); });
-            const posOf=_gpPosOf(lv.us||[]);
-            const qn=Q.board;
-            for(let c=0;c<10;c++){
-              const t=base+c*60+30; if(t>lv.lastT) break;
-              const real=onAt(t); if(real.length!==5) continue;
-              const rowPid=GP_ROWS.map((pos,r)=>((plan.grid[qn]||[])[r]||[])[c]||"");
-              const planned=rowPid.filter(Boolean);
-              if(!planned.length) continue;   /* a minute the plan leaves empty is not compared */
-              if(planned.some(pid=>!known[pid])) continue;   /* a name of the plan not read at all: nothing is claimed */
-              const plannedIds=rowPid.map(pid=>pid? (idOf[pid]||"") : "");
-              if(planned.length===5 && real.every(id=>plannedIds.indexOf(id)>=0)) continue;   /* the plan's five */
-              /* not the plan's five: the five on the floor seated by the positions they play,
-                 and every row whose man is not the plan's is marked with the man playing it */
-              const seat=_gpSeat(plannedIds, real, posOf);
-              GP_ROWS.forEach((pos,r)=>{ const id=seat[r]; if(!id || !rowPid[r] || id===plannedIds[r]) return;
-                const td=w.querySelector('td.gp2-st[data-c="'+c+'"][data-r="'+r+'"]'); if(!td) return;
-                const was=rowPid[r]? _gpById(plan, rowPid[r]) : null;
-                td.classList.add("diff");
-                td.title=(was? "planned "+was.name : "nobody planned")+" · playing the "+pos+": "+nameOf[id]+(real.indexOf(plannedIds[r])>=0? " ("+(was? was.name : "")+" is on, at another position)" : "");
-                td.appendChild(h("span",{class:"gp5-real"}, nameOf[id])); });
-            }
-          }); };
+          });
+          paintNext(Q); };
+        /* THE NEXT CHANGES OF THE PLAN, FROM THE FLOOR AS IT IS. The board used to mark in red every
+           minute played off the plan; the bench breaks the plan when it has to and that told it
+           nothing. What it wants is to be ahead of the next change: the next minute where the plan
+           changes its five (this quarter, or how the next quarter starts), how long until then, and
+           who has to come in and go out to get from the five on the floor to that one - each one
+           paired with the man he replaces by the position he takes. Nothing when the floor is
+           already the plan's five. */
+        const nextBox=h("div",{class:"gp5-next"});
+        const paintNext=Q=>{
+          nextBox.innerHTML="";
+          const lv=Q && Q.lv; if(!Q || !Q.live || !lv || Q.qi>3) return;
+          const base=Q.qi*600, el=Math.max(0, lv.lastT-base), cur=Math.min(9, Math.floor(el/60));
+          const nicks=plan.pool.map(p=>p.name), byNick=_gpMatchAll(nicks, lv.us||[]);
+          const idOf={}, pidOf={}; plan.pool.forEach(p=>{ const m=byNick[p.name]; if(m){ idOf[p.id]=String(m.id); pidOf[String(m.id)]=p.id; } });
+          const nameOfLive={}; (lv.us||[]).forEach(p=>{ nameOfLive[String(p.id)]=_lgLastName(p.name||"")||("#"+p.num); });
+          const nm=key=>{ if(key.indexOf("p:")===0){ const pl=_gpById(plan, key.slice(2)); return pl? pl.name : "?"; } const pid=pidOf[key]; const pl=pid? _gpById(plan, pid) : null; return pl? pl.name : (nameOfLive[key]||"?"); };
+          const court=(lv.court && lv.court.u)||{}, onNow=Object.keys(court).filter(id=>court[id].on);
+          if(onNow.length!==5) return;
+          /* the five the plan has at a minute of a board, as live ids (a planned man who has not
+             played tonight keeps his plan name) and the row each one plays */
+          const fiveAt=(board, c)=>{ const g=plan.grid[board]||[], out=[];
+            GP_ROWS.forEach((pos,r)=>{ const pid=((g[r]||[])[c])||""; if(pid) out.push({ key:idOf[pid]||("p:"+pid), r:r }); }); return out; };
+          const sameFive=(a,b)=>a.length===b.length && a.every(x=>b.some(y=>y.key===x.key));
+          const board=Q.board, changes=[];
+          for(let c=cur+1;c<10 && changes.length<2;c++){
+            const a=fiveAt(board, c), b=fiveAt(board, c-1); if(a.length===5 && !sameFive(a,b)) changes.push({ c:c, five:a, at:base+c*60, label:(10-c)+"′" });
+          }
+          if(changes.length<2 && Q.qi<3){ const nb=((Q.qi+1)%2===1)? "Q2" : "Q1", a=fiveAt(nb, 0);
+            if(a.length===5) changes.push({ c:0, five:a, at:base+600, label:"start of Q"+(Q.qi+2), nextQ:true }); }
+          if(!changes.length) return;
+          nextBox.appendChild(h("b",{class:"gp5-next-h"},"Next changes"));
+          changes.forEach((ch,k)=>{
+            const want=ch.five.map(x=>x.key), ins=ch.five.filter(x=>onNow.indexOf(x.key)<0), outs=onNow.filter(id=>want.indexOf(id)<0);
+            /* each man coming in for the one whose place he takes: the row the plan puts him in,
+               against the positions of the men going out */
+            const posOf=_gpPosOf(lv.us||[]), left=outs.slice(), pairs=[];
+            ins.forEach(x=>{ let bi=0, bs=-1; left.forEach((id,i)=>{ const ps=posOf[id]||[], s=ps.indexOf(x.r+1)===0? 3 : ps.indexOf(x.r+1)>0? 2 : 0; if(s>bs){ bs=s; bi=i; } });
+              const out=left.splice(bi,1)[0]; pairs.push({ inn:nm(x.key), out:out? nm(out) : "", pos:GP_ROWS[x.r] }); });
+            const toGo=Math.max(0, ch.at-lv.lastT);
+            nextBox.appendChild(h("div",{class:"gp5-next-r"+(k===0? " first" : "")+(k===0 && toGo<=30? " soon" : "")},
+              h("span",{class:"t"}, ch.nextQ? ch.label : "in "+_gpMmss(toGo)+" · "+ch.label),
+              pairs.length? h("span",{class:"p"}, pairs.map(p=>h("span",{class:"pr"}, h("i",{}, p.pos), h("b",{}, p.inn), p.out? h("em",{}, "for "+p.out) : null)))
+                : h("span",{class:"ok"},"the plan's five is already on the floor")));
+          });
+        };
         const paintRot=()=>{
           const Q=qOf();
           const mode=(rq==="both"||rq==="Q1"||rq==="Q2")? rq : "auto";
           const q=mode==="Q1"||mode==="Q2"? mode : Q.board;
           if(mode===shownMode && q+qName(q)===shownQ){ marker(); return; }
-          shownMode=mode; shownQ=q+qName(q); rotHost.innerHTML="";
+          shownMode=mode; shownQ=q+qName(q); rotHost.innerHTML=""; rotHost.appendChild(nextBox);
           if(mode==="both"){
             rotHost.appendChild(h("div",{class:"gp5-rot"}, GP_HALF.map(x=>{ const b=h("div",{class:"gp5-board"}, quarterBoard(x)); b.dataset.q=x; return b; })));
             paintQ(q);
@@ -36715,6 +36736,19 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .gp6-cct tr.good td.ppp{background:#d9f2e3;color:#0f5132;font-weight:800}
 .gp6-cct tr.bad td.ppp{background:#fbe1df;color:#8a1c17;font-weight:800}
 .gp5-ruleshost{margin:0 0 8px}.gp5-ruleshost:empty{display:none}
+/* the plan's next changes, from the floor as it is */
+.gp5-next{display:flex;flex-direction:column;gap:4px;margin:0 0 8px}.gp5-next:empty{display:none}
+.gp5-next-h{font:800 10.5px "Oswald",sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}
+.gp5-next-r{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 10px;border-radius:8px;background:#f3f5f8;border:1px solid var(--line,#e3e6ea)}
+.gp5-next-r.first{background:#fff8e1;border-color:#f0d27a}
+.gp5-next-r.soon{background:#ffe08a;animation:gpTired 1.2s ease-in-out infinite}
+.gp5-next-r .t{font:800 12.5px Inter,system-ui,sans-serif;min-width:118px;color:var(--ink,#141821)}
+.gp5-next-r .p{display:flex;flex-wrap:wrap;gap:6px}
+.gp5-next-r .pr{display:inline-flex;align-items:baseline;gap:5px;padding:3px 8px;border-radius:6px;background:var(--panel,#fff);border:1px solid var(--line,#e3e6ea)}
+.gp5-next-r .pr i{font:700 9.5px "Oswald",sans-serif;letter-spacing:.08em;font-style:normal;color:var(--ink-soft,#5b6472)}
+.gp5-next-r .pr b{font:800 13.5px Inter,system-ui,sans-serif;color:var(--ink,#141821)}
+.gp5-next-r .pr em{font:600 11.5px Inter,system-ui,sans-serif;font-style:normal;color:var(--ink-soft,#5b6472)}
+.gp5-next-r .ok{font:600 12px Inter,system-ui,sans-serif;color:#1f8a5b}
 /* the line above the pre game cards */
 .pc-hint{margin:0 0 8px;padding:8px 12px;border-radius:8px;background:#fff8e1;border:1px solid #f0d27a;color:#5a4300;font:700 13px Inter,system-ui,sans-serif}
 .gp5-rules{background:var(--panel,#fff);border:1px solid var(--line-strong,#cfd4dc);border-radius:10px;padding:0}
