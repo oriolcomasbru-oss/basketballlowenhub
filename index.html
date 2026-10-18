@@ -36531,7 +36531,8 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .gp5 .gp4-right,.gp5 .gp4-b{max-height:none!important;overflow:visible!important;position:static!important}
 .gp5-rot{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .gp5-rot1{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(250px,1fr);gap:12px;align-items:start}
-@media (max-width:760px){ .gp5-rot1{grid-template-columns:minmax(0,1fr)} }
+/* up to an iPad held either way the plan goes under the board, so the board has the width its names need */
+@media (max-width:1000px){ .gp5-rot1{grid-template-columns:minmax(0,1fr)} .gp5-side{border-left:0;padding-left:0;border-top:1px dashed var(--line-strong,#d7dbe0);padding-top:10px} }
 .gp5-side{border-left:1px dashed var(--line-strong,#d7dbe0);padding-left:12px;min-width:0}
 .gp5-side-h{font:700 10px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint,#8a919c);margin-bottom:4px}
 .gp5 .gp2-wrap{position:relative}
