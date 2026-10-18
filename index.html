@@ -36069,6 +36069,8 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .ow-days span{position:absolute;top:0;display:flex;flex-direction:column;align-items:center;font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
 .ow-days span b{font-size:11px;color:var(--ink-soft,#5b6472)}.ow-days span i{font-style:normal;font-size:8.5px}
 .ow-days span.we{opacity:.6}.ow-days span.t b{color:#fff;background:#c6a15b;border-radius:4px;padding:0 4px}
+/* on a phone the days do not fit one by one: one in three is written, and today always */
+@media (max-width:560px){ .ow-days span i{display:none} .ow-days span:not(:nth-child(3n+1)):not(.t){visibility:hidden} .ow-days span b{font-size:10px} }
 .ow-row{display:grid;grid-template-columns:120px minmax(0,1fr);align-items:center;gap:0}
 .ow-lab{display:flex;justify-content:space-between;gap:6px;padding-right:8px;font-size:11.5px}
 .ow-lab b{font:700 11px 'Oswald',sans-serif;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ow-lab i{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
