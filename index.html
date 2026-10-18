@@ -16614,8 +16614,9 @@ function renderPlanSection(sec, canEd, save, allSecs){
       const legsQ=(side, q)=>{ const out={}; const bars=(side==="off"? plan.offbar : plan.defbar)[q]||[], legs=side==="off"? plan.offleg : plan.defleg, cols=side==="off"? GP_OFFCOLORS : GP_DEFCOLORS;
         const dd=side==="def"? gpDefDerived(plan, q) : null;
         for(let c=0;c<GP_COLS;c++){ if(dd){ out[c]={ k:"d|"+dd.text, txt:dd.text, col:dd.color }; continue; }
-          const v=bars[c]||0; if(!v) continue; const txt=gpLegQText(legs[v-1], q)||String(legs[v-1]||"").trim();
-          out[c]={ k:side+"|"+v+"|"+txt, txt:txt||("Colour "+v), col:cols[v-1] }; }
+          const v=bars[c]||0; if(!v) continue; const txt=String(gpLegQText(legs[v-1], q)||"").trim();
+          /* one idea is one row whatever colour it has on each board (7POP was yellow in Q1 and blue in Q2); a stretch with no words on the sheet says so */
+          out[c]= txt? { k:side+"|t|"+txt.toUpperCase().replace(/\s+/g," "), txt:txt, col:cols[v-1] } : { k:side+"|c|"+q+"|"+v, txt:q+" · colour with no text on the sheet", col:cols[v-1] }; }
         return out; };
       const hasPlan=GP_HALF.some(q=>Object.keys(legsQ("off", q)).length || Object.keys(legsQ("def", q)).length);
       const sig=JSON.stringify([hasPlan, L && L.feed? (L.feed.actions||[]).length : 0, L? Math.floor((L.lastT||0)/30) : -1]);
