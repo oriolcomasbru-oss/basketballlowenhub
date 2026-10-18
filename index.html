@@ -10805,7 +10805,7 @@ function _preSig(){
     /* our tagging of the club is part of what is drawn: when it lands the report is drawn again
        (it was not, so the roster table said "Our tagging · reading…" until editing was turned on) */
     let tg=""; try{ tg=_preTagOn? _preTagState() : ""; }catch(e){}
-    return [tid, (L.teams||[]).length? 1 : 0, ros.length, (pl.players||[]).length, pl.partial? 1 : 0, (L.alias||{})[_lgNorm(_scoutOpponent||"")]||"", tg, ((L.roster||{})[tid]||{}).updated||"", pl.updated||""].join("|");
+    return [tid, (L.teams||[]).length? 1 : 0, ros.length, (pl.players||[]).length, pl.partial? 1 : 0, (L.alias||{})[_lgNorm(_scoutOpponent||"")]||"", tg, ((L.roster||{})[tid]||{}).updated||"", pl.updated||"", (_preCupMemo[tid] && !_preCupMemo[tid].busy)? "cup"+Object.keys(_preCupMemo[tid].lines).length : ""].join("|");
   }catch(e){ return ""; }
 }
 function _preRefresh(){
@@ -11270,7 +11270,8 @@ function _preCardsFresh(L, tid, C){
     /* the boxes the card has, each with today's value */
     const fresh={}; (d.stats||[]).forEach(s=>{ fresh[String(s[1]||"").toUpperCase()]=s[0]; });
     if(Array.isArray(c.stats)) c.stats.forEach(s=>{ const k=String((s&&s[1])||"").toUpperCase(); if(k in fresh) s[0]=fresh[k]; });
-    if(!c.min || /^\d+(\.\d+)? min\/g$/.test(String(c.min).trim())) c.min=d.min||c.min;
+    /* the minutes a game, said to be the cup's when the numbers are */
+    if(!c.min || /^\d+(\.\d+)? min\/g( · cup)?$/.test(String(c.min).trim())) c.min=d.min? d.min+(d.cupOnly? " · cup" : "") : c.min;
     if(d.gp!=null) c.gp=d.gp;
     /* the ideas the draft writes itself, written again */
     if(Array.isArray(c.ideas)){
@@ -11281,6 +11282,37 @@ function _preCardsFresh(L, tid, C){
       c.ideas=out;
     }
   }catch(e){} }));
+}
+/* A MAN WHO HAS ONLY PLAYED IN THE CUP. The cards count the league's games (as the league's own
+   numbers and the "14th BBL" ranks do), so a man whose only game is a cup game - Polite, back
+   from injury, 8 points at Ulm in the Pokal - had a card with nothing on it. The club's cup
+   games of the season are read from their game sheets, and such a man's card shows his cup
+   numbers, marked as the cup's. Read once a visit per club; the report is drawn again when they land. */
+const _preCupMemo={};
+function _preCupLines(L, tid){
+  const k=String(tid||""); if(!k || L.demo) return null;
+  const m=_preCupMemo[k];
+  if(m) return m.busy? null : m.lines;
+  const ent=_preCupMemo[k]={ busy:true, lines:{}, at:0 };
+  const games=((L.games||[]).concat(L.cup||[])).filter(g=>g && (g.phase==="cup" || /pokal|cup/i.test(String(g.competition||""))) && _lgDone(g)
+    && (String(g.homeId)===k || String(g.awayId)===k));
+  const seen={}, list=games.filter(g=>{ const id=String(g.id); if(seen[id]) return false; seen[id]=1; return true; });
+  (async()=>{
+    for(const g of list){
+      try{
+        const j=await fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(g.id)).then(r=>r.ok? r.json() : null).catch(()=>null);
+        const fp=(j && j.feed && j.feed.players)||[]; if(!fp.length) continue;
+        const code=String(g.homeId)===k? "A" : "B";
+        fp.filter(p=>p.teamcode===code && (+p.SP||0)>0).forEach(p=>{ const id=String(p.player_id||p.id||"");
+          const a=ent.lines[id]||(ent.lines[id]={ gp:0, sec:0, pts:0, p2m:0, p2a:0, p3m:0, p3a:0, ftm:0, fta:0, oreb:0, dreb:0, reb:0, ast:0, stl:0, blk:0, tov:0, pf:0 });
+          a.gp++; a.sec+=+p.SP||0; a.pts+=+p.PTS||0; a.p2m+=+p.P2M||0; a.p2a+=+p.P2A||0; a.p3m+=+p.P3M||0; a.p3a+=+p.P3A||0;
+          a.ftm+=+p.FTM||0; a.fta+=+p.FTA||0; a.oreb+=+p.OREB||0; a.dreb+=+p.DREB||0; a.reb+=+p.REB||0; a.ast+=+p.AST||0; a.stl+=+p.STL||0; a.blk+=+p.BL||0; a.tov+=+p.TOV||0; a.pf+=+p.FOUL||0; });
+      }catch(e){}
+    }
+    ent.busy=false; ent.at=Date.now();
+    try{ _preRefresh(); }catch(e){}
+  })();
+  return null;
 }
 /* one card worked out again from the league, the way the draft works it out */
 function _preCardFreshOf(c, L, tid){
@@ -11302,7 +11334,10 @@ function _preCardFreshOf(c, L, tid){
     let best=a, bg=(a&&a.gp)||0;
     if(l2 && (l2.gp||0)>bg){ best=l2; bg=l2.gp; }
     if(q && q.t && (q.t.gp||0)>bg){ best=q.t; bg=q.t.gp; }
+    /* no league game at all: his cup games, when he has played some */
+    if(!bg && cup){ const cl=cup[String(p.pid||p.id||"")]; if(cl && cl.gp) return Object.assign({}, p, { off:Object.assign({}, cl), all:null, __cup:true }); }
     return best===a? p : Object.assign({}, p, { off:Object.assign({}, a||{}, best), all:null }); };
+  const cup=_preCupLines(L, tid);
   const rows=_preRosterRows(L, tid).filter(p=>p && (p.name || p.num)).map(fresh);
   const norm=s=>_lgNorm(String(s||""));
   const p=rows.filter(x=>c.pid && String(x.pid||x.id||"")===String(c.pid))[0]
@@ -11313,7 +11348,9 @@ function _preCardFreshOf(c, L, tid){
   const per=(x,k)=>{ const a=_preLine(x); return (a&&a.gp)? (a[k]||0)/a.gp : 0; };
   const ctx={ teamFga: base.reduce((t,x)=>{ const a=_preLine(x); return t+((a&&a.p2a)||0)+((a&&a.p3a)||0); },0),
     rank:(x,k)=>base.filter(y=>per(y,k)>per(x,k)).length+1 };
-  return _preCardOf(Object.assign({}, p, c.pos? { pos:c.pos } : {}), ctx);
+  const d=_preCardOf(Object.assign({}, p, c.pos? { pos:c.pos } : {}), ctx);
+  if(d && p.__cup) d.cupOnly=true;
+  return d;
 }
 /* the league's statistics for one card, worked out the way the draft works them out */
 function _preCardStatsAgain(c){
