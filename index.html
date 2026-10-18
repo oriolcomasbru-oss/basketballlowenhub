@@ -10805,7 +10805,7 @@ function _preSig(){
     /* our tagging of the club is part of what is drawn: when it lands the report is drawn again
        (it was not, so the roster table said "Our tagging · reading…" until editing was turned on) */
     let tg=""; try{ tg=_preTagOn? _preTagState() : ""; }catch(e){}
-    return [tid, (L.teams||[]).length? 1 : 0, ros.length, (pl.players||[]).length, pl.partial? 1 : 0, (L.alias||{})[_lgNorm(_scoutOpponent||"")]||"", tg].join("|");
+    return [tid, (L.teams||[]).length? 1 : 0, ros.length, (pl.players||[]).length, pl.partial? 1 : 0, (L.alias||{})[_lgNorm(_scoutOpponent||"")]||"", tg, ((L.roster||{})[tid]||{}).updated||"", pl.updated||""].join("|");
   }catch(e){ return ""; }
 }
 function _preRefresh(){
@@ -11264,6 +11264,9 @@ function _preCardsFresh(L, tid, C){
   PRE_CARD_POS.forEach(pos=>(C.pos[pos]||[]).forEach(c=>{ try{
     if(!c || c.from) return;
     const d=_preCardFreshOf(c, L, tid); if(!d) return;
+    /* a card drafted before the man had played (no games, so no boxes) gets its boxes the day he
+       has played - a card whose boxes the staff took off had games and is left without them */
+    if((!Array.isArray(c.stats) || !c.stats.length) && !(+c.gp>0) && (d.gp||0)>0 && (d.stats||[]).length) c.stats=JSON.parse(JSON.stringify(d.stats));
     /* the boxes the card has, each with today's value */
     const fresh={}; (d.stats||[]).forEach(s=>{ fresh[String(s[1]||"").toUpperCase()]=s[0]; });
     if(Array.isArray(c.stats)) c.stats.forEach(s=>{ const k=String((s&&s[1])||"").toUpperCase(); if(k in fresh) s[0]=fresh[k]; });
@@ -11286,11 +11289,20 @@ function _preCardFreshOf(c, L, tid){
      while the rank beside it read the table (5): the card said 25%, the rank said 2nd. Each man's
      line is the one with more games of the two, so the card and its rank stand on the same game. */
   let pool=[]; try{ pool=(_lgLeadPool(L).pool||[]).filter(x=>String(x.tid)===String(tid)); }catch(e){}
+  /* and the club's own reading of its game sheets, man by man - the table above leaves out a man
+     with few games (Polite, back from injury, one game: 8 points the league's season totals did
+     not have yet), this does not */
+  const plRows=(((L.players||{})[tid]||{}).players)||[];
   const pnorm=s=>_lgNorm(_lgLastName(String(s||"")));
+  const same=(p, x, nm)=>(p.pid && String(x.pid||x.id||"")===String(p.pid)) || (p.id && String(x.id)===String(p.id));
   const fresh=p=>{ const a=_preLine(p), nm=p.name||((p.first||"")+" "+(p.last||""));
-    const q=pool.filter(x=>(p.pid && String(x.pid||x.id||"")===String(p.pid)) || (p.id && String(x.id)===String(p.id)))[0] || pool.filter(x=>pnorm(x.name)===pnorm(nm))[0];
-    if(q && q.t && (q.t.gp||0)>((a&&a.gp)||0)) return Object.assign({}, p, { off:Object.assign({}, a||{}, q.t), all:null });
-    return p; };
+    const q2=plRows.filter(x=>same(p, x))[0] || plRows.filter(x=>pnorm(x.name||((x.first||"")+" "+(x.last||"")))===pnorm(nm))[0];
+    const l2=q2? _preLine(q2) : null;
+    const q=pool.filter(x=>same(p, x))[0] || pool.filter(x=>pnorm(x.name)===pnorm(nm))[0];
+    let best=a, bg=(a&&a.gp)||0;
+    if(l2 && (l2.gp||0)>bg){ best=l2; bg=l2.gp; }
+    if(q && q.t && (q.t.gp||0)>bg){ best=q.t; bg=q.t.gp; }
+    return best===a? p : Object.assign({}, p, { off:Object.assign({}, a||{}, best), all:null }); };
   const rows=_preRosterRows(L, tid).filter(p=>p && (p.name || p.num)).map(fresh);
   const norm=s=>_lgNorm(String(s||""));
   const p=rows.filter(x=>c.pid && String(x.pid||x.id||"")===String(c.pid))[0]
@@ -11926,7 +11938,7 @@ function _preRoleColsSet(box, n){
       _preRoleColsSet(b, +b.dataset.n||0)); }catch(e){}
   }, 120); });
 })();
-let _preLgForCards=null, _preTidForCards="";
+let _preLgForCards=null, _preTidForCards="", _prePlFresh={};
 /* EVERY MAN IN THE LEAGUE, THIS SEASON AND THE LAST. A club signs a player in the middle
    of a week and its roster in the feed does not have him yet - but the league does: his
    season with another club, or last season's. The rosters of every club for both seasons
@@ -12867,6 +12879,11 @@ function _preCardsBlock(L, tid, rep, canEd, save){
      once a visit, in the background, and the cards are drawn again when it lands */
   const rosOld=!!ros && (!ros.updated || Date.now()-Date.parse(ros.updated)>2*3600e3);
   if((!ros || rosOld) && !_lgRosBusy[tid] && !_lgRosTried[tid] && !L.demo) syncRoster(tid, rosOld);
+  /* the club's reading of its game sheets the same way: read once and kept, it stayed on the day
+     before the club's last game (Hagen's from before Ulm) - again when it is more than two hours
+     old, once a visit */
+  { const plx=(L.players||{})[tid], plOld=!!plx && (!plx.updated || Date.now()-Date.parse(plx.updated)>2*3600e3);
+    if(plOld && !_lgPlBusy[tid] && !_prePlFresh[tid] && !L.demo){ _prePlFresh[tid]=1; try{ syncPlayers(tid, true); }catch(e){} } }
   if(!C){
     const draft=_preCardsDraft(L, tid);
     if(draft){ rep.data.cards=draft; C=draft; if(canEd) try{ save(); }catch(e){} }
