@@ -26739,12 +26739,12 @@ function _dashFormInto(box, opp){
   const st=L.standings||[], posOf={}; st.forEach(s=>{ posOf[String(s.teamId)]=s.pos; }); const nT=st.length||18;
   const shortOf=id=>{ const t=(L.teams||[]).filter(x=>String(x.id)===String(id))[0]; return (t && (t.short||t.tlc))||""; };
   const rows=gs.slice(-5).map(y=>{ const home=String(y.homeId)===tid, us=home? y.hs : y.as, th=home? y.as : y.hs, oid=String(home? y.awayId : y.homeId);
-    return { y:y, home:home, us:us, th:th, d:us-th, w:us>th, oid:oid, op:posOf[oid]||null, nm:shortOf(oid)||_lgShort(home? y.away : y.home), cup:/pokal|cup/i.test(String(y.competition||"")) }; });
-  const flag=r=>(r.w && r.op && r.op<=4)? "beat a top 4" : (!r.w && r.op && r.op>nT-4)? "lost to a bottom 4" : Math.abs(r.d)>=15? (r.w? "big win" : "heavy loss") : "";
+    return { y:y, home:home, us:us, th:th, d:us-th, w:us>th, oid:oid, op:posOf[oid]||null, nm:shortOf(oid)||_lgShort(home? y.away : y.home), tlc:(home? y.awayTlc : y.homeTlc)||shortOf(oid)||"", cup:/pokal|cup/i.test(String(y.competition||"")) }; });
+  const flag=r=>(r.w && r.op && r.op<=4)? "top-4 win" : (!r.w && r.op && r.op>nT-4)? "bottom-4 loss" : Math.abs(r.d)>=15? (r.w? "big win" : "big loss") : "";
   box.appendChild(h("div",{class:"dash-form"}, rows.map(r=>{ const f=flag(r);
-    return h("div",{class:"fg "+(r.w? "w" : "l")+(f? " sig" : ""), title:r.y.home+" "+r.y.hs+"–"+r.y.as+" "+r.y.away+(r.cup? " · cup" : "")},
-      h("b",{}, r.w? "W" : "L"), h("strong",{}, (r.d>0? "+" : "")+r.d), h("span",{}, (r.home? "vs " : "@ ")+r.nm+(r.op? " ("+r.op+")" : "")),
-      h("em",{}, r.us+"–"+r.th+" · "+r.y.date.slice(8,10)+"/"+r.y.date.slice(5,7)), f? h("i",{}, f) : null); })));
+    return h("div",{class:"fg "+(r.w? "w" : "l")+(f? " sig" : ""), title:r.y.home+" "+r.y.hs+"–"+r.y.as+" "+r.y.away+" · "+r.y.date.slice(8,10)+"/"+r.y.date.slice(5,7)+(r.cup? " · cup" : "")},
+      h("b",{}, r.w? "W" : "L"), h("strong",{}, (r.d>0? "+" : "")+r.d), h("span",{}, (r.home? "vs " : "@ ")+r.tlc+(r.op? " ("+r.op+")" : "")),
+      h("em",{}, r.us+"–"+r.th), f? h("i",{}, f) : null); })));
   const w5=rows.filter(r=>r.w).length, md=rows.reduce((a,r)=>a+r.d,0)/rows.length;
   let sk=0; for(let i=rows.length-1;i>=0 && rows[i].w===rows[rows.length-1].w;i--) sk++;
   const l3=rows.slice(-3), w3=l3.filter(r=>r.w).length, all=gs.length, wa=gs.filter(y=>{ const home=String(y.homeId)===tid; return home? y.hs>y.as : y.as>y.hs; }).length;
@@ -36495,7 +36495,7 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 @media (max-width:900px){ .dash-2{grid-template-columns:minmax(0,1fr)} .dash-2 > .dash-sub + .dash-sub{border-left:0;padding-left:0;border-top:1px solid var(--line,#e4e7ec);padding-top:10px} }
 /* the rival card: blocks in the order the staff reads them */
 .dash-blk{margin-top:12px;min-width:0}
-.dash-2.r64{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}
+.dash-2.r64{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
 /* team stats: four tiles, each a rank on the league's line */
 .dash-ts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .dash-t{border:1px solid var(--line,#e4e7ec);border-top:3px solid var(--ink-faint,#8a93a2);border-radius:9px;padding:7px 10px 8px;display:grid;gap:3px;min-width:0;background:var(--panel,#fff)}
@@ -36523,7 +36523,7 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-form .fg strong{font:700 15px/1 'Oswald',sans-serif;color:var(--ink,#141821)}
 .dash-form .fg span{font:600 10.5px 'Inter',system-ui,sans-serif;color:var(--ink,#141821);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .dash-form .fg em{font:500 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
-.dash-form .fg i{font:700 8.5px 'Oswald',sans-serif;font-style:normal;letter-spacing:.08em;text-transform:uppercase;color:#7a5c12}
+.dash-form .fg i{font:700 8.5px 'Oswald',sans-serif;font-style:normal;letter-spacing:.08em;text-transform:uppercase;color:#7a5c12;line-height:1.1;white-space:nowrap}
 .dash-formsum{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--ink-soft,#5b6472);margin-top:4px}
 .dash-formsum b{font:700 13px 'Oswald',sans-serif;color:var(--ink,#141821)}
 .dash-formsum b.up{color:#17805a}.dash-formsum b.dn{color:#c0403c}
