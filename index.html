@@ -14059,7 +14059,7 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
       const mine=(L.games||[]).filter(x=>(String(x.homeId)===tid || String(x.awayId)===tid) && x.date && x.date<=T && (x.status==="final" || x.hs!=null));
       const used={}; const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]+/g," ");
       list.forEach(g=>{ const toks=norm(g).split(" ").filter(t=>t.length>=3);
-        const hit=mine.filter(x=>{ const home=String(x.homeId)===tid, nm=norm(home? x.away : x.home), tlc=norm(home? x.awayTlc : x.homeTlc).trim();
+        const hit=mine.filter(x=>{ const home=String(x.homeId)===tid, oid=String(home? x.awayId : x.homeId), tm=(L.teams||[]).filter(t=>String(t.id)===oid)[0]||{}, nm=norm((home? x.away : x.home)+" "+(tm.name||"")+" "+(tm.short||"")), tlc=norm(home? x.awayTlc : x.homeTlc).trim();
           return !used[x.id] && toks.length && (toks.every(t=>nm.indexOf(t)>=0) || toks.indexOf(tlc)>=0); }).sort((a,b)=>a.date<b.date? 1 : -1)[0];
         if(hit){ GDATE[g]=hit.date; used[hit.id]=1; } });
     }catch(e){}
