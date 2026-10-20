@@ -26465,7 +26465,7 @@ function _dashRosterInto(box, g, wide){
     const byNum={}, byName={}; POS.forEach(k=>(cards[k]||[]).forEach(c0=>{ if(!c0) return; if(c0.num) byNum[String(c0.num)]=c0; const n=nk(c0.name); if(n) byName[n]=c0; }));
     const used={};
     const man=(p, start, cd)=>{ if(cd) used[cd.id||cd.name]=1;
-      const ideas=((cd && cd.ideas)||[]).filter(x=>String(x||"").trim()).slice(0, wide? 3 : 2);
+      const ideas=wide? [] : ((cd && cd.ideas)||[]).filter(x=>String(x||"").trim()).slice(0, 2);   /* the wide roster says the role only */
       return h("div",{class:"dash-man"+(start? " start" : "")+((cd && (cd.hl==="key"||cd.hl==="stop"))? " hl-"+cd.hl : "")+((cd && cd.out)? " is-out" : ""), style:(cd && CO[cd.co])? "border-left-color:"+CO[cd.co] : ""},
         h("div",{class:"l1"}, h("u",{}, (p.num||(cd&&cd.num))? "#"+(p.num||cd.num) : ""), h("b",{}, _lgLastName(p.name||(cd&&cd.name)||"")),
           (p.last===false)? h("em",{title:"Did not play their last game"},"?") : null,
@@ -26487,7 +26487,7 @@ function _dashRosterInto(box, g, wide){
         l.forEach((cd,i)=>{ const p=ms[String(parseInt(cd.num,10))] || mn[nk(cd.name)] || null;
           list.appendChild(man(Object.assign({ num:cd.num, name:cd.name }, p? { min:p.min, st:p.st, last:p.last } : {}), anyS? cd.badge==="STARTER" : i===0, cd)); });
         wrap.appendChild(grp); });
-      box.appendChild(h("div",{class:"dash-src"}, "In the order of the pre game cards"+(R? " · minutes from their last "+R.n+" games · S = games started" : "")+" · the edge is the closeout on the card · ? = missed the last game"));
+      box.appendChild(h("div",{class:"dash-src"}, wide? "Order of the pre game cards"+(R? " · min: last "+R.n+" games · S = starts" : "")+" · edge = closeout" : "In the order of the pre game cards"+(R? " · minutes from their last "+R.n+" games · S = games started" : "")+" · the edge is the closeout on the card · ? = missed the last game"));
     } else if(R){
       R.five.forEach((e,i)=>{ const row=[e].concat(R.bench[i]||[]);
         const grp=h("div",{class:"dash-pos2"}, h("b",{}, POS[i]));
@@ -26524,7 +26524,7 @@ function _dashCoverInto(box, opp){
     cb.rows.slice().sort((a,b)=>vol(b)-vol(a)).slice(0,7).forEach(r=>{ t.appendChild(h("span",{class:"k"}, r.label)); t.appendChild(cell(r.cells[0])); t.appendChild(cell(r.cells[1])); });
     box.appendChild(t);
     (D.covbig||[]).forEach(r=>{ if(r.mix) box.appendChild(h("div",{class:"dash-src"}, h("b",{}, r.label+": "), r.mix)); });
-    box.appendChild(h("div",{class:"dash-src"},"Share: of the ball screens that big defends · PPP: what the coverage gives up — green gives up a lot (attack it), red holds · pale: under five possessions"));
+    box.appendChild(h("div",{class:"dash-src"},"% of the ball screens that big defends · PPP given up: green = attack it, red = it holds · pale: under 5 poss"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their tagging could not be read from the Drive.")); });
 }
 /* THEIR BEST PLAYERS AND WHY: the three with the highest PIR, each with the categories in
@@ -26639,6 +26639,187 @@ function _dashKeySetsInto(box, g){
         r.ppp!=null? h("em",{class:r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : null); })));
     box.appendChild(h("div",{class:"dash-src"},"Starred in the pre game playbook · runs in the games tagged · points per possession (red: it hurts us)"+(rows.length>10? " · +"+(rows.length-10)+" more in the pre game" : "")));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their sets could not be read.")); });
+}
+/* THEIR SIX WEAPONS: of everything our tagging found them running - sets, transition, half
+   court situations - the six that give them most, read as runs × points per possession (the
+   points each one is worth to them), among those run often enough to be read (3% of their
+   possessions, five runs at least) and not below their own average by more than a tenth.
+   With the staff's names, calls and splits, and the star when it is a key set. */
+function _dashTopSetsInto(box, g){
+  box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading their playbook…"));
+  const L=leagueState(), tid=_lgTeamIdByName(L, g.opponent);
+  _dashNeed(()=>window.ScoutPre && window.ScoutPre.sets, 20000).then(ok=>Promise.all([ ok? window.ScoutPre.sets(g.opponent, null).catch(()=>null) : null, _dashRep(g) ])).then(async ([res, rep])=>{
+    await new Promise(r2=>{ try{ if(!tid || _clubPulled[tid]) return r2(); _clubPull(tid, null, r2); setTimeout(r2, 8000); }catch(e){ r2(); } });
+    const edits={}, calls={}, splits={};
+    ((rep && rep.data && rep.data.sections)||[]).forEach(s2=>((s2 && s2.items)||[]).forEach(it=>{ if(!it) return;
+      if(it.pbEdit && typeof it.pbEdit==="object") Object.assign(edits, it.pbEdit);
+      if(it.pbCall && typeof it.pbCall==="object") Object.assign(calls, it.pbCall);
+      if(it.pbSplit && typeof it.pbSplit==="object") Object.keys(it.pbSplit).forEach(k=>{ splits[k]=(splits[k]||[]).concat(it.pbSplit[k]||[]); }); }));
+    const base=((res && res.rows)||[]), all=((window.ScoutPre && window.ScoutPre.pbSplit)? window.ScoutPre.pbSplit(base, splits) : base).map(r=>calls[r.label]? Object.assign({}, r, { call:calls[r.label] }) : r);
+    box.innerHTML="";
+    if(!all.length){ box.appendChild(h("div",{class:"dash-miss"},"No tagging of this club yet, so no sets.")); return; }
+    const tot=base.reduce((a,x)=>a+(x.n||0),0)||1, avg=(res && res.avg!=null)? Number(res.avg) : null;
+    const minN=Math.max(5, Math.round(0.03*tot));
+    const keep=_scoutOpponent; let cand=[], keyOf={};
+    try{ _scoutOpponent=g.opponent;
+      cand=all.filter(r=>{ try{ return _pbClass(r).kind!=="Concepts"; }catch(e){ return true; } }).filter(r=>r.origin!=="Out of Sets" && r.ppp!=null && (r.n||0)>=minN);
+      cand.forEach(r=>{ try{ keyOf[r.label]=_pbKeyRead(r.label); }catch(e){} });
+    } finally{ _scoutOpponent=keep; }
+    const pts=r=>(r.n||0)*(+r.ppp||0);
+    const good=cand.filter(r=>avg==null || r.ppp>=avg-0.10).sort((a,b)=>pts(b)-pts(a));
+    let top=good.slice(0,6);
+    if(top.length<6) top=top.concat(cand.filter(r=>top.indexOf(r)<0).sort((a,b)=>pts(b)-pts(a)).slice(0, 6-top.length));
+    if(!top.length){ box.appendChild(h("div",{class:"dash-miss"},"No set run "+minN+" times or more yet.")); return; }
+    const mx=Math.max(1, ...top.map(r=>r.n||0));
+    box.appendChild(h("div",{class:"dash-sets"}, top.map((r,i)=>{ let kind=""; try{ kind=_pbClass(r).kind||""; }catch(e){}
+      return h("div",{class:"dash-set top"}, h("u",{class:"rk"}, String(i+1)), h("b",{}, (keyOf[r.label]? "★ " : "")+(edits[r.label]||r.label)), kind? h("i",{class:"kd"}, kind) : null,
+        r.call? h("q",{}, r.call) : h("span",{class:"nc"}, ""),
+        h("span",{class:"vol", title:r.n+" runs · "+Math.round(100*r.n/tot)+"% of their possessions"}, h("i",{style:"width:"+Math.max(8,Math.round(100*(r.n||0)/mx))+"%"})), h("u",{}, String(r.n||0)),
+        h("span",{class:"pc"}, Math.round(100*r.n/tot)+"%"),
+        h("em",{class:r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2))); })));
+    box.appendChild(h("div",{class:"dash-src"},"Runs × points per possession · "+minN+"+ runs · not below their average"+(avg!=null? " "+avg.toFixed(2) : "")+" by more than 0.10 · % of their possessions · ★ key set"));
+  }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their playbook could not be read.")); });
+}
+/* THEIR IDENTITY IN FOUR NUMBERS. Seventeen team measures from the league - the ratings, the
+   pace, the four factors at both ends, the shot mix - ranked among the clubs, and the four in
+   which this club is furthest from the middle of the league: one a family (eFG, 2P% and the
+   offensive rating say the same thing), at least one at each end of the floor. Each with the
+   league's average and ours. Strength red (respect it), weakness green (go at it), a style
+   (pace, shot mix) neutral. */
+const DASH_TS=[
+  ["Off. rating","o",t=>t.ortg,1,"o-eff",""], ["eFG%","o",t=>100*t.off.efg,1,"o-eff","%"],
+  ["2P%","o",t=>t.off.p2a? 100*t.off.p2m/t.off.p2a : null,1,"o-eff","%"], ["3P%","o",t=>t.off.p3a? 100*t.off.p3m/t.off.p3a : null,1,"o-eff","%"],
+  ["Turnover rate","o",t=>100*t.off.tov,-1,"o-tov","%"], ["Off. rebounding","o",t=>100*t.off.reb,1,"o-reb","%"],
+  ["Free throw rate","o",t=>100*t.off.ftr,1,"o-ft",""], ["3PA rate","o",t=>(t.off.p2a+t.off.p3a)? 100*t.off.p3a/(t.off.p2a+t.off.p3a) : null,0,"o-mix","%"],
+  ["Pace","p",t=>t.pace,0,"pace",""],
+  ["Def. rating","d",t=>t.drtg,-1,"d-eff",""], ["Opp. eFG%","d",t=>100*t.def.efg,-1,"d-eff","%"],
+  ["Opp. 2P%","d",t=>t.def.p2a? 100*t.def.p2m/t.def.p2a : null,-1,"d-eff","%"], ["Opp. 3P%","d",t=>t.def.p3a? 100*t.def.p3m/t.def.p3a : null,-1,"d-eff","%"],
+  ["Forced turnovers","d",t=>100*t.def.tov,1,"d-tov","%"], ["Def. rebounding","d",t=>100*t.def.reb,1,"d-reb","%"],
+  ["Opp. free throw rate","d",t=>100*t.def.ftr,-1,"d-ft",""], ["Opp. 3PA rate","d",t=>(t.def.p2a+t.def.p3a)? 100*t.def.p3a/(t.def.p2a+t.def.p3a) : null,0,"d-mix","%"] ];
+function _dashOrd(n){ return n+(n%10===1&&n%100!==11? "st" : n%10===2&&n%100!==12? "nd" : n%10===3&&n%100!==13? "rd" : "th"); }
+function _dashTeamStatsInto(box, opp){
+  box.innerHTML="";
+  const L=leagueState(), tid=String(_lgTeamIdByName(L, opp)||""), F=Object.values(L.four||{}).filter(t=>t && t.off && t.def && t.gp);
+  const me=F.filter(t=>String(t.teamId)===tid)[0], our=((L.teams||[]).filter(t=>_lgOurs(t.name))[0]||{}).id, us=F.filter(t=>String(t.teamId)===String(our))[0];
+  if(!me || F.length<6){ box.appendChild(h("div",{class:"dash-miss"},"The league's team numbers for this club are not in yet.")); return; }
+  const n=F.length, mid=(n+1)/2;
+  const all=DASH_TS.map(m=>{ const v=m[2](me); if(v==null || !isFinite(v)) return null;
+    const vals=F.map(m[2]).filter(x=>x!=null && isFinite(x));
+    const r=1+vals.filter(x=>m[3]<0? x<v : x>v).length, avg=vals.reduce((a,b)=>a+b,0)/vals.length;
+    return { m:m, v:v, r:r, avg:avg, us:us? m[2](us) : null, e:Math.abs(r-mid) }; }).filter(Boolean);
+  all.sort((a,b)=>(b.e-a.e) || ((b.m[3]? 1 : 0)-(a.m[3]? 1 : 0)));
+  const pick=[], fam={};
+  all.forEach(x=>{ if(pick.length<4 && !fam[x.m[4]]){ pick.push(x); fam[x.m[4]]=1; } });
+  /* both ends of the floor: the fourth gives way to the best of the end that is missing */
+  ["o","d"].forEach(sd=>{ if(!pick.some(x=>x.m[1]===sd)){ const b=all.filter(x=>x.m[1]===sd && !fam[x.m[4]])[0]; if(b && pick.length){ const out=pick.pop(); delete fam[out.m[4]]; pick.push(b); fam[b.m[4]]=1; } } });
+  const f1=v=>v==null? "—" : v.toFixed(1);
+  box.appendChild(h("div",{class:"dash-ts"}, pick.map(x=>{ const m=x.m, dir=m[3];
+    const tone=dir===0? "sty" : x.r<=Math.round(n/3)? "str" : x.r>n-Math.round(n/3)? "wk" : "";
+    const word=dir===0? "Style" : tone==="str"? "Strength" : tone==="wk"? "Weakness" : "";
+    const most=m[4]==="pace"? ["fastest","slowest"] : ["most","fewest"];
+    const where=dir===0? (x.r<=mid? _dashOrd(x.r)+" "+most[0] : _dashOrd(n+1-x.r)+" "+most[1]) : _dashOrd(x.r)+" of "+n;
+    const pos=dir===0? (x.r-1)/(n-1) : (x.r-1)/(n-1);
+    return h("div",{class:"dash-t "+tone},
+      h("div",{class:"t1"}, h("i",{}, m[1]==="o"? "Offense" : m[1]==="d"? "Defense" : "Tempo"), word? h("em",{}, word) : null),
+      h("div",{class:"t2"}, m[0]),
+      h("div",{class:"t3"}, h("b",{}, f1(x.v)+m[5]), h("span",{}, where)),
+      h("div",{class:"trk"}, h("u",{style:"left:"+Math.round(100*pos)+"%"})),
+      h("div",{class:"t4"}, "League "+f1(x.avg)+m[5]+(x.us!=null? " · Us "+f1(x.us)+m[5] : ""))); })));
+  box.appendChild(h("div",{class:"dash-src"}, "The 4 of "+DASH_TS.length+" league measures where they are furthest from the middle · "+me.gp+" games · 1st = best"));
+}
+/* WHERE THEY COME FROM: their last five games from the league's calendar - won or lost and by
+   how much - the run they are on, and the one result that says most (a big margin, a win over
+   a top-four club, a loss to a bottom-four one) */
+function _dashFormInto(box, opp){
+  box.innerHTML="";
+  const L=leagueState(), tid=String(_lgTeamIdByName(L, opp)||"");
+  const gs=(L.games||[]).concat(L.cup||[]).filter(y=>tid && (String(y.homeId)===tid || String(y.awayId)===tid) && _lgDone(y) && y.hs!=null && y.as!=null)
+    .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  if(!gs.length){ box.appendChild(h("div",{class:"dash-miss"},"No game of theirs played yet.")); return; }
+  const st=L.standings||[], posOf={}; st.forEach(s=>{ posOf[String(s.teamId)]=s.pos; }); const nT=st.length||18;
+  const shortOf=id=>{ const t=(L.teams||[]).filter(x=>String(x.id)===String(id))[0]; return (t && (t.short||t.tlc))||""; };
+  const rows=gs.slice(-5).map(y=>{ const home=String(y.homeId)===tid, us=home? y.hs : y.as, th=home? y.as : y.hs, oid=String(home? y.awayId : y.homeId);
+    return { y:y, home:home, us:us, th:th, d:us-th, w:us>th, oid:oid, op:posOf[oid]||null, nm:shortOf(oid)||_lgShort(home? y.away : y.home), cup:/pokal|cup/i.test(String(y.competition||"")) }; });
+  const flag=r=>(r.w && r.op && r.op<=4)? "beat a top 4" : (!r.w && r.op && r.op>nT-4)? "lost to a bottom 4" : Math.abs(r.d)>=15? (r.w? "big win" : "heavy loss") : "";
+  box.appendChild(h("div",{class:"dash-form"}, rows.map(r=>{ const f=flag(r);
+    return h("div",{class:"fg "+(r.w? "w" : "l")+(f? " sig" : ""), title:r.y.home+" "+r.y.hs+"–"+r.y.as+" "+r.y.away+(r.cup? " · cup" : "")},
+      h("b",{}, r.w? "W" : "L"), h("strong",{}, (r.d>0? "+" : "")+r.d), h("span",{}, (r.home? "vs " : "@ ")+r.nm+(r.op? " ("+r.op+")" : "")),
+      h("em",{}, r.us+"–"+r.th+" · "+r.y.date.slice(8,10)+"/"+r.y.date.slice(5,7)), f? h("i",{}, f) : null); })));
+  const w5=rows.filter(r=>r.w).length, md=rows.reduce((a,r)=>a+r.d,0)/rows.length;
+  let sk=0; for(let i=rows.length-1;i>=0 && rows[i].w===rows[rows.length-1].w;i--) sk++;
+  const l3=rows.slice(-3), w3=l3.filter(r=>r.w).length, all=gs.length, wa=gs.filter(y=>{ const home=String(y.homeId)===tid; return home? y.hs>y.as : y.as>y.hs; }).length;
+  box.appendChild(h("div",{class:"dash-formsum"},
+    h("span",{}, h("b",{}, w5+"–"+(rows.length-w5)), " last "+rows.length),
+    h("span",{}, h("b",{class:md>=0? "up" : "dn"}, (md>=0? "+" : "−")+Math.abs(md).toFixed(1)), " margin"),
+    h("span",{}, h("b",{}, (rows[rows.length-1].w? "W" : "L")+sk), " streak"),
+    all>rows.length? h("span",{}, h("b",{}, wa+"–"+(all-wa)), " season") : null,
+    l3.length===3? h("span",{class:"tr"}, w3>=2? (w3===3? "▲ won the last 3" : "▲ 2 of the last 3 won") : (w3===0? "▼ lost the last 3" : "▼ 1 of the last 3 won")) : null));
+  box.appendChild(h("div",{class:"dash-src"},"League calendar · (n) = the rival's place in the table today"));
+}
+/* THE STAFF'S NOTES ON THEM, FIVE A SIDE. Everything written in the pre game is read - the
+   Game Summary keys, Our Defense (their offense) and Our Offense (their defense), line by line -
+   and the lines that weigh most are kept: the staff's own keys first, then 3 keys and game
+   plan, then the part of their game each line is about (ball screen, transition, post, ...);
+   a marked line (bold, capitals) weighs more, and a line about a starred set or a key
+   player weighs more. One line a concept, so nothing is said twice, each cut to its first
+   clause. Nothing is written by the app: every line is the staff's. */
+function _dashNotesPick(rep, side, extra){
+  const secs=(rep && rep.data && rep.data.sections)||[];
+  const want=side==="off"? /our\s*defen[cs]e/i : /our\s*offen[cs]e/i;
+  const sum=secs.filter(s=>s && (s.role==="summary" || String(s.title||"").trim()==="Game Summary"))[0];
+  const C=[];
+  /* a block of html, one candidate a line, with whether the line was marked */
+  const lines=(html, base, src)=>{ String(html||"").split(/<\s*br\s*\/?>|<\/(?:p|li|div)>|\n/i).forEach((seg,i)=>{
+      const marked=/<(b|strong|u|mark)\b|font-weight\s*:\s*(bold|[6-9]00)|background(-color)?\s*:/i.test(seg);
+      let t=_dashTxt(seg).replace(/^[\s•\-–·*\d.)]+/,"").replace(/\s+/g," ").trim();
+      if(t.length<6) return;
+      const caps=(t.match(/\b[A-Z]{4,}\b/g)||[]).filter(w=>!/^(PNR|PNP|DHO|ATO|SLOB|BLOB|ICE|DROP|SHOW|HEDGE)$/.test(w)).length>=2;
+      C.push({ t:t, w:base+(marked||caps? 2 : 0)+(i===0? 0.6 : 0), src:src }); }); };
+  if(sum){ (sum.items||[]).forEach(it=>{ const tt=String((it && it.t)||"");
+    const mine=side==="off"? /our defen[cs]e|ato/i.test(tt) : /our offen[cs]e|special defen|players to attack/i.test(tt);
+    if(mine) lines(it.v, 6, tt.replace(/·.*$/,"").trim()); }); }
+  secs.filter(s=>s && want.test(String(s.title||""))).forEach(s=>(s.items||[]).forEach(it=>{ if(!it) return;
+    const pt=String(it.t||""), base=/3 keys/i.test(pt)? 5 : /game plan/i.test(pt)? 4 : /pnr|pick|transition|early|players to attack|special/i.test(pt)? 3 : 2;
+    lines(it.them, base, pt); }));
+  /* the concept each line is about: one line a concept */
+  const CON=[["Ball screen",/\b(pnr|p&r|pick|ball ?screen|hedge|ice|drop|show|blitz|roll|pop)\b/i],["Transition",/\b(transition|early|fast ?break|push the ball|push after|outlet|open court|run(ning)? hard|run after|after (misses|makes|rebounds)|press)\b/i],
+    ["Post",/\b(post|low ?post|duck|seal|back ?down)/i],["Off-ball screens",/\b(off ?screen|pin ?down|flare|stagger|zipper|curl|elevator|back ?pick|ucla)\b/i],
+    ["Zone",/\bzone\b/i],["Rebounding",/\b(rebound|boards|crash|o-?reb|box ?out)\b/i],["Shooting",/\b(three|3pt|3p|shooter|spot ?up|catch and shoot|pull ?up)\b/i],
+    ["1x1",/\b(1x1|1v1|iso|isolation|drive|downhill|attack the close)\b/i],["Switch",/\bswitch/i],["ATO / BLOB / SLOB",/\b(ato|blob|slob|out of bounds|inbound)\b/i],
+    ["Help",/\b(help|tag|rotation|stunt|dig|gap)\b/i],["Turnovers",/\b(turnover|steal|deflect|trap)\b/i]];
+  /* every concept a line touches - from its words, else from the heading it was written under */
+  const consOf=(t, src)=>{ let l=CON.filter(x=>x[1].test(t)).map(x=>x[0]); if(!l.length) l=CON.filter(x=>x[1].test(String(src||""))).map(x=>x[0]).slice(0,1); return l; };
+  const ex=(extra||[]).map(s=>_lgNorm(String(s||""))).filter(s=>s.length>=3);
+  C.forEach(c=>{ c.cons=consOf(c.t, c.src); const nt=_lgNorm(c.t); if(ex.some(e=>nt.indexOf(e)>=0)) c.w+=1.5; if(/\d/.test(c.t)) c.w+=0.3; if(c.t.length>160) c.w-=1; });
+  const toks=t=>_lgNorm(t).replace(/[^a-z0-9 ]/g," ").split(" ").filter(x=>x.length>=4);
+  const near=(a,b)=>{ const A=toks(a), B=toks(b); if(!A.length || !B.length) return false; const s=A.filter(x=>B.indexOf(x)>=0).length; return s/Math.min(A.length,B.length)>=0.6; };
+  const out=[], seen={};
+  C.slice().sort((a,b)=>b.w-a.w).forEach(c=>{ if(out.length>=5) return;
+    /* a line only goes in if it brings a concept not said yet (the staff's own keys always may) */
+    const fresh=c.cons.filter(k=>!seen[k]);
+    if(c.cons.length && !fresh.length && c.w<6) return;
+    c.con=(fresh[0]||c.cons[0]||"");
+    if(out.some(o=>near(o.t, c.t))) return;
+    out.push(c); c.cons.forEach(k=>{ seen[k]=1; }); });
+  /* the first clause, no more */
+  const cut=t=>{ let s=t.split(/\s[-–]\s|;\s|\.\s/)[0]; if(s.length>96){ s=s.slice(0,94); s=s.slice(0, s.lastIndexOf(" ")>40? s.lastIndexOf(" ") : 94)+"…"; } return s.replace(/[.,:]$/,""); };
+  return out.map(c=>({ t:cut(c.t), full:c.t, con:c.con, src:c.src }));
+}
+function _dashNotesInto(box, g){
+  box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading the pre game…"));
+  _dashRep(g).then(rep=>{ box.innerHTML="";
+    if(!rep){ box.appendChild(h("div",{class:"dash-miss"},"No pre game for this game yet.")); return; }
+    /* a line about one of their key players or a starred set weighs more */
+    const cards=(rep.data && rep.data.cards && rep.data.cards.pos)||{}, extra=[];
+    Object.keys(cards).forEach(k=>(cards[k]||[]).forEach(c=>{ if(c && (c.hl==="key" || c.hl==="stop")) extra.push(_lgLastName(c.name||"")); }));
+    ((rep.data && rep.data.sections)||[]).forEach(s=>((s && s.items)||[]).forEach(it=>{ if(it && it.pbEdit) Object.keys(it.pbEdit).forEach(k=>{ const c=(String(k).match(/^([A-Z]{1,2}\d[A-Z]?)\b/)||[])[1]; if(c) extra.push(c); }); }));
+    const O=_dashNotesPick(rep, "off", extra), D=_dashNotesPick(rep, "def", extra);
+    if(!O.length && !D.length){ box.appendChild(h("div",{class:"dash-miss"},"Nothing written about them in the pre game yet.")); return; }
+    const col=(title, L2, cls)=>h("div",{class:"dash-nc "+cls}, h("b",{class:"nh"}, title),
+      L2.length? h("ol",{}, L2.map(x=>h("li",{ title:x.full+(x.src? "\n— "+x.src : "") }, x.con? h("i",{}, x.con) : null, h("span",{}, x.t)))) : h("div",{class:"dash-src"},"Nothing written yet"));
+    box.appendChild(h("div",{class:"dash-notes"}, col("Their offense", O, "o"), col("Their defense", D, "d")));
+    box.appendChild(h("div",{class:"dash-src"},"From the pre game: the keys first, then 3 keys and game plan · one line a concept · the whole line on hover"));
+  }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"The pre game could not be read.")); });
 }
 /* OUR GAME FROM OUR TAGGING, OFFENSE AND DEFENSE APART: OER, paint touches and the sets
    that worked and did not; DER, what TAG and BACK conceded and each defensive concept with
@@ -27203,19 +27384,25 @@ function renderDashboard(){
       /* the state of the pre game report, and a warning when it is not ready three days out */
       _dashRep(g).then(rep=>{ const s=_dashStatus(rep, false); st.innerHTML=""; st.appendChild(pill(s));
         if(s[0]!=="ready" && dd<=3){ alerts.push({ tone:s[0]==="pend"? "bad" : "warn", text:"Pre game "+g.opponent+": "+s[1].toLowerCase(), go:()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } }) }); paintAtt(); } });
-      /* their key players from both sources, their key sets, their ball screen defense on
-         the 4 and the 5, and the roster as the staff ordered it */
+      /* THE RIVAL IN ONE OR TWO MINUTES, in the order the staff reads it: who they are in four
+         numbers, their roster, the ball screen, what we wrote about them, their six weapons,
+         how they come in, and their key players */
       const sub=(title)=>{ const b=h("div",{class:"dash-sub"}, h("h4",{}, title)); const body=h("div",{}); b.appendChild(body); b.__b=body; return b; };
-      const cP=sub("Their key players · play by play and our tagging");
-      c.__b.appendChild(cP);
-      const cK=sub("Key sets"), cV=sub("Ball screen defense · their 4 and their 5");
-      c.__b.appendChild(h("div",{class:"dash-2"}, cK, cV));
-      const cR=sub("Their roster · in the order of our cards");
-      c.__b.appendChild(h("div",{style:"margin-top:12px"}, cR));
-      _dashKeyPlayersInto(cP.__b, g.opponent);
-      _dashKeySetsInto(cK.__b, g);
-      _dashCoverInto(cV.__b, g.opponent);
+      const cT=sub("Team stats · what sets them apart"), cR=sub("Roster summary"),
+        cV=sub("Pick & roll · their 4 and their 5 on the ball screen"), cN=sub("Scouting notes · 5 + 5"),
+        cS=sub("Playbook summary · their 6 weapons"), cF=sub("Recent form"), cP=sub("Key players · play by play and our tagging");
+      c.__b.appendChild(h("div",{class:"dash-blk"}, cT));
+      c.__b.appendChild(h("div",{class:"dash-blk"}, cR));
+      c.__b.appendChild(h("div",{class:"dash-2"}, cV, cN));
+      c.__b.appendChild(h("div",{class:"dash-2 r64"}, cS, cF));
+      c.__b.appendChild(h("div",{class:"dash-blk"}, cP));
+      _dashTeamStatsInto(cT.__b, g.opponent);
       _dashRosterInto(cR.__b, g, true);
+      _dashCoverInto(cV.__b, g.opponent);
+      _dashNotesInto(cN.__b, g);
+      _dashTopSetsInto(cS.__b, g);
+      _dashFormInto(cF.__b, g.opponent);
+      _dashKeyPlayersInto(cP.__b, g.opponent);
     },
     /* ---------------------------------------------------- Oriol: the season in lines, sets best and worst */
     trends2:()=>{
@@ -36306,6 +36493,55 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-2.post{margin-top:6px;align-items:center}
 .dash-4.r2{margin-top:14px;padding-top:12px;border-top:1px solid var(--line,#e4e7ec)}
 @media (max-width:900px){ .dash-2{grid-template-columns:minmax(0,1fr)} .dash-2 > .dash-sub + .dash-sub{border-left:0;padding-left:0;border-top:1px solid var(--line,#e4e7ec);padding-top:10px} }
+/* the rival card: blocks in the order the staff reads them */
+.dash-blk{margin-top:12px;min-width:0}
+.dash-2.r64{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}
+/* team stats: four tiles, each a rank on the league's line */
+.dash-ts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.dash-t{border:1px solid var(--line,#e4e7ec);border-top:3px solid var(--ink-faint,#8a93a2);border-radius:9px;padding:7px 10px 8px;display:grid;gap:3px;min-width:0;background:var(--panel,#fff)}
+.dash-t.str{border-top-color:#d8524e}.dash-t.wk{border-top-color:#2f9e86}.dash-t.sty{border-top-color:#4a86d8}
+.dash-t .t1{display:flex;align-items:center;gap:6px}
+.dash-t .t1 i{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint,#8a93a2)}
+.dash-t .t1 em{margin-left:auto;font:700 9px 'Oswald',sans-serif;font-style:normal;letter-spacing:.12em;text-transform:uppercase;padding:1px 6px;border-radius:999px;background:var(--panel-2,#f1f2f4);color:var(--ink-soft,#5b6472)}
+.dash-t.str .t1 em{background:rgba(216,82,78,.14);color:#c0403c}.dash-t.wk .t1 em{background:rgba(47,158,134,.16);color:#17805a}.dash-t.sty .t1 em{background:rgba(74,134,216,.14);color:#2f63ad}
+.dash-t .t2{font:700 12px 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--ink,#141821);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-t .t3{display:flex;align-items:baseline;gap:8px}
+.dash-t .t3 b{font:700 24px/1 'Oswald',sans-serif;color:var(--ink,#141821)}
+.dash-t.str .t3 b{color:#c0403c}.dash-t.wk .t3 b{color:#17805a}
+.dash-t .t3 span{font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.dash-t .trk{position:relative;height:4px;border-radius:2px;background:var(--panel-2,#eef0f3);margin:4px 5px 3px}
+.dash-t .trk u{position:absolute;top:-3px;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:var(--ink-soft,#5b6472);border:2px solid var(--panel,#fff)}
+.dash-t.str .trk u{background:#d8524e}.dash-t.wk .trk u{background:#2f9e86}.dash-t.sty .trk u{background:#4a86d8}
+.dash-t .t4{font:500 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:900px){ .dash-ts{grid-template-columns:repeat(2,minmax(0,1fr))} .dash-2.r64{grid-template-columns:minmax(0,1fr)} }
+/* recent form: one box a game, oldest to newest */
+.dash-form{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
+.dash-form .fg{border-radius:8px;padding:5px 6px;display:grid;gap:1px;justify-items:center;text-align:center;background:rgba(216,82,78,.08);border-bottom:3px solid #d8524e;min-width:0}
+.dash-form .fg.w{background:rgba(47,158,134,.09);border-bottom-color:#2f9e86}
+.dash-form .fg.sig{box-shadow:0 0 0 2px #c6a15b}
+.dash-form .fg > b{font:700 13px 'Oswald',sans-serif;color:#c0403c}.dash-form .fg.w > b{color:#17805a}
+.dash-form .fg strong{font:700 15px/1 'Oswald',sans-serif;color:var(--ink,#141821)}
+.dash-form .fg span{font:600 10.5px 'Inter',system-ui,sans-serif;color:var(--ink,#141821);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.dash-form .fg em{font:500 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
+.dash-form .fg i{font:700 8.5px 'Oswald',sans-serif;font-style:normal;letter-spacing:.08em;text-transform:uppercase;color:#7a5c12}
+.dash-formsum{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--ink-soft,#5b6472);margin-top:4px}
+.dash-formsum b{font:700 13px 'Oswald',sans-serif;color:var(--ink,#141821)}
+.dash-formsum b.up{color:#17805a}.dash-formsum b.dn{color:#c0403c}
+.dash-formsum .tr{font-weight:700;color:var(--ink,#141821)}
+/* scouting notes: two columns of five */
+.dash-notes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.dash-nc{min-width:0}
+.dash-nc .nh{display:block;font:700 10px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;padding:2px 0 4px;border-bottom:2px solid #d8524e;color:#c0403c;margin-bottom:4px}
+.dash-nc.d .nh{border-bottom-color:#2f9e86;color:#17805a}
+.dash-nc ol{margin:0;padding:0;list-style:none;display:grid;gap:4px;counter-reset:n}
+.dash-nc li{counter-increment:n;display:grid;grid-template-columns:16px minmax(0,1fr);column-gap:6px;font-size:12px;line-height:1.3;color:var(--ink,#141821)}
+.dash-nc li::before{content:counter(n);grid-row:1 / span 2;font:700 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);padding-top:1px}
+.dash-nc li i{font:700 8.5px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint,#8a93a2)}
+.dash-nc li span{grid-column:2}
+@media (max-width:520px){ .dash-notes{grid-template-columns:minmax(0,1fr)} .dash-form{grid-template-columns:repeat(3,minmax(0,1fr))} }
+/* the six weapons: rank, name, call, use, share, PPP */
+.dash-set.top .rk{min-width:14px;text-align:center;color:var(--ink-faint,#8a93a2)}
+.dash-set .pc{flex:none;font:600 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);min-width:26px;text-align:right}
 .dash-cov{display:grid;grid-template-columns:minmax(90px,1.3fr) repeat(2,minmax(0,1fr));gap:3px 6px;align-items:center;font-size:12px}
 .dash-cov .hd{font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint,#8a93a2)}
 .dash-cov .k{font-weight:700}
