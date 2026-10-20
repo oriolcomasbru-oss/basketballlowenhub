@@ -4757,7 +4757,7 @@ async function syncCalendar(){
   const rows=await fetchPub(PUBCSV.calendar); if(!rows.length) return 0;
   const month=state.plan.month=state.plan.month||{};
   const sessions=state.plan.sessions=state.plan.sessions||{};
-  const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+  const used={}; const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
   const WD=/^(MON|TUE|WED|THU|FRI|SAT|SUN)/i;
   const preMonth={}; Object.keys(month).forEach(k=>{ if(month[k]&&month[k].length) preMonth[k]=1; });
   const preSess={}; Object.keys(sessions).forEach(k=>{ if(sessions[k]&&sessions[k].length) preSess[k]=1; });
@@ -14046,7 +14046,25 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
      so a split set counts its own. */
   const gmShort=g=>String(g||"").replace(/^(VS|AT|@)\s+/i,"").slice(0,3).toUpperCase();
   const perGame=r=>{ const src=r._src||r, o={}; ((src && src._chs)||[]).forEach(c=>{ const g=(c && c[0] && c[0].game)||""; o[g]=(o[g]||0)+1; }); return o; };
-  const gmHead=()=>h("span",{class:"pbb-c-gm hd", title:"Times run in each tagged game"}, GAMES.map(g=>h("i",{title:g}, gmShort(g))));
+  const gmHead=()=>h("span",{class:"pbb-c-gm hd", title:"Times run in each tagged game, oldest first"}, GAMES.map(g=>h("i",{title:g+(GDATE[g]? " · "+GDATE[g].split("-").reverse().join("/") : "")}, gmShort(g), GDATE[g]? h("u",{}, GDATE[g].slice(8,10)+"/"+GDATE[g].slice(5,7)) : null)));
+  /* THE GAMES IN THE ORDER THEY WERE PLAYED. A tagged file is named after the two clubs and
+     carries no date, so the date comes from the league's schedule: the scouted club's played
+     game against that rival (the latest, when they met twice). A game the schedule does not
+     place keeps its place at the end. */
+  const GDATE={};
+  const orderGames=list=>{
+    try{
+      const L=leagueState(), tid=String(_preClub()||""), T=todayISO();
+      if(!tid) return list;
+      const mine=(L.games||[]).filter(x=>(String(x.homeId)===tid || String(x.awayId)===tid) && x.date && x.date<=T && (x.status==="final" || x.hs!=null));
+      const used={}; const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]+/g," ");
+      list.forEach(g=>{ const toks=norm(g).split(" ").filter(t=>t.length>=3);
+        const hit=mine.filter(x=>{ const home=String(x.homeId)===tid, nm=norm(home? x.away : x.home), tlc=norm(home? x.awayTlc : x.homeTlc).trim();
+          return !used[x.id] && toks.length && (toks.every(t=>nm.indexOf(t)>=0) || toks.indexOf(tlc)>=0); }).sort((a,b)=>a.date<b.date? 1 : -1)[0];
+        if(hit){ GDATE[g]=hit.date; used[hit.id]=1; } });
+    }catch(e){}
+    return list.map((g,i)=>({ g:g, i:i })).sort((a,b)=>{ const A=GDATE[a.g], B=GDATE[b.g]; if(A && B) return A<B? -1 : A>B? 1 : a.i-b.i; if(A) return -1; if(B) return 1; return a.i-b.i; }).map(x=>x.g);
+  };
   const inFilter=r=>(FILTER==="All" || (FILTER==="ATO"? r.c.ato : r.c.kind===FILTER))
     && (ONLY!=="adj" || hasAdj(r.label)) && (ONLY!=="key" || keyOn(r.label));
   function draw(){
@@ -14195,7 +14213,7 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
   try{ _clubPull(_preClub(), ()=>{ try{ if(ROWS.length) draw(); }catch(e){} }); }catch(e){}
   if(_scoutOpponent && window.ScoutPre && window.ScoutPre.sets){
     window.ScoutPre.sets(_scoutOpponent, null).then(res=>{
-      BASE=res.rows||[]; GAMES=(res.games||[]).slice(); derive();  /* concepts are not sets: the staff keeps them out of the playbook */ AVG=(res.avg!=null)? res.avg : null;
+      BASE=res.rows||[]; GAMES=orderGames((res.games||[]).filter((g,i,a)=>a.indexOf(g)===i)); derive();  /* concepts are not sets: the staff keeps them out of the playbook */ AVG=(res.avg!=null)? res.avg : null;
       if(!ROWS.length){ tableBox.innerHTML=""; tableBox.appendChild(h("div",{class:"pbx-none"},
         res.why==="nomatch"? "The tagging holds no games against this opponent." : res.why==="empty"? "No files in the pregame folder." : "Nothing tagged for this opponent yet."));
         /* what the staff wrote is still shown, with nothing to hang it on */
@@ -33650,7 +33668,7 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pbb-chip.on{background:var(--ink,#141821);color:#fff;border-color:var(--ink,#141821)}.pbb-chip.on i{color:rgba(255,255,255,.7)}
 .pbb-sep{width:1px;height:18px;background:var(--line-strong,#cfd4dc);margin:0 4px}
 .pbb-main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
-.pbb-r{display:grid;grid-template-columns:26px 92px minmax(120px,1.1fr) minmax(56px,auto) 96px 52px 64px calc(var(--ng,4)*23px) minmax(180px,1.3fr);gap:8px;align-items:center;
+.pbb-r{display:grid;grid-template-columns:26px 92px minmax(120px,1.1fr) minmax(56px,auto) 96px 52px 64px calc(var(--ng,4)*27px) minmax(180px,1.3fr);gap:8px;align-items:center;
   padding:5px 8px;border-bottom:1px solid var(--line,#eef0f3);font-size:12.5px;border-left:4px solid transparent}
 .pbb-h{position:-webkit-sticky;position:sticky;top:0;z-index:2;background:var(--panel,#fff);border-bottom:2px solid var(--ink,#141821);
   font:700 9.5px 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
@@ -33680,9 +33698,10 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pbb-c-vol i{display:block;height:7px;border-radius:4px;background:#8a96a8;flex:0 0 auto;max-width:30px}
 .pbb-c-vol b{font:700 11px 'IBM Plex Mono',monospace}
 .pbb-c-gm{display:flex;gap:2px}
-.pbb-c-gm i{flex:0 0 21px;height:19px;border-radius:4px;display:flex;align-items:center;justify-content:center;font:700 10.5px 'IBM Plex Mono',monospace;font-style:normal;background:var(--panel-2,#f1f3f6);color:var(--ink-faint,#8a93a2)}
+.pbb-c-gm i{flex:0 0 25px;height:19px;border-radius:4px;display:flex;align-items:center;justify-content:center;font:700 10.5px 'IBM Plex Mono',monospace;font-style:normal;background:var(--panel-2,#f1f3f6);color:var(--ink-faint,#8a93a2)}
 .pbb-c-gm i.z{opacity:.55}
-.pbb-c-gm.hd i{background:none;height:auto;font:700 8.5px 'Oswald',sans-serif;letter-spacing:.04em;color:var(--ink-soft,#5b6472);cursor:help}
+.pbb-c-gm.hd i{background:none;height:auto;flex-direction:column;line-height:1.05;font:700 8.5px 'Oswald',sans-serif;letter-spacing:.04em;color:var(--ink-soft,#5b6472);cursor:help}
+.pbb-c-gm.hd i u{text-decoration:none;font:600 7.5px 'IBM Plex Mono',monospace;letter-spacing:0;color:var(--ink-faint,#8a93a2)}
 @media (max-width:1100px){ .pbb .pbb-c-n{min-width:0} .pbb .pbb-c-n i{max-width:26px} }
 @media (max-width:560px){ .pbb .pbb-r{grid-template-columns:22px 62px minmax(70px,1fr) 44px 42px 46px;gap:6px} .pbb .pbb-c-vol i{max-width:14px} .pbb .pbb-c-gm{grid-column:2 / -1} }
 .pbb-c-adj{display:flex;align-items:flex-start;gap:6px;min-width:0}
@@ -33716,7 +33735,7 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pbb-note-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px}
 .pbb-note-2 i{font-style:normal;font-size:10px;color:var(--ink-faint,#8a93a2);text-transform:uppercase;letter-spacing:.06em}
 @media (max-width:1100px){ .pbb-main{grid-template-columns:minmax(0,1fr)} .pbb-key{position:static}
-  .pbb-r{grid-template-columns:24px 70px minmax(90px,1fr) 56px 46px 52px calc(var(--ng,4)*23px);row-gap:3px} .pbb-c-call{display:none} .pbb-c-adj{grid-column:2 / -1} .pbb-h .pbb-c-adj{display:none} }
+  .pbb-r{grid-template-columns:24px 70px minmax(90px,1fr) 56px 46px 52px calc(var(--ng,4)*27px);row-gap:3px} .pbb-c-call{display:none} .pbb-c-adj{grid-column:2 / -1} .pbb-h .pbb-c-adj{display:none} }
 
 /* post game / practice: the trainings between two games, folded */
 .ym-trg{margin:3px 0}
