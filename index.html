@@ -14023,7 +14023,7 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
     save(); derive(); draw(); toast(r.label+" put back into "+r.split); };
   const COLS=[ ["code","Code",false, r=>(r.c.fam||"~")+" "+(r.c.variant||"")+" "+String(nameOf(r.label)).toLowerCase()],
     ["name","Set",false, r=>String(nameOf(r.label)).toLowerCase()], ["call","Call",false, r=>String(r.call||"￿").toLowerCase()],
-    ["n","Use",true, r=>r.n], ["ppp","PPP",true, r=>r.ppp], ["efg","eFG",true, r=>r.efg] ];
+    ["n","Use",true, r=>r.n], ["ppp","PPP",true, r=>r.ppp], ["vol","Vol",true, r=>r.n] ];
   const cmp=()=>{ const c=COLS.filter(x=>x[0]===ORDER)[0]||COLS[3], get=c[3];
     return (a,b)=>{ const A=get(a), B=get(b); let d=(typeof A==="number" && typeof B==="number")? A-B : String(A).localeCompare(String(B), undefined, { numeric:true });
       if(!d) d=b.n-a.n; return (c[2]? DESC : !DESC)? -d : d; }; };
@@ -14112,7 +14112,11 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
       const mx=Math.max.apply(null, ROWS.map(x=>x.n).concat([1]));
       row.appendChild(h("span",{class:"pbb-c-n", title:r.n+" runs"}, h("i",{style:"width:"+Math.max(4,Math.round(100*r.n/mx))+"%"}), h("b",{}, String(r.n))));
       const pp=pbxPppChip(r.ppp, AVG, r.n); pp.classList.add("pbb-c-ppp"); row.appendChild(pp);
-      row.appendChild(h("span",{class:"pbb-c-efg"}, r.efg==null? "—" : r.efg+"%"));
+      /* THE VOLUME: the share of their possessions that end in this set, drawn like the use -
+         a bar against the set they run most, and the number */
+      { const tot=BASE.reduce((a,x)=>a+(x.n||0),0)||1, v=100*r.n/tot, mxV=100*mx/tot;
+        row.appendChild(h("span",{class:"pbb-c-vol", title:"≈"+Math.round(v)+"% of their tagged possessions ("+r.n+" of "+tot+")"},
+          h("i",{style:"width:"+Math.max(4,Math.round(100*v/mxV))+"%"}), h("b",{}, (v<1 && v>0? "<1" : String(Math.round(v)))+"%"))); }
       /* the adjustment, and only the adjustment */
       const cell=h("span",{class:"pbb-c-adj"});
       if(pk && (canEd || hasAdj(r.label))){
@@ -14136,7 +14140,7 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
     if(orphans.length){
       tableBox.appendChild(h("div",{class:"pbb-fam"}, h("b",{},"Not in the tagging"), h("span",{},"adjustments written for a set the tagging does not list now — kept as they are")));
       orphans.forEach(o=>{ const row=h("div",{class:"pbb-r adj orphan"}, h("span",{class:"pbb-star"},""), h("span",{class:"pbb-c-code"}, h("i",{},"—")),
-          h("span",{class:"pbb-c-name"}, nameOf(o.p.k)), h("span",{class:"pbb-c-call"},""), h("span",{class:"pbb-c-n"},""), h("span",{class:"pbb-c-ppp"},""), h("span",{class:"pbb-c-efg"},""));
+          h("span",{class:"pbb-c-name"}, nameOf(o.p.k)), h("span",{class:"pbb-c-call"},""), h("span",{class:"pbb-c-n"},""), h("span",{class:"pbb-c-ppp"},""), h("span",{class:"pbb-c-vol"},""));
         const cell=h("span",{class:"pbb-c-adj"}); const box=makeRichBox(canEd, o.p.rule, html=>{ o.p.rule=html; save(); }, "", 0); box.classList.add("pbb-rule"); cell.appendChild(box);
         row.appendChild(cell); tableBox.appendChild(row); });
     }
@@ -33635,7 +33639,7 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pbb-chip.on{background:var(--ink,#141821);color:#fff;border-color:var(--ink,#141821)}.pbb-chip.on i{color:rgba(255,255,255,.7)}
 .pbb-sep{width:1px;height:18px;background:var(--line-strong,#cfd4dc);margin:0 4px}
 .pbb-main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
-.pbb-r{display:grid;grid-template-columns:26px 92px minmax(120px,1.1fr) minmax(56px,auto) 96px 52px 46px minmax(180px,1.3fr);gap:8px;align-items:center;
+.pbb-r{display:grid;grid-template-columns:26px 92px minmax(120px,1.1fr) minmax(56px,auto) 96px 52px 64px minmax(180px,1.3fr);gap:8px;align-items:center;
   padding:5px 8px;border-bottom:1px solid var(--line,#eef0f3);font-size:12.5px;border-left:4px solid transparent}
 .pbb-h{position:-webkit-sticky;position:sticky;top:0;z-index:2;background:var(--panel,#fff);border-bottom:2px solid var(--ink,#141821);
   font:700 9.5px 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
@@ -33660,7 +33664,10 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pbb-c-n{display:flex;align-items:center;gap:6px}
 .pbb-c-n i{display:block;height:7px;border-radius:4px;background:#4a86d8;flex:0 0 auto;max-width:60px}
 .pbb-c-n b{font:700 11px 'IBM Plex Mono',monospace}
-.pbb-c-ppp{text-align:center}.pbb-c-efg{font:400 11.5px 'IBM Plex Mono',monospace;text-align:right;color:var(--ink-soft,#5b6472)}
+.pbb-c-ppp{text-align:center}
+.pbb-c-vol{display:flex;align-items:center;gap:5px}
+.pbb-c-vol i{display:block;height:7px;border-radius:4px;background:#8a96a8;flex:0 0 auto;max-width:30px}
+.pbb-c-vol b{font:700 11px 'IBM Plex Mono',monospace}
 .pbb-c-adj{display:flex;align-items:flex-start;gap:6px;min-width:0}
 .pbb-rule{flex:1 1 auto;min-width:0;background:rgba(47,158,134,.10);border-radius:6px;padding:3px 8px!important;font-size:12.5px!important;min-height:24px!important}
 .pbb-add{border:1px dashed var(--line-strong,#cfd4dc);background:transparent;color:var(--ink-faint,#8a93a2);border-radius:6px;font-size:11px;padding:3px 9px;cursor:pointer;opacity:0;transition:opacity .12s}
@@ -33692,7 +33699,7 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pbb-note-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px}
 .pbb-note-2 i{font-style:normal;font-size:10px;color:var(--ink-faint,#8a93a2);text-transform:uppercase;letter-spacing:.06em}
 @media (max-width:1100px){ .pbb-main{grid-template-columns:minmax(0,1fr)} .pbb-key{position:static}
-  .pbb-r{grid-template-columns:24px 70px minmax(100px,1fr) 60px 46px;row-gap:3px} .pbb-c-call,.pbb-c-efg{display:none} .pbb-c-adj{grid-column:2 / -1} .pbb-h .pbb-c-adj{display:none} }
+  .pbb-r{grid-template-columns:24px 70px minmax(90px,1fr) 56px 46px 52px;row-gap:3px} .pbb-c-call{display:none} .pbb-c-adj{grid-column:2 / -1} .pbb-h .pbb-c-adj{display:none} }
 
 /* post game / practice: the trainings between two games, folded */
 .ym-trg{margin:3px 0}
