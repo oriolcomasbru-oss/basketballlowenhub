@@ -1853,6 +1853,7 @@ body.prt.prt-textonly .rs-block-stats{display:none!important}
 /* floating rich-text toolbar */
 .rep-toolbar{position:absolute;z-index:9000;display:none;align-items:center;gap:4px;background:var(--ink,#111827);border-radius:10px;padding:5px 7px;box-shadow:0 8px 24px rgba(16,24,40,.28)}
 /* key ideas: an underline only while editing, and the button that puts it on and off */
+.rs-rich span[data-key]{font-weight:700}
 body.edit-mode .rs-rich span[data-key]{text-decoration:underline;text-decoration-color:#c6a15b;text-decoration-thickness:3px;text-underline-offset:3px;background:rgba(198,161,91,.16);border-radius:2px}
 .key-idea-btn{position:fixed;z-index:9100;font:700 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:999px;border:0;background:#141821;color:#f3d98e;box-shadow:0 6px 18px rgba(16,24,40,.3);cursor:pointer;white-space:nowrap}
 .rep-toolbar .rep-tb-btn.tb-key{color:#f3d98e;font-weight:800;letter-spacing:.04em}
@@ -7489,7 +7490,7 @@ function _ensureRepTB(){
   bar.appendChild(btn("⨯","Clear formatting",()=>_repExec("removeFormat")));
   /* the key idea the dashboard shows: on the selection, or off where the caret is */
   bar.appendChild(h("span",{class:"rep-tb-sep"}));
-  bar.appendChild(btn("★ Key","Key idea — the dashboard's Scouting notes shows it (an underline seen only while editing). On a marked idea it takes the mark off",()=>{ try{ _keyToggle(); }catch(e){} _hideRepTB(); },"tb-key"));
+  bar.appendChild(btn("★ Key","Key idea — bold in the report, underlined while editing, and its keywords go to the dashboard's Scouting notes. On a marked idea it takes the mark off",()=>{ try{ _keyToggle(); }catch(e){} _hideRepTB(); },"tb-key"));
   document.body.appendChild(bar);
   if(!_repTBWired){ _repTBWired=true;
     /* the bar is a context menu now: it opens on right-click and closes on any
@@ -26817,26 +26818,66 @@ function _dashFormInto(box, opp){
     l3.length===3? h("span",{class:"tr"}, w3>=2? (w3===3? "▲ won the last 3" : "▲ 2 of the last 3 won") : (w3===0? "▼ lost the last 3" : "▼ 1 of the last 3 won")) : null));
   box.appendChild(h("div",{class:"dash-src"},"League calendar · (n) = the rival's place in the table today"));
 }
-/* THE KEY IDEAS THE STAFF MARKED. In the pre game, in edit mode, a passage is marked as a key
-   idea (see _keyToggle): the ones in Our Defense are about their offense, the ones in Our
-   Offense about their defense. They are read here in the order they were written, a marked
-   passage being one idea up to the end of its line, five a side. Nothing is chosen or written
-   by the app. */
+/* THE KEY IDEAS THE STAFF MARKED, AS KEYWORDS. In the pre game, in edit mode, a passage is
+   marked as a key idea (see _keyToggle). Each row of Our Defense and Our Offense is a concept
+   (PNR, early offense...) and reads across: THEY on the left, what they do, WE on the right,
+   what we do about it. So the dashboard keeps that shape - one line a concept, the rows where
+   something was marked - and turns each marked passage into its keywords: the coverages and
+   actions of the game (ice, flat, switch, DHO, pop...), the men by number and name, the names
+   the staff gives in capitals (RED, BLACK), and the figures. The words are the staff's; the
+   app only leaves the rest of the sentence out. Our Defense is about their offense, Our
+   Offense about their defense. */
+const DASH_KW=[
+  [/\bpick[ -]?(and|&|n)[ -]?roll\b|\bp&r\b|\bpnr\b|\bball ?screens?\b/i,"PnR"],[/\bpick[ -]?(and|&|n)[ -]?pop\b|\bpnp\b/i,"PnP"],
+  [/\bside pnr\b/i,"side PnR"],[/\bmiddle pnr\b/i,"middle PnR"],[/\bdrag\b/i,"drag"],[/\bdouble drag\b/i,"double drag"],
+  [/\bice\b/i,"ice"],[/\bdrop\b/i,"drop"],[/\bshow\b/i,"show"],[/\bhedge\b/i,"hedge"],[/\bblitz|\btrap/i,"trap"],
+  [/\bswitch(es|ing)?\b/i,"switch"],[/\bflat\b/i,"flat"],[/\bover ?\/ ?under\b/i,"over/under"],[/\b(go(es)? |going )?under\b/i,"under"],[/\bhigh flat\b/i,"high flat"],
+  [/\b(2-3|3-2|1-3-1|1-2-2|2-1-2) zone\b|\bzone (2-3|3-2|1-3-1|1-2-2|2-1-2)\b/i,"zone*"],[/\bzone\b/i,"zone"],[/\bbox[ -]and[ -]1\b/i,"box-and-1"],[/\b(full[- ]court )?press\b/i,"press"],
+  [/\btransition\b/i,"transition"],[/\bearly offen[cs]e\b/i,"early offense"],[/\bfast ?breaks?\b/i,"fast break"],[/\brun(s)? the floor\b/i,"run the floor"],
+  [/\bcrash(es|ing)? the (offensive )?glass\b|\boffensive rebound|\bo-?reb/i,"crash O-glass"],[/\bcherry[- ]?pick/i,"cherry-picking"],[/\bget(ting)? back\b/i,"getting back"],
+  [/\bpost[ -]?ups?\b/i,"post up"],[/\bduck[ -]?ins?\b/i,"duck-in"],[/\bhigh[ -]post\b/i,"high post"],
+  [/\bdhos?\b|\bhand[ -]?offs?\b/i,"DHO"],[/\bpop\b/i,"pop"],[/\broll(er|s)?\b/i,"roll"],[/\bshort roll\b/i,"short roll"],[/\bslip\b/i,"slip"],[/\bsnake\b/i,"snake"],[/\breject/i,"reject"],
+  [/\bstunts?\b/i,"stunt"],[/\btag\b/i,"tag"],[/\bhelp\b/i,"help"],[/\brotations?\b/i,"rotations"],[/\bclose ?outs?\b/i,"closeout"],[/\brecover/i,"recovery"],
+  [/\b1[ -]?(x|v|on)[ -]?1\b|\bisolation\b|\biso\b/i,"1x1"],[/\bspot[ -]?ups?\b/i,"spot up"],[/\bcorners?\b/i,"corner"],[/\bsecond[ -]side\b|\b2nd side\b/i,"2nd side"],
+  [/\breversals?\b/i,"reversal"],[/\bpaint touch/i,"paint touch"],[/\bstagger/i,"stagger"],[/\bflare/i,"flare"],[/\bpin[ -]?downs?\b/i,"pin down"],[/\bback[ -]?picks?\b/i,"back pick"],
+  [/\bpass[ -]and[ -]chase\b/i,"pass & chase"],[/\boff[ -]?(the[ -])?ball screen|\boffscreens?\b/i,"off-ball screens"],[/\bscreening angle/i,"screening angle"],[/\bscreen(ing)? height\b/i,"screen height"],
+  [/\bato'?s?\b/i,"ATO"],[/\bslobs?\b/i,"SLOB"],[/\bblobs?\b/i,"BLOB"],[/\blate (in the )?(clock|game)\b/i,"late"],[/\bfouls?\b/i,"fouls"],
+  [/\bmobil(e|ity)\b/i,"mobility"],[/\bphysical\b/i,"physical"],[/\baggressive(ly)?\b/i,"aggressive"],[/\bmismatch/i,"mismatch"],[/\bpull[ -]?ups?\b/i,"pull-up"],[/\bfloaters?\b/i,"floater"],[/\blobs?\b/i,"lob"],
+  [/\bweak[ -]?side\b/i,"weak side"],[/\bsideline\b/i,"sideline"],[/\bbaseline\b/i,"baseline"],[/\b4[ -]?out[ ,-]*1[ -]?in\b/i,"4-out 1-in"],[/\b5[ -]?out\b/i,"5-out"],
+  [/\bdeny\b|\bdenial\b/i,"deny"],[/\bpocket pass\b/i,"pocket pass"],[/\blate pass\b/i,"late pass"],[/\bcut(s|ters?)?\b/i,"cuts"]];
+const DASH_KW_SKIP={ THE:1, AND:1, BUT:1, WITH:1, THEY:1, THEIR:1, THEM:1, WE:1, OUR:1, FOR:1, NOT:1, ALL:1, VS:1, NBA:1 };
+function _dashKeywords(text, max){
+  const t=String(text||"").replace(/\s+/g," ").trim(); if(!t) return [];
+  const hits=[];
+  /* the men: "#21 UHLEMANN", "#4 Kraushaar" */
+  t.replace(/#\s*(\d{1,2})\s+([A-Za-zÀ-ÿ'’-]{3,})/g, (m,n,nm,at)=>{ hits.push({ at:at, k:"#"+n+" "+nm.charAt(0).toUpperCase()+nm.slice(1).toLowerCase(), man:true }); return m; });
+  /* the staff's own names for things, written in capitals: RED, BLACK, T3 PISTOL */
+  t.replace(/\b([A-Z][A-Z0-9]{2,}(?:\s*\/\s*[A-Z0-9]{2,}|\s+[A-Z0-9]{2,})?)\b/g, (m,w,at)=>{ if(DASH_KW_SKIP[w] || /^\d+$/.test(w)) return m;
+    if(hits.some(x=>x.man && at>=x.at && at<=x.at+x.k.length+2)) return m; hits.push({ at:at, k:w }); return m; });
+  DASH_KW.forEach(([re,k])=>{ const g=new RegExp(re.source, re.flags.indexOf("g")>=0? re.flags : re.flags+"g"); const m=g.exec(t); if(m) hits.push({ at:m.index, k:k==="zone*"? ((m[0].match(/[\d-]{3,}/)||[""])[0]+" zone") : k }); });
+  /* the figures: a percentage */
+  t.replace(/\b\d{1,3}(\.\d)?%/g, (m,_,at)=>{ hits.push({ at:at, k:m }); return m; });
+  hits.sort((a,b)=>a.at-b.at);
+  const out=[];
+  hits.forEach(x=>{ const l=x.k.toLowerCase();
+    if(out.some(o=>o.toLowerCase()===l || o.toLowerCase().indexOf(l)>=0)) return;
+    /* "flat" and "high flat", "roll" and "short roll": the longer one says it */
+    for(let i=out.length-1;i>=0;i--){ if(l.indexOf(out[i].toLowerCase())>=0) out.splice(i,1); }
+    out.push(x.k); });
+  if(!out.length){ const w=t.split(" "); return [w.slice(0,4).join(" ")+(w.length>4? "…" : "")]; }
+  return out.slice(0, max||6);
+}
+/* the marked passages of a report, row by row: { off:[{ pt, they:[...], we:[...] }], def:[...] } */
 function _dashKeyIdeas(rep){
   const secs=(rep && rep.data && rep.data.sections)||[];
-  const read=(html, pt, out)=>{ const d=document.createElement("div"); d.innerHTML=String(html||"");
-    let cur=null;
-    const close=()=>{ if(cur){ const t=cur.t.replace(/\s+/g," ").trim(); if(t.length>1) out.push({ t:t, src:pt }); } cur=null; };
-    const walk=n=>{ if(n.nodeType===3){ const k=_keySpanOf(n, d);
-        if(k){ (cur=cur||{ t:"" }).t+=n.nodeValue; } else if(n.nodeValue.trim()) close(); return; }
-      if(n.nodeType!==1) return;
-      const blk=/^(BR|LI|P|DIV|UL|OL)$/.test(n.nodeName);
-      if(blk) close();
-      [...n.childNodes].forEach(walk);
-      if(blk) close(); };
-    [...d.childNodes].forEach(walk); close(); };
-  const side=re=>{ const out=[]; secs.filter(s=>s && re.test(String(s.title||""))).forEach(s=>(s.items||[]).forEach(it=>{ if(!it) return;
-    const pt=String(it.t||""); read(it.them, pt, out); read(it.us, pt, out); read(it.v, pt, out); })); return out; };
+  const marked=html=>{ const d=document.createElement("div"); d.innerHTML=String(html||""); const out=[]; let cur=null;
+    const close=()=>{ if(cur){ const t=cur.replace(/\s+/g," ").trim(); if(t.length>1) out.push(t); } cur=null; };
+    const walk=n=>{ if(n.nodeType===3){ if(_keySpanOf(n, d)) cur=(cur||"")+n.nodeValue; else if(n.nodeValue.trim()) close(); return; }
+      if(n.nodeType!==1) return; const blk=/^(BR|LI|P|DIV|UL|OL)$/.test(n.nodeName); if(blk) close(); [...n.childNodes].forEach(walk); if(blk) close(); };
+    [...d.childNodes].forEach(walk); close(); return out; };
+  const side=re=>{ const rows=[]; secs.filter(s=>s && re.test(String(s.title||""))).forEach(s=>(s.items||[]).forEach(it=>{ if(!it) return;
+    const they=marked(it.them).concat(marked(it.v)), we=marked(it.us);
+    if(they.length || we.length) rows.push({ pt:String(it.t||""), they:they, we:we }); })); return rows; };
   return { off:side(/our\s*defen[cs]e/i), def:side(/our\s*offen[cs]e/i) };
 }
 function _dashNotesInto(box, g){
@@ -26844,12 +26885,17 @@ function _dashNotesInto(box, g){
   _dashRep(g).then(rep=>{ box.innerHTML="";
     if(!rep){ box.appendChild(h("div",{class:"dash-miss"},"No pre game for this game yet.")); return; }
     const K=_dashKeyIdeas(rep);
-    if(!K.off.length && !K.def.length){ box.appendChild(h("div",{class:"dash-miss"},"No key ideas marked yet — in the pre game, Edit, select an idea in Our Defense or Our Offense and press ★ Key idea.")); return; }
-    const col=(title, L2, cls)=>h("div",{class:"dash-nc "+cls}, h("b",{class:"nh"}, title),
-      L2.length? h("ol",{}, L2.slice(0,5).map(x=>h("li",{ title:x.src }, x.src? h("i",{}, x.src) : null, h("span",{}, x.t)))) : h("div",{class:"dash-src"},"None marked yet"),
-      L2.length>5? h("div",{class:"dash-src"}, "+"+(L2.length-5)+" more marked — the first five are shown") : null);
-    box.appendChild(h("div",{class:"dash-notes"}, col("Their offense", K.off, "o"), col("Their defense", K.def, "d")));
-    box.appendChild(h("div",{class:"dash-src"},"The key ideas marked in the pre game · Our Defense → their offense · Our Offense → their defense"));
+    if(!K.off.length && !K.def.length){ box.appendChild(h("div",{class:"dash-miss"},"No key ideas marked yet — in the pre game, Edit, select an idea in Our Defense or Our Offense and press ★ Key (right click) or ★ Key idea.")); return; }
+    /* one line an idea marked, its keywords on it - so the ideas stay apart and none is lost */
+    const chips=(list, cls)=>h("span",{class:"kw "+cls, title:list.join("\n")},
+      list.length? list.slice(0,4).map(t=>h("span",{class:"ln"}, _dashKeywords(t, 5).map(k=>h("i",{}, k)))) : h("em",{},"—"));
+    const table=(title, rows, cls)=>h("div",{class:"dash-kt "+cls}, h("b",{class:"nh"}, title),
+      rows.length? h("div",{class:"tb"}, h("span",{class:"hd"},""), h("span",{class:"hd"},"They"), h("span",{class:"hd"},"We"),
+        ...[].concat(...rows.slice(0,5).map(r=>[h("span",{class:"pt"}, r.pt), chips(r.they, "th"), chips(r.we, "us")])))
+        : h("div",{class:"dash-src"},"None marked yet"),
+      rows.length>5? h("div",{class:"dash-src"}, "+"+(rows.length-5)+" more concepts marked") : null);
+    box.appendChild(h("div",{class:"dash-kts"}, table("Their offense · our defense", K.off, "o"), table("Their defense · our offense", K.def, "d")));
+    box.appendChild(h("div",{class:"dash-src"},"Keywords of the key ideas marked in the pre game · one line a concept · the whole idea on hover"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"The pre game could not be read.")); });
 }
 /* OUR GAME FROM OUR TAGGING, OFFENSE AND DEFENSE APART: OER, paint touches and the sets
@@ -36587,6 +36633,18 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-nc li::before{content:counter(n);grid-row:1 / span 2;font:700 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);padding-top:1px}
 .dash-nc li i{font:700 8.5px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint,#8a93a2)}
 .dash-nc li span{grid-column:2}
+/* scouting notes: a small table a side - the concept, what they do, what we do - in keywords */
+.dash-kts{display:grid;gap:10px}
+.dash-kt .nh{display:block;font:700 10px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;padding:2px 0 4px;border-bottom:2px solid #d8524e;color:#c0403c;margin-bottom:4px}
+.dash-kt.d .nh{border-bottom-color:#2f9e86;color:#17805a}
+.dash-kt .tb{display:grid;grid-template-columns:minmax(64px,auto) minmax(0,1fr) minmax(0,1fr);gap:4px 8px;align-items:start}
+.dash-kt .hd{font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint,#8a93a2)}
+.dash-kt .pt{font:700 10px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink,#141821);padding-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px}
+.dash-kt .kw{display:grid;gap:3px;min-width:0}
+.dash-kt .kw .ln{display:flex;flex-wrap:wrap;gap:3px}
+.dash-kt .kw i{font:600 11px 'Inter',system-ui,sans-serif;font-style:normal;padding:1px 6px;border-radius:5px;white-space:nowrap;background:rgba(216,82,78,.09);color:var(--ink,#141821)}
+.dash-kt .kw.us i{background:rgba(47,158,134,.11)}
+.dash-kt .kw em{font-style:normal;color:var(--ink-faint,#8a93a2)}
 @media (max-width:520px){ .dash-notes{grid-template-columns:minmax(0,1fr)} .dash-form{grid-template-columns:repeat(3,minmax(0,1fr))} }
 /* the six weapons: rank, name, call, use, share, PPP */
 .dash-set.top .rk{min-width:14px;text-align:center;color:var(--ink-faint,#8a93a2)}
