@@ -26640,11 +26640,8 @@ function _dashKeySetsInto(box, g){
     box.appendChild(h("div",{class:"dash-src"},"Starred in the pre game playbook · runs in the games tagged · points per possession (red: it hurts us)"+(rows.length>10? " · +"+(rows.length-10)+" more in the pre game" : "")));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their sets could not be read.")); });
 }
-/* THEIR SIX WEAPONS: of everything our tagging found them running - sets, transition, half
-   court situations - the six that give them most, read as runs × points per possession (the
-   points each one is worth to them), among those run often enough to be read (3% of their
-   possessions, five runs at least) and not below their own average by more than a tenth.
-   With the staff's names, calls and splits, and the star when it is a key set. */
+/* THEIR SIX WEAPONS: only the key sets the staff starred in the pre game playbook, the six
+   they run most - with the staff's names, calls and splits, how often and what they return */
 function _dashTopSetsInto(box, g){
   box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading their playbook…"));
   const L=leagueState(), tid=_lgTeamIdByName(L, g.opponent);
@@ -26659,25 +26656,19 @@ function _dashTopSetsInto(box, g){
     box.innerHTML="";
     if(!all.length){ box.appendChild(h("div",{class:"dash-miss"},"No tagging of this club yet, so no sets.")); return; }
     const tot=base.reduce((a,x)=>a+(x.n||0),0)||1, avg=(res && res.avg!=null)? Number(res.avg) : null;
-    const minN=Math.max(5, Math.round(0.03*tot));
-    const keep=_scoutOpponent; let cand=[], keyOf={};
-    try{ _scoutOpponent=g.opponent;
-      cand=all.filter(r=>{ try{ return _pbClass(r).kind!=="Concepts"; }catch(e){ return true; } }).filter(r=>r.origin!=="Out of Sets" && r.ppp!=null && (r.n||0)>=minN);
-      cand.forEach(r=>{ try{ keyOf[r.label]=_pbKeyRead(r.label); }catch(e){} });
-    } finally{ _scoutOpponent=keep; }
-    const pts=r=>(r.n||0)*(+r.ppp||0);
-    const good=cand.filter(r=>avg==null || r.ppp>=avg-0.10).sort((a,b)=>pts(b)-pts(a));
-    let top=good.slice(0,6);
-    if(top.length<6) top=top.concat(cand.filter(r=>top.indexOf(r)<0).sort((a,b)=>pts(b)-pts(a)).slice(0, 6-top.length));
-    if(!top.length){ box.appendChild(h("div",{class:"dash-miss"},"No set run "+minN+" times or more yet.")); return; }
+    const keep=_scoutOpponent; let keyOf={};
+    try{ _scoutOpponent=g.opponent; all.forEach(r=>{ try{ keyOf[r.label]=_pbKeyRead(r.label); }catch(e){} }); } finally{ _scoutOpponent=keep; }
+    /* only the key sets the staff starred in the pre game playbook, the most run first */
+    const top=all.filter(r=>{ if(!keyOf[r.label]) return false; try{ return _pbClass(r).kind!=="Concepts"; }catch(e){ return true; } }).sort((a,b)=>(b.n||0)-(a.n||0)).slice(0,6);
+    if(!top.length){ box.appendChild(h("div",{class:"dash-miss"},"No key sets starred in the pre game playbook yet.")); return; }
     const mx=Math.max(1, ...top.map(r=>r.n||0));
     box.appendChild(h("div",{class:"dash-sets"}, top.map((r,i)=>{ let kind=""; try{ kind=_pbClass(r).kind||""; }catch(e){}
-      return h("div",{class:"dash-set top"}, h("u",{class:"rk"}, String(i+1)), h("b",{}, (keyOf[r.label]? "★ " : "")+(edits[r.label]||r.label)), kind? h("i",{class:"kd"}, kind) : null,
+      return h("div",{class:"dash-set top"}, h("u",{class:"rk"}, String(i+1)), h("b",{}, edits[r.label]||r.label), kind? h("i",{class:"kd"}, kind) : null,
         r.call? h("q",{}, r.call) : h("span",{class:"nc"}, ""),
         h("span",{class:"vol", title:r.n+" runs · "+Math.round(100*r.n/tot)+"% of their possessions"}, h("i",{style:"width:"+Math.max(8,Math.round(100*(r.n||0)/mx))+"%"})), h("u",{}, String(r.n||0)),
         h("span",{class:"pc"}, Math.round(100*r.n/tot)+"%"),
-        h("em",{class:r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2))); })));
-    box.appendChild(h("div",{class:"dash-src"},"Runs × points per possession · "+minN+"+ runs · not below their average"+(avg!=null? " "+avg.toFixed(2) : "")+" by more than 0.10 · % of their possessions · ★ key set"));
+        r.ppp!=null? h("em",{class:r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : null); })));
+    box.appendChild(h("div",{class:"dash-src"},"Key sets starred in the pre game playbook, the most run first · runs · % of their possessions · PPP (red: it hurts us)"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their playbook could not be read.")); });
 }
 /* THEIR IDENTITY IN FOUR NUMBERS. Seventeen team measures from the league - the ratings, the
