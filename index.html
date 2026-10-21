@@ -1855,6 +1855,7 @@ body.prt.prt-textonly .rs-block-stats{display:none!important}
 /* key ideas: an underline only while editing, and the button that puts it on and off */
 body.edit-mode .rs-rich span[data-key]{text-decoration:underline;text-decoration-color:#c6a15b;text-decoration-thickness:3px;text-underline-offset:3px;background:rgba(198,161,91,.16);border-radius:2px}
 .key-idea-btn{position:fixed;z-index:9100;font:700 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:999px;border:0;background:#141821;color:#f3d98e;box-shadow:0 6px 18px rgba(16,24,40,.3);cursor:pointer;white-space:nowrap}
+.rep-toolbar .rep-tb-btn.tb-key{color:#f3d98e;font-weight:800;letter-spacing:.04em}
 .rep-tb-btn{border:0;background:rgba(255,255,255,.12);color:#fff;border-radius:6px;min-width:26px;height:26px;cursor:pointer;font-weight:800;font-size:12px;padding:0 7px}
 .rep-tb-btn:hover{background:rgba(255,255,255,.24)}
 .rep-tb-sel{border:0;border-radius:6px;height:26px;font:inherit;font-size:12px;font-weight:700;padding:0 4px;cursor:pointer}
@@ -7486,6 +7487,9 @@ function _ensureRepTB(){
   bar.appendChild(h("span",{class:"rep-tb-sep"}));
   bar.appendChild(btn("Aa","Report font — strips the typeface and size that came with the pasted text",()=>_repBaseFont(),"tb-font"));
   bar.appendChild(btn("⨯","Clear formatting",()=>_repExec("removeFormat")));
+  /* the key idea the dashboard shows: on the selection, or off where the caret is */
+  bar.appendChild(h("span",{class:"rep-tb-sep"}));
+  bar.appendChild(btn("★ Key","Key idea — the dashboard's Scouting notes shows it (an underline seen only while editing). On a marked idea it takes the mark off",()=>{ try{ _keyToggle(); }catch(e){} _hideRepTB(); },"tb-key"));
   document.body.appendChild(bar);
   if(!_repTBWired){ _repTBWired=true;
     /* the bar is a context menu now: it opens on right-click and closes on any
