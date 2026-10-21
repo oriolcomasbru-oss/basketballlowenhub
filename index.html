@@ -26822,51 +26822,76 @@ function _dashFormInto(box, opp){
     l3.length===3? h("span",{class:"tr"}, w3>=2? (w3===3? "▲ won the last 3" : "▲ 2 of the last 3 won") : (w3===0? "▼ lost the last 3" : "▼ 1 of the last 3 won")) : null));
   box.appendChild(h("div",{class:"dash-src"},"League calendar · (n) = the rival's place in the table today"));
 }
-/* THE KEY IDEAS THE STAFF MARKED, AS THE REPORT HAS THEM. In the pre game, in edit mode, a
-   passage is marked as a key idea (see _keyToggle). The dashboard shows How to defend and How
-   to attack as the report draws them - AREA, THEY, WE - cut to the areas where something was
-   marked and, in each, to the marked text alone, with its own formatting (bold, colour, the
-   list it was in). Nothing is chosen or written by the app. */
-function _dashMarkedHtml(html){
+/* THE KEY IDEAS THE STAFF MARKED, CONCEPT BY CONCEPT. In the pre game, in edit mode, a
+   passage is marked as a key idea (see _keyToggle). The concept of each row - Early offense,
+   PNR, Offscreens... - is what the staff thinks in, so it is the first thing on the card: one
+   tab a concept, the same concept of How to defend and How to attack joined under it (their
+   names are matched by keyword, "Postup/backpicks" and "Backpicks/POST" being one), and in the
+   tab both, each THEY beside WE. The marked text keeps the report's shape: a title line with
+   its list under it, a "LABEL:" in bold. Nothing is written by the app, and only one concept
+   is open at a time, so the card never has to scroll inside itself. */
+const DASH_AREAS=[["Transition",/transition/i],["Early offense",/early/i],["PNR",/\bpnr\b|pick ?(and|&|n) ?roll/i],["Offscreens",/off ?screen/i],
+  ["Post · backpicks",/post|back ?pick/i],["Special defenses",/special/i],["Players to attack",/players to attack/i],["ATO's",/\bato/i],["Entries",/entr/i],["1x1",/1x1|1v1|\biso\b/i]];
+function _dashArea(t){ const c=DASH_AREAS.filter(x=>x[1].test(String(t||"")))[0]; return c? c[0] : String(t||"").trim(); }
+/* a cell's marked text as groups: [{ h:title line or null, items:[...] }] */
+function _dashMarkedGroups(html){
   const d=document.createElement("div"); d.innerHTML=String(html||"");
-  const lines=[]; let cur=null;
-  const close=()=>{ if(cur && cur.textContent.replace(/\s+/g," ").trim().length>1) lines.push(cur.innerHTML); cur=null; };
-  /* a marked piece, with the inline formatting around it inside the cell (a bold, a colour) */
-  const piece=sp=>{ let node=sp.cloneNode(true); node.removeAttribute("data-key");
-    let p=sp.parentNode;
-    while(p && p!==d && !/^(LI|P|DIV|UL|OL)$/.test(p.nodeName)){ if(/^(B|STRONG|I|EM|U|SPAN|FONT)$/.test(p.nodeName)){ const w=p.cloneNode(false); w.appendChild(node); node=w; } p=p.parentNode; }
-    return node; };
-  const walk=n=>{
-    if(n.nodeType===3){ if(n.nodeValue.trim() && !_keySpanOf(n, d)) { if(cur) cur.appendChild(document.createTextNode(" ")); } return; }
-    if(n.nodeType!==1) return;
-    if(n.hasAttribute("data-key")){ (cur=cur||document.createElement("div")).appendChild(piece(n)); return; }
-    const blk=/^(BR|LI|P|DIV|UL|OL)$/.test(n.nodeName);
-    if(blk) close(); [...n.childNodes].forEach(walk); if(blk) close(); };
-  [...d.childNodes].forEach(walk); close();
-  return lines.length? "<ul>"+lines.map(l=>"<li>"+l.replace(/(\s|&nbsp;)+$/,"")+"</li>").join("")+"</ul>" : "";
+  const isKey=n=>!!_keySpanOf(n, d);
+  const txt=n=>{ let s=""; const w=x=>{ if(x.nodeType===3){ if(isKey(x)) s+=x.nodeValue; } else if(x.nodeType===1 && !/^(UL|OL)$/.test(x.nodeName)) [...x.childNodes].forEach(w); }; w(n); return s.replace(/ /g," ").replace(/\s+/g," ").trim().replace(/[.:]$/,""); };
+  const lines=[]; let buf=document.createElement("span");
+  const flush=()=>{ const t=txt(buf); if(t) lines.push({ t:t }); buf=document.createElement("span"); };
+  [...d.childNodes].forEach(n=>{
+    if(n.nodeName==="BR" || n.nodeName==="P" || n.nodeName==="DIV"){ if(n.nodeName!=="BR") buf.appendChild(n.cloneNode(true)); flush(); return; }
+    if(n.nodeName==="UL" || n.nodeName==="OL"){ flush(); const items=[];
+      [...n.children].forEach(li=>{ const t=txt(li), sub=[...li.querySelectorAll("li")].map(x=>txt(x)).filter(Boolean); if(t || sub.length) items.push({ t:t, sub:sub }); });
+      lines.push({ list:items }); return; }
+    buf.appendChild(n.cloneNode(true)); });
+  flush();
+  const out=[]; let g=null;
+  const close=()=>{ if(g && (g.h || g.items.length)) out.push(g); g=null; };
+  lines.forEach(L=>{
+    if(L.list){ if(!g) g={ h:null, items:[] };
+      L.list.forEach(it=>{ /* a list item that announces more ("Five principles:") opens a group of its own */
+        if(it.t && /principles|keys|rules|options/i.test(it.t) && !it.sub.length && it.t.length<40){ close(); g={ h:it.t, items:[] }; return; }
+        if(it.t) g.items.push(it.t); it.sub.forEach(s=>g.items.push(s)); }); }
+    else { close(); g={ h:L.t, items:[] }; } });
+  close();
+  return out;
 }
 function _dashKeyIdeas(rep){
   const secs=(rep && rep.data && rep.data.sections)||[];
-  const side=re=>{ const rows=[]; secs.filter(s=>s && re.test(String(s.title||"").trim())).forEach(s=>(s.items||[]).forEach(it=>{ if(!it || it.kind==="table") return;
-    const they=_dashMarkedHtml(it.them), we=_dashMarkedHtml(it.us!==undefined? it.us : it.v);
-    if(they || we) rows.push({ pt:String(it.t||""), they:they, we:we }); })); return rows; };
-  return { def:side(RE_PRE_DEF), off:side(RE_PRE_OFF) };
+  const areas=[], by={};
+  [[RE_PRE_DEF,"d"],[RE_PRE_OFF,"a"]].forEach(([re,k])=>secs.filter(s=>s && re.test(String(s.title||"").trim())).forEach(s=>(s.items||[]).forEach(it=>{ if(!it || it.kind==="table") return;
+    const th=_dashMarkedGroups(it.them), we=_dashMarkedGroups(it.us!==undefined? it.us : it.v);
+    if(!th.length && !we.length) return;
+    const n=_dashArea(it.t); if(!by[n]){ by[n]={ n:n }; areas.push(by[n]); }
+    const prev=by[n][k]; by[n][k]=prev? { th:prev.th.concat(th), we:prev.we.concat(we) } : { th:th, we:we }; })));
+  return areas;
 }
 function _dashNotesInto(box, g){
   box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading the pre game…"));
   _dashRep(g).then(rep=>{ box.innerHTML="";
     if(!rep){ box.appendChild(h("div",{class:"dash-miss"},"No pre game for this game yet.")); return; }
-    const K=_dashKeyIdeas(rep);
-    if(!K.off.length && !K.def.length){ box.appendChild(h("div",{class:"dash-miss"},"No key ideas marked yet — in the pre game, Edit, select the text in How to defend or How to attack and press ★ Key (right click).")); return; }
-    const cell=(html, cls, lbl)=>{ const v=h("div",{class:"rs-card-val rs-rich", contenteditable:"false"}); v.innerHTML=html||""; return h("div",{class:"rs-dual-col "+cls, "data-lbl":lbl}, v); };
-    const table=(title, rows)=>{ if(!rows.length) return null;
-      const grid=h("div",{class:"rs-grid rs-onecol rs-dual-table dash-mini"});
-      grid.appendChild(h("div",{class:"rs-dualhead"}, h("div",{class:"rs-dualhead-t"}, title), h("div",{class:"rs-dualhead-them"},"They"), h("div",{class:"rs-dualhead-us"},"We")));
-      rows.forEach(r=>grid.appendChild(h("div",{class:"rs-card rs-dual rs-dualrow"},
-        h("div",{class:"rs-dual-title"}, h("span",{class:"rs-card-title"}, r.pt)), cell(r.they, "them", "THEY"), cell(r.we, "us", "WE"))));
-      return grid; };
-    box.appendChild(h("div",{class:"dash-kts"}, table("How to defend", K.def), table("How to attack", K.off)));
-    box.appendChild(h("div",{class:"dash-src"},"The key ideas marked in the pre game, as written · only the areas with something marked"));
+    const areas=_dashKeyIdeas(rep);
+    if(!areas.length){ box.appendChild(h("div",{class:"dash-miss"},"No key ideas marked yet — in the pre game, Edit, select the text in How to defend or How to attack and press ★ Key (right click).")); return; }
+    const lab=t=>{ const m=/^([A-Z0-9#&\/+\-–—. ]{3,}?)\s*:\s*(.+)$/.exec(t); return m? [h("b",{}, m[1]+":"), " "+m[2]] : [t]; };
+    const side=(groups, cls, title)=>h("div",{class:"side "+cls}, h("div",{class:"sl"}, title),
+      groups && groups.length? groups.map(gp=>(gp.h && !gp.items.length)? h("div",{class:"solo"}, ...lab(gp.h))
+        : h("div",{class:"g"}, gp.h? h("div",{class:"gh"}, gp.h) : null, h("ul",{}, gp.items.map(t=>h("li",{}, ...lab(t))))))
+        : h("div",{class:"none"},"—"));
+    const cnt=x=>x? [x.th, x.we].reduce((n,gs)=>n+gs.reduce((m,gp)=>m+(gp.items.length||1),0),0) : 0;
+    /* the concept with most marked opens first */
+    let A=areas.reduce((b,x,i)=>(cnt(x.d)+cnt(x.a))>(cnt(areas[b].d)+cnt(areas[b].a))? i : b, 0);
+    const wrap=h("div",{class:"dash-nt"}); box.appendChild(wrap);
+    const paint=()=>{ wrap.innerHTML=""; const a=areas[A];
+      const tabs=h("div",{class:"tabs"}, areas.map((x,i)=>{ const nd=cnt(x.d), na=cnt(x.a);
+        const b=h("button",{type:"button", class:i===A? "on" : ""}, x.n, nd? h("u",{class:"cd", title:"How to defend"}, "D "+nd) : null, na? h("u",{class:"ca", title:"How to attack"}, "A "+na) : null);
+        b.addEventListener("click",()=>{ A=i; paint(); }); return b; }));
+      wrap.appendChild(h("div",{class:"top"}, tabs));
+      const blk=(r, cls, lbl)=>r? h("div",{class:"blk "+cls}, h("div",{class:"vl"}, lbl), side(r.th, "t", "They"), side(r.we, "w", "We")) : null;
+      [blk(a.d, "def", "How to defend"), blk(a.a, "att", "How to attack")].forEach(x=>{ if(x) wrap.appendChild(x); }); };
+    paint();
+    box.appendChild(h("div",{class:"dash-src"},"The key ideas marked in the pre game, concept by concept · D = How to defend · A = How to attack"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"The pre game could not be read.")); });
 }
 /* OUR GAME FROM OUR TAGGING, OFFENSE AND DEFENSE APART: OER, paint touches and the sets
@@ -26914,13 +26939,15 @@ function _dashPostSplit(box, g){
 /* a line chart for a card: one value a game, the last game marked */
 function _dashChart(series, labels, opts){
   opts=opts||{};
-  const W=320, H=opts.h||120, L=32, R=8, T=8, B=18, n=labels.length;
+  /* a chart given its width (opts.w) keeps its shape: drawn at that size and scaled as a whole;
+     without one it is stretched to its box, as the narrow ones always were */
+  const W=opts.w||320, H=opts.h||120, L=32, R=8, T=8, B=18, n=labels.length;
   const NS="http://www.w3.org/2000/svg", mk=(t,a)=>{ const e=document.createElementNS(NS,t); Object.keys(a||{}).forEach(k=>e.setAttribute(k,a[k])); return e; };
   const all=[].concat(...series.map(x=>x.v)).filter(v=>v!=null && isFinite(v)).concat(opts.ref!=null? [opts.ref] : []).concat(opts.zero? [0] : []);
   if(all.length<2 || !n) return null;
   let lo=Math.min(...all), hi=Math.max(...all); if(hi===lo){ hi+=1; lo-=1; } const pad=(hi-lo)*0.12; lo-=pad; hi+=pad;
   const fm=opts.fmt||(v=>v.toFixed(0)), X=i=>L+(W-L-R)*(n>1? i/(n-1) : .5), Y=v=>T+(H-T-B)*(hi-v)/(hi-lo);
-  const s=mk("svg",{ viewBox:"0 0 "+W+" "+H, class:"dash-ch2", preserveAspectRatio:"none" });
+  const s=mk("svg",{ viewBox:"0 0 "+W+" "+H, class:"dash-ch2"+(opts.w? " fit" : ""), preserveAspectRatio:opts.w? "xMidYMid meet" : "none" });
   s.appendChild(mk("rect",{ x:X(n-1)-8, y:T, width:16, height:H-T-B, class:"last" }));
   [lo+pad, (lo+hi)/2, hi-pad].forEach(v=>{ s.appendChild(mk("line",{ x1:L, x2:W-R, y1:Y(v), y2:Y(v), class:"g" }));
     const t=mk("text",{ x:L-3, y:Y(v)+3, class:"ax", "text-anchor":"end" }); t.textContent=fm(v); s.appendChild(t); });
@@ -27441,8 +27468,10 @@ function renderDashboard(){
         cS=sub("Playbook summary · their 6 weapons"), cF=sub("Recent form"), cP=sub("Key players · play by play and our tagging");
       c.__b.appendChild(h("div",{class:"dash-blk"}, cT));
       c.__b.appendChild(h("div",{class:"dash-blk"}, cR));
-      c.__b.appendChild(h("div",{class:"dash-2"}, cV, cN));
-      c.__b.appendChild(h("div",{class:"dash-2 r64"}, cS, cF));
+      /* the notes take the whole width, a concept at a time; the ball screen, their sets and
+         how they come in share the line under them */
+      c.__b.appendChild(h("div",{class:"dash-blk"}, cN));
+      c.__b.appendChild(h("div",{class:"dash-3c"}, cV, cS, cF));
       c.__b.appendChild(h("div",{class:"dash-blk"}, cP));
       _dashTeamStatsInto(cT.__b, g.opponent);
       _dashRosterInto(cR.__b, g, true);
@@ -27487,12 +27516,12 @@ function renderDashboard(){
           /* OER and DER: our points and theirs per 100 possessions, the same box score as the net */
           { const labs=GL.map(x=>x.code||"?"), oe=GL.map(x=>100*x.us.pts/x.us.poss), de=GL.map(x=>100*x.them.pts/x.them.poss);
             const SO=[{ name:"OER · ours", v:oe, c:"#2f9e86" }, { name:"DER · theirs", v:de, c:"#d8524e" }];
-            const chO=_dashChart(SO, labs, { fmt:v=>v.toFixed(0), h:110 });
+            const chO=_dashChart(SO, labs, { fmt:v=>v.toFixed(0), h:130, w:620 });
             if(chO){ cOD.__b.appendChild(chO); cOD.__b.appendChild(_dashLegend(SO)); }
             const sp=(k,side)=>GL.reduce((a,y)=>a+(+y[side][k]||0),0);
             cOD.__b.appendChild(h("div",{class:"dash-src"},"Points per 100 possessions · season OER "+(100*sp("pts","us")/sp("poss","us")).toFixed(1)+" · DER "+(100*sp("pts","them")/sp("poss","them")).toFixed(1)+" · green above red is a game won on efficiency"));
             const ps=GL.map(x=>(x.us.poss+x.them.poss)/2), pA=ps.reduce((a,b)=>a+b,0)/ps.length;
-            const chP=_dashChart([{ name:"Possessions", v:ps, c:"#4a86d8" }], labs, { ref:pA, fmt:v=>v.toFixed(0), h:110 });
+            const chP=_dashChart([{ name:"Possessions", v:ps, c:"#4a86d8" }], labs, { ref:pA, fmt:v=>v.toFixed(0), h:130, w:620 });
             if(chP) cPS.__b.appendChild(chP);
             cPS.__b.appendChild(h("div",{class:"dash-src"},"Possessions a team in each game (≈ from the box score) · dashed: season "+pA.toFixed(1))); }
           const x=GL[GL.length-1], n=net(x), home=String(x.g.homeId)===String(R.tid), us=home? x.g.hs : x.g.as, th=home? x.g.as : x.g.hs;
@@ -36623,6 +36652,34 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-mini .rs-card-title{font-size:10px;letter-spacing:.06em}
 .dash-mini .rs-rich{min-height:0;padding:4px 8px;font-size:11.5px;line-height:1.35}
 .dash-mini .rs-rich ul{margin:0;padding-left:15px}
+/* scouting notes: one tab a concept, How to defend and How to attack under it */
+.dash-nt{border:1px solid #d9dce2;border-radius:10px;overflow:hidden;background:var(--panel,#fff)}
+.dash-nt .top{padding:7px 9px;background:#1c1c1c}
+.dash-nt .tabs{display:flex;flex-wrap:wrap;gap:5px}
+.dash-nt .tabs button{border:1px solid rgba(255,255,255,.25);background:none;color:#e9ecf1;font:600 11.5px Inter,system-ui,sans-serif;padding:4px 10px;border-radius:999px;cursor:pointer;display:flex;align-items:center;gap:6px;min-height:28px}
+.dash-nt .tabs button.on{background:#f3d98e;border-color:#f3d98e;color:#141821;font-weight:700}
+.dash-nt .tabs button u{text-decoration:none;font:700 9.5px 'IBM Plex Mono',monospace;border-radius:8px;padding:0 5px}
+.dash-nt .tabs button .cd{background:#f7dcd6;color:#b6472e}.dash-nt .tabs button .ca{background:#dbe7f3;color:#2f5c8f}
+.dash-nt .blk{display:grid;grid-template-columns:30px minmax(0,1fr) minmax(0,1fr);border-top:1px solid #e4e7ec}
+.dash-nt .vl{writing-mode:vertical-rl;transform:rotate(180deg);font:700 10px Oswald,sans-serif;letter-spacing:.14em;text-transform:uppercase;text-align:center;padding:8px 0;background:#2a2f38;color:#fff}
+.dash-nt .blk.att .vl{background:#4b5563}
+.dash-nt .side{padding:9px 14px;min-width:0}
+.dash-nt .side.t{background:#fdf6f4}.dash-nt .side.w{background:#f5f8fc;border-left:1px solid #e6ebf2}
+.dash-nt .sl{font:700 10px Oswald,sans-serif;letter-spacing:.14em;text-transform:uppercase;margin-bottom:5px}
+.dash-nt .side.t .sl{color:#b6472e}.dash-nt .side.w .sl{color:#2f5c8f}
+.dash-nt .g{margin-bottom:7px}
+.dash-nt .gh{font:700 10.5px Oswald,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#141821;border-bottom:1px solid rgba(0,0,0,.08);padding-bottom:2px;margin-bottom:3px}
+.dash-nt ul{margin:0;padding-left:16px}.dash-nt li{font-size:12.5px;line-height:1.38;margin:1px 0}
+.dash-nt .side.t li,.dash-nt .side.t .solo{color:#5c2417}.dash-nt .side.w li,.dash-nt .side.w .solo{color:#16304f}
+.dash-nt li b,.dash-nt .solo b{font-weight:800}
+.dash-nt .solo{font-size:12.5px;line-height:1.38;margin:0 0 4px}
+.dash-nt .none{font-size:12px;color:var(--ink-faint,#8a93a2)}
+@media (max-width:700px){ .dash-nt .blk{grid-template-columns:24px minmax(0,1fr)} .dash-nt .side.w{grid-column:2;border-left:0;border-top:1px solid #e6ebf2} .dash-nt .vl{grid-row:span 2} }
+/* the ball screen, their sets and their form on one line */
+.dash-3c{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1.2fr) minmax(0,.95fr);gap:14px;margin-top:12px}
+.dash-3c > .dash-sub + .dash-sub{border-left:1px solid var(--line,#e4e7ec);padding-left:14px}
+@media (max-width:1100px){ .dash-3c{grid-template-columns:minmax(0,1fr) minmax(0,1fr)} .dash-3c > .dash-sub:nth-child(3){grid-column:1 / -1;border-left:0;padding-left:0} }
+@media (max-width:700px){ .dash-3c{grid-template-columns:minmax(0,1fr)} .dash-3c > .dash-sub + .dash-sub{border-left:0;padding-left:0} }
 @media (max-width:520px){ .dash-mini .rs-dualhead,.dash-mini .rs-card.rs-dualrow{grid-template-columns:70px minmax(0,1fr) minmax(0,1fr)} }
 @media (max-width:520px){ .dash-notes{grid-template-columns:minmax(0,1fr)} .dash-form{grid-template-columns:repeat(3,minmax(0,1fr))} }
 /* the six weapons: rank, name, call, use, share, PPP */
@@ -36638,6 +36695,7 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-cov .c.sm{opacity:.5}.dash-cov .c.none{background:transparent;color:var(--ink-faint,#8a93a2)}
 .dash-ideas.best li b{font-size:12.5px}.dash-ideas.best small.tg{color:#7a5c12}
 .dash-ch2{width:100%;height:120px;display:block}
+.dash-ch2.fit{height:auto;max-height:190px}
 .dash-ch2 .g{stroke:var(--line,#e4e7ec);stroke-width:1}
 .dash-ch2 .z{stroke:#8a93a2;stroke-width:1}
 .dash-ch2 .ref{stroke:#c6a15b;stroke-width:1.3;stroke-dasharray:4 3}
