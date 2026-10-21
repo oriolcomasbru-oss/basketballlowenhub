@@ -1852,6 +1852,9 @@ body.prt.prt-textonly .rs-block-stats{display:none!important}
 .rs-add-sec.alt{border-color:#bcd0c2;background:rgba(30,130,76,.12);color:#1e824c}
 /* floating rich-text toolbar */
 .rep-toolbar{position:absolute;z-index:9000;display:none;align-items:center;gap:4px;background:var(--ink,#111827);border-radius:10px;padding:5px 7px;box-shadow:0 8px 24px rgba(16,24,40,.28)}
+/* key ideas: an underline only while editing, and the button that puts it on and off */
+body.edit-mode .rs-rich span[data-key]{text-decoration:underline;text-decoration-color:#c6a15b;text-decoration-thickness:3px;text-underline-offset:3px;background:rgba(198,161,91,.16);border-radius:2px}
+.key-idea-btn{position:fixed;z-index:9100;font:700 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:999px;border:0;background:#141821;color:#f3d98e;box-shadow:0 6px 18px rgba(16,24,40,.3);cursor:pointer;white-space:nowrap}
 .rep-tb-btn{border:0;background:rgba(255,255,255,.12);color:#fff;border-radius:6px;min-width:26px;height:26px;cursor:pointer;font-weight:800;font-size:12px;padding:0 7px}
 .rep-tb-btn:hover{background:rgba(255,255,255,.24)}
 .rep-tb-sel{border:0;border-radius:6px;height:26px;font:inherit;font-size:12px;font-weight:700;padding:0 4px;cursor:pointer}
@@ -7996,7 +7999,61 @@ function _rtNorm(html){
   });
   return d.innerHTML;
 }
+/* KEY IDEAS. In edit mode a passage of a note can be marked as one of the key ideas - the
+   ones the dashboard's Scouting notes shows. Select the text and a "★ Key idea" button comes
+   up over it; with the caret inside a marked passage it takes the mark off. The mark is a
+   span with data-key (the report's own cleaning keeps it), drawn as an underline only while
+   editing: read, printed or shared, the text looks as it always did. A selection that runs
+   over several lines is marked line by line, so no list is ever broken. */
+let _keyBtn=null;
+function _keyBoxOf(node){ const el=node && (node.nodeType===1? node : node.parentNode); return (el && el.closest)? el.closest('.rs-rich[contenteditable="true"]') : null; }
+function _keySpanOf(node, box){ let el=node && (node.nodeType===1? node : node.parentNode); while(el && el!==box){ if(el.nodeType===1 && el.hasAttribute("data-key")) return el; el=el.parentNode; } return null; }
+function _keyToggle(){
+  const sel=window.getSelection(); if(!sel || !sel.rangeCount) return;
+  const range=sel.getRangeAt(0), box=_keyBoxOf(range.commonAncestorContainer); if(!box) return;
+  const unwrap=sp=>{ const p=sp.parentNode; while(sp.firstChild) p.insertBefore(sp.firstChild, sp); p.removeChild(sp); };
+  /* marked already: the marks it touches come off */
+  const hit=[...box.querySelectorAll("span[data-key]")].filter(sp=>range.intersectsNode(sp));
+  const inKey=_keySpanOf(range.startContainer, box);
+  if(inKey && hit.indexOf(inKey)<0) hit.push(inKey);
+  if(hit.length){ hit.forEach(unwrap); box.normalize(); }
+  else {
+    if(range.collapsed){ toast("Select the idea first"); return; }
+    const tw=document.createTreeWalker(box, NodeFilter.SHOW_TEXT), nodes=[];
+    while(tw.nextNode()){ const n=tw.currentNode; if(range.intersectsNode(n) && n.nodeValue.trim()) nodes.push(n); }
+    const sC=range.startContainer, sO=range.startOffset, eC=range.endContainer, eO=range.endOffset;
+    nodes.forEach(n=>{ let s=(n===sC)? sO : 0, e=(n===eC)? eO : n.nodeValue.length; if(e<=s) return;
+      let t=n; if(e<t.nodeValue.length) t.splitText(e); if(s>0) t=t.splitText(s);
+      if(!t.nodeValue.trim()) return;
+      const sp=document.createElement("span"); sp.setAttribute("data-key","1"); t.parentNode.insertBefore(sp, t); sp.appendChild(t); });
+  }
+  try{ sel.removeAllRanges(); }catch(e){}
+  if(_keyBtn) _keyBtn.style.display="none";
+  box.dispatchEvent(new Event("input",{bubbles:true}));
+}
+function _keyWire(){
+  if(_keyBtn) return;
+  const b=h("button",{type:"button", class:"key-idea-btn"},"★ Key idea"); b.style.display="none";
+  const go=e=>{ e.preventDefault(); e.stopPropagation(); _keyToggle(); };
+  b.addEventListener("mousedown", go); b.addEventListener("touchstart", go, { passive:false });
+  document.body.appendChild(b); _keyBtn=b;
+  document.addEventListener("selectionchange",()=>{
+    const sel=window.getSelection();
+    const r=(sel && sel.rangeCount)? sel.getRangeAt(0) : null, box=r? _keyBoxOf(r.commonAncestorContainer) : null;
+    const on=box && (!r.collapsed || _keySpanOf(r.startContainer, box));
+    if(!on){ b.style.display="none"; return; }
+    const inK=_keySpanOf(r.startContainer, box) || [...box.querySelectorAll("span[data-key]")].some(sp=>r.intersectsNode(sp));
+    b.textContent=inK? "✕ Not key" : "★ Key idea";
+    let rc=r.getBoundingClientRect(); if(!rc || (!rc.width && !rc.height)){ const k=_keySpanOf(r.startContainer, box); if(k) rc=k.getBoundingClientRect(); }
+    b.style.display="block";
+    const bw=b.offsetWidth||90, bh=b.offsetHeight||26;
+    let x=rc.left+rc.width/2-bw/2, y=rc.top-bh-8; if(y<56) y=rc.bottom+8;
+    b.style.left=Math.max(6, Math.min(x, window.innerWidth-bw-6))+"px"; b.style.top=y+"px";
+  });
+  window.addEventListener("scroll",()=>{ if(b.style.display!=="none") b.style.display="none"; }, true);
+}
 function wireRichBox(val){
+  try{ _keyWire(); }catch(_){}
   /* whatever the browser did to a list while typing - Enter on an empty bullet, Backspace
      at the start of one - is put right as soon as it happens */
   let fixing=false;
@@ -26458,7 +26515,7 @@ function _scNoteBox(cyc){
    Used by the pre game card and by the roster card on its own. */
 function _dashRosterInto(box, g, wide){
   box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading…"));
-  Promise.all([ _gpOppFive(g.opponent, g.date).catch(()=>null), _dashRep(g) ]).then(([R, rep])=>{ box.innerHTML="";
+  Promise.all([ _gpOppFive(g.opponent, g.date).catch(()=>null), _dashRep(g), wide? _dashClubReady(_lgTeamIdByName(leagueState(), g.opponent)).catch(()=>null) : null ]).then(([R, rep])=>{ box.innerHTML="";
     const POS=["PG","SG","SF","PF","C"], CO={ red:"#d8524e", yellow:"#d9a521", green:"#2f9e86" };
     const cards=((rep && rep.data && rep.data.cards && rep.data.cards.pos)||{});
     const nk=s=>_lgNorm(_lgLastName(String(s||"")));
@@ -26466,14 +26523,16 @@ function _dashRosterInto(box, g, wide){
     const used={};
     const man=(p, start, cd)=>{ if(cd) used[cd.id||cd.name]=1;
       const ideas=wide? [] : ((cd && cd.ideas)||[]).filter(x=>String(x||"").trim()).slice(0, 2);   /* the wide roster says the role only */
-      return h("div",{class:"dash-man"+(start? " start" : "")+((cd && (cd.hl==="key"||cd.hl==="stop"))? " hl-"+cd.hl : "")+((cd && cd.out)? " is-out" : ""), style:(cd && CO[cd.co])? "border-left-color:"+CO[cd.co] : ""},
-        h("div",{class:"l1"}, h("u",{}, (p.num||(cd&&cd.num))? "#"+(p.num||cd.num) : ""), h("b",{}, _lgLastName(p.name||(cd&&cd.name)||"")),
+      /* the wide roster puts each man's face beside him, from the league roster */
+      let face=null; if(wide){ try{ face=_lgFaceName(g, p.name||(cd&&cd.name)||"", "ros"); }catch(e){} }
+      return h("div",{class:"dash-man"+(face? " ph" : "")+(start? " start" : "")+((cd && (cd.hl==="key"||cd.hl==="stop"))? " hl-"+cd.hl : "")+((cd && cd.out)? " is-out" : ""), style:(cd && CO[cd.co])? "border-left-color:"+CO[cd.co] : ""},
+        face, h("div",{class:"bd"}, h("div",{class:"l1"}, h("u",{}, (p.num||(cd&&cd.num))? "#"+(p.num||cd.num) : ""), h("b",{}, _lgLastName(p.name||(cd&&cd.name)||"")),
           (p.last===false)? h("em",{title:"Did not play their last game"},"?") : null,
           cd && cd.badge==="NEW"? h("span",{class:"new"},"NEW") : null,
           (cd && cd.hl==="stop")? h("span",{class:"hlb stop"},"STOP HIM") : (cd && cd.hl==="key")? h("span",{class:"hlb key"},"KEY") : null,
           p.min? h("i",{}, Math.round(p.min)+"′"+(start && R? " · S "+p.st+"/"+R.n : "")) : null),
         (cd && String(cd.tag||"").trim())? h("div",{class:"tg"}, cd.tag) : null,
-        ideas.length? h("div",{class:"id"}, ideas.join(" · ")) : null); };
+        ideas.length? h("div",{class:"id"}, ideas.join(" · ")) : null)); };
     const wrap=h("div",{class:wide? "dash-ros5" : ""}); box.appendChild(wrap);
     /* THE STAFF'S ORDER FIRST. When the pre game has cards, the roster is the cards: each
        position and each man in the order the staff put them in the pre game. Their games
@@ -26556,7 +26615,7 @@ function _dashBestInto(box, opp){
       return h("li",{}, h("i",{}, String(i+1)), h("span",{},
         h("b",{}, (_lgLastName(x.name)||x.name)+" · "+(x.m.pir/gp(x)).toFixed(1)+" PIR, "+(x.t.pts/gp(x)).toFixed(1)+" pts, "+(x.t.sec/60/gp(x)).toFixed(0)+" min"),
         h("small",{}, why.length? why.join(" · ") : "Not in the league's top 25 in anything — leads them in PIR"),
-        tg? h("small",{class:"tg"}, "Our tagging: "+tg.use+"% of their possessions, "+Number(tg.ppp).toFixed(2)+" points each, eFG "+tg.efg+"%") : null)); })));
+        tg? h("small",{class:"tg"}, "Our tagging: "+tg.use+"% of their possessions, eFG "+tg.efg+"%"+(()=>{ const u=(x.t.p2a||0)+(x.t.p3a||0)+0.44*(x.t.fta||0)+(x.t.tov||0); return u>0? " · "+((x.t.pts||0)/u).toFixed(2)+" PPP with his turnovers" : ""; })()) : null)); })));
     box.appendChild(h("div",{class:"dash-src"},"Ranked by PIR a game · places among the "+pool.length+" players of the league with enough games and minutes"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their players could not be read.")); });
 }
@@ -26591,7 +26650,14 @@ function _dashKeyPlayersInto(box, opp){
     const sel=byPir.slice(0,8);
     const top25=(x,f)=>{ const r=rank(x,f); return (r!=null && r<=25)? h("sup",{class:r<=10? "t10" : ""}, r+"º") : null; };
     const roles=r=>{ const o=(r && r.roles)||{}; return Object.keys(o).filter(k=>o[k]>0).sort((a,b)=>o[b]-o[a]).slice(0,2).map(k=>k).join(" · "); };
-    const pppCls=v=>(v==null||avg==null)? "" : v-avg>=0.12? "hot" : v-avg<=-0.12? "cold" : "";
+    /* HIS PPP IS THE PRE GAME'S: points over the possessions he used in the league's box
+       score - shots, free-throw trips and his turnovers - against their players' average.
+       The tagging's own figure leaves out the turnovers it does not put on a name and reads
+       high, so it is not used for this column. */
+    const lgPPP=a=>{ const u=(a.p2a||0)+(a.p3a||0)+0.44*(a.fta||0)+(a.tov||0); return u>0? (a.pts||0)/u : null; };
+    const tmT=((((L2.players||{})[tid])||{}).team_tot||{}).all||null;
+    const ref=tmT? (()=>{ const u=(tmT.fga||0)+0.44*(tmT.fta||0)+(tmT.tov||0); return u>0? (tmT.pts||0)/u : null; })() : null;
+    const pppCls=v=>(v==null||ref==null)? "" : v-ref>=0.12? "hot" : v-ref<=-0.12? "cold" : "";
     const t=h("div",{class:"dash-kp"},
       h("span",{class:"hd l"},"Player"), h("span",{class:"hd g1"},"Min"), h("span",{class:"hd"},"Pts"), h("span",{class:"hd"},"TS%"), h("span",{class:"hd"},"3P"),
       h("span",{class:"hd"},"Reb"), h("span",{class:"hd"},"Ast"), h("span",{class:"hd"},"TO"), h("span",{class:"hd"},"PIR"),
@@ -26607,11 +26673,11 @@ function _dashKeyPlayersInto(box, opp){
       t.appendChild(h("span",{class:"c"}, ((a.tov||0)/g).toFixed(1)));
       t.appendChild(h("span",{class:"c b"}, PIR(x).toFixed(1), top25(x,PIR)));
       t.appendChild(h("span",{class:"c g2 use", style:tg? "--s:"+Math.min(1,tg.use/30) : ""}, tg? tg.use+"%" : "—"));
-      t.appendChild(h("span",{class:"c "+(tg? pppCls(tg.ppp) : "")}, tg? Number(tg.ppp).toFixed(2) : "—"));
+      { const lp=lgPPP(a); t.appendChild(h("span",{class:"c "+pppCls(lp), title:"points per possession he used, from the league: shots, free-throw trips and turnovers"+(ref==null? "" : " · their players' average "+ref.toFixed(2))}, lp==null? "—" : lp.toFixed(2))); }
       t.appendChild(h("span",{class:"c"}, tg? tg.efg+"%" : "—"));
       t.appendChild(h("span",{class:"c l rl"}, tg? roles(tg)||"—" : "—")); });
     box.appendChild(h("div",{class:"dash-kpw"}, t));
-    box.appendChild(h("div",{class:"dash-src"},"League per game (º = place among the league's "+pool.length+" players, gold = top 10) · our tagging of "+((T&&T.games)||0)+" game"+(((T&&T.games)||0)===1? "" : "s")+": Use = share of their possessions he finishes, PPP red = above their average "+(avg==null? "" : Number(avg).toFixed(2))+" (he hurts us), blue = below"));
+    box.appendChild(h("div",{class:"dash-src"},"League per game (º = place among the league's "+pool.length+" players, gold = top 10) · our tagging of "+((T&&T.games)||0)+" game"+(((T&&T.games)||0)===1? "" : "s")+": Use = share of their possessions he finishes, PPP (league, with his turnovers) red = above their players' average "+(ref==null? "" : ref.toFixed(2))+" (he hurts us), blue = below"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their players could not be read.")); });
 }
 /* THE KEY SETS OF AN OPPONENT: the ones the staff starred in the pre game playbook, with the
@@ -26747,69 +26813,39 @@ function _dashFormInto(box, opp){
     l3.length===3? h("span",{class:"tr"}, w3>=2? (w3===3? "▲ won the last 3" : "▲ 2 of the last 3 won") : (w3===0? "▼ lost the last 3" : "▼ 1 of the last 3 won")) : null));
   box.appendChild(h("div",{class:"dash-src"},"League calendar · (n) = the rival's place in the table today"));
 }
-/* THE STAFF'S NOTES ON THEM, FIVE A SIDE. Everything written in the pre game is read - the
-   Game Summary keys, Our Defense (their offense) and Our Offense (their defense), line by line -
-   and the lines that weigh most are kept: the staff's own keys first, then 3 keys and game
-   plan, then the part of their game each line is about (ball screen, transition, post, ...);
-   a marked line (bold, capitals) weighs more, and a line about a starred set or a key
-   player weighs more. One line a concept, so nothing is said twice, each cut to its first
-   clause. Nothing is written by the app: every line is the staff's. */
-function _dashNotesPick(rep, side, extra){
+/* THE KEY IDEAS THE STAFF MARKED. In the pre game, in edit mode, a passage is marked as a key
+   idea (see _keyToggle): the ones in Our Defense are about their offense, the ones in Our
+   Offense about their defense. They are read here in the order they were written, a marked
+   passage being one idea up to the end of its line, five a side. Nothing is chosen or written
+   by the app. */
+function _dashKeyIdeas(rep){
   const secs=(rep && rep.data && rep.data.sections)||[];
-  const want=side==="off"? /our\s*defen[cs]e/i : /our\s*offen[cs]e/i;
-  const sum=secs.filter(s=>s && (s.role==="summary" || String(s.title||"").trim()==="Game Summary"))[0];
-  const C=[];
-  /* a block of html, one candidate a line, with whether the line was marked */
-  const lines=(html, base, src)=>{ String(html||"").split(/<\s*br\s*\/?>|<\/(?:p|li|div)>|\n/i).forEach((seg,i)=>{
-      const marked=/<(b|strong|u|mark)\b|font-weight\s*:\s*(bold|[6-9]00)|background(-color)?\s*:/i.test(seg);
-      let t=_dashTxt(seg).replace(/^[\s•\-–·*\d.)]+/,"").replace(/\s+/g," ").trim();
-      if(t.length<6) return;
-      const caps=(t.match(/\b[A-Z]{4,}\b/g)||[]).filter(w=>!/^(PNR|PNP|DHO|ATO|SLOB|BLOB|ICE|DROP|SHOW|HEDGE)$/.test(w)).length>=2;
-      C.push({ t:t, w:base+(marked||caps? 2 : 0)+(i===0? 0.6 : 0), src:src }); }); };
-  if(sum){ (sum.items||[]).forEach(it=>{ const tt=String((it && it.t)||"");
-    const mine=side==="off"? /our defen[cs]e|ato/i.test(tt) : /our offen[cs]e|special defen|players to attack/i.test(tt);
-    if(mine) lines(it.v, 6, tt.replace(/·.*$/,"").trim()); }); }
-  secs.filter(s=>s && want.test(String(s.title||""))).forEach(s=>(s.items||[]).forEach(it=>{ if(!it) return;
-    const pt=String(it.t||""), base=/3 keys/i.test(pt)? 5 : /game plan/i.test(pt)? 4 : /pnr|pick|transition|early|players to attack|special/i.test(pt)? 3 : 2;
-    lines(it.them, base, pt); }));
-  /* the concept each line is about: one line a concept */
-  const CON=[["Ball screen",/\b(pnr|p&r|pick|ball ?screen|hedge|ice|drop|show|blitz|roll|pop)\b/i],["Transition",/\b(transition|early|fast ?break|push the ball|push after|outlet|open court|run(ning)? hard|run after|after (misses|makes|rebounds)|press)\b/i],
-    ["Post",/\b(post|low ?post|duck|seal|back ?down)/i],["Off-ball screens",/\b(off ?screen|pin ?down|flare|stagger|zipper|curl|elevator|back ?pick|ucla)\b/i],
-    ["Zone",/\bzone\b/i],["Rebounding",/\b(rebound|boards|crash|o-?reb|box ?out)\b/i],["Shooting",/\b(three|3pt|3p|shooter|spot ?up|catch and shoot|pull ?up)\b/i],
-    ["1x1",/\b(1x1|1v1|iso|isolation|drive|downhill|attack the close)\b/i],["Switch",/\bswitch/i],["ATO / BLOB / SLOB",/\b(ato|blob|slob|out of bounds|inbound)\b/i],
-    ["Help",/\b(help|tag|rotation|stunt|dig|gap)\b/i],["Turnovers",/\b(turnover|steal|deflect|trap)\b/i]];
-  /* every concept a line touches - from its words, else from the heading it was written under */
-  const consOf=(t, src)=>{ let l=CON.filter(x=>x[1].test(t)).map(x=>x[0]); if(!l.length) l=CON.filter(x=>x[1].test(String(src||""))).map(x=>x[0]).slice(0,1); return l; };
-  const ex=(extra||[]).map(s=>_lgNorm(String(s||""))).filter(s=>s.length>=3);
-  C.forEach(c=>{ c.cons=consOf(c.t, c.src); const nt=_lgNorm(c.t); if(ex.some(e=>nt.indexOf(e)>=0)) c.w+=1.5; if(/\d/.test(c.t)) c.w+=0.3; if(c.t.length>160) c.w-=1; });
-  const toks=t=>_lgNorm(t).replace(/[^a-z0-9 ]/g," ").split(" ").filter(x=>x.length>=4);
-  const near=(a,b)=>{ const A=toks(a), B=toks(b); if(!A.length || !B.length) return false; const s=A.filter(x=>B.indexOf(x)>=0).length; return s/Math.min(A.length,B.length)>=0.6; };
-  const out=[], seen={};
-  C.slice().sort((a,b)=>b.w-a.w).forEach(c=>{ if(out.length>=5) return;
-    /* a line only goes in if it brings a concept not said yet (the staff's own keys always may) */
-    const fresh=c.cons.filter(k=>!seen[k]);
-    if(c.cons.length && !fresh.length && c.w<6) return;
-    c.con=(fresh[0]||c.cons[0]||"");
-    if(out.some(o=>near(o.t, c.t))) return;
-    out.push(c); c.cons.forEach(k=>{ seen[k]=1; }); });
-  /* the first clause, no more */
-  const cut=t=>{ let s=t.split(/\s[-–]\s|;\s|\.\s/)[0]; if(s.length>96){ s=s.slice(0,94); s=s.slice(0, s.lastIndexOf(" ")>40? s.lastIndexOf(" ") : 94)+"…"; } return s.replace(/[.,:]$/,""); };
-  return out.map(c=>({ t:cut(c.t), full:c.t, con:c.con, src:c.src }));
+  const read=(html, pt, out)=>{ const d=document.createElement("div"); d.innerHTML=String(html||"");
+    let cur=null;
+    const close=()=>{ if(cur){ const t=cur.t.replace(/\s+/g," ").trim(); if(t.length>1) out.push({ t:t, src:pt }); } cur=null; };
+    const walk=n=>{ if(n.nodeType===3){ const k=_keySpanOf(n, d);
+        if(k){ (cur=cur||{ t:"" }).t+=n.nodeValue; } else if(n.nodeValue.trim()) close(); return; }
+      if(n.nodeType!==1) return;
+      const blk=/^(BR|LI|P|DIV|UL|OL)$/.test(n.nodeName);
+      if(blk) close();
+      [...n.childNodes].forEach(walk);
+      if(blk) close(); };
+    [...d.childNodes].forEach(walk); close(); };
+  const side=re=>{ const out=[]; secs.filter(s=>s && re.test(String(s.title||""))).forEach(s=>(s.items||[]).forEach(it=>{ if(!it) return;
+    const pt=String(it.t||""); read(it.them, pt, out); read(it.us, pt, out); read(it.v, pt, out); })); return out; };
+  return { off:side(/our\s*defen[cs]e/i), def:side(/our\s*offen[cs]e/i) };
 }
 function _dashNotesInto(box, g){
   box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading the pre game…"));
   _dashRep(g).then(rep=>{ box.innerHTML="";
     if(!rep){ box.appendChild(h("div",{class:"dash-miss"},"No pre game for this game yet.")); return; }
-    /* a line about one of their key players or a starred set weighs more */
-    const cards=(rep.data && rep.data.cards && rep.data.cards.pos)||{}, extra=[];
-    Object.keys(cards).forEach(k=>(cards[k]||[]).forEach(c=>{ if(c && (c.hl==="key" || c.hl==="stop")) extra.push(_lgLastName(c.name||"")); }));
-    ((rep.data && rep.data.sections)||[]).forEach(s=>((s && s.items)||[]).forEach(it=>{ if(it && it.pbEdit) Object.keys(it.pbEdit).forEach(k=>{ const c=(String(k).match(/^([A-Z]{1,2}\d[A-Z]?)\b/)||[])[1]; if(c) extra.push(c); }); }));
-    const O=_dashNotesPick(rep, "off", extra), D=_dashNotesPick(rep, "def", extra);
-    if(!O.length && !D.length){ box.appendChild(h("div",{class:"dash-miss"},"Nothing written about them in the pre game yet.")); return; }
+    const K=_dashKeyIdeas(rep);
+    if(!K.off.length && !K.def.length){ box.appendChild(h("div",{class:"dash-miss"},"No key ideas marked yet — in the pre game, Edit, select an idea in Our Defense or Our Offense and press ★ Key idea.")); return; }
     const col=(title, L2, cls)=>h("div",{class:"dash-nc "+cls}, h("b",{class:"nh"}, title),
-      L2.length? h("ol",{}, L2.map(x=>h("li",{ title:x.full+(x.src? "\n— "+x.src : "") }, x.con? h("i",{}, x.con) : null, h("span",{}, x.t)))) : h("div",{class:"dash-src"},"Nothing written yet"));
-    box.appendChild(h("div",{class:"dash-notes"}, col("Their offense", O, "o"), col("Their defense", D, "d")));
-    box.appendChild(h("div",{class:"dash-src"},"From the pre game: the keys first, then 3 keys and game plan · one line a concept · the whole line on hover"));
+      L2.length? h("ol",{}, L2.slice(0,5).map(x=>h("li",{ title:x.src }, x.src? h("i",{}, x.src) : null, h("span",{}, x.t)))) : h("div",{class:"dash-src"},"None marked yet"),
+      L2.length>5? h("div",{class:"dash-src"}, "+"+(L2.length-5)+" more marked — the first five are shown") : null);
+    box.appendChild(h("div",{class:"dash-notes"}, col("Their offense", K.off, "o"), col("Their defense", K.def, "d")));
+    box.appendChild(h("div",{class:"dash-src"},"The key ideas marked in the pre game · Our Defense → their offense · Our Offense → their defense"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"The pre game could not be read.")); });
 }
 /* OUR GAME FROM OUR TAGGING, OFFENSE AND DEFENSE APART: OER, paint touches and the sets
@@ -27408,6 +27444,9 @@ function renderDashboard(){
       c.__b.appendChild(h("div",{class:"dash-4"}, cT, cP, cR, cL));
       const cN=sub("Net rating · league"), cPU=sub("Players improving · PIR"), cPD=sub("Players dropping · PIR","bad"), cX=sub("Team trends");
       c.__b.appendChild(h("div",{class:"dash-4 r2"}, cN, cPU, cPD, cX));
+      /* our offense and defense game by game, and how many possessions each game had */
+      const cOD=sub("OER / DER · league"), cPS=sub("Possessions · league");
+      c.__b.appendChild(h("div",{class:"dash-2 r2"}, cOD, cPS));
       const cB=sub("Our 10 best sets · half court"), cW=sub("Our 10 worst sets · half court","bad"), cU=sub("Sets improving most · last 3 games"), cD=sub("Sets dropping most · last 3 games","bad");
       c.__b.appendChild(h("div",{class:"dash-4 r2"}, cB, cW, cU, cD));
       const net=x=>(x.us.poss && x.them.poss)? 100*x.us.pts/x.us.poss-100*x.them.pts/x.them.poss : null;
@@ -27417,13 +27456,24 @@ function renderDashboard(){
         if(!lastBits.length){ cL.__b.appendChild(h("div",{class:"dash-miss"},"No game read yet.")); return; }
         lastBits.forEach(b=>cL.__b.appendChild(b)); };
       /* the league: net rating, the last game, and each player's PIR - last three against before */
-      _trgRead().then(R=>{ cN.__b.innerHTML=""; cPU.__b.innerHTML=""; cPD.__b.innerHTML="";
+      _trgRead().then(R=>{ cN.__b.innerHTML=""; cPU.__b.innerHTML=""; cPD.__b.innerHTML=""; cOD.__b.innerHTML=""; cPS.__b.innerHTML="";
         const GL=((R && R.games)||[]).filter(x=>x && x.us && x.them && x.us.poss && x.them.poss);
         if(GL.length>=2){
           const v=GL.map(net), avg=v.reduce((a,b)=>a+b,0)/v.length;
           const ch=_dashChart([{ name:"Net rating", v:v, c:"#141821" }], GL.map(x=>x.code||"?"), { zero:true, ref:avg, fmt:x=>(x>0? "+" : "")+x.toFixed(0), h:100 });
           if(ch) cN.__b.appendChild(ch);
           cN.__b.appendChild(h("div",{class:"dash-src"},"Ours minus theirs per 100 possessions · dashed: season "+(avg>0? "+" : "")+avg.toFixed(1)));
+          /* OER and DER: our points and theirs per 100 possessions, the same box score as the net */
+          { const labs=GL.map(x=>x.code||"?"), oe=GL.map(x=>100*x.us.pts/x.us.poss), de=GL.map(x=>100*x.them.pts/x.them.poss);
+            const SO=[{ name:"OER · ours", v:oe, c:"#2f9e86" }, { name:"DER · theirs", v:de, c:"#d8524e" }];
+            const chO=_dashChart(SO, labs, { fmt:v=>v.toFixed(0), h:110 });
+            if(chO){ cOD.__b.appendChild(chO); cOD.__b.appendChild(_dashLegend(SO)); }
+            const sp=(k,side)=>GL.reduce((a,y)=>a+(+y[side][k]||0),0);
+            cOD.__b.appendChild(h("div",{class:"dash-src"},"Points per 100 possessions · season OER "+(100*sp("pts","us")/sp("poss","us")).toFixed(1)+" · DER "+(100*sp("pts","them")/sp("poss","them")).toFixed(1)+" · green above red is a game won on efficiency"));
+            const ps=GL.map(x=>(x.us.poss+x.them.poss)/2), pA=ps.reduce((a,b)=>a+b,0)/ps.length;
+            const chP=_dashChart([{ name:"Possessions", v:ps, c:"#4a86d8" }], labs, { ref:pA, fmt:v=>v.toFixed(0), h:110 });
+            if(chP) cPS.__b.appendChild(chP);
+            cPS.__b.appendChild(h("div",{class:"dash-src"},"Possessions a team in each game (≈ from the box score) · dashed: season "+pA.toFixed(1))); }
           const x=GL[GL.length-1], n=net(x), home=String(x.g.homeId)===String(R.tid), us=home? x.g.hs : x.g.as, th=home? x.g.as : x.g.hs;
           const S=(k,side)=>GL.reduce((a,y)=>a+(+y[side][k]||0),0);
           const oS=100*S("pts","us")/S("poss","us"), dS=100*S("pts","them")/S("poss","them");
@@ -27433,7 +27483,7 @@ function renderDashboard(){
               fig("Off. rating", oL.toFixed(1), "season "+oS.toFixed(1), oL-oS>=4? "good" : oL-oS<=-4? "bad" : ""),
               fig("Def. rating", dL.toFixed(1), "season "+dS.toFixed(1), dL-dS<=-4? "good" : dL-dS>=4? "bad" : "")));
           paintLast();
-        } else cN.__b.appendChild(h("div",{class:"dash-miss"},"Two games are needed for a line."));
+        } else [cN,cOD,cPS].forEach(x=>x.__b.appendChild(h("div",{class:"dash-miss"},"Two games are needed for a line.")));
         /* every player of ours with three games before his last three */
         const by={};
         ((R && R.games)||[]).forEach(x=>(x.pl||[]).forEach(q=>{ if(!(q.s>0)) return; (by[q.nm]=by[q.nm]||{ nm:q.nm, n:q.n, l:[] }).l.push({ pir:+q.pir||0, pts:+q.p||0, min:q.s/60 }); }));
@@ -27446,7 +27496,7 @@ function renderDashboard(){
         cPU.__b.appendChild(up.length? h("div",{}, up.map(x=>prow(x,"good"))) : h("div",{class:"dash-src"},"Nobody up 1.5 PIR or more."));
         cPD.__b.appendChild(dn.length? h("div",{}, dn.map(x=>prow(x,"bad"))) : h("div",{class:"dash-src"},"Nobody down 1.5 PIR or more."));
         cPU.__b.appendChild(h("div",{class:"dash-src"},"PIR a game: the games before → his last three · players with five games or more"));
-      }).catch(()=>{ [cN,cPU,cPD].forEach(x=>{ x.__b.innerHTML=""; }); cN.__b.appendChild(h("div",{class:"dash-miss"},"Our games could not be read from the league.")); });
+      }).catch(()=>{ [cN,cPU,cPD,cOD,cPS].forEach(x=>{ x.__b.innerHTML=""; }); cN.__b.appendChild(h("div",{class:"dash-miss"},"Our games could not be read from the league.")); });
       /* our tagging: the key measures, the charts, the sets */
       _dashNeed(()=>window.LowenPostStats && window.LowenPostStats.seasonGames).then(()=>window.LowenPostStats.seasonGames()).then(list=>{
         [cP,cT,cR,cB,cW,cU,cD,cX].forEach(x=>{ x.__b.innerHTML=""; }); key.innerHTML="";
@@ -36287,6 +36337,10 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-pos2 > b{font:700 11px 'Oswald',sans-serif;padding-top:3px}
 .dash-man{border-left:3px solid var(--line-strong,#cfd4dc);padding:2px 0 3px 7px;margin-bottom:3px}
 .dash-man.start{background:rgba(198,161,91,.12)}
+.dash-man.ph{display:grid;grid-template-columns:30px minmax(0,1fr);gap:7px;align-items:start}
+.dash-man.ph .bd{min-width:0}
+.dash-man .lg-bdg.face.ros{width:30px;height:30px;margin-top:1px}
+.dash-man .lg-bdg.face.ros .lg-bdg-m{font-size:10px}
 .dash-man .l1{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
 .dash-man .l1 u{text-decoration:none;font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
 .dash-man .l1 b{font-size:12.5px}
