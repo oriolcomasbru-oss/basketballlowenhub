@@ -27516,12 +27516,13 @@ function renderDashboard(){
           /* OER and DER: our points and theirs per 100 possessions, the same box score as the net */
           { const labs=GL.map(x=>x.code||"?"), oe=GL.map(x=>100*x.us.pts/x.us.poss), de=GL.map(x=>100*x.them.pts/x.them.poss);
             const SO=[{ name:"OER · ours", v:oe, c:"#2f9e86" }, { name:"DER · theirs", v:de, c:"#d8524e" }];
-            const chO=_dashChart(SO, labs, { fmt:v=>v.toFixed(0), h:130, w:620 });
+            const cw=Math.max(300, Math.round(cOD.__b.clientWidth||620));
+            const chO=_dashChart(SO, labs, { fmt:v=>v.toFixed(0), h:130, w:cw });
             if(chO){ cOD.__b.appendChild(chO); cOD.__b.appendChild(_dashLegend(SO)); }
             const sp=(k,side)=>GL.reduce((a,y)=>a+(+y[side][k]||0),0);
             cOD.__b.appendChild(h("div",{class:"dash-src"},"Points per 100 possessions · season OER "+(100*sp("pts","us")/sp("poss","us")).toFixed(1)+" · DER "+(100*sp("pts","them")/sp("poss","them")).toFixed(1)+" · green above red is a game won on efficiency"));
             const ps=GL.map(x=>(x.us.poss+x.them.poss)/2), pA=ps.reduce((a,b)=>a+b,0)/ps.length;
-            const chP=_dashChart([{ name:"Possessions", v:ps, c:"#4a86d8" }], labs, { ref:pA, fmt:v=>v.toFixed(0), h:130, w:620 });
+            const chP=_dashChart([{ name:"Possessions", v:ps, c:"#4a86d8" }], labs, { ref:pA, fmt:v=>v.toFixed(0), h:130, w:Math.max(300, Math.round(cPS.__b.clientWidth||620)) });
             if(chP) cPS.__b.appendChild(chP);
             cPS.__b.appendChild(h("div",{class:"dash-src"},"Possessions a team in each game (≈ from the box score) · dashed: season "+pA.toFixed(1))); }
           const x=GL[GL.length-1], n=net(x), home=String(x.g.homeId)===String(R.tid), us=home? x.g.hs : x.g.as, th=home? x.g.as : x.g.hs;
