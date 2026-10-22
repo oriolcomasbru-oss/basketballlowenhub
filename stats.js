@@ -398,7 +398,7 @@
 
   function buildTransDef(rows) {
     var o = { tag: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0 },
-              back: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0 } };
+              back: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0 }, events: [] };
     /* how many of our possessions ended that way at all, paired or not: without
        it the table looks like the whole game when it is a slice of it */
     rows.forEach(function (r) {
@@ -428,6 +428,8 @@
       if (!kind) continue;
       if (fouledOnTheRebound(d, pv)) continue;
       o[kind].n++; o[kind].pts += points(d.tags);
+      /* each one with where it is in the video and its quarter, for the minute-by-minute table */
+      o.events.push({ a: d.a, q: periodOf(d.tags), kind: kind, pts: points(d.tags) });
     }
     return o;
   }
@@ -1929,22 +1931,27 @@
         gDF.appendChild(s52);
       }
 
-      var covRows = [], covSeen = 0;
-      COVERAGE.forEach(function (c) {
-        var l = DP.filter(function (q) {
-          return c.marks.some(function (m) { return has(q.tags, m); });
+      /* the coverage twice: the half court ball screens, and the transition ones (drag PnR)
+         apart - a drag in the open floor is met with a defense of its own */
+      var isDrag = function (q) { return /drag|transition/i.test(String(q.first || "")); };
+      [["By coverage · half court", DP.filter(function (q) { return !isDrag(q); })],
+       ["By coverage · transition (drag PnR)", DP.filter(isDrag)]].forEach(function (pair) {
+        var covRows = [], covSeen = 0;
+        COVERAGE.forEach(function (c) {
+          var l = pair[1].filter(function (q) {
+            return c.marks.some(function (m) { return has(q.tags, m); });
+          });
+          if (l.length) { covRows.push({ c: c, l: l }); covSeen += l.length; }
         });
-        if (l.length) { covRows.push({ c: c, l: l }); covSeen += l.length; }
-      });
-      if (covRows.length) {
+        if (!covRows.length) return;
         covRows.sort(function (a, b) { return b.l.length - a.l.length; });
         var cMax = covRows[0].l.length || 1;
         /* RED and HEDGE are one coverage, and so are SWITCH and BLACK */
-        var s53 = section("By coverage");
+        var s53 = section(pair[0]);
         s53.appendChild(table(effHead("Coverage", "% cov"),
           covRows.map(function (r) { return effCells(r.c.k, r.l, covSeen, cMax, { def: 1 }); })));
         gDF.appendChild(s53);
-      }
+      });
     }
     box.appendChild(gDF);
 

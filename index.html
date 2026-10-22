@@ -10628,7 +10628,7 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
        moved into this block, so what is stored and how it is built do not change. */
     const uni=h("div",{class:"rs-block rs-block-auto pg-uni"},
       h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"}, "THE GAME · PLAY BY PLAY AND TAGGING")));
-    const PT=[["ov","Overview"],["pbp","Game stats"],["pt","Paint touches"],["br","Ball reversals"],["eff","Efficiency"],["td","Transition D"],["def","What we concede"],["all","Everything"]];
+    const PT=[["ov","Overview"],["pbp","Game stats"],["min","Minute by minute"],["pt","Paint touches"],["br","Ball reversals"],["eff","Efficiency"],["td","Transition D"],["def","What we concede"],["all","Everything"]];
     const bar=h("div",{class:"sxp-tabs pg-tabs"});
     const pane=(k, build)=>{ const p=h("div",{class:"pg-pane", "data-pane":k});
       try{ p.appendChild(build()); }catch(e){ p.appendChild(h("div",{class:"lg-empty"}, "This block could not be drawn: "+((e&&e.message)||e))); }
@@ -10641,23 +10641,23 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
       return h("div",{class:"pg-main"}, h("div",{class:"pg-main-h"},"Main points of the game"),
         makeRichBox(canEd, rep.data.postMain||"", html=>{ rep.data.postMain=html; save(); }, "The three or four things this game was about…", 3)); };
     const pOv=pane("ov", ()=>{ const w=h("div",{}); const mp=mainPoints(); if(mp) w.appendChild(mp); w.appendChild(_postOverview(g)); return w; }),
-      pPbp=pane("pbp", ()=>_lgGameInline(g)), pTs=h("div",{class:"pg-pane", "data-pane":"ts"}),
+      pPbp=pane("pbp", ()=>_lgGameInline(g)), pMin=pane("min", ()=>_postMinutes(g)), pTs=h("div",{class:"pg-pane", "data-pane":"ts"}),
       pQ=h("div",{class:"pg-pane", "data-pane":"q"});
     /* the quarter-by-quarter table of the overview, drawn when the overview is, shown in Efficiency */
     if(_postOvKeep.q && _postOvKeep.key===g.date+"|"+(g.opponent||"")) pQ.appendChild(_postOvKeep.q);
     const show=k=>{
       window.__postCat=k; uni.dataset.tab=k;
       bar.querySelectorAll(".sxp-tab").forEach(b=>b.classList.toggle("on", b.dataset.t===k));
-      const tsOn=(k!=="ov" && k!=="pbp");
-      pOv.classList.toggle("on", k==="ov"||k==="all"); pPbp.classList.toggle("on", k==="pbp"||k==="all"); pQ.classList.toggle("on", k==="eff"||k==="all"); pTs.classList.toggle("on", tsOn);
+      const tsOn=(k!=="ov" && k!=="pbp" && k!=="min");
+      pOv.classList.toggle("on", k==="ov"||k==="all"); pPbp.classList.toggle("on", k==="pbp"||k==="all"); pMin.classList.toggle("on", k==="min"||k==="all"); pQ.classList.toggle("on", k==="eff"||k==="all"); pTs.classList.toggle("on", tsOn);
       const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && tsOn) sp.__setCat(k);
       try{ window.dispatchEvent(new Event("resize")); }catch(e){}
     };
     PT.forEach(t=>{ const b=h("button",{class:"sxp-tab", type:"button", onclick:()=>show(t[0])}, t[1]); b.dataset.t=t[0]; bar.appendChild(b); });
-    uni.appendChild(bar); uni.appendChild(pOv); uni.appendChild(pPbp); uni.appendChild(pQ); uni.appendChild(pTs);
+    uni.appendChild(bar); uni.appendChild(pOv); uni.appendChild(pPbp); uni.appendChild(pMin); uni.appendChild(pQ); uni.appendChild(pTs);
     uni.__ts=pTs;
     /* the team stats arrive later, from the Drive: when they land, they open on the tab chosen */
-    try{ new MutationObserver(()=>{ const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && !sp.__synced){ sp.__synced=1; const k=uni.dataset.tab; if(k!=="ov" && k!=="pbp") sp.__setCat(k); } })
+    try{ new MutationObserver(()=>{ const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && !sp.__synced){ sp.__synced=1; const k=uni.dataset.tab; if(k!=="ov" && k!=="pbp" && k!=="min") sp.__setCat(k); } })
       .observe(pTs, { childList:true, subtree:true }); }catch(e){}
     wrap.appendChild(uni);
     _postUni=uni;
@@ -21124,6 +21124,99 @@ function _postLeagueGame(sg, list){
   return mine.filter(x=>x.date && Math.abs(day(x.date)-day(sg.date))<=1 && opp &&
     (String(x.home||"")+" "+String(x.away||"")).toLowerCase().indexOf(opp)>=0)[0]||null;
 }
+/* THE GAME MINUTE BY MINUTE, QUARTER BY QUARTER. OER, DER and the offensive rebounding come
+   from the league's play by play, which has the clock: our points and theirs a possession in
+   each minute (possessions ≈ from the box score) and the share of our misses we got back.
+   Paint touches, TAG and BACK come from our tagging, which only has the video's time: each
+   tagged possession is put on the game clock by lining the baskets of the video up with the
+   baskets of the play by play, quarter by quarter, and reading the time in between from the
+   two baskets either side - so a possession can land a minute out, never a quarter. */
+function _postMinutes(sg){
+  const box=h("div",{class:"pgm"});
+  if(!sg || !sg.date) return box;
+  box.appendChild(h("div",{class:"ld"},"Reading the play by play and the tagging of this game…", h("span",{class:"ld-bar"})));
+  const API=window.LowenPostStats;
+  const pbp=(async ()=>{
+    const L=leagueState();
+    let G=_postLeagueGame(sg, (L.games||[]).concat(L.cup||[]));
+    if(!G){ const all=await _lgAll(); G=_postLeagueGame(sg, ((all&&all.games)||[]).concat((all&&all.cup)||[])); }
+    if(!G) return null;
+    const j=await (_lgGameMemo[G.id]||(_lgGameMemo[G.id]=fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(G.id)).then(r=>r.json())));
+    return (j && j.feed && (j.feed.actions||[]).length)? { G:G, j:j } : null;
+  })().catch(()=>null);
+  const tag=(API && API.gameModel)? API.gameModel(sg.opponent||"", sg.date).catch(()=>null) : Promise.resolve(null);
+  Promise.all([pbp, tag]).then(([P, GM])=>{ box.innerHTML="";
+    if(!P){ box.appendChild(h("div",{class:"lg-empty"},"The league's play by play of this game is not in yet.")); return; }
+    const L=leagueState(), our=String(((L.teams||[]).filter(t=>_lgOurs(t.name))[0]||{}).id||"");
+    const uc=String(P.G.homeId)===our? "A" : "B";
+    const qLen=qi=>qi<4? 600 : 300, qBase=qi=>qi<4? qi*600 : 2400+(qi-4)*300;
+    /* the play by play, a bucket a minute */
+    const B={}, bk=(qi,m)=>B[qi+"|"+m]||(B[qi+"|"+m]={ u:{ pts:0, fga:0, or:0, dr:0, tov:0, fta:0 }, t:{ pts:0, fga:0, or:0, dr:0, tov:0, fta:0 }, pt:0, pn:0, tag:[0,0], back:[0,0] });
+    const acts=(P.j.feed.actions||[]).map((a,i)=>{ const e=_lgGameElapsed(a.quarter, a.time); return { a:a, t:e.t, qi:e.qi, i:i }; }).sort((x,y)=>(x.t-y.t)||(x.i-y.i));
+    let maxQ=3; acts.forEach(o=>{ if(o.qi>maxQ) maxQ=o.qi; });
+    const minOf=o=>Math.max(0, Math.min(qLen(o.qi)/60-1, Math.floor((o.t-qBase(o.qi))/60)));
+    const scores={};   /* each quarter's baskets, in order, for lining the tagging up */
+    acts.forEach(o=>{ const a=o.a, c=a.teamcode; if(c!=="A" && c!=="B") return;
+      const S=bk(o.qi, minOf(o))[c===uc? "u" : "t"], k=a.action;
+      if(k==="REB"||k==="TREB"){ if(a.info1==="O") S.or++; else S.dr++; return; }
+      if(k==="TO"||k==="TTO"||(k==="FOUL" && a.info1==="O")){ S.tov++; return; }
+      if(k!=="P2" && k!=="P3" && k!=="FT") return;
+      if(k==="FT") S.fta++; else S.fga++;
+      if(a.result==="+"){ const v=k==="P3"? 3 : k==="P2"? 2 : 1; S.pts+=v;
+        const lst=(scores[o.qi]=scores[o.qi]||[]), side=c===uc? "u" : "t", last=lst[lst.length-1];
+        /* a basket and its free throws are one scoring possession */
+        if(last && last.side===side && o.t-last.t<=4) last.pts+=v; else lst.push({ t:o.t, side:side, pts:v }); } });
+    /* the tagging on the clock */
+    const m=GM && GM.model;
+    const QN={ "1Q":0, "2Q":1, "3Q":2, "4Q":3, "OT":4 };
+    if(m && (m.poss||[]).length){
+      for(let qi=0; qi<=Math.min(maxQ,4); qi++){
+        const mine=(m.poss||[]).filter(q=>QN[q.q]===qi), theirs=(m.dposs||[]).filter(q=>QN[q.q]===qi);
+        const ev=(((m.trans||{}).events)||[]).filter(e=>QN[e.q]===qi);
+        if(!mine.length && !ev.length) continue;
+        const va=q=>(q.clips && q.clips[0] && q.clips[0].a)||0;
+        const allV=mine.map(va).concat(theirs.map(va)).concat(ev.map(e=>e.a)).filter(x=>x>0);
+        if(!allV.length) continue;
+        const v0=Math.min(...allV), v1=Math.max(...allV), T0=qBase(qi), T1=qBase(qi)+qLen(qi);
+        /* the anchors: the k-th scoring possession of each side in the video is the k-th basket
+           of that side in the play by play (by rank when the counts differ) */
+        const anchors=[{ v:v0, t:T0 }, { v:v1, t:T1 }];
+        ["u","t"].forEach(sd=>{ const vid=(sd==="u"? mine : theirs).filter(q=>(q.pts||0)>0).map(va).sort((x,y)=>x-y), pb=(scores[qi]||[]).filter(x=>x.side===sd);
+          if(!vid.length || !pb.length) return;
+          vid.forEach((v,k)=>{ const idx=vid.length===pb.length? k : Math.round(k*(pb.length-1)/Math.max(1, vid.length-1)); anchors.push({ v:v, t:pb[idx].t }); }); });
+        anchors.sort((x,y)=>x.v-y.v);
+        const mono=[]; anchors.forEach(p=>{ if(!mono.length || (p.t>=mono[mono.length-1].t && p.v>mono[mono.length-1].v)) mono.push(p); });
+        const at=v=>{ for(let i=1;i<mono.length;i++){ if(v<=mono[i].v){ const A=mono[i-1], C=mono[i]; return A.t+(C.t-A.t)*(v-A.v)/Math.max(1e-6, C.v-A.v); } } return T1-1; };
+        const mOf=v=>Math.max(0, Math.min(qLen(qi)/60-1, Math.floor((at(v)-T0)/60)));
+        mine.forEach(q=>{ const b=bk(qi, mOf(va(q))); b.pn++; if((q.pt||0)>0 || q.phase==="Fastbreak") b.pt++; });
+        ev.forEach(e=>{ const b=bk(qi, mOf(e.a)); const s=e.kind==="tag"? b.tag : b.back; s[0]++; s[1]+=e.pts||0; });
+      }
+    }
+    const poss=S=>Math.max(0, S.fga-S.or+S.tov+0.44*S.fta);
+    const f2=v=>v==null? "—" : v.toFixed(2);
+    const cell=(txt, cls, title)=>h("td",{class:cls||"", title:title||""}, txt);
+    const ppp=(S, good)=>{ const p=poss(S); if(p<0.5) return cell(S.pts? S.pts+" pts" : "·","mu"); const v=S.pts/p;
+      return cell(f2(v), good? (v>=1.1? "g" : v<=0.85? "b" : "") : (v<=0.85? "g" : v>=1.1? "b" : ""), S.pts+" pts in ≈"+p.toFixed(1)+" possessions"); };
+    const orb=(U,T)=>{ const d=U.or+T.dr; if(!d) return cell("·","mu"); const v=100*U.or/d; return cell(Math.round(v)+"%", v>=35? "g" : v<=20? "b" : "", U.or+" of "+d+" of our misses"); };
+    const ptc=b=>{ if(!b.pn) return cell("·","mu"); const v=100*b.pt/b.pn; return cell(Math.round(v)+"%", v>=70? "g" : v<60? "b" : "", b.pt+" of "+b.pn+" possessions with a paint touch"); };
+    const tb=s=>{ if(!s[0]) return cell("·","mu"); const v=s[1]/s[0]; return cell(v.toFixed(2), v<=0.8? "g" : v>=1.2? "b" : "", s[1]+" pts in "+s[0]); };
+    const sum=list=>{ const o={ u:{ pts:0, fga:0, or:0, dr:0, tov:0, fta:0 }, t:{ pts:0, fga:0, or:0, dr:0, tov:0, fta:0 }, pt:0, pn:0, tag:[0,0], back:[0,0] };
+      list.forEach(b=>{ ["u","t"].forEach(s=>Object.keys(o[s]).forEach(k=>{ o[s][k]+=b[s][k]; })); o.pt+=b.pt; o.pn+=b.pn; o.tag[0]+=b.tag[0]; o.tag[1]+=b.tag[1]; o.back[0]+=b.back[0]; o.back[1]+=b.back[1]; }); return o; };
+    const row=(lab, b, cls)=>h("tr",{class:cls||""}, h("th",{}, lab), ptc(b), tb(b.tag), tb(b.back), ppp(b.u, true), ppp(b.t, false), orb(b.u, b.t));
+    const grid=h("div",{class:"pgm-grid"});
+    for(let qi=0; qi<=maxQ; qi++){
+      const n=qLen(qi)/60, bs=[]; for(let mm=0; mm<n; mm++) bs.push(B[qi+"|"+mm]||bk(qi,mm));
+      const t=h("table",{class:"pgm-t"},
+        h("tr",{}, h("th",{class:"q"}, qi<4? "Q"+(qi+1) : "OT"+(qi-3)), h("th",{title:"possessions with a paint touch (our tagging)"},"Paint"), h("th",{title:"points they scored a transition after our long shot (our tagging)"},"TAG"),
+          h("th",{title:"points they scored a transition after our shot at the rim (our tagging)"},"BACK"), h("th",{title:"our points a possession (play by play)"},"OER"), h("th",{title:"their points a possession (play by play)"},"DER"), h("th",{title:"our offensive rebounds of our misses (play by play)"},"OREB%")),
+        ...bs.map((b,mm)=>row((n-mm)+"′", b)), row("Total", sum(bs), "tot"));
+      grid.appendChild(t);
+    }
+    box.appendChild(grid);
+    box.appendChild(h("div",{class:"gpo-note"},"OER, DER, OREB%: the league's play by play, by the game clock · Paint, TAG, BACK: our tagging, put on the clock by lining its baskets up with the play by play's (a possession can land a minute out) · green good, red bad"+(m? "" : " · no tagging of this game in the Drive yet")));
+  }).catch(e=>{ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"},"This table could not be built: "+((e&&e.message)||e))); });
+  return box;
+}
 function _postOverview(sg){
   const box=h("div",{class:"gpo sx"});
   if(!sg || !sg.date) return box;
@@ -26585,7 +26678,11 @@ function _dashCoverInto(box, opp){
   box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading their ball screen defense…"));
   _dashNeed(()=>window.ScoutPre && window.ScoutPre.report).then(()=>window.ScoutPre.report(opp)).then(R=>{ box.innerHTML="";
     const D=R && R.D, cb=D && D.covbybig;
-    if(!cb || !(cb.rows||[]).length){ box.appendChild(h("div",{class:"dash-miss"}, D? "No ball screen of theirs tagged with a coverage yet." : "No tagging of this club in the Drive folder yet.")); return; }
+    const cbT=D && D.covbybigTr, has=x=>x && (x.rows||[]).length;
+    if(!has(cb) && !has(cbT)){ box.appendChild(h("div",{class:"dash-miss"}, D? "No ball screen of theirs tagged with a coverage yet." : "No tagging of this club in the Drive folder yet.")); return; }
+    /* half court and transition apart: the drag screen is met with a defense of its own */
+    const draw=(cb, title)=>{ if(!has(cb)) return;
+    box.appendChild(h("div",{class:"dash-covh"}, title));
     const tot=cb.total||[];
     const t=h("div",{class:"dash-cov"}, h("span",{class:"hd"},"Coverage"),
       h("span",{class:"hd"},"On their 4 · "+Math.round((tot[0]&&tot[0].poss)||0)+" poss"), h("span",{class:"hd"},"On their 5 · "+Math.round((tot[1]&&tot[1].poss)||0)+" poss"));
@@ -26596,6 +26693,8 @@ function _dashCoverInto(box, opp){
     const vol=r=>(r.cells[0].poss||0)+(r.cells[1].poss||0);
     cb.rows.slice().sort((a,b)=>vol(b)-vol(a)).slice(0,7).forEach(r=>{ t.appendChild(h("span",{class:"k"}, r.label)); t.appendChild(cell(r.cells[0])); t.appendChild(cell(r.cells[1])); });
     box.appendChild(t);
+    };
+    draw(cb, "Half court"); draw(cbT, "Transition · drag PnR");
     (D.covbig||[]).forEach(r=>{ if(r.mix) box.appendChild(h("div",{class:"dash-src"}, h("b",{}, r.label+": "), r.mix)); });
     box.appendChild(h("div",{class:"dash-src"},"% of the ball screens that big defends · PPP given up: green = attack it, red = it holds · pale: under 5 poss"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their tagging could not be read from the Drive.")); });
@@ -27590,6 +27689,11 @@ function renderDashboard(){
       c.__b.appendChild(h("div",{class:"dash-2 r2"}, cOD, cPS));
       const cB=sub("Our 10 best sets · half court"), cW=sub("Our 10 worst sets · half court","bad"), cU=sub("Sets improving most · last 3 games"), cD=sub("Sets dropping most · last 3 games","bad");
       c.__b.appendChild(h("div",{class:"dash-4 r2"}, cB, cW, cU, cD));
+      /* OUR OFFENSIVE REBOUNDING, FROM THE LEAGUE, BESIDE THE TAGGING'S KEY MEASURES: the share of
+         our misses we got back - the last game, the last three, the season and our place among
+         the clubs. Drawn by whichever of the two readings arrives second. */
+      let orFig=null, keyDone=false;
+      const putOr=()=>{ if(orFig && keyDone && !orFig.isConnected) key.appendChild(orFig); };
       const net=x=>(x.us.poss && x.them.poss)? 100*x.us.pts/x.us.poss-100*x.them.pts/x.them.poss : null;
       const fig=(k,v,n2,tone)=>h("div",{class:"dash-fig "+(tone||"")}, h("i",{},k), h("b",{},v), h("span",{},n2||""));
       const lastBits=[];
@@ -27599,6 +27703,17 @@ function renderDashboard(){
       /* the league: net rating, the last game, and each player's PIR - last three against before */
       _trgRead().then(R=>{ cN.__b.innerHTML=""; cPU.__b.innerHTML=""; cPD.__b.innerHTML=""; cOD.__b.innerHTML=""; cPS.__b.innerHTML="";
         const GL=((R && R.games)||[]).filter(x=>x && x.us && x.them && x.us.poss && x.them.poss);
+        { const orb=l=>{ const o=l.reduce((a,x)=>a+(+x.us.oreb||0),0), d=l.reduce((a,x)=>a+(+x.them.dreb||0),0); return (o+d)? 100*o/(o+d) : null; };
+          const lg=GL.slice(-1), l3=GL.slice(-3), vL=orb(lg), v3=orb(l3), vS=orb(GL);
+          const F=Object.values(leagueState().four||{}).filter(t=>t && t.off), me=F.filter(t=>String(t.teamId)===String(R.tid))[0];
+          const lgAvg=F.length? 100*F.reduce((a,t)=>a+t.off.reb,0)/F.length : null, rank=me? 1+F.filter(t=>t.off.reb>me.off.reb).length : null;
+          const f0=v=>v==null? "—" : Math.round(v)+"%";
+          const tone=(a,b)=>(a==null||b==null||Math.abs(a-b)<3)? "" : a>b? "good" : "bad";
+          if(GL.length) orFig=h("div",{class:"dash-kf "+tone(vL, vS)},
+            h("i",{}, "Off. rebounding"), h("b",{}, f0(vL)), h("span",{}, "last game · "+(GL[GL.length-1].opp||"")),
+            h("div",{class:"row"}, h("em",{class:tone(v3, vS)}, "last 3 ", h("u",{}, f0(v3))), h("em",{}, "season ", h("u",{}, f0(vS)))),
+            h("small",{}, "of our misses, from the league"+(rank? " · "+_dashOrd(rank)+" of "+F.length+(lgAvg!=null? " · league "+f0(lgAvg) : "") : "")));
+          putOr(); }
         if(GL.length>=2){
           const v=GL.map(net), avg=v.reduce((a,b)=>a+b,0)/v.length;
           const ch=_dashChart([{ name:"Net rating", v:v, c:"#141821" }], GL.map(x=>x.code||"?"), { zero:true, ref:avg, fmt:x=>(x>0? "+" : "")+x.toFixed(0), h:100 });
@@ -27662,6 +27777,7 @@ function renderDashboard(){
             h("i",{}, k[0]), h("b",{}, k[4](k[1])), h("span",{}, "last game · "+lx.label),
             h("div",{class:"row"}, h("em",{class:tone(k[2],k[3],k[5],k[6])}, "last 3 ", h("u",{}, k[4](k[2]))), h("em",{}, "season ", h("u",{}, k[4](k[3])))),
             h("small",{}, k[7]))); });
+        keyDone=true; putOr();
         /* the three charts */
         const S2=[{ name:"TAG", v:list.map(x=>tb(x,"tag")), c:"#d8524e" }, { name:"BACK", v:list.map(x=>tb(x,"back")), c:"#4a86d8" }];
         const ch2=_dashChart(S2, labs, { fmt:v=>v.toFixed(2), h:110 });
@@ -36773,6 +36889,15 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 @media (max-width:1100px){ .dash-3c{grid-template-columns:minmax(0,1fr) minmax(0,1fr)} .dash-3c > .dash-sub:nth-child(3){grid-column:1 / -1;border-left:0;padding-left:0} }
 @media (max-width:700px){ .dash-3c{grid-template-columns:minmax(0,1fr)} .dash-3c > .dash-sub + .dash-sub{border-left:0;padding-left:0} }
 /* the key sets: a row a set, and a box a tagged game, oldest first */
+/* post game, minute by minute: a table a quarter, ten minutes and a total each */
+.pgm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px}
+.pgm-t{width:100%;border-collapse:collapse;font:600 12px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
+.pgm-t th{font:700 9.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472);padding:4px 5px;border-bottom:2px solid var(--ink,#141821);text-align:right}
+.pgm-t th.q{text-align:left;font-size:13px;color:var(--ink,#141821)}
+.pgm-t tr > th:first-child{text-align:left}
+.pgm-t td{padding:3px 5px;text-align:right;border-bottom:1px solid var(--line,#eef0f3)}
+.pgm-t td.g{background:rgba(47,158,134,.16);color:#17805a}.pgm-t td.b{background:rgba(216,82,78,.15);color:#c0403c}.pgm-t td.mu{color:var(--ink-faint,#8a93a2)}
+.pgm-t tr.tot th,.pgm-t tr.tot td{border-top:2px solid var(--ink,#141821);font-weight:800}
 .dash-ks{display:grid;grid-template-columns:16px minmax(0,1.5fr) minmax(0,.8fr) 84px 42px calc(var(--ng,4)*26px);gap:3px 7px;align-items:center;font-size:12px}
 .dash-ks .hd{font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-faint,#8a93a2);text-align:center}
 .dash-ks .hd.l{text-align:left}
@@ -36840,6 +36965,7 @@ body.dop-measure #print-area{display:block;position:fixed;left:-99999px;top:0}
 /* the six weapons: rank, name, call, use, share, PPP */
 .dash-set.top .rk{min-width:14px;text-align:center;color:var(--ink-faint,#8a93a2)}
 .dash-set .pc{flex:none;font:600 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);min-width:26px;text-align:right}
+.dash-covh{font:700 10px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft,#5b6472);margin:6px 0 2px}
 .dash-cov{display:grid;grid-template-columns:minmax(90px,1.3fr) repeat(2,minmax(0,1fr));gap:3px 6px;align-items:center;font-size:12px}
 .dash-cov .hd{font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint,#8a93a2)}
 .dash-cov .k{font-weight:700}
@@ -36935,7 +37061,7 @@ body.dop-measure #print-area{display:block;position:fixed;left:-99999px;top:0}
 .dash-keyh{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}
 .dash-keyh b{font:700 12px 'Oswald',sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#7a5c12}
 .dash-keyh span{font:500 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
-.dash-key{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.dash-key{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:14px}
 @media (max-width:900px){ .dash-key{grid-template-columns:repeat(2,minmax(0,1fr))} }
 .dash-kf{border-radius:12px;padding:10px 12px;background:var(--panel-2,#f4f5f7);border-top:4px solid #c6a15b;display:grid;gap:2px;min-width:0}
 .dash-kf.good{background:rgba(47,158,134,.1);border-top-color:#2f9e86}.dash-kf.bad{background:rgba(216,82,78,.09);border-top-color:#d8524e}

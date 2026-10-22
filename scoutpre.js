@@ -1057,21 +1057,32 @@
                    cov: covOf(c).join(", "), who: plOf(c).map(function (p) { return p.replace("|", " #"); }).join(", "),
                    pts: a ? Math.round(a.ppp * a.poss * 10) / 10 : null }; }) };
     });
-    D.covbybig = {
-      total: bigTot,
-      totalRef: refPnrAll,
-      rows: covKeysOf(pn).map(function (k) {
-        var cells = bigCols.map(function (b, j) {
-          var c = cellFor(b[1].filter(function (x) { return covOf(x).indexOf(k) >= 0; }));
-          /* out of everything THAT big defends, not out of the whole table: four
-             possessions beside thirty-seven is not a comparison until both are shares */
-          c.share = bigTot[j].poss ? Math.round(100 * c.poss / bigTot[j].poss) : null;
-          return c;
-        });
-        if (!cells.some(function (x) { return x.n; })) return null;
-        return { label: k, ref: (REF_COV[k] == null ? null : REF_COV[k]), cells: cells };
-      }).filter(Boolean)
+    /* THE BALL SCREEN IN TRANSITION IS ANOTHER DEFENSE. A drag screen in the open floor is
+       met with a coverage of its own - nearly always different from the half court one - and
+       mixed in it hides both. So the table is built twice: the half court ball screens, and
+       the transition ones (the "Drag PnR" category) apart. */
+    var isTr = function (c) { return /drag|transition/i.test(String(c[0].label || "") + " " + String(c[0].cat || "")); };
+    var covTable = function (list) {
+      var cols = [["4", list.filter(function (c) { return bigOf(c) === "4"; })], ["5", list.filter(function (c) { return bigOf(c) === "5"; })]];
+      var tot = cols.map(function (b) { return cellFor(b[1]); });
+      return {
+        total: tot,
+        totalRef: refPnrAll,
+        rows: covKeysOf(list).map(function (k) {
+          var cells = cols.map(function (b, j) {
+            var c = cellFor(b[1].filter(function (x) { return covOf(x).indexOf(k) >= 0; }));
+            /* out of everything THAT big defends, not out of the whole table: four
+               possessions beside thirty-seven is not a comparison until both are shares */
+            c.share = tot[j].poss ? Math.round(100 * c.poss / tot[j].poss) : null;
+            return c;
+          });
+          if (!cells.some(function (x) { return x.n; })) return null;
+          return { label: k, ref: (REF_COV[k] == null ? null : REF_COV[k]), cells: cells };
+        }).filter(Boolean)
+      };
     };
+    D.covbybig = covTable(pn.filter(function (c) { return !isTr(c); }));
+    D.covbybigTr = covTable(pn.filter(isTr));
 
     /* ---------------------------------------------- the same screens, game by game
        The coverage table says what each coverage costs them over the whole sample, and
@@ -2256,8 +2267,12 @@
          what it cost them. This is the table the question was actually about — a team that
          drops with the five and switches with the four is two defenses, and this is where
          that shows. */
-      if (D.covbybig.rows.length) {
-        b5bb.appendChild(el("div", "sxp-sub sxp-sub2", "How they cover each of them"));
+      /* twice: the half court ball screens, and the transition ones (drag) apart */
+      [[D.covbybig, "How they cover each of them · half court", "Any half court ball screen"],
+       [D.covbybigTr, "Transition ball screens (drag PnR) · a defense of its own", "Any transition ball screen"]].forEach(function (pair) {
+      var CB = pair[0];
+      if (CB && CB.rows.length) {
+        b5bb.appendChild(el("div", "sxp-sub sxp-sub2", pair[1]));
         var TX2 = tableShell([
           { t: "Coverage", rows: 2 },
           { t: "Their 4", span: 3, cls: "grpd" }, { t: "Their 5", span: 3, cls: "grpd" }]);
@@ -2280,11 +2295,11 @@
           return tr;
         };
         /* the total row is the only one where the share is not a share of itself */
-        var tot = D.covbybig.total.map(function (c) {
+        var tot = CB.total.map(function (c) {
           return { n: c.n, poss: c.poss, ppp: c.ppp, conf: c.conf, share: null };
         });
-        TX2.body.appendChild(bigRow("Any ball screen", tot, D.covbybig.totalRef, "sxp-tot"));
-        D.covbybig.rows.forEach(function (r) {
+        TX2.body.appendChild(bigRow(pair[2], tot, CB.totalRef, "sxp-tot"));
+        CB.rows.forEach(function (r) {
           TX2.body.appendChild(bigRow(r.label, r.cells, r.ref));
         });
         b5bb.appendChild(TX2.wrap);
@@ -2293,6 +2308,7 @@
           + "comparable \u2014 four possessions beside thirty-seven is not. A dash means that big "
           + "was never in that coverage; a pale PPP means too few possessions to read as a rate.");
       }
+      });
 
       /* who is tagged in those clips, and the clips themselves */
       if (D.bigwho && D.bigwho.some(function (w) { return w.n; })) {
