@@ -26754,13 +26754,23 @@ function _dashOppPrint(card, title){
     const area=$("#print-area");
     const PW=1058, PH=715;   /* the printable box of a landscape A4 at 7 mm margins, in CSS px, less a little */
     const fit=(p, W)=>{ p.style.width=W+"px"; p.style.transform="none"; const s=Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); return s; };
-    const s1=fit(p1, 1400); p1.style.transform="scale("+s1.toFixed(4)+")";
-    /* the notes in two to five columns of one of four widths: the one that leaves the letters largest */
-    let best={ s:0, c:3, cw:380 };
-    [300,340,380,420].forEach(cw=>[2,3,4,5].forEach(c=>{ p2.style.setProperty("--cols", String(c)); const s=fit(p2, cw*c); if(s>best.s) best={ s:s, c:c, cw:cw }; }));
-    p2.style.setProperty("--cols", String(best.c)); fit(p2, best.cw*best.c); p2.style.transform="scale("+best.s.toFixed(4)+")";
+    /* THE SHEETS ARE MEASURED AGAIN ON PAPER. A landscape A4 is a window about 1070 px wide, so
+       the stylesheet's narrow-screen rules apply to the printed copy and make it taller than it
+       was on the screen - and the bottom of the first sheet, the key players, was cut off. So
+       the fit is worked out once here and once more as the page goes to the printer, with the
+       layout the printer has. */
+    const refit=()=>{
+      const s1=fit(p1, 1400); p1.style.transform="scale("+s1.toFixed(4)+")";
+      /* the notes in two to five columns of one of four widths: the one that leaves the letters largest */
+      let best={ s:0, c:3, cw:380 };
+      [300,340,380,420].forEach(cw=>[2,3,4,5].forEach(c=>{ p2.style.setProperty("--cols", String(c)); const s=fit(p2, cw*c); if(s>best.s) best={ s:s, c:c, cw:cw }; }));
+      p2.style.setProperty("--cols", String(best.c)); fit(p2, best.cw*best.c); p2.style.transform="scale("+best.s.toFixed(4)+")"; };
+    refit();
+    const mq=window.matchMedia? window.matchMedia("print") : null, onMq=e=>{ if(e.matches) refit(); };
+    if(mq){ if(mq.addEventListener) mq.addEventListener("change", onMq); else if(mq.addListener) mq.addListener(onMq); }
     const st=document.createElement("style"); st.textContent="@page{size:A4 landscape;margin:7mm} html,body{margin:0!important;padding:0!important}"; document.body.appendChild(st);
-    const done=()=>{ document.body.classList.remove("printing","printing-dop","dop-measure"); area.innerHTML=""; st.remove(); window.removeEventListener("afterprint", done); };
+    const done=()=>{ document.body.classList.remove("printing","printing-dop","dop-measure"); area.innerHTML=""; st.remove(); window.removeEventListener("afterprint", done);
+      if(mq){ if(mq.removeEventListener) mq.removeEventListener("change", onMq); else if(mq.removeListener) mq.removeListener(onMq); } };
     window.addEventListener("afterprint", done);
     document.body.classList.remove("dop-measure");
     document.body.classList.add("printing","printing-dop");
