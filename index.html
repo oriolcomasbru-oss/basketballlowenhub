@@ -18378,7 +18378,7 @@ function _trendsDashDraw(R, TD){
       const tb1=(x,k)=>{ const t=x && x.m && x.m.trans && x.m.trans[k]; return (t && t.n)? t.pts/t.n : null; };
       const items=k=>G.map((g,i)=>{ const v=tb1(tagged[i],k); return v==null? null : { label:g.code||"", value:v, text:v.toFixed(2), tone:v<=0.9? "good" : v>=1.2? "bad" : "neutral" }; }).filter(Boolean);
       if(items("tag").length) visuals.push(K0.strip({ title:"TAG conceded", sub:"points a transition after our long shot", items:items("tag") }));
-      if(items("back").length) visuals.push(K0.strip({ title:"BACK conceded", sub:"points a transition after our shot at the rim", items:items("back") }));
+      if(items("back").length) visuals.push(K0.strip({ title:"BACK conceded", sub:"points a transition after our miss at the rim or our turnover", items:items("back") }));
     }
     if(nTag && API.measured) visuals.push(K0.strip({ title:"Ball reversals", sub:"share of possessions", items:G.map((g,i)=>{ const x=tagged[i]; if(!x) return null; const v=API.measured(x.s,"br");
       return isFinite(v)? { label:g.code||"", value:v, text:Math.round(v)+"%", tone:"neutral" } : null; }).filter(Boolean) }));
@@ -21136,7 +21136,7 @@ function _postLeagueGame(sg, list){
    - points each and how many - for wherever BACK is shown as one number */
 function _backSplitTxt(back){ const s=back && back.sub; if(!s) return "";
   const one=(k,l)=>{ const o=s[k]||{ n:0, pts:0 }; return o.n? l+" "+(o.pts/o.n).toFixed(2)+" ("+o.n+")" : ""; };
-  return [one("to","after TO"), one("miss","after a miss"), one("make","after a make")].filter(Boolean).join(" · "); }
+  return [one("to","after TO"), one("miss","after a miss")].filter(Boolean).join(" · "); }
 function _postMinutes(sg){
   const box=h("div",{class:"pgm"});
   if(!sg || !sg.date) return box;
@@ -27776,7 +27776,7 @@ function renderDashboard(){
         const f0=v=>v==null? "—" : Math.round(v)+"%", f2=v=>v==null? "—" : v.toFixed(2);
         /* the four key measures, big */
         const K=[["TAG conceded", tb(lx,"tag"), tbL(l3,"tag"), tbL(list,"tag"), f2, false, 0.1, "pts a transition after our long shot"],
-          ["BACK conceded", tb(lx,"back"), tbL(l3,"back"), tbL(list,"back"), f2, false, 0.1, "pts a transition after our shot at the rim"],
+          ["BACK conceded", tb(lx,"back"), tbL(l3,"back"), tbL(list,"back"), f2, false, 0.1, "pts a transition after our miss at the rim or our turnover"],
           ["Paint touches", ms(lx,"pt"), msL(l3,"pt"), msL(list,"pt"), f0, true, 3, "of possessions · target 70%"],
           ["Ball reversals", ms(lx,"br"), msL(l3,"br"), msL(list,"br"), f0, true, 3, "of possessions"]];
         const tone=(a,b,hi,th)=>(a==null||b==null||Math.abs(a-b)<th)? "" : ((a>b)===hi? "good" : "bad");
@@ -27788,8 +27788,11 @@ function renderDashboard(){
         /* BACK in its three parts under it: after our turnover, after our miss, after our make */
         { const bf=key.children[1], subOf=L2=>{ const o={ to:{ n:0, pts:0 }, miss:{ n:0, pts:0 }, make:{ n:0, pts:0 } };
             L2.forEach(x=>{ const s=x.m && x.m.trans && x.m.trans.back && x.m.trans.back.sub; if(s) Object.keys(o).forEach(k=>{ o[k].n+=(s[k]&&s[k].n)||0; o[k].pts+=(s[k]&&s[k].pts)||0; }); }); return { sub:o }; };
-          const tL=_backSplitTxt(subOf([lx])), tS=_backSplitTxt(subOf(list));
-          if(bf && (tL || tS)) bf.appendChild(h("div",{class:"bsplit"}, tL? h("span",{}, h("b",{},"Last game "), tL) : null, tS? h("span",{}, h("b",{},"Season "), tS) : null)); }
+          /* two pills a line - after a turnover, after a miss - coloured by what they cost */
+          const pill=(o, lab)=>{ if(!o || !o.n) return h("span",{class:"bp none"}, lab, h("b",{},"—"));
+            const v=o.pts/o.n; return h("span",{class:"bp "+(v>=1.2? "bad" : v<=0.8? "good" : ""), title:o.pts+" pts in "+o.n+" "+(lab==="TO"? "after our turnovers" : "after our misses")}, lab, h("b",{}, v.toFixed(2)), h("i",{}, o.n)); };
+          const line=(lab, S)=>h("div",{class:"bl"}, h("u",{}, lab), pill(S.sub.to, "TO"), pill(S.sub.miss, "Miss"));
+          if(bf) bf.appendChild(h("div",{class:"bsplit"}, line("Last", subOf([lx])), line("Season", subOf(list)))); }
         keyDone=true; putOr();
         /* the three charts */
         const S2=[{ name:"TAG", v:list.map(x=>tb(x,"tag")), c:"#d8524e" }, { name:"BACK", v:list.map(x=>tb(x,"back")), c:"#4a86d8" }];
@@ -36912,7 +36915,14 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .pgm-t td.g{background:rgba(47,158,134,.16);color:#17805a}.pgm-t td.b{background:rgba(216,82,78,.15);color:#c0403c}.pgm-t td.mu{color:var(--ink-faint,#8a93a2)}
 .pgm-t tr.tot th,.pgm-t tr.tot td{border-top:2px solid var(--ink,#141821);font-weight:800}
 .pgm-bs{font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);padding:4px 5px 0}.pgm-bs b{color:var(--ink,#141821)}
-.dash-kf .bsplit{display:grid;gap:1px;font:500 10px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);margin-top:3px}.dash-kf .bsplit b{color:var(--ink,#141821)}
+.dash-kf .bsplit{display:grid;gap:3px;margin-top:5px}
+.dash-kf .bsplit .bl{display:flex;align-items:center;gap:4px}
+.dash-kf .bsplit .bl u{text-decoration:none;font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-faint,#8a93a2);width:38px}
+.dash-kf .bsplit .bp{display:inline-flex;align-items:baseline;gap:4px;border-radius:999px;padding:1px 8px;background:var(--panel-2,#f1f2f4);font:700 9px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}
+.dash-kf .bsplit .bp b{font:800 11px 'IBM Plex Mono',monospace;letter-spacing:0;color:var(--ink,#141821)}
+.dash-kf .bsplit .bp i{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
+.dash-kf .bsplit .bp.bad{background:rgba(216,82,78,.15)}.dash-kf .bsplit .bp.bad b{color:#c0403c}
+.dash-kf .bsplit .bp.good{background:rgba(47,158,134,.16)}.dash-kf .bsplit .bp.good b{color:#17805a}
 .sx-subrow td{color:var(--ink-soft,#5b6472);font-size:.92em}
 .dash-ks{display:grid;grid-template-columns:16px minmax(0,1.5fr) minmax(0,.8fr) 84px 42px calc(var(--ng,4)*26px);gap:3px 7px;align-items:center;font-size:12px}
 .dash-ks .hd{font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-faint,#8a93a2);text-align:center}

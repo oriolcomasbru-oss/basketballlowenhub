@@ -379,7 +379,7 @@
      BACK is never written in a file and does not need to be: both are read off
      the rows. The literal TAG mark is a different thing and lives in its own
      block — it names the player who did NOT tag up, not the situation. */
-  var LONG_END = ["M3", "ML2", "C3", "CL2"], CLOSE_END = ["C2", "M2", "Turnover"];
+  var LONG_END = ["M3", "ML2", "C3", "CL2"], CLOSE_END = ["M2", "Turnover"];   /* after our make at the rim it is their full-court press, not BACK */
   var FG_MARKS = ["C2", "CL2", "C3", "M2", "ML2", "M3"];
   var TRANS_GAP = 10;
 
@@ -391,8 +391,8 @@
      that also carries a field goal is left in: that is an and-one, not a foul
      on the rebound. */
   /* which of the three a BACK came from: our turnover, our miss at the rim, our make */
-  function backSub(pv) { return has(pv.tags, "Turnover") ? "to" : has(pv.tags, "M2") ? "miss" : "make"; }
-  var BACK_SUB = [["to", " after our turnover", "Turnover"], ["miss", " after our miss (their rebound)", "M2"], ["make", " after our make", "C2"]];
+  function backSub(pv) { return has(pv.tags, "Turnover") ? "to" : "miss"; }
+  var BACK_SUB = [["to", " after our turnover", "Turnover"], ["miss", " after our miss (their rebound)", "M2"]];
   /* the BACK row's three parts, for a table of `cols` columns: situations, points and PPP
      in the places the main rows have them, the rest left empty */
   function backSubRows(back, all, cols) {
@@ -448,8 +448,8 @@
       if (!kind) continue;
       if (fouledOnTheRebound(d, pv)) continue;
       o[kind].n++; o[kind].pts += points(d.tags);
-      /* BACK is three situations: after our turnover, after our miss at the rim (their rebound)
-         and after our make - the total, and each apart under it */
+      /* BACK is two situations: after our turnover and after our miss at the rim (their rebound)
+         the total, and each apart under it (after our make it is their full-court press, not BACK) */
       var sub = kind === "back" ? backSub(pv) : null;
       if (sub) { o.back.sub[sub].n++; o.back.sub[sub].pts += points(d.tags); }
       /* each one with where it is in the video and its quarter, for the minute-by-minute table */
@@ -1157,7 +1157,7 @@
         TDF.forEach(function (f) { TD[k][f] += t[k][f] || 0; });
       });
       var sb = t.back && t.back.sub; TD.back.sub = TD.back.sub || { to: { n: 0, pts: 0 }, miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } };
-      if (sb) ["to", "miss", "make"].forEach(function (k) { TD.back.sub[k].n += (sb[k] && sb[k].n) || 0; TD.back.sub[k].pts += (sb[k] && sb[k].pts) || 0; });
+      if (sb) ["to", "miss"].forEach(function (k) { TD.back.sub[k].n += (sb[k] && sb[k].n) || 0; TD.back.sub[k].pts += (sb[k] && sb[k].pts) || 0; });
     });
     var tdAny = (TD.tag.n + TD.back.n) > 0;
     /* A training has no defensive clips - it is two of our own fives - so the possession
@@ -1191,7 +1191,7 @@
       sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%", "Missed tag up",
         "Possessions", "Pts conceded", "DER", "In transition", "Trans. pts", "We finished on"], [
         tdRowP("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2"),
-        tdRowP("BACK \u00b7 after a shot at the rim or a turnover", TD.back, "C2 \u00b7 M2 \u00b7 Turnover")
+        tdRowP("BACK \u00b7 after a miss at the rim or a turnover", TD.back, "M2 \u00b7 Turnover")
       ].concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 12)).concat([
         tdTot
       ])));
@@ -1917,7 +1917,7 @@
     }
     var tdRows = [
       tdRow("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2"),
-      tdRow("BACK \u00b7 after a shot at the rim or a turnover", TD.back, "C2 \u00b7 M2 \u00b7 Turnover")
+      tdRow("BACK \u00b7 after a miss at the rim or a turnover", TD.back, "M2 \u00b7 Turnover")
     ].concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 9));
     var sTD = section("The two situations");
     sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%",
@@ -2052,7 +2052,7 @@
       var tdT = function (v) { return v == null ? "neutral" : v <= 0.9 ? "good" : v >= 1.15 ? "bad" : "neutral"; };
       put(gTD, { figures: [
         { label: "TAG · after a long shot", value: f2(tdP(TD.tag)), note: (TD.tag.pts || 0) + " conceded in " + (TD.tag.n || 0) + " situations", tone: tdT(tdP(TD.tag)) },
-        { label: "BACK · after the rim or a turnover", value: f2(tdP(TD.back)), note: (TD.back.pts || 0) + " conceded in " + (TD.back.n || 0) + " situations", tone: tdT(tdP(TD.back)) }] });
+        { label: "BACK · after a miss at the rim or a turnover", value: f2(tdP(TD.back)), note: (TD.back.pts || 0) + " conceded in " + (TD.back.n || 0) + " situations", tone: tdT(tdP(TD.back)) }] });
       if (DN) {
         var dAll = shotLine(DP), cats = Object.keys(byCat || {}).sort(function (a, b) { return byCat[b].length - byCat[a].length; });
         var head = cats.slice(0, 6), restN = 0; cats.slice(6).forEach(function (k) { restN += byCat[k].length; });
@@ -3344,7 +3344,7 @@
     sec.appendChild(timelineChart("", "", pts, [
       { name: "TAG — DER after a long shot", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2,
         n: function (s) { return s.tagN; }, roll: function (s) { return [s.tagP, s.tagN]; } },
-      { name: "BACK — DER after a shot at the rim or a turnover", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2,
+      { name: "BACK — DER after a miss at the rim or a turnover", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2,
         n: function (s) { return s.backN; }, roll: function (s) { return [s.backP, s.backN]; } }
     ], { axisFmt: f2, height: 200, minN: 4, rollWindow: 5 }));
     sec.appendChild(el("div", "sx-sub", "The line is the last five sessions added together, points over possessions. Small dots are trainings and diamonds are games; a day with fewer than four possessions is left out."));
@@ -3945,7 +3945,7 @@
         note: "season " + pct0f(br.avg) });
     }
     if (tb && isFinite(tb.tag) && isFinite(tb.back)) {
-      var worse = tb.tag > tb.back ? "after a long shot" : "after a shot at the rim";
+      var worse = tb.tag > tb.back ? "after a long shot" : "after a miss at the rim";
       bits.push({ kind: "warn", text: "They hurt us most " + worse,
         note: "TAG " + f2(tb.tag) + " · BACK " + f2(tb.back) + " per possession" });
     }
