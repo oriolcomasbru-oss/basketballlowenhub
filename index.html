@@ -5597,6 +5597,7 @@ function defaultPerms(){
     "Keith":mk(all,Object.assign({},none,{playerdev:true})),
     "Liviu":mk(all,Object.assign({},none,{playerdev:true})),
     "Pedro":mk(all,Object.assign({},none)),
+    "Alex":mk(all,Object.assign({},none)),
     "Joan Marc":mk(Object.assign({},all,{playerdb:false,rooster:false}),Object.assign({},none)),
     "Fabienne":mk(Object.assign({},none,{league:true}),Object.assign({},none)),
     "Jonas":mk(Object.assign({},none,{league:true}),Object.assign({},none))
@@ -21131,6 +21132,11 @@ function _postLeagueGame(sg, list){
    tagged possession is put on the game clock by lining the baskets of the video up with the
    baskets of the play by play, quarter by quarter, and reading the time in between from the
    two baskets either side - so a possession can land a minute out, never a quarter. */
+/* BACK in its three parts, in one line: after our turnover, after our miss, after our make
+   - points each and how many - for wherever BACK is shown as one number */
+function _backSplitTxt(back){ const s=back && back.sub; if(!s) return "";
+  const one=(k,l)=>{ const o=s[k]||{ n:0, pts:0 }; return o.n? l+" "+(o.pts/o.n).toFixed(2)+" ("+o.n+")" : ""; };
+  return [one("to","after TO"), one("miss","after a miss"), one("make","after a make")].filter(Boolean).join(" · "); }
 function _postMinutes(sg){
   const box=h("div",{class:"pgm"});
   if(!sg || !sg.date) return box;
@@ -21151,7 +21157,7 @@ function _postMinutes(sg){
     const uc=String(P.G.homeId)===our? "A" : "B";
     const qLen=qi=>qi<4? 600 : 300, qBase=qi=>qi<4? qi*600 : 2400+(qi-4)*300;
     /* the play by play, a bucket a minute */
-    const B={}, bk=(qi,m)=>B[qi+"|"+m]||(B[qi+"|"+m]={ u:{ pts:0, fga:0, or:0, dr:0, tov:0, fta:0 }, t:{ pts:0, fga:0, or:0, dr:0, tov:0, fta:0 }, pt:0, pn:0, tag:[0,0], back:[0,0] });
+    const B={}, bk=(qi,m)=>B[qi+"|"+m]||(B[qi+"|"+m]={ u:{ pts:0, fga:0, or:0, dr:0, tov:0, fta:0 }, t:{ pts:0, fga:0, or:0, dr:0, tov:0, fta:0 }, pt:0, pn:0, tag:[0,0], back:[0,0], bs:{ to:{ n:0, pts:0 }, miss:{ n:0, pts:0 }, make:{ n:0, pts:0 } } });
     const acts=(P.j.feed.actions||[]).map((a,i)=>{ const e=_lgGameElapsed(a.quarter, a.time); return { a:a, t:e.t, qi:e.qi, i:i }; }).sort((x,y)=>(x.t-y.t)||(x.i-y.i));
     let maxQ=3; acts.forEach(o=>{ if(o.qi>maxQ) maxQ=o.qi; });
     const minOf=o=>Math.max(0, Math.min(qLen(o.qi)/60-1, Math.floor((o.t-qBase(o.qi))/60)));
@@ -21189,7 +21195,7 @@ function _postMinutes(sg){
         const at=v=>{ for(let i=1;i<mono.length;i++){ if(v<=mono[i].v){ const A=mono[i-1], C=mono[i]; return A.t+(C.t-A.t)*(v-A.v)/Math.max(1e-6, C.v-A.v); } } return T1-1; };
         const mOf=v=>Math.max(0, Math.min(qLen(qi)/60-1, Math.floor((at(v)-T0)/60)));
         mine.forEach(q=>{ const b=bk(qi, mOf(va(q))); b.pn++; if((q.pt||0)>0 || q.phase==="Fastbreak") b.pt++; });
-        ev.forEach(e=>{ const b=bk(qi, mOf(e.a)); const s=e.kind==="tag"? b.tag : b.back; s[0]++; s[1]+=e.pts||0; });
+        ev.forEach(e=>{ const b=bk(qi, mOf(e.a)); const s=e.kind==="tag"? b.tag : b.back; s[0]++; s[1]+=e.pts||0; if(e.kind==="back" && e.sub && b.bs[e.sub]){ b.bs[e.sub].n++; b.bs[e.sub].pts+=e.pts||0; } });
       }
     }
     const poss=S=>Math.max(0, S.fga-S.or+S.tov+0.44*S.fta);
@@ -21200,9 +21206,11 @@ function _postMinutes(sg){
     const orb=(U,T)=>{ const d=U.or+T.dr; if(!d) return cell("·","mu"); const v=100*U.or/d; return cell(Math.round(v)+"%", v>=35? "g" : v<=20? "b" : "", U.or+" of "+d+" of our misses"); };
     const ptc=b=>{ if(!b.pn) return cell("·","mu"); const v=100*b.pt/b.pn; return cell(Math.round(v)+"%", v>=70? "g" : v<60? "b" : "", b.pt+" of "+b.pn+" possessions with a paint touch"); };
     const tb=s=>{ if(!s[0]) return cell("·","mu"); const v=s[1]/s[0]; return cell(v.toFixed(2), v<=0.8? "g" : v>=1.2? "b" : "", s[1]+" pts in "+s[0]); };
-    const sum=list=>{ const o={ u:{ pts:0, fga:0, or:0, dr:0, tov:0, fta:0 }, t:{ pts:0, fga:0, or:0, dr:0, tov:0, fta:0 }, pt:0, pn:0, tag:[0,0], back:[0,0] };
+    const sum=list=>{ const o={ u:{ pts:0, fga:0, or:0, dr:0, tov:0, fta:0 }, t:{ pts:0, fga:0, or:0, dr:0, tov:0, fta:0 }, pt:0, pn:0, tag:[0,0], back:[0,0], bs:{ to:{ n:0, pts:0 }, miss:{ n:0, pts:0 }, make:{ n:0, pts:0 } } };
+      list.forEach(b=>{ Object.keys(o.bs).forEach(k=>{ o.bs[k].n+=b.bs[k].n; o.bs[k].pts+=b.bs[k].pts; }); });
       list.forEach(b=>{ ["u","t"].forEach(s=>Object.keys(o[s]).forEach(k=>{ o[s][k]+=b[s][k]; })); o.pt+=b.pt; o.pn+=b.pn; o.tag[0]+=b.tag[0]; o.tag[1]+=b.tag[1]; o.back[0]+=b.back[0]; o.back[1]+=b.back[1]; }); return o; };
-    const row=(lab, b, cls)=>h("tr",{class:cls||""}, h("th",{}, lab), ptc(b), tb(b.tag), tb(b.back), ppp(b.u, true), ppp(b.t, false), orb(b.u, b.t));
+    const tbB=b=>{ const c=tb(b.back), x=_backSplitTxt({ sub:b.bs }); if(x) c.title=(c.title? c.title+" · " : "")+x; return c; };
+    const row=(lab, b, cls)=>h("tr",{class:cls||""}, h("th",{}, lab), ptc(b), tb(b.tag), tbB(b), ppp(b.u, true), ppp(b.t, false), orb(b.u, b.t));
     const grid=h("div",{class:"pgm-grid"});
     for(let qi=0; qi<=maxQ; qi++){
       const n=qLen(qi)/60, bs=[]; for(let mm=0; mm<n; mm++) bs.push(B[qi+"|"+mm]||bk(qi,mm));
@@ -21210,7 +21218,7 @@ function _postMinutes(sg){
         h("tr",{}, h("th",{class:"q"}, qi<4? "Q"+(qi+1) : "OT"+(qi-3)), h("th",{title:"possessions with a paint touch (our tagging)"},"Paint"), h("th",{title:"points they scored a transition after our long shot (our tagging)"},"TAG"),
           h("th",{title:"points they scored a transition after our shot at the rim (our tagging)"},"BACK"), h("th",{title:"our points a possession (play by play)"},"OER"), h("th",{title:"their points a possession (play by play)"},"DER"), h("th",{title:"our offensive rebounds of our misses (play by play)"},"OREB%")),
         ...bs.map((b,mm)=>row((n-mm)+"′", b)), row("Total", sum(bs), "tot"));
-      grid.appendChild(t);
+      { const sp=_backSplitTxt({ sub:sum(bs).bs }); grid.appendChild(sp? h("div",{class:"pgm-q"}, t, h("div",{class:"pgm-bs"}, h("b",{},"BACK "), sp)) : t); }
     }
     box.appendChild(grid);
     box.appendChild(h("div",{class:"gpo-note"},"OER, DER, OREB%: the league's play by play, by the game clock · Paint, TAG, BACK: our tagging, put on the clock by lining its baskets up with the play by play's (a possession can land a minute out) · green good, red bad"+(m? "" : " · no tagging of this game in the Drive yet")));
@@ -21289,7 +21297,7 @@ function _postOverviewDraw(sg, P, Tg, API, K){
   if(model && model.trans){
     const tg0=model.trans.tag, bk0=model.trans.back;
     [["TAG conceded", tg0],["BACK conceded", bk0]].forEach(x=>{ const o=x[1]; if(!o || !o.n) return; const v=o.pts/o.n;
-      figs.push({ label:x[0], value:f2(v), note:o.n+" transitions · points each", tone:v<=0.9? "good" : v>=1.2? "bad" : "neutral" }); });
+      figs.push({ label:x[0], value:f2(v), note:o.n+" transitions · points each"+(x[1]===bk0 && _backSplitTxt(bk0)? " · "+_backSplitTxt(bk0) : ""), tone:v<=0.9? "good" : v>=1.2? "bad" : "neutral" }); });
   }
   /* the order a coach reads them: the score, then TAG, BACK, paint touches, reversals, then the rest */
   { const rank=f=>({ "Score":0, "TAG conceded":1, "BACK conceded":2, "Paint touches":3, "Ball reversals":4 }[f.label]);
@@ -21386,7 +21394,7 @@ function _postOverviewDraw(sg, P, Tg, API, K){
     const tg=model.trans.tag, bk=model.trans.back;
     if(tg && bk && (tg.n>=3 || bk.n>=3)){
       const a=tg.n? tg.pts/tg.n : null, b=bk.n? bk.pts/bk.n : null;
-      gDef.push({ text:"TAG "+(a==null? "—" : f2(a))+" ("+tg.n+") · BACK "+(b==null? "—" : f2(b))+" ("+bk.n+") conceded per possession in transition",
+      gDef.push({ text:"TAG "+(a==null? "—" : f2(a))+" ("+tg.n+") · BACK "+(b==null? "—" : f2(b))+" ("+bk.n+") conceded per possession in transition"+(_backSplitTxt(bk)? " — BACK "+_backSplitTxt(bk) : ""),
         tone:(a!=null && b!=null && Math.max(a,b)>=1.2)? "bad" : (a!=null && b!=null && Math.max(a,b)<=0.9)? "good" : "neutral",
         size:0.8, n:tg.n+bk.n, solidN:12, unit:"poss", weight:1.3 });
     }
@@ -27777,6 +27785,11 @@ function renderDashboard(){
             h("i",{}, k[0]), h("b",{}, k[4](k[1])), h("span",{}, "last game · "+lx.label),
             h("div",{class:"row"}, h("em",{class:tone(k[2],k[3],k[5],k[6])}, "last 3 ", h("u",{}, k[4](k[2]))), h("em",{}, "season ", h("u",{}, k[4](k[3])))),
             h("small",{}, k[7]))); });
+        /* BACK in its three parts under it: after our turnover, after our miss, after our make */
+        { const bf=key.children[1], subOf=L2=>{ const o={ to:{ n:0, pts:0 }, miss:{ n:0, pts:0 }, make:{ n:0, pts:0 } };
+            L2.forEach(x=>{ const s=x.m && x.m.trans && x.m.trans.back && x.m.trans.back.sub; if(s) Object.keys(o).forEach(k=>{ o[k].n+=(s[k]&&s[k].n)||0; o[k].pts+=(s[k]&&s[k].pts)||0; }); }); return { sub:o }; };
+          const tL=_backSplitTxt(subOf([lx])), tS=_backSplitTxt(subOf(list));
+          if(bf && (tL || tS)) bf.appendChild(h("div",{class:"bsplit"}, tL? h("span",{}, h("b",{},"Last game "), tL) : null, tS? h("span",{}, h("b",{},"Season "), tS) : null)); }
         keyDone=true; putOr();
         /* the three charts */
         const S2=[{ name:"TAG", v:list.map(x=>tb(x,"tag")), c:"#d8524e" }, { name:"BACK", v:list.map(x=>tb(x,"back")), c:"#4a86d8" }];
@@ -29092,7 +29105,7 @@ function applyCollapse(){
 
 /* ---------------- Users · Cover · Messages ---------------- */
 /* the order Oriol asked for; anyone not named here follows at the end */
-const USERS=["Ramon","Oriol","Keith","Liviu","Joan Marc","Nils","Pedro","Fabienne","Marc Ribas","Jonas"];
+const USERS=["Ramon","Oriol","Keith","Liviu","Joan Marc","Nils","Pedro","Fabienne","Marc Ribas","Jonas","Alex"];
 const SECTIONS=[["Calendar","calendar"],["Planning","planification"],["Post game/practice","teamscout"],["Pre game","oppscout"],["Player development","playerdev"],["Player database","playerdb"],["Rooster","rooster"]];
 let currentUser=null;
 /* The player list is the Rooster, so it follows the squad instead of a second
@@ -36898,6 +36911,9 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .pgm-t td{padding:3px 5px;text-align:right;border-bottom:1px solid var(--line,#eef0f3)}
 .pgm-t td.g{background:rgba(47,158,134,.16);color:#17805a}.pgm-t td.b{background:rgba(216,82,78,.15);color:#c0403c}.pgm-t td.mu{color:var(--ink-faint,#8a93a2)}
 .pgm-t tr.tot th,.pgm-t tr.tot td{border-top:2px solid var(--ink,#141821);font-weight:800}
+.pgm-bs{font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);padding:4px 5px 0}.pgm-bs b{color:var(--ink,#141821)}
+.dash-kf .bsplit{display:grid;gap:1px;font:500 10px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);margin-top:3px}.dash-kf .bsplit b{color:var(--ink,#141821)}
+.sx-subrow td{color:var(--ink-soft,#5b6472);font-size:.92em}
 .dash-ks{display:grid;grid-template-columns:16px minmax(0,1.5fr) minmax(0,.8fr) 84px 42px calc(var(--ng,4)*26px);gap:3px 7px;align-items:center;font-size:12px}
 .dash-ks .hd{font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-faint,#8a93a2);text-align:center}
 .dash-ks .hd.l{text-align:left}

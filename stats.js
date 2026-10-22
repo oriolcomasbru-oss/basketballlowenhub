@@ -390,6 +390,26 @@
      BALANCE, so the test is the shape of the clip and not its category. A clip
      that also carries a field goal is left in: that is an and-one, not a foul
      on the rebound. */
+  /* which of the three a BACK came from: our turnover, our miss at the rim, our make */
+  function backSub(pv) { return has(pv.tags, "Turnover") ? "to" : has(pv.tags, "M2") ? "miss" : "make"; }
+  var BACK_SUB = [["to", " after our turnover", "Turnover"], ["miss", " after our miss (their rebound)", "M2"], ["make", " after our make", "C2"]];
+  /* the BACK row's three parts, for a table of `cols` columns: situations, points and PPP
+     in the places the main rows have them, the rest left empty */
+  function backSubRows(back, all, cols) {
+    var sub = back && back.sub; if (!sub) return [];
+    return BACK_SUB.map(function (s) {
+      var o = sub[s[0]] || { n: 0, pts: 0 }, ppp = o.n ? o.pts / o.n : null;
+      var cells = [s[1]];
+      var at = cols === 9 ? 5 : 6;   /* where "situations" sits in each table */
+      for (var i = 1; i < at; i++) cells.push("");
+      cells.push({ v: o.n, cls: "sx-vol " + volStep(100 * o.n / Math.max(1, all)) });
+      cells.push(o.pts);
+      cells.push({ v: f2(ppp), cls: "sx-cell " + pppStepD(ppp) + (o.n < SMALL ? " sx-small" : "") });
+      while (cells.length < cols - 1) cells.push("");
+      cells.push(s[2]);
+      return { cells: cells, cls: "sx-subrow" };
+    });
+  }
   function fouledOnTheRebound(d, pv) {
     if (d.a >= pv.b) return false;
     if (!(has(d.tags, "Foul Drawn") || has(d.tags, "C1") || has(d.tags, "M1"))) return false;
@@ -398,7 +418,7 @@
 
   function buildTransDef(rows) {
     var o = { tag: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0 },
-              back: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0 }, events: [] };
+              back: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, sub: { to: { n: 0, pts: 0 }, miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } } }, events: [] };
     /* how many of our possessions ended that way at all, paired or not: without
        it the table looks like the whole game when it is a slice of it */
     rows.forEach(function (r) {
@@ -428,8 +448,12 @@
       if (!kind) continue;
       if (fouledOnTheRebound(d, pv)) continue;
       o[kind].n++; o[kind].pts += points(d.tags);
+      /* BACK is three situations: after our turnover, after our miss at the rim (their rebound)
+         and after our make - the total, and each apart under it */
+      var sub = kind === "back" ? backSub(pv) : null;
+      if (sub) { o.back.sub[sub].n++; o.back.sub[sub].pts += points(d.tags); }
       /* each one with where it is in the video and its quarter, for the minute-by-minute table */
-      o.events.push({ a: d.a, q: periodOf(d.tags), kind: kind, pts: points(d.tags) });
+      o.events.push({ a: d.a, q: periodOf(d.tags), kind: kind, sub: sub, pts: points(d.tags) });
     }
     return o;
   }
@@ -470,6 +494,7 @@
   function buildTransPractice(rows) {
     var mk = function () { return { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, tn: 0, tpts: 0, mtu: 0 }; };
     var o = { tag: mk(), back: mk(), mtuOdd: 0, orebLoose: 0, mtuBy: {} };
+    o.back.sub = { to: { n: 0, pts: 0 }, miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } };
     rows.forEach(function (r) {
       if (r.def) return;
       /* MISSED TAG UP is the one thing about TAG the staff writes down by hand: the long
@@ -514,6 +539,7 @@
       if (d.def && fouledOnTheRebound(d, pv)) continue;
       var p = points(d.tags);
       o[kind].n++; o[kind].pts += p;
+      if (kind === "back") { var sb = backSub(pv); o.back.sub[sb].n++; o.back.sub[sb].pts += p; }
       if (has(d.tags, "Transition Attack Poss")) { o[kind].tn++; o[kind].tpts += p; }
     }
     return o;
@@ -1130,6 +1156,8 @@
       ["tag", "back"].forEach(function (k) {
         TDF.forEach(function (f) { TD[k][f] += t[k][f] || 0; });
       });
+      var sb = t.back && t.back.sub; TD.back.sub = TD.back.sub || { to: { n: 0, pts: 0 }, miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } };
+      if (sb) ["to", "miss", "make"].forEach(function (k) { TD.back.sub[k].n += (sb[k] && sb[k].n) || 0; TD.back.sub[k].pts += (sb[k] && sb[k].pts) || 0; });
     });
     var tdAny = (TD.tag.n + TD.back.n) > 0;
     /* A training has no defensive clips - it is two of our own fives - so the possession
@@ -1163,9 +1191,10 @@
       sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%", "Missed tag up",
         "Possessions", "Pts conceded", "DER", "In transition", "Trans. pts", "We finished on"], [
         tdRowP("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2"),
-        tdRowP("BACK \u00b7 after a shot at the rim or a turnover", TD.back, "C2 \u00b7 M2 \u00b7 Turnover"),
+        tdRowP("BACK \u00b7 after a shot at the rim or a turnover", TD.back, "C2 \u00b7 M2 \u00b7 Turnover")
+      ].concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 12)).concat([
         tdTot
-      ]));
+      ])));
       sTD.appendChild(el("div", "sx-sub", sets.length + (sets.length === 1 ? " session" : " sessions") +
         (defClips ? " \u00b7 " + defClips + (defClips === 1 ? " defensive clip" : " defensive clips") : "") + "."));
       /* who the missed tag ups belong to, most first */
@@ -1889,7 +1918,7 @@
     var tdRows = [
       tdRow("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2"),
       tdRow("BACK \u00b7 after a shot at the rim or a turnover", TD.back, "C2 \u00b7 M2 \u00b7 Turnover")
-    ];
+    ].concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 9));
     var sTD = section("The two situations");
     sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%",
       "Situations", "Pts conceded", "PPP", "We finished on"], tdRows));
