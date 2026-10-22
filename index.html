@@ -26735,7 +26735,10 @@ function _dashOppPrint(card, title){
     const notesSub=[...body.querySelectorAll(".dash-sub")].filter(s=>/Scouting notes/.test(((s.querySelector("h4")||{}).textContent)||""))[0];
     const notesBlk=notesSub? notesSub.closest(".dash-blk") : null, notesBox=notesSub? notesSub.children[1] : null;
     const top=t=>h("div",{class:"dop-top"}, h("b",{}, "Next opponent"), h("span",{}, t));
-    const clean=el=>{ el.querySelectorAll("button,input,.dash-go").forEach(x=>x.remove()); el.querySelectorAll(".dash-src").forEach(x=>x.remove()); return el; };
+    const clean=el=>{ el.querySelectorAll("button,input,.dash-go").forEach(x=>x.remove()); el.querySelectorAll(".dash-src").forEach(x=>x.remove());
+      /* a box that scrolls on the screen is cut by the printer to what fits: on paper it is not there at all */
+      el.querySelectorAll(".dash-kpw").forEach(w=>{ while(w.firstChild) w.parentNode.insertBefore(w.firstChild, w); w.remove(); });
+      return el; };
     const p1=h("div",{class:"dop-fit"}, top(title));
     [...body.children].forEach(ch=>{ if(ch!==notesBlk) p1.appendChild(clean(ch.cloneNode(true))); });
     const all=(notesBox && notesBox.__printAll)? notesBox.__printAll() : h("div",{class:"dash-miss"},"No key ideas marked in the pre game.");
