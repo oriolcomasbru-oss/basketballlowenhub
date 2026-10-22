@@ -14019,6 +14019,23 @@ function _pbbRename(nm, r, itemFor, areas, save, after){
     if(v && v!==r.label) it.pbEdit[r.label]=v; else { delete it.pbEdit[r.label]; nm.textContent=r.label; }
     save(); try{ if(after) after(); }catch(e){} });
 }
+/* the tagged games of a club in the order they were played, oldest first: a tagged file is named
+   after the two clubs and carries no date, so the date comes from the league's schedule - the
+   club's played game against that rival (the latest when they met twice, each meeting once).
+   dates is filled with the date of each game it places; a game it cannot place goes last. */
+function _pbGameOrder(list, tid, dates){
+    try{
+      const L=leagueState(), T=todayISO(); tid=String(tid||"");
+      if(!tid) return list;
+      const mine=(L.games||[]).filter(x=>(String(x.homeId)===tid || String(x.awayId)===tid) && x.date && x.date<=T && (x.status==="final" || x.hs!=null));
+      const used={}; const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]+/g," ");
+      list.forEach(g=>{ const toks=norm(g).split(" ").filter(t=>t.length>=3);
+        const hit=mine.filter(x=>{ const home=String(x.homeId)===tid, oid=String(home? x.awayId : x.homeId), tm=(L.teams||[]).filter(t=>String(t.id)===oid)[0]||{}, nm=norm((home? x.away : x.home)+" "+(tm.name||"")+" "+(tm.short||"")), tlc=norm(home? x.awayTlc : x.homeTlc).trim();
+          return !used[x.id] && toks.length && (toks.every(t=>nm.indexOf(t)>=0) || toks.indexOf(tlc)>=0); }).sort((a,b)=>a.date<b.date? 1 : -1)[0];
+        if(hit){ dates[g]=hit.date; used[hit.id]=1; } });
+    }catch(e){}
+    return list.map((g,i)=>({ g:g, i:i })).sort((a,b)=>{ const A=dates[a.g], B=dates[b.g]; if(A && B) return A<B? -1 : A>B? 1 : a.i-b.i; if(A) return -1; if(B) return 1; return a.i-b.i; }).map(x=>x.g);
+}
 function renderPlaybookBoard(sec, canEd, save, reRender){
   const areas=(sec.items||[]).filter(it=>it && it.kind!=="table");
   areas.forEach(it=>{ if(it.us===undefined && it.v!==undefined) it.us=it.v;
@@ -14118,19 +14135,7 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
      game against that rival (the latest, when they met twice). A game the schedule does not
      place keeps its place at the end. */
   const GDATE={};
-  const orderGames=list=>{
-    try{
-      const L=leagueState(), tid=String(_preClub()||""), T=todayISO();
-      if(!tid) return list;
-      const mine=(L.games||[]).filter(x=>(String(x.homeId)===tid || String(x.awayId)===tid) && x.date && x.date<=T && (x.status==="final" || x.hs!=null));
-      const used={}; const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]+/g," ");
-      list.forEach(g=>{ const toks=norm(g).split(" ").filter(t=>t.length>=3);
-        const hit=mine.filter(x=>{ const home=String(x.homeId)===tid, oid=String(home? x.awayId : x.homeId), tm=(L.teams||[]).filter(t=>String(t.id)===oid)[0]||{}, nm=norm((home? x.away : x.home)+" "+(tm.name||"")+" "+(tm.short||"")), tlc=norm(home? x.awayTlc : x.homeTlc).trim();
-          return !used[x.id] && toks.length && (toks.every(t=>nm.indexOf(t)>=0) || toks.indexOf(tlc)>=0); }).sort((a,b)=>a.date<b.date? 1 : -1)[0];
-        if(hit){ GDATE[g]=hit.date; used[hit.id]=1; } });
-    }catch(e){}
-    return list.map((g,i)=>({ g:g, i:i })).sort((a,b)=>{ const A=GDATE[a.g], B=GDATE[b.g]; if(A && B) return A<B? -1 : A>B? 1 : a.i-b.i; if(A) return -1; if(B) return 1; return a.i-b.i; }).map(x=>x.g);
-  };
+  const orderGames=list=>_pbGameOrder(list, String(_preClub()||""), GDATE);
   const inFilter=r=>(FILTER==="All" || (FILTER==="ATO"? r.c.ato : r.c.kind===FILTER))
     && (ONLY!=="adj" || hasAdj(r.label)) && (ONLY!=="key" || keyOn(r.label));
   function draw(){
@@ -26715,8 +26720,48 @@ function _dashKeySetsInto(box, g){
     box.appendChild(h("div",{class:"dash-src"},"Starred in the pre game playbook · runs in the games tagged · points per possession (red: it hurts us)"+(rows.length>10? " · +"+(rows.length-10)+" more in the pre game" : "")));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their sets could not be read.")); });
 }
-/* THEIR SIX WEAPONS: only the key sets the staff starred in the pre game playbook, the six
-   they run most - with the staff's names, calls and splits, how often and what they return */
+/* THE RIVAL ON TWO SHEETS. The card is printed as two landscape A4 pages and nothing else:
+   the first is the card as it is on the screen without the notes (who they are, the roster,
+   the ball screen, the key sets, the form, the key players), the second the scouting notes
+   with every concept open, side by side in as many columns as make them largest. Each page is
+   a box of exactly one sheet and its content is scaled inside it, the way the game plan's A4
+   is, so neither can run onto a third. */
+function _dashOppPrint(card, title){
+  const area=$("#print-area"); if(!area || !card) return;
+  const body=card.__b;
+  const go=(tries)=>{
+    if(tries<14 && /Reading /.test(body.textContent||"")){ setTimeout(()=>go(tries+1), 300); return; }
+    area.innerHTML="";
+    const notesSub=[...body.querySelectorAll(".dash-sub")].filter(s=>/Scouting notes/.test(((s.querySelector("h4")||{}).textContent)||""))[0];
+    const notesBlk=notesSub? notesSub.closest(".dash-blk") : null, notesBox=notesSub? notesSub.children[1] : null;
+    const top=t=>h("div",{class:"dop-top"}, h("b",{}, "Next opponent"), h("span",{}, t));
+    const clean=el=>{ el.querySelectorAll("button,input,.dash-go").forEach(x=>x.remove()); el.querySelectorAll(".dash-src").forEach(x=>x.remove()); return el; };
+    const p1=h("div",{class:"dop-fit"}, top(title));
+    [...body.children].forEach(ch=>{ if(ch!==notesBlk) p1.appendChild(clean(ch.cloneNode(true))); });
+    const all=(notesBox && notesBox.__printAll)? notesBox.__printAll() : h("div",{class:"dash-miss"},"No key ideas marked in the pre game.");
+    const p2=h("div",{class:"dop-fit dop-notes"}, top(title+" · scouting notes"), all);
+    const pages=[p1, p2].map(p=>h("div",{class:"dop-page"}, p));
+    pages.forEach(x=>area.appendChild(x));
+    document.body.classList.add("dop-measure");
+    const PW=1058, PH=729;   /* the printable box of a landscape A4 at 7 mm margins, in CSS px */
+    const fit=(p, W)=>{ p.style.width=W+"px"; p.style.transform="none"; const s=Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); return s; };
+    const s1=fit(p1, 1400); p1.style.transform="scale("+s1.toFixed(4)+")";
+    /* the notes in two to five columns of one of four widths: the one that leaves the letters largest */
+    let best={ s:0, c:3, cw:380 };
+    [300,340,380,420].forEach(cw=>[2,3,4,5].forEach(c=>{ p2.style.setProperty("--cols", String(c)); const s=fit(p2, cw*c); if(s>best.s) best={ s:s, c:c, cw:cw }; }));
+    p2.style.setProperty("--cols", String(best.c)); fit(p2, best.cw*best.c); p2.style.transform="scale("+best.s.toFixed(4)+")";
+    const st=document.createElement("style"); st.textContent="@page{size:A4 landscape;margin:7mm} html,body{margin:0!important;padding:0!important}"; document.body.appendChild(st);
+    const done=()=>{ document.body.classList.remove("printing","printing-dop","dop-measure"); area.innerHTML=""; st.remove(); window.removeEventListener("afterprint", done); };
+    window.addEventListener("afterprint", done);
+    document.body.classList.remove("dop-measure");
+    document.body.classList.add("printing","printing-dop");
+    setTimeout(()=>{ try{ window.print(); }catch(e){ done(); } }, 120);
+  };
+  go(0);
+}
+/* THEIR KEY SETS: the ten the staff starred in the pre game playbook that they run most - with
+   the staff's names, calls and splits, how often and what they return, and game by game, as the
+   pre game playbook shows it: one box a tagged game, oldest first, the runs in each */
 function _dashTopSetsInto(box, g){
   box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading their playbook…"));
   const L=leagueState(), tid=_lgTeamIdByName(L, g.opponent);
@@ -26727,23 +26772,37 @@ function _dashTopSetsInto(box, g){
       if(it.pbEdit && typeof it.pbEdit==="object") Object.assign(edits, it.pbEdit);
       if(it.pbCall && typeof it.pbCall==="object") Object.assign(calls, it.pbCall);
       if(it.pbSplit && typeof it.pbSplit==="object") Object.keys(it.pbSplit).forEach(k=>{ splits[k]=(splits[k]||[]).concat(it.pbSplit[k]||[]); }); }));
-    const base=((res && res.rows)||[]), all=((window.ScoutPre && window.ScoutPre.pbSplit)? window.ScoutPre.pbSplit(base, splits) : base).map(r=>calls[r.label]? Object.assign({}, r, { call:calls[r.label] }) : r);
+    const base=((res && res.rows)||[]);
+    /* a hand-written call is put on a copy of the row; its possessions go with it, for the games */
+    const all=((window.ScoutPre && window.ScoutPre.pbSplit)? window.ScoutPre.pbSplit(base, splits) : base).map(r=>{ if(!calls[r.label]) return r;
+      const o=Object.assign({}, r, { call:calls[r.label] }); try{ Object.defineProperty(o, "_chs", { value:r._chs, enumerable:false }); }catch(e){} return o; });
     box.innerHTML="";
     if(!all.length){ box.appendChild(h("div",{class:"dash-miss"},"No tagging of this club yet, so no sets.")); return; }
-    const tot=base.reduce((a,x)=>a+(x.n||0),0)||1, avg=(res && res.avg!=null)? Number(res.avg) : null;
+    const tot=base.reduce((a,x)=>a+(x.n||0),0)||1;
     const keep=_scoutOpponent; let keyOf={};
     try{ _scoutOpponent=g.opponent; all.forEach(r=>{ try{ keyOf[r.label]=_pbKeyRead(r.label); }catch(e){} }); } finally{ _scoutOpponent=keep; }
-    /* only the key sets the staff starred in the pre game playbook, the most run first */
-    const top=all.filter(r=>{ if(!keyOf[r.label]) return false; try{ return _pbClass(r).kind!=="Concepts"; }catch(e){ return true; } }).sort((a,b)=>(b.n||0)-(a.n||0)).slice(0,6);
+    const top=all.filter(r=>{ if(!keyOf[r.label]) return false; try{ return _pbClass(r).kind!=="Concepts"; }catch(e){ return true; } }).sort((a,b)=>(b.n||0)-(a.n||0)).slice(0,10);
     if(!top.length){ box.appendChild(h("div",{class:"dash-miss"},"No key sets starred in the pre game playbook yet.")); return; }
+    /* the games, oldest first, and what each set ran in each */
+    const dates={}, games=_pbGameOrder(((res && res.games)||[]).filter((x,i,a)=>a.indexOf(x)===i), tid, dates);
+    const per=r=>{ const o={}; ((r && r._chs)||[]).forEach(c=>{ const k=(c && c[0] && c[0].game)||""; o[k]=(o[k]||0)+1; }); return o; };
+    const P=top.map(per), gmx=Math.max(1, ...P.map(o=>Math.max(0, ...Object.keys(o).map(k=>o[k]))));
+    const short=x=>String(x||"").replace(/^(VS|AT|@)\s+/i,"").slice(0,3).toUpperCase();
     const mx=Math.max(1, ...top.map(r=>r.n||0));
-    box.appendChild(h("div",{class:"dash-sets"}, top.map((r,i)=>{ let kind=""; try{ kind=_pbClass(r).kind||""; }catch(e){}
-      return h("div",{class:"dash-set top"}, h("u",{class:"rk"}, String(i+1)), h("b",{}, edits[r.label]||r.label), kind? h("i",{class:"kd"}, kind) : null,
-        r.call? h("q",{}, r.call) : h("span",{class:"nc"}, ""),
-        h("span",{class:"vol", title:r.n+" runs · "+Math.round(100*r.n/tot)+"% of their possessions"}, h("i",{style:"width:"+Math.max(8,Math.round(100*(r.n||0)/mx))+"%"})), h("u",{}, String(r.n||0)),
-        h("span",{class:"pc"}, Math.round(100*r.n/tot)+"%"),
-        r.ppp!=null? h("em",{class:r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : null); })));
-    box.appendChild(h("div",{class:"dash-src"},"Key sets starred in the pre game playbook, the most run first · runs · % of their possessions · PPP (red: it hurts us)"));
+    const t=h("div",{class:"dash-ks", style:"--ng:"+Math.max(1, games.length)},
+      h("span",{class:"hd"}), h("span",{class:"hd l"},"Set"), h("span",{class:"hd l"},"Call"), h("span",{class:"hd"},"Use"), h("span",{class:"hd"},"PPP"),
+      h("span",{class:"hd gm"}, games.map(x=>h("i",{ title:x+(dates[x]? " · "+dates[x].split("-").reverse().join("/") : "") }, short(x), dates[x]? h("u",{}, dates[x].slice(8,10)+"/"+dates[x].slice(5,7)) : null))));
+    top.forEach((r,i)=>{ let kind=""; try{ kind=_pbClass(r).kind||""; }catch(e){}
+      t.appendChild(h("span",{class:"rk"}, String(i+1)));
+      t.appendChild(h("span",{class:"nm"}, h("b",{}, edits[r.label]||r.label), kind? h("i",{class:"kd"}, kind) : null));
+      t.appendChild(r.call? h("q",{}, r.call) : h("span",{class:"nc"},"—"));
+      t.appendChild(h("span",{class:"use", title:r.n+" runs · "+Math.round(100*r.n/tot)+"% of their possessions"}, h("span",{class:"vol"}, h("i",{style:"width:"+Math.max(8,Math.round(100*(r.n||0)/mx))+"%"})), h("u",{}, String(r.n||0)), h("small",{}, Math.round(100*r.n/tot)+"%")));
+      t.appendChild(r.ppp!=null? h("em",{class:r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : h("em",{},"—"));
+      t.appendChild(h("span",{class:"gm"}, games.map(x=>{ const k=P[i][x]||0, a=k? 0.18+0.72*Math.min(1, k/gmx) : 0;
+        return h("i",{class:k? "" : "z", title:x+": "+k, style:k? "background:rgba(74,134,216,"+a.toFixed(2)+");color:"+(a>0.55? "#fff" : "#1d3a66") : ""}, k? String(k) : "·"); })));
+    });
+    box.appendChild(t);
+    box.appendChild(h("div",{class:"dash-src"},"Key sets starred in the pre game playbook, the most run first · runs and % of their possessions · PPP (red: it hurts us) · runs in each tagged game, oldest first"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their playbook could not be read.")); });
 }
 /* THEIR IDENTITY IN FOUR NUMBERS. Seventeen team measures from the league - the ratings, the
@@ -26883,14 +26942,21 @@ function _dashNotesInto(box, g){
     /* the concept with most marked opens first */
     let A=areas.reduce((b,x,i)=>(cnt(x.d)+cnt(x.a))>(cnt(areas[b].d)+cnt(areas[b].a))? i : b, 0);
     const wrap=h("div",{class:"dash-nt"}); box.appendChild(wrap);
+    const blk=(r, cls, lbl)=>r? h("div",{class:"blk "+cls}, h("div",{class:"vl"}, lbl), side(r.th, "t", "They"), side(r.we, "w", "We")) : null;
     const paint=()=>{ wrap.innerHTML=""; const a=areas[A];
       const tabs=h("div",{class:"tabs"}, areas.map((x,i)=>{ const nd=cnt(x.d), na=cnt(x.a);
         const b=h("button",{type:"button", class:i===A? "on" : ""}, x.n, nd? h("u",{class:"cd", title:"How to defend"}, "D "+nd) : null, na? h("u",{class:"ca", title:"How to attack"}, "A "+na) : null);
         b.addEventListener("click",()=>{ A=i; paint(); }); return b; }));
       wrap.appendChild(h("div",{class:"top"}, tabs));
-      const blk=(r, cls, lbl)=>r? h("div",{class:"blk "+cls}, h("div",{class:"vl"}, lbl), side(r.th, "t", "They"), side(r.we, "w", "We")) : null;
       [blk(a.d, "def", "How to defend"), blk(a.a, "att", "How to attack")].forEach(x=>{ if(x) wrap.appendChild(x); }); };
     paint();
+    /* PRINTED, EVERY CONCEPT IS ON THE SHEET, and the sheet is in columns. THEY beside WE is a
+       block that cannot be cut, and the PNR of a staff that writes a lot is as tall as the page;
+       so on paper the two go one under the other, labelled, and a long concept runs on into the
+       next column at the end of one of its titles - never in the middle of a list */
+    const flat=(r, lbl)=>r? [ r.th.length? h("div",{class:"pt t"}, h("i",{}, lbl+" · they"), ...side(r.th, "t", "").querySelectorAll(":scope > .g, :scope > .solo")) : null,
+      r.we.length? h("div",{class:"pt w"}, h("i",{}, lbl+" · we"), ...side(r.we, "w", "").querySelectorAll(":scope > .g, :scope > .solo")) : null ].filter(Boolean) : [];
+    box.__printAll=()=>h("div",{class:"dash-nt all flat"}, areas.map(a=>h("div",{class:"cpt"}, h("div",{class:"cn"}, a.n), ...flat(a.d, "Defend"), ...flat(a.a, "Attack"))));
     box.appendChild(h("div",{class:"dash-src"},"The key ideas marked in the pre game, concept by concept · D = How to defend · A = How to attack"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"The pre game could not be read.")); });
 }
@@ -27450,7 +27516,11 @@ function renderDashboard(){
     /* ---------------------------------------------------- the next opponent's roster on its own */
     oppr:()=>{
       const x=G.upcoming.filter(y=>{ try{ return !_gamePlaceholder(y.g.opponent); }catch(e){ return true; } })[0];
-      const c=card("them wide", "Next opponent · their roster", x? ()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:x.g.id } }) : null, "Open the pre game");
+      const c=card("them wide", "Next opponent", x? ()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:x.g.id } }) : null, "Open the pre game");
+      /* the card on two sheets of paper */
+      if(x){ const ch=c.querySelector(".dash-ch"), pb=h("button",{type:"button", class:"dash-go dash-print", title:"Print the card on two A4 pages: the card, then every concept of the scouting notes"},"🖨 Print");
+        pb.addEventListener("click",()=>_dashOppPrint(c, (x.g.venue==="Away"? "@ " : "vs ")+x.g.opponent+" · "+_dashFmt(x.g.date)));
+        ch.insertBefore(pb, ch.querySelector(".dash-go")); }
       if(!x){ c.__b.appendChild(h("div",{class:"dash-miss"},"No known opponent in the calendar yet.")); return; }
       const g=x.g, dd=dayDelta(g.date);
       const st=h("span",{}, pill(["wait","…"]));
@@ -27465,7 +27535,7 @@ function renderDashboard(){
       const sub=(title)=>{ const b=h("div",{class:"dash-sub"}, h("h4",{}, title)); const body=h("div",{}); b.appendChild(body); b.__b=body; return b; };
       const cT=sub("Team stats · what sets them apart"), cR=sub("Roster summary"),
         cV=sub("Pick & roll · their 4 and their 5 on the ball screen"), cN=sub("Scouting notes · key ideas"),
-        cS=sub("Playbook summary · their 6 weapons"), cF=sub("Recent form"), cP=sub("Key players · play by play and our tagging");
+        cS=sub("Playbook summary · their 10 key sets"), cF=sub("Recent form"), cP=sub("Key players · play by play and our tagging");
       c.__b.appendChild(h("div",{class:"dash-blk"}, cT));
       c.__b.appendChild(h("div",{class:"dash-blk"}, cR));
       /* the notes take the whole width, a concept at a time; the ball screen, their sets and
@@ -36677,10 +36747,69 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-nt .none{font-size:12px;color:var(--ink-faint,#8a93a2)}
 @media (max-width:700px){ .dash-nt .blk{grid-template-columns:24px minmax(0,1fr)} .dash-nt .side.w{grid-column:2;border-left:0;border-top:1px solid #e6ebf2} .dash-nt .vl{grid-row:span 2} }
 /* the ball screen, their sets and their form on one line */
-.dash-3c{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1.2fr) minmax(0,.95fr);gap:14px;margin-top:12px}
+.dash-3c{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.45fr) minmax(0,1fr);gap:14px;margin-top:12px}
 .dash-3c > .dash-sub + .dash-sub{border-left:1px solid var(--line,#e4e7ec);padding-left:14px}
 @media (max-width:1100px){ .dash-3c{grid-template-columns:minmax(0,1fr) minmax(0,1fr)} .dash-3c > .dash-sub:nth-child(3){grid-column:1 / -1;border-left:0;padding-left:0} }
 @media (max-width:700px){ .dash-3c{grid-template-columns:minmax(0,1fr)} .dash-3c > .dash-sub + .dash-sub{border-left:0;padding-left:0} }
+/* the key sets: a row a set, and a box a tagged game, oldest first */
+.dash-ks{display:grid;grid-template-columns:16px minmax(0,1.5fr) minmax(0,.8fr) 84px 42px calc(var(--ng,4)*26px);gap:3px 7px;align-items:center;font-size:12px}
+.dash-ks .hd{font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-faint,#8a93a2);text-align:center}
+.dash-ks .hd.l{text-align:left}
+.dash-ks .rk{font:700 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);text-align:center}
+.dash-ks .nm{display:flex;align-items:baseline;gap:5px;min-width:0}
+.dash-ks .nm b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.dash-ks .nm .kd{font:600 9px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);white-space:nowrap}
+.dash-ks q{quotes:"\201C" "\201D";font-style:italic;font-weight:600;color:#8a6829;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.dash-ks .nc{color:var(--ink-faint,#8a93a2)}
+.dash-ks .use{display:flex;align-items:center;gap:5px}
+.dash-ks .vol{flex:none;width:28px;height:5px;border-radius:3px;background:rgba(20,24,33,.1);overflow:hidden}.dash-ks .vol i{display:block;height:100%;background:#4a86d8}
+.dash-ks .use u{text-decoration:none;font:700 10px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.dash-ks .use small{font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+.dash-ks em{font:800 10.5px 'IBM Plex Mono',monospace;font-style:normal;border-radius:10px;padding:1px 0;text-align:center;background:var(--panel-2,#f1f2f4)}
+.dash-ks em.hi{background:#d8524e;color:#fff}.dash-ks em.lo{background:#2f9e86;color:#fff}
+.dash-ks .gm{display:flex;gap:2px}
+.dash-ks .gm i{flex:0 0 24px;height:18px;border-radius:4px;display:flex;align-items:center;justify-content:center;font:700 10px 'IBM Plex Mono',monospace;font-style:normal;background:var(--panel-2,#f1f3f6);color:var(--ink-faint,#8a93a2)}
+.dash-ks .gm i.z{opacity:.55}
+.dash-ks .hd.gm i{background:none;height:auto;flex-direction:column;line-height:1.05;font:700 8.5px Oswald,sans-serif;letter-spacing:.04em;color:var(--ink-soft,#5b6472)}
+.dash-ks .hd.gm i u{text-decoration:none;font:600 7.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+/* printing the rival: two landscape A4 pages, each a box its content is scaled into */
+.dash-print{margin-right:6px}
+#print-area .dop-page{position:relative;width:280mm;height:193mm;overflow:hidden;background:#fff}
+.dop-fit{position:absolute;left:0;top:0;transform-origin:0 0;width:1400px;background:#fff;color:#141821;font:400 13px/1.35 Inter,system-ui,sans-serif;display:grid;gap:10px;align-content:start}
+.dop-top{display:flex;align-items:baseline;gap:12px;background:#8a2f2b;color:#fff;padding:6px 14px;border-radius:8px}
+.dop-top b{font:700 13px Oswald,sans-serif;letter-spacing:.18em;text-transform:uppercase}
+.dop-top span{font:600 12px 'IBM Plex Mono',monospace}
+.dop-fit .dash-blk,.dop-fit .dash-3c{margin-top:0}
+.dop-fit .dash-ts{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+.dop-fit .dash-ros5{grid-template-columns:repeat(5,minmax(0,1fr))!important}
+.dop-fit .dash-3c{grid-template-columns:minmax(0,1fr) minmax(0,1.45fr) minmax(0,1fr)!important}
+.dop-fit .dash-3c > .dash-sub:nth-child(3){grid-column:auto!important;border-left:1px solid #e4e7ec!important;padding-left:14px!important}
+.dop-fit .dash-3c > .dash-sub + .dash-sub{border-left:1px solid #e4e7ec!important;padding-left:14px!important}
+.dash-nt.all{border:0;border-radius:0;overflow:visible;background:none;column-count:var(--cols,2);column-gap:12px}
+.dash-nt.all .cpt{break-inside:avoid;page-break-inside:avoid;display:inline-block;width:100%;border:1px solid #d9dce2;border-radius:8px;overflow:hidden;margin:0 0 10px}
+.dash-nt.all .cn{background:#1c1c1c;color:#f3d98e;font:700 11px Oswald,sans-serif;letter-spacing:.14em;text-transform:uppercase;padding:4px 10px}
+.dash-nt.all .blk:first-of-type{border-top:0}
+/* the printed notes: tighter, THEY over WE, concepts running on from column to column */
+.dop-notes .dash-nt.all .cpt{display:block;break-inside:auto;page-break-inside:auto;margin:0 0 6px;border:0;border-radius:0;overflow:visible}
+.dop-notes .dash-nt.all .cn{padding:2px 8px;font-size:10.5px;border-radius:4px;break-after:avoid;page-break-after:avoid}
+.dop-notes .dash-nt .g,.dop-notes .dash-nt .solo{break-inside:avoid;page-break-inside:avoid}
+.dop-notes .dash-nt .g{margin-bottom:3px}
+.dop-notes .dash-nt .gh{font-size:9.5px;padding-bottom:1px;margin-bottom:1px}
+.dop-notes .dash-nt ul{padding-left:12px}
+.dop-notes .dash-nt li,.dop-notes .dash-nt .solo{font-size:11.5px;line-height:1.24;margin:0}
+.dash-nt.all.flat .pt{padding:2px 6px 3px 8px;border-left:3px solid #d8524e;background:#fdf6f4;margin-top:2px}
+.dash-nt.all.flat .pt.w{border-left-color:#4a86d8;background:#f5f8fc}
+.dash-nt.all.flat .pt > i{display:block;font:700 8.5px Oswald,sans-serif;font-style:normal;letter-spacing:.12em;text-transform:uppercase;color:#8a93a2;break-after:avoid;page-break-after:avoid}
+.dash-nt.all.flat .pt.t li,.dash-nt.all.flat .pt.t .solo{color:#5c2417}
+.dash-nt.all.flat .pt.w li,.dash-nt.all.flat .pt.w .solo{color:#16304f}
+body.dop-measure #print-area{display:block;position:fixed;left:-99999px;top:0}
+@media print{
+  body.printing-dop #print-area{display:block;position:static;width:auto;height:auto;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body.printing-dop #print-area *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body.printing-dop > *:not(#print-area){display:none!important}
+  body.printing-dop .dop-page{break-after:page;page-break-after:always}
+  body.printing-dop .dop-page:last-child{break-after:auto;page-break-after:auto}
+}
 @media (max-width:520px){ .dash-mini .rs-dualhead,.dash-mini .rs-card.rs-dualrow{grid-template-columns:70px minmax(0,1fr) minmax(0,1fr)} }
 @media (max-width:520px){ .dash-notes{grid-template-columns:minmax(0,1fr)} .dash-form{grid-template-columns:repeat(3,minmax(0,1fr))} }
 /* the six weapons: rank, name, call, use, share, PPP */
