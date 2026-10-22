@@ -26743,7 +26743,13 @@ function _dashOppPrint(card, title){
     const pages=[p1, p2].map(p=>h("div",{class:"dop-page"}, p));
     pages.forEach(x=>area.appendChild(x));
     document.body.classList.add("dop-measure");
-    const PW=1058, PH=729;   /* the printable box of a landscape A4 at 7 mm margins, in CSS px */
+    /* measured once the faces have come in, so a picture arriving late cannot push the page */
+    const imgs=[...area.querySelectorAll("img")].filter(i=>!i.complete);
+    Promise.race([ Promise.all(imgs.map(i=>new Promise(r=>{ i.addEventListener("load", r); i.addEventListener("error", r); }))), new Promise(r=>setTimeout(r, 2500)) ]).then(()=>measure(p1, p2));
+  };
+  const measure=(p1, p2)=>{
+    const area=$("#print-area");
+    const PW=1058, PH=715;   /* the printable box of a landscape A4 at 7 mm margins, in CSS px, less a little */
     const fit=(p, W)=>{ p.style.width=W+"px"; p.style.transform="none"; const s=Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); return s; };
     const s1=fit(p1, 1400); p1.style.transform="scale("+s1.toFixed(4)+")";
     /* the notes in two to five columns of one of four widths: the one that leaves the letters largest */
@@ -36785,6 +36791,10 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dop-fit .dash-3c{grid-template-columns:minmax(0,1fr) minmax(0,1.45fr) minmax(0,1fr)!important}
 .dop-fit .dash-3c > .dash-sub:nth-child(3){grid-column:auto!important;border-left:1px solid #e4e7ec!important;padding-left:14px!important}
 .dop-fit .dash-3c > .dash-sub + .dash-sub{border-left:1px solid #e4e7ec!important;padding-left:14px!important}
+/* on paper nothing scrolls: a box that scrolls on the screen is cut to its first lines by the
+   printer, which is how the key players came out as one man */
+.dop-fit .dash-kpw,.dop-fit .dash-ros5,.dop-fit .dash-sub,.dop-fit .dash-blk{overflow:visible!important;max-height:none!important}
+.dop-fit .dash-kp{min-width:0!important}
 .dash-nt.all{border:0;border-radius:0;overflow:visible;background:none;column-count:var(--cols,2);column-gap:12px}
 .dash-nt.all .cpt{break-inside:avoid;page-break-inside:avoid;display:inline-block;width:100%;border:1px solid #d9dce2;border-radius:8px;overflow:hidden;margin:0 0 10px}
 .dash-nt.all .cn{background:#1c1c1c;color:#f3d98e;font:700 11px Oswald,sans-serif;letter-spacing:.14em;text-transform:uppercase;padding:4px 10px}
