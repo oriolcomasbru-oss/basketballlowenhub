@@ -26753,18 +26753,20 @@ function _dashOppPrint(card, title){
   const measure=(p1, p2)=>{
     const area=$("#print-area");
     const PW=1058, PH=715;   /* the printable box of a landscape A4 at 7 mm margins, in CSS px, less a little */
-    const fit=(p, W)=>{ p.style.width=W+"px"; p.style.transform="none"; const s=Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); return s; };
+    const fit=(p, W)=>{ p.style.width=W+"px"; p.style.transform="none"; p.style.zoom="1"; const s=Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); return s; };
+    /* the scale is a real zoom, not a transform: a browser that prints the box at its unscaled height (Safari) would cut what lies below the first sheet */
+    const put=(p, s)=>{ p.style.transform="none"; p.style.zoom=s.toFixed(4); };
     /* THE SHEETS ARE MEASURED AGAIN ON PAPER. A landscape A4 is a window about 1070 px wide, so
        the stylesheet's narrow-screen rules apply to the printed copy and make it taller than it
        was on the screen - and the bottom of the first sheet, the key players, was cut off. So
        the fit is worked out once here and once more as the page goes to the printer, with the
        layout the printer has. */
     const refit=()=>{
-      const s1=fit(p1, 1400); p1.style.transform="scale("+s1.toFixed(4)+")";
+      const s1=fit(p1, 1400); put(p1, s1);
       /* the notes in two to five columns of one of four widths: the one that leaves the letters largest */
       let best={ s:0, c:3, cw:380 };
       [300,340,380,420].forEach(cw=>[2,3,4,5].forEach(c=>{ p2.style.setProperty("--cols", String(c)); const s=fit(p2, cw*c); if(s>best.s) best={ s:s, c:c, cw:cw }; }));
-      p2.style.setProperty("--cols", String(best.c)); fit(p2, best.cw*best.c); p2.style.transform="scale("+best.s.toFixed(4)+")"; };
+      p2.style.setProperty("--cols", String(best.c)); fit(p2, best.cw*best.c); put(p2, best.s); };
     refit();
     const mq=window.matchMedia? window.matchMedia("print") : null, onMq=e=>{ if(e.matches) refit(); };
     if(mq){ if(mq.addEventListener) mq.addEventListener("change", onMq); else if(mq.addListener) mq.addListener(onMq); }
