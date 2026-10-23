@@ -22107,12 +22107,26 @@ function _lgLeadLoad(L){
   ask(0).catch(()=>{}).then(()=>{
     setTimeout(()=>{ _lgLeadBusy=false;
       try{ const L2=leagueState(); _lgLeadLoad(L2);
-        /* the boards fill in as the clubs land, but only while they are on screen */
+        /* the boards are drawn again once, when the last club has landed - drawing them at
+           every club moved the page under the reader sixteen times in a row - and what is
+           being read stays where it is on the screen */
+        if(_lgLeadBusy) return;
         const v=document.getElementById("viewLeague");
-        if(v && v.style.display!=="none"){ const old=v.querySelector(".ldr"); if(old){ const y=document.getElementById("workspace"); const top=y? y.scrollTop : 0;
-          old.parentNode.replaceChild(_lgLeaders(L2), old); if(y) y.scrollTop=top; }
-          const op=v.querySelector(".lg-pace-live"); if(op){ const y2=document.getElementById("workspace"), t2=y2? y2.scrollTop : 0; op.parentNode.replaceChild(_lgPace(L2), op); if(y2) y2.scrollTop=t2; } }
+        if(v && v.style.display!=="none"){
+          const old=v.querySelector(".ldr"); if(old) _lgSwapKeep(old, _lgLeaders(L2));
+          const op=v.querySelector(".lg-pace-live"); if(op) _lgSwapKeep(op, _lgPace(L2)); }
       }catch(e){} }, 700); });
+}
+/* put a panel in the place of another without the page moving: a panel above the screen
+   that grows or shrinks pushes the scroll by as much, one the reader is in keeps its top */
+function _lgSwapKeep(old, neu){
+  const y=document.getElementById("workspace"), top0=y? y.getBoundingClientRect().top : 0;
+  const r=old.getBoundingClientRect();
+  old.parentNode.replaceChild(neu, old);
+  if(!y) return;
+  const n=neu.getBoundingClientRect();
+  if(r.bottom<=top0) y.scrollTop+=n.height-r.height;
+  else if(r.top<top0) y.scrollTop+=n.top-r.top;
 }
 function _lgLeadPool(L){
   const pool=[]; let clubs=0;
