@@ -25133,7 +25133,7 @@ function _paceLeague(L){
   const lg=_paceStats(sumO, noO, gm, allPts? ptO : null), lgD=_paceStats(sumD, noD, gm, allPts? ptD : null);
   const rng=get=>{ const v=rows.map(get).filter(x=>x!=null); return v.length? [Math.min.apply(null,v), Math.max.apply(null,v)] : null; };
   if(lg){ lg.rAvg=rng(r=>r.o.avg); lg.rPpg=rng(r=>r.o.ppg); ["early","mid","late","eP","mP","lP"].forEach(k=>{ lg["r_"+k]=rng(r=>r.o[k]); }); }
-  if(lgD){ lgD.rAvg=rng(r=>r.d? r.d.avg : null); lgD.rPpg=rng(r=>r.d? r.d.ppg : null); ["early","mid","late"].forEach(k=>{ lgD["r_"+k]=rng(r=>r.d? r.d[k] : null); }); }
+  if(lgD){ lgD.rAvg=rng(r=>r.d? r.d.avg : null); lgD.rPpg=rng(r=>r.d? r.d.ppg : null); ["early","mid","late","eP","mP","lP"].forEach(k=>{ lgD["r_"+k]=rng(r=>r.d? r.d[k] : null); }); }
   return { rows:rows, lg:lg, lgD:lgD };
 }
 /* where a value sits in the league: the clubs' range as a track, the league's average as a
@@ -25185,10 +25185,9 @@ function _paceCols(side){
     { k:side+"m", lab:"8–15 s", get:r=>P(r)? P(r).mid : null, share:true, tip:o? "share of first shots between eight and fifteen seconds" : "share of the opponents' first shots between eight and fifteen seconds", rng:"r_mid" },
     { k:side+"l", lab:"16–24 s", get:r=>P(r)? P(r).late : null, share:true, tip:o? "share of first shots after sixteen seconds" : "share of the opponents' first shots after sixteen seconds - 1 forces the most late shots", rng:"r_late" }
   ];
-  if(!o) return C;
-  /* the offense: what each range scores - points a possession, putbacks included - after its share */
-  const oer=(at, lk, lab)=>({ k:side+lk, lk:lk, lab:"OER", get:r=>P(r)? P(r)[lk] : null, f:v=>v.toFixed(2), oer:true,
-    tip:"points a possession of the possessions whose first shot went up in "+lab+" - 1 scores the most", rng:"r_"+lk, at:at });
+  /* what each range scores (offense) or allows (defense) - points a possession, putbacks included - after its share */
+  const oer=(at, lk, lab)=>({ k:side+lk, lk:lk, lab:o? "OER" : "DER", get:r=>P(r)? P(r)[lk] : null, f:v=>v.toFixed(2), oer:true, asc:!o,
+    tip:o? "points a possession of the possessions whose first shot went up in "+lab+" - 1 scores the most" : "points a possession allowed when the opponents' first shot went up in "+lab+" - 1 allows the fewest", rng:"r_"+lk, at:at });
   [oer(3,"eP","0–7 s"), oer(5,"mP","8–15 s"), oer(7,"lP","16–24 s")].forEach(c=>C.splice(c.at, 0, c));
   return C;
 }
@@ -25245,7 +25244,7 @@ function _paceTable(L, R, rows, opts){
 /* League: every club */
 function _lgPace(L){
   const box=_lgPanel("Pace · when the shot comes", null,
-    "For every possession, the second its first shot went up in, counted from the moment the ball changed hands (a defensive rebound, a turnover, a basket at the other end). Offense: how fast the club shoots. Defense: how fast its opponents shoot against it. OER after each range: the points a possession of the possessions whose first shot went up in it, putbacks included. Every column is ranked; the gold chips are the top three; the bar behind a value is where it sits between the slowest and the fastest club, the grey tick the league's average. Rebuilt from the play by play.");
+    "For every possession, the second its first shot went up in, counted from the moment the ball changed hands (a defensive rebound, a turnover, a basket at the other end). Offense: how fast the club shoots. Defense: how fast its opponents shoot against it. OER (offense) and DER (defense) after each range: the points a possession of the possessions whose first shot went up in it, putbacks included. Every column is ranked; the gold chips are the top three; the bar behind a value is where it sits between the slowest and the fastest club, the grey tick the league's average. Rebuilt from the play by play.");
   const R=_paceLeague(L);
   if(!R.rows.length){ box.appendChild(h("div",{class:"lg-empty"},"The clubs' seasons are being read; this fills in club by club.")); try{ _lgLeadLoad(L); }catch(e){} return box; }
   box.appendChild(_paceTable(L, R, R.rows, { sortable:true, sel:_lgPanelClub(L), onPick:r=>{ _lgSetClub(L, r.id); persist(); _lgRerender(); } }));
