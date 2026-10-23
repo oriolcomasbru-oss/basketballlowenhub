@@ -457,7 +457,7 @@ function possessions(actions) {
       /* a possession in which its own side never touched the ball was a misreading: it is
          dropped, and the side that shoots keeps the moment the ball changed hands */
       if (!cur.ball) { const from = cur.from; cur = null; open(c, from); }
-      else { close(t); open(c, t); }
+      else { close(t); open(c, t); cur.unk = true; }   /* the hand-over is missing from the sheet: when it began is not known */
     }
     if (c === cur.team && !def) cur.ball = true;
     cur.acts.push(i);
@@ -472,7 +472,8 @@ function possessions(actions) {
     if (fg && made) { if (!ftFollows(i, cur.team)) close(t); return; }
     if (a.action === "FT" && made) { if (!ftFollows(i, cur.team)) close(t); return; }
     if (a.action === "TO") { close(t); return; }
-    if (a.action === "REB" && S(a.info1) === "D") {
+    /* a team rebound changes hands like a player's: left out, the next possession began at its shot and read 0 seconds */
+    if ((a.action === "REB" || a.action === "TREB") && S(a.info1) === "D") {
       const who = c;
       close(t);
       open(who, t);
@@ -604,9 +605,9 @@ function clockSplit(actions, poss, code) {
       const b = clockBlock(rem);
       if ((a.action === "P2" || a.action === "P3") && !shot) {
         shot = true;
-        const el = Math.max(0, Math.min(24, Math.floor(t - p.from))); el0 = el;
+        if (!p.unk) { const el = Math.max(0, Math.min(24, Math.floor(t - p.from))); el0 = el;
         (p.team === code ? out.first.team : out.first.opp)[el]++;
-        { const qq = out.first.q[Math.min(4, qIndex(p.quarter))]; if (p.team === code) { qq.ts++; qq.tsec += el + 0.5; } else { qq.os++; qq.osec += el + 0.5; } }
+        { const qq = out.first.q[Math.min(4, qIndex(p.quarter))]; if (p.team === code) { qq.ts++; qq.tsec += el + 0.5; } else { qq.os++; qq.osec += el + 0.5; } } }   /* no known start: no second to put it in */
       }
       if (a.action === "P2" || a.action === "P3") {
         side[b].fga++; if (a.action === "P3") side[b].p3a++;
@@ -630,10 +631,10 @@ function clockSplit(actions, poss, code) {
         if (p.team === code) pl(S(a.player_id1))[b].fd++;
       }
     }
-    if (!shot) { if (p.team === code) out.first.teamNo++; else out.first.oppNo++; }
-    else (p.team === code ? out.first.teamPts : out.first.oppPts)[el0] += p.pts || 0;
+    if (!shot || p.unk) { if (p.team === code) out.first.teamNo++; else out.first.oppNo++; }
+    else if (el0 >= 0) (p.team === code ? out.first.teamPts : out.first.oppPts)[el0] += p.pts || 0;
     /* a possession with no shot goes, with its points (a foul trip), in the second it ended in, so a range's points a possession counts its turnovers; one that ended with neither a turnover nor a free throw is the clock running out and goes nowhere */
-    if (!shot && ended) { const ee = Math.max(0, Math.min(24, Math.floor((p.to || p.from) - p.from))); (p.team === code ? out.first.teamNoB : out.first.oppNoB)[ee]++; (p.team === code ? out.first.teamPts : out.first.oppPts)[ee] += p.pts || 0; }
+    if (!shot && ended && !p.unk) { const ee = Math.max(0, Math.min(24, Math.floor((p.to || p.from) - p.from))); (p.team === code ? out.first.teamNoB : out.first.oppNoB)[ee]++; (p.team === code ? out.first.teamPts : out.first.oppPts)[ee] += p.pts || 0; }
     { const qq = out.first.q[Math.min(4, qIndex(p.quarter))]; if (p.team === code) qq.tp++; else qq.op++; }
     const remEnd = Math.max(0, Math.min(len, len - (p.to - ref)));
     const be = clockBlock(remEnd);
