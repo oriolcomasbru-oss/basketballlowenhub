@@ -25189,14 +25189,15 @@ function _paceTone(v, lv, def){
 function _paceBand(P, lg, b, def, mx, tip){
   const v=P? P[b[1]] : null, sh=P? P[b[2]] : null, lv=lg? lg[b[1]] : null, ls=lg? lg[b[2]] : null;
   if(sh==null) return h("td",{class:"pbd"},"—");
-  /* two floors: on top the points a possession, green to red against the league's in the
-     range; under it the share of the first shots, blue the more it plays there than the league */
+  /* one bar: its length the share of the first shots, the tick the league's share; the
+     points a possession written on it, green or red only when it is 0.05 off the league's */
+  const tone=_paceTone(v, lv, def), col=tone==="g1"||tone==="g2"? "up" : tone==="r1"||tone==="r2"? "dn" : "";
   const dv=ls!=null? Math.round(100*(sh-ls)) : null;
-  const vt=dv==null? "vn" : dv>=6? "v2" : dv>=3? "v1" : dv<=-6? "vm2" : dv<=-3? "vm1" : "vn";
   const cell=h("td",{class:"pbd", title:(tip||"")+b[3]+": "+Math.round(100*sh)+"% of the first shots"+(ls!=null? " (league "+Math.round(100*ls)+"%, "+(dv>0? "+" : dv<0? "−" : "±")+Math.abs(dv)+")" : "")
     +(v!=null? " · "+v.toFixed(2)+" points a possession"+(lv!=null? " (league "+lv.toFixed(2)+")" : "") : " · points still being read")});
-  cell.appendChild(h("div",{class:"pbd-o "+(_paceTone(v, lv, def)||"n")}, v==null? "…" : v.toFixed(2)));
-  cell.appendChild(h("div",{class:"pbd-v "+vt}, Math.round(100*sh)+"%"));
+  const W=x=>Math.round(100*Math.min(1, x/Math.max(mx,0.01)));
+  cell.appendChild(h("div",{class:"pbd-n"}, h("b",{class:col}, v==null? "…" : v.toFixed(2)), h("em",{}, Math.round(100*sh)+"%")));
+  cell.appendChild(h("div",{class:"pbd-bar"}, h("i",{style:"width:"+W(sh)+"%"}), ls!=null? h("u",{style:"left:"+W(ls)+"%"}) : null));
   return cell;
 }
 let _lgPaceSort={ k:"o", d:1 };
@@ -25213,7 +25214,8 @@ function _paceTable(L, R, rows, opts){
   let list=rows.slice();
   const sk=opts.sortable && KEYS[_lgPaceSort.k]? _lgPaceSort.k : null;
   if(sk){ const K=KEYS[sk]; list.sort((a,b)=>{ const x=K.get(a), y=K.get(b); if(x==null) return 1; if(y==null) return -1; return (K.hi? y-x : x-y)*_lgPaceSort.d; }); }
-  const mx={}; sides.forEach(s=>{ mx[s]=Math.max.apply(null, [0.01].concat(...R.rows.map(r=>side(r,s)? PACE_BANDS.map(b=>side(r,s)[b[2]]||0) : []))); });
+  /* each range's bars to its own longest, so a column compares the clubs in that range */
+  const mx={}; sides.forEach(s=>{ mx[s]={}; PACE_BANDS.forEach(b=>{ mx[s][b[0]]=Math.max.apply(null, [0.01].concat(R.rows.map(r=>side(r,s)? side(r,s)[b[2]]||0 : 0))); }); });
   const t=h("table",{class:"lg-tbl pace-tbl pace-v"});
   const g=h("tr",{class:"lg-grph"}, h("th",{},""), h("th",{},""));
   sides.forEach(s=>g.appendChild(h("th",{colspan:"5", class:"grp "+(s==="o"? "pace-go" : "pace-gd")}, s==="o"? "Offense · OER by when they shoot" : "Defense · DER by when they let you shoot")));
@@ -25233,17 +25235,17 @@ function _paceTable(L, R, rows, opts){
     sides.forEach(s=>{ const P=side(r,s), lg=lgOf(s);
       tr.appendChild(h("td",{class:"grp pnum"}, P && P.ppg!=null? P.ppg.toFixed(1) : "—"));
       tr.appendChild(h("td",{class:"pnum "+avgTone(P&&P.avg, lg&&lg.avg, s)}, P? P.avg.toFixed(1)+" s" : "—"));
-      PACE_BANDS.forEach(b=>tr.appendChild(_paceBand(P, lg, b, s==="d", mx[s], (r.label||r.name)+" · "))); });
+      PACE_BANDS.forEach(b=>tr.appendChild(_paceBand(P, lg, b, s==="d", mx[s][b[0]], (r.label||r.name)+" · "))); });
     t.appendChild(tr);
   });
   const lt=h("tr",{class:"pace-lg"}, h("td",{}), h("td",{class:"l"},"League · average"));
   sides.forEach(s=>{ const lg=lgOf(s);
     lt.appendChild(h("td",{class:"grp pnum"}, lg && lg.ppg!=null? lg.ppg.toFixed(1) : "—"));
     lt.appendChild(h("td",{class:"pnum"}, lg? lg.avg.toFixed(1)+" s" : "—"));
-    PACE_BANDS.forEach(b=>{ const c=_paceBand(lg, null, b, s==="d", mx[s]); c.classList.add("n"); lt.appendChild(c); }); });
+    PACE_BANDS.forEach(b=>{ const c=_paceBand(lg, null, b, s==="d", mx[s][b[0]]); c.classList.add("n"); lt.appendChild(c); }); });
   t.appendChild(lt);
   const leg=h("div",{class:"pace-vleg"},
-h("span",{}, h("b",{},"Top · OER / DER"), " ", h("i",{class:"g2"}), h("i",{class:"g1"}), "better than the league in that range ·", h("i",{class:"n"}), "±0.05 ·", h("i",{class:"r1"}), h("i",{class:"r2"}), "worse"),    h("span",{}, h("b",{},"Bottom · volume"), " ", h("i",{class:"v2"}), h("i",{class:"v1"}), "more of the first shots there than the league (+6 / +3 points) ·", h("i",{class:"n"}), "±2 ·", h("i",{class:"vm1"}), h("i",{class:"vm2"}), "fewer"));
+h("span",{}, h("b",{},"Bar"), " the share of the first shots in that range · the black tick: the league's share"), h("span",{}, h("b",{},"Number"), " OER (offense) / DER (defense) · ", h("em",{class:"up"},"green"), " better than the league in that range by 0.05 or more, ", h("em",{class:"dn"},"red"), " worse"));
   return h("div",{}, h("div",{class:"pb-scroll"}, t), leg);
 }
 /* League: every club */
@@ -25329,11 +25331,11 @@ function _postPace(P, home){
        allowed), the share of the first shots as the bar under it */
     const tb=h("table",{class:"lg-tbl pace-tbl pace-v pace-post-t"});
     tb.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{class:"l"},""), h("th",{},"Avg"), ...PACE_BANDS.map(b=>h("th",{title:"points a possession of the possessions whose first shot went up in "+b[3]+" · the bar: the share of first shots"}, b[3])), h("th",{},"Shots")));
-    const mx=Math.max.apply(null, [0.01].concat(...rows.map(r=>PACE_BANDS.map(b=>r[1][b[2]]||0))));
+    const mx={}; PACE_BANDS.forEach(b=>{ mx[b[0]]=Math.max.apply(null, [0.01].concat(rows.map(r=>r[1][b[2]]||0))); });
     rows.forEach(r=>{ const S=r[1], ref=R.lg, isLg=r[2]==="lg";
       const tr=h("tr",{class:"pp-"+r[2]}, h("td",{class:"l lg-team"}, h("i",{class:"pp-dot "+r[2]}), r[0]),
         h("td",{class:"pnum"}, h("b",{}, f1(S.avg)), ref && !isLg? h("small",{class:S.avg-ref.avg<=-0.6? "fast" : S.avg-ref.avg>=0.6? "slow" : ""}, " "+(S.avg-ref.avg>0? "+" : "−")+Math.abs(S.avg-ref.avg).toFixed(1)) : null));
-      PACE_BANDS.forEach(b=>{ const c=_paceBand(S, isLg? null : ref, b, r[2]==="them", mx, r[0]+" · "); if(isLg) c.classList.add("n"); tr.appendChild(c); });
+      PACE_BANDS.forEach(b=>{ const c=_paceBand(S, isLg? null : ref, b, r[2]==="them", mx[b[0]], r[0]+" · "); if(isLg) c.classList.add("n"); tr.appendChild(c); });
       tr.appendChild(h("td",{class:"pnum"}, String(S.n)));
       tb.appendChild(tr); });
     box.appendChild(h("div",{class:"pb-scroll"}, tb));
@@ -37429,15 +37431,14 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .modal-box.hl-key{box-shadow:0 0 0 4px #1f4e9a,0 20px 60px rgba(0,0,0,.35)!important}.modal-box.hl-stop{box-shadow:0 0 0 4px #c62828,0 20px 60px rgba(0,0,0,.35)!important}
 /* OUT: he will not play - the card in grey, its OUT badge in full colour */
 /* pace: when the shot comes */
-.pace-v td.pbd{padding:3px 3px;min-width:74px;text-align:center}
-.pace-v .pbd-o{font:700 16px 'IBM Plex Mono',monospace;line-height:1.2;padding:4px 0 3px;border-radius:5px 5px 0 0;font-variant-numeric:tabular-nums}
-.pace-v .pbd-v{font:700 11px 'IBM Plex Mono',monospace;padding:2px 0;border-radius:0 0 5px 5px;border:1px solid transparent;border-top:0}
-.pace-v .pbd-o.g2{background:#2f9e86;color:#fff}.pace-v .pbd-o.g1{background:rgba(47,158,134,.22);color:#17694d}
-.pace-v .pbd-o.n{background:var(--panel-2,#f1f2f5);color:var(--ink,#141821)}
-.pace-v .pbd-o.r1{background:rgba(216,82,78,.2);color:#a8322f}.pace-v .pbd-o.r2{background:#d8524e;color:#fff}
-.pace-v .pbd-v.v2{background:#2563b8;color:#fff}.pace-v .pbd-v.v1{background:#8fb3e6;color:#0f2f63}
-.pace-v .pbd-v.vn{background:var(--panel-2,#f1f2f5);color:var(--ink-soft,#5b6472)}
-.pace-v .pbd-v.vm1{background:#e8f0fb;color:#3d5f93}.pace-v .pbd-v.vm2{background:var(--panel,#fff);color:#3d5f93;border-color:#8fb3e6}
+.pace-v td.pbd{padding:5px 8px;min-width:92px}
+.pace-v .pbd-n{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
+.pace-v .pbd-n b{font:700 15px 'IBM Plex Mono',monospace;color:var(--ink,#141821);font-variant-numeric:tabular-nums}
+.pace-v .pbd-n b.up{color:#13804f}.pace-v .pbd-n b.dn{color:#c0392b}
+.pace-v .pbd-n em{font:600 10.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}
+.pace-v .pbd-bar{position:relative;height:6px;margin-top:3px;border-radius:3px;background:var(--panel-2,#eef0f3)}
+.pace-v .pbd-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:#9fb4d1}
+.pace-v .pbd-bar u{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:var(--ink,#141821)}
 .pace-v td.pnum{font:600 13px 'IBM Plex Mono',monospace;text-align:center;white-space:nowrap}
 .pace-v td.pnum.fast{color:#17805a}.pace-v td.pnum.slow{color:#c0403c}
 .pace-v tr.pace-lg td{border-top:2px solid var(--ink,#141821)}
@@ -37445,6 +37446,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .pace-vleg i{display:inline-block;width:14px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:2px}
 .pace-vleg i.v2{background:#2563b8}.pace-vleg i.v1{background:#8fb3e6}.pace-vleg i.vm1{background:#e8f0fb}.pace-vleg i.vm2{background:#fff;border:1px solid #8fb3e6}
 .pace-vleg i.g2{background:#2f9e86}.pace-vleg i.g1{background:rgba(47,158,134,.25)}.pace-vleg i.n{background:var(--panel-2,#f3f4f6);border:1px solid var(--line,#e6e8ec)}.pace-vleg i.r1{background:rgba(216,82,78,.22)}.pace-vleg i.r2{background:#d8524e}
+.pace-vleg em{font-style:normal;font-weight:700}.pace-vleg em.up{color:#13804f}.pace-vleg em.dn{color:#c0392b}
 .pace-vleg b{font:700 10.5px "Oswald",sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--ink,#141821)}
 .pace-tbl th.oer{color:var(--gold,#b8913f)}
 .pace-tbl td.oer{background:rgba(199,167,106,.08)}
