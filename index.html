@@ -18169,7 +18169,7 @@ function _trgRead(onProg){
     const pos={};
     try{ const ros=await fetch("/.netlify/functions/bbl?res=roster&id="+encodeURIComponent(tid)+"&season="+encodeURIComponent(L.season||"")).then(r=>r.ok? r.json() : null).catch(()=>null);
       ((ros&&ros.players)||[]).forEach(p=>{ const s=String(p.pos||"").toUpperCase();
-        const lab=/POINT/.test(s)? "PG" : /SHOOTING/.test(s)? "SG" : /SMALL/.test(s)? "SF" : /POWER/.test(s)? "PF" : /CENT/.test(s)? "C" : /GUARD/.test(s)? "G" : /FORWARD/.test(s)? "F" : "";
+        const lab=TRG_POS_STAFF[String(_lgLastName(p.name||((p.first||"")+" "+(p.last||"")))).toLowerCase()] || (/POINT/.test(s)? "PG" : /SHOOTING/.test(s)? "SG" : /SMALL/.test(s)? "SF" : /POWER/.test(s)? "PF" : /CENT/.test(s)? "C" : /GUARD/.test(s)? "G" : /FORWARD/.test(s)? "F" : "");
         if(lab){ pos[String(p.id)]=lab; if(p.pid) pos[String(p.pid)]=lab; } }); }catch(e){}
     return { tid:tid, games:out, missing:games.length-out.length, pos:pos };
   })();
@@ -18412,6 +18412,8 @@ function _trendsDashDraw(R, TD){
   if(!K) out.appendChild(h("div",{class:"gpo-note"},"With "+N+" games there is no “last games against the ones before” yet; the trends start at four."));
   return out;
 }
+/* where the staff plays one of ours somewhere else than the league's roster says, by surname: the staff wins */
+const TRG_POS_STAFF={ thiers:"C" };
 function _lgFourTrend(){
   /* "sx" is where the chart palette is declared (--tl-1, --tl-2, --tl-grid, the marker
      ring). Without it the strokes resolve to nothing. */
@@ -18880,10 +18882,12 @@ function _lgFourTrend(){
     /* ---------------------------------------------------- 4b · the points, by position */
     {
       const POS=R.pos||{};
+      /* where the staff plays a man somewhere else than the league's roster says, the staff wins */
+      const posOf=p=>TRG_POS_STAFF[String(_lgLastName(p.nm||"")).toLowerCase()] || POS[String(p.i)] || "—";
       const ORD=["PG","SG","SF","PF","C","G","F","—"];
       const LBL={ PG:"Point guard (1)", SG:"Shooting guard (2)", SF:"Small forward (3)", PF:"Power forward (4)", C:"Center (5)", G:"Guard", F:"Forward", "—":"No position on the roster" };
       const by={}, who={};
-      G.forEach((g,gi)=>(g.pl||[]).forEach(p=>{ const k=POS[String(p.i)]||"—";
+      G.forEach((g,gi)=>(g.pl||[]).forEach(p=>{ const k=posOf(p);
         const e=by[k]||(by[k]={ per:[], pa:0, mi:0, th:0, ft:0, pts:0 });
         const th=3*(p.tm||0), ft=p.f1||0, pa=Math.min(p.pa||0, Math.max(0,p.p-th-ft)), mi=Math.max(0, p.p-th-ft-pa);
         e.per[gi]=(e.per[gi]||0)+p.p; e.pa+=pa; e.mi+=mi; e.th+=th; e.ft+=ft; e.pts+=p.p;
@@ -18921,6 +18925,60 @@ function _lgFourTrend(){
       }
     }
 
+    /* ------------------------------------------------- 4c · paint touches, every game */
+    /* THE POST GAME'S PAINT TOUCH TABLE OVER THE WHOLE SEASON: from our tagging, each
+       possession by how many times it touched the paint - none, one, two or more - and
+       what each scored, phase by phase for all the games together, then game by game for
+       the phase picked. A cell is the points a possession big, green or red when it is
+       0.10 off the same column over the season, and the share of the possessions small. */
+    { const TD=window.LowenTrendsData, PS=window.LowenPostStats;
+      const tgs=(TD && TD.games)||[];
+      const dayN=d=>Math.round(new Date(d+"T12:00:00Z").getTime()/86400000);
+      const tagOf=g=>tgs.filter(x=>x.d===g.g.date)[0] || tgs.filter(x=>x.d && Math.abs(dayN(x.d)-dayN(g.g.date))<=1)[0] || null;
+      const TG=G.map(g=>({ g:g, x:tagOf(g) })).filter(o=>o.x && o.x.m && (o.x.m.poss||[]).length);
+      if(TG.length && PS && PS.shotLine){
+        const all=[].concat(...TG.map(o=>o.x.m.poss));
+        const PH={}; all.forEach(q=>{ const k=q.phase||"Half court"; PH[k]=(PH[k]||0)+1; });
+        const phases=Object.keys(PH).sort((a,b)=>PH[b]-PH[a]);
+        const ph=q=>q.phase||"Half court";
+        const BK=[["0","none",q=>!(q.pt>0)],["1","one",q=>q.pt===1],["2+","two or more",q=>q.pt>=2]];
+        const ppp=l=>l.length? PS.shotLine(l).ppp : null;
+        /* the season's own figure of each column, for the colours */
+        const ref={}; BK.forEach(b=>{ ref[b[0]]=ppp(all.filter(b[2])); }); ref.all=ppp(all);
+        const cell=(list, of, key, tipLab)=>{ const l=list.filter(of), v=ppp(l), sh=list.length? l.length/list.length : 0, r=ref[key];
+          const tone=v==null || r==null? "" : v-r>=0.10? "up" : v-r<=-0.10? "dn" : "";
+          return h("td",{class:"tpt-c", title:tipLab+" · "+l.length+" of "+list.length+" possessions"+(v!=null? " · "+v.toFixed(2)+" points a possession (season "+(r!=null? r.toFixed(2) : "—")+")" : "")},
+            h("div",{class:"tpt-n"}, h("b",{class:tone}, v==null? "—" : v.toFixed(2)), h("em",{}, Math.round(100*sh)+"%")),
+            h("div",{class:"tpt-bar"}, h("i",{style:"width:"+Math.round(100*sh)+"%"}))); };
+        const head=first=>h("tr",{}, h("th",{class:"l"}, first), h("th",{},"Poss"), ...BK.map(b=>h("th",{title:"possessions with "+b[1]+" paint touch"+(b[0]==="1"? "" : "es")}, b[0]+" PT")), h("th",{},"PT rate"), h("th",{},"OER"));
+        const line=(lab, list, cls, tipLab)=>{ const v=ppp(list), r=ref.all, w=list.filter(q=>q.pt>0).length;
+          return h("tr",{class:cls||""}, lab, h("td",{class:"pnum"}, String(list.length)), ...BK.map(b=>cell(list, b[2], b[0], tipLab+" · "+b[0]+" PT")),
+            h("td",{class:"pnum "+(list.length? (100*w/list.length>=70? "up" : 100*w/list.length<60? "dn" : "") : "")}, list.length? Math.round(100*w/list.length)+"%" : "—"),
+            h("td",{class:"pnum tpt-o "+(v==null||r==null? "" : v-r>=0.10? "up" : v-r<=-0.10? "dn" : "")}, v==null? "—" : v.toFixed(2))); };
+        const s=sec("PAINT TOUCHES · EVERY GAME",
+          "From our tagging ("+TG.length+" of "+G.length+" games tagged). Each possession by its paint touches - none, one, two or more - with the points a possession it scored (big) and its share of the possessions (small, and the bar). Green or red: 0.10 better or worse than the same column over the season. PT rate: possessions with a touch - target 70%, floor 60%.");
+        /* all the games, phase by phase */
+        const t1=h("table",{class:"lg-tbl tpt-t"}, h("thead",{}, head("All games · by phase")));
+        const b1=h("tbody",{});
+        phases.forEach(p=>b1.appendChild(line(h("td",{class:"l"}, p), all.filter(q=>ph(q)===p), "", p)));
+        b1.appendChild(line(h("td",{class:"l"}, h("b",{},"All phases")), all, "tot", "All phases"));
+        t1.appendChild(b1); s.appendChild(h("div",{class:"pb-scroll"}, t1));
+        /* game by game, for the phase picked */
+        const wrap=h("div",{class:"tpt-gw"});
+        const draw=p=>{ wrap.innerHTML="";
+          wrap.appendChild(h("div",{class:"tpt-chips"}, h("span",{class:"tpt-lab"},"Game by game ·"),
+            ...["All phases"].concat(phases).map(k=>h("span",{class:"tpt-chip"+(k===p? " on" : ""), onclick:()=>draw(k)}, k))));
+          const t2=h("table",{class:"lg-tbl tpt-t"}, h("thead",{}, head(p)));
+          const b2=h("tbody",{});
+          TG.forEach(o=>{ const l=o.x.m.poss.filter(q=>p==="All phases" || ph(q)===p); if(!l.length) return;
+            b2.appendChild(line(gameTd(o.g), l, "", what(o.g))); });
+          const tl=p==="All phases"? all : all.filter(q=>ph(q)===p);
+          b2.appendChild(line(h("td",{class:"l"}, h("b",{},"All games")), tl, "tot", "All games"));
+          t2.appendChild(b2); wrap.appendChild(h("div",{class:"pb-scroll"}, t2)); };
+        draw("All phases");
+        s.appendChild(wrap);
+      }
+    }
     /* ------------------------------------------------------------ 5 · who was in front */
     {
       const s=sec("WHO WAS IN FRONT",
@@ -37456,6 +37514,26 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .modal-hl.key{background:#1f4e9a;color:#fff}.modal-hl.stop{background:#d8524e;color:#fff}
 .modal-box.hl-key{box-shadow:0 0 0 4px #1f4e9a,0 20px 60px rgba(0,0,0,.35)!important}.modal-box.hl-stop{box-shadow:0 0 0 4px #c62828,0 20px 60px rgba(0,0,0,.35)!important}
 /* OUT: he will not play - the card in grey, its OUT badge in full colour */
+/* trends: paint touches, every game */
+.tpt-t{width:100%;margin-top:6px}
+.tpt-t th{text-align:center}.tpt-t th.l,.tpt-t td.l{text-align:left}
+.tpt-t td.tpt-c{min-width:92px;padding:5px 8px}
+.tpt-n{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
+.tpt-n b{font:700 15px 'IBM Plex Mono',monospace;color:var(--ink,#141821)}
+.tpt-n b.up,.tpt-t td.up{color:#13804f}.tpt-n b.dn,.tpt-t td.dn{color:#c0392b}
+.tpt-n em{font:600 10.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}
+.tpt-bar{height:6px;margin-top:3px;border-radius:3px;background:var(--panel-2,#eef0f3);overflow:hidden}
+.tpt-bar i{display:block;height:100%;border-radius:3px;background:#9fb4d1}
+.tpt-t td.trg-gn{text-align:left;white-space:nowrap}
+.tpt-t td.pnum{font:600 13px 'IBM Plex Mono',monospace;text-align:center;white-space:nowrap}
+.tpt-t td.tpt-o{font:700 15px 'IBM Plex Mono',monospace}
+.tpt-t tr.tot td{border-top:2px solid var(--ink,#141821)}
+.tpt-gw{margin-top:14px}
+.tpt-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.tpt-lab{font:700 11px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;margin-right:4px}
+.tpt-chip{cursor:pointer;padding:3px 10px;border-radius:12px;border:1px solid var(--line,#dfe2e7);font-size:11.5px;color:var(--ink-soft,#5b6472)}
+.tpt-chip:hover{border-color:var(--ink,#141821);color:var(--ink,#141821)}
+.tpt-chip.on{background:var(--ink,#141821);border-color:var(--ink,#141821);color:var(--panel,#fff)}
 /* pace: when the shot comes */
 .pace-v th.pbh{text-align:center}
 .pace-v .pbh-ks{display:flex;justify-content:center;gap:4px;margin-top:3px}
