@@ -15514,7 +15514,8 @@ function _gpLiveWin(feed, uc, inWin, names){
   let cur=null, pend=null, lastQ=-1, run=null;
   acts.forEach(o=>{
     const a=o.a, c=a.teamcode, k=a.action;
-    if(o.qi!==lastQ){ cur=null; pend=null; lastQ=o.qi; }
+    /* a quarter's first possession runs from the start of the quarter, whoever has it */
+    if(o.qi!==lastQ){ cur=null; pend={ team:null, t0:o.qi<4? o.qi*600 : 2400+(o.qi-4)*300 }; lastQ=o.qi; }
     if(c!=="A" && c!=="B") return;
     const S=(c===uc)? W.u : W.t, on=!!inWin(o);
     if(k==="REB"||k==="TREB"){
@@ -15531,7 +15532,7 @@ function _gpLiveWin(feed, uc, inWin, names){
     if(k!=="P2" && k!=="P3" && k!=="FT") return;
     const shot=(k!=="FT"), made=(a.result==="+"), v=(k==="P3")?3:(k==="P2")?2:1;
     if(!cur || cur.team!==c || (cur.done && shot))
-      cur=(pend && pend.team===c)? fresh(c,{ t0:pend.t0 }) : fresh(c);
+      cur=(pend && (pend.team===c || pend.team===null))? fresh(c,{ t0:pend.t0 }) : fresh(c);
     pend=null;
     if(cur.b<0 && cur.t0!=null && !cur.oreb){ cur.b=bucket(o.t-cur.t0); if(on){ S.clk[cur.b].n++; const sec=Math.max(0,Math.min(24,Math.floor(o.t-cur.t0))); if(shot){ cur.el=sec; S.first[sec]++; } else { cur.ne=sec; S.firstNo[sec]++; } } }
     if(on){
@@ -19355,7 +19356,7 @@ function pbVideoPanel(canEd){
 const LG_DATA_VER=15;
 /* what the server is asked for: moved on when the server adds to an answer (16: when the
    shot comes in the possession), without throwing away what this browser already has */
-const LG_FETCH_VER=21;
+const LG_FETCH_VER=22;
 function leagueState(){
   const L=state.league||(state.league={});
   if(L.dataVer!==LG_DATA_VER){

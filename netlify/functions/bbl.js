@@ -439,7 +439,9 @@ function possessions(actions) {
   };
   actions.forEach((a, i) => {
     const t = T[i], c = S(a.teamcode);
-    if (S(a.quarter) !== q) { close(t); q = S(a.quarter); handover = null; }
+    /* a quarter's first possession runs from the start of the quarter, not from its first
+       action: a shot 20 seconds in is a 20-second possession, not a 0-second one */
+    if (S(a.quarter) !== q) { close(t); q = S(a.quarter); handover = gameClock({ quarter: a.quarter, time: Q_SECS[S(a.quarter)] || 600 }); }
     if (a.action === "SUBST" || a.action === "TIMEO") return;
     if (c !== "A" && c !== "B") return;
     /* WHO HAS THE BALL WHEN NOBODY DOES. After a basket the next thing in the sheet is often
