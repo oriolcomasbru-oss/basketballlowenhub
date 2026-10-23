@@ -22040,7 +22040,8 @@ const LG_LEAD=[
    asked for, the totals are taken, and everything else is let go at once: what is kept
    for the whole league is smaller than what one club's panel holds for itself. One club
    at a time, and a club is asked again only when it has played since. */
-let _lgLeadBusy=false;
+let _lgLeadBusy=0;
+const _lgLeadInFlight={};
 const _lgLeadTried={};
 function _lgLeadSlim(tid, j, done){
   const tot=(j.team_tot&&j.team_tot.all)||null;
@@ -22080,42 +22081,48 @@ function _lgLeadTrim(L, done){
   });
   if(n) try{ persist(); }catch(e){}
 }
+/* the clubs still to be read: never read, played since, or read before the pace kept its points */
+function _lgLeadTodo(L){
+  const done={};
+  (L.games||[]).forEach(g=>{ if(_lgDone(g) && g.phase==="main"){ done[g.homeId]=(done[g.homeId]||0)+1; done[g.awayId]=(done[g.awayId]||0)+1; } });
+  const lead=L.lead||{};
+  return { done:done, ids:(L.teams||[]).map(t=>t.id).filter(id=>{
+    const have=lead[id];
+    const stale=!have || (done[id]||0)>(have.done||0) || !have.first || !have.first.teamNoB;
+    return stale && _lgLeadTried[id]!==(done[id]||0); }) };
+}
+/* FOUR CLUBS AT A TIME: each is its own call on the server, so asking for four together
+   takes the time of one. When the last has landed the boards are drawn once. */
+const LG_LEAD_PAR=4;
 function _lgLeadLoad(L){
   if(L.demo) return;
   L.lead=L.lead||{};
-  const done={};
-  (L.games||[]).forEach(g=>{ if(_lgDone(g) && g.phase==="main"){ done[g.homeId]=(done[g.homeId]||0)+1; done[g.awayId]=(done[g.awayId]||0)+1; } });
+  const T=_lgLeadTodo(L), done=T.done;
   try{ _lgLeadTrim(L, done); }catch(e){}
-  if(_lgLeadBusy) return;
-  const todo=(L.teams||[]).map(t=>t.id).filter(id=>{
-    const have=L.lead[id];
-    const stale=!have || (done[id]||0)>(have.done||0) || !have.first || !have.first.teamNoB;
-    return stale && _lgLeadTried[id]!==(done[id]||0);
-  });
-  if(!todo.length) return;
-  const tid=todo[0];
-  _lgLeadBusy=true; _lgLeadTried[tid]=(done[tid]||0);
-  const ask=round=>fetch("/.netlify/functions/bbl?res=players&id="+encodeURIComponent(tid)+
-      "&season="+encodeURIComponent(L.season||"")+"&v="+LG_FETCH_VER)
-    .then(r=>{ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
-    .then(j=>{
-      /* a read that ran out of time comes back with part of the season; the sheets it
-         did read are kept by the server, so asking once or twice more finishes it */
-      if(j && j.partial && round<3) return new Promise(res=>setTimeout(res, 1500)).then(()=>ask(round+1));
-      if(j && (j.players||[]).length){ L.lead[tid]=_lgLeadSlim(tid, j, done[tid]||0); try{ persist(); }catch(e){} }
-    });
-  ask(0).catch(()=>{}).then(()=>{
-    setTimeout(()=>{ _lgLeadBusy=false;
+  T.ids.filter(id=>!_lgLeadInFlight[id]).slice(0, Math.max(0, LG_LEAD_PAR-_lgLeadBusy)).forEach(tid=>{
+    _lgLeadBusy++; _lgLeadInFlight[tid]=true; _lgLeadTried[tid]=(done[tid]||0);
+    const ask=round=>fetch("/.netlify/functions/bbl?res=players&id="+encodeURIComponent(tid)+
+        "&season="+encodeURIComponent(L.season||"")+"&v="+LG_FETCH_VER)
+      .then(r=>{ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+      .then(j=>{
+        /* a read that ran out of time comes back with part of the season; the sheets it
+           did read are kept by the server, so asking once or twice more finishes it */
+        if(j && j.partial && round<3) return new Promise(res=>setTimeout(res, 1500)).then(()=>ask(round+1));
+        if(j && (j.players||[]).length){ L.lead[tid]=_lgLeadSlim(tid, j, done[tid]||0); try{ persist(); }catch(e){} }
+      });
+    ask(0).catch(()=>{}).then(()=>{ _lgLeadBusy--; delete _lgLeadInFlight[tid];
       try{ const L2=leagueState(); _lgLeadLoad(L2);
+        const v=document.getElementById("viewLeague");
+        /* while clubs are still out, only the count moves */
+        if(_lgLeadBusy>0){ if(v){ const n=v.querySelector(".lg-pace-n"); if(n){ const R=_paceLeague(L2); n.textContent=R.rows.filter(r=>r.o.eP!=null).length+" of "+(L2.teams||[]).length; } } return; }
         /* the boards are drawn again once, when the last club has landed - drawing them at
            every club moved the page under the reader sixteen times in a row - and what is
            being read stays where it is on the screen */
-        if(_lgLeadBusy) return;
-        const v=document.getElementById("viewLeague");
         if(v && v.style.display!=="none"){
           const old=v.querySelector(".ldr"); if(old) _lgSwapKeep(old, _lgLeaders(L2));
           const op=v.querySelector(".lg-pace-live"); if(op) _lgSwapKeep(op, _lgPace(L2)); }
-      }catch(e){} }, 700); });
+      }catch(e){} });
+  });
 }
 /* put a panel in the place of another without the page moving: a panel above the screen
    that grows or shrinks pushes the scroll by as much, one the reader is in keeps its top */
@@ -25272,14 +25279,14 @@ function _lgPace(L){
   const box=_lgPanel("Pace · when the shot comes", null,
     "For every possession, the second its first shot went up in, counted from the moment the ball changed hands (a defensive rebound, a turnover, a basket at the other end). Offense: how fast the club shoots. Defense: how fast its opponents shoot against it. OER (offense) and DER (defense) after each range: the points a possession of the possessions whose first shot went up in it, putbacks included. Every column is ranked; the gold chips are the top three; the bar behind a value is where it sits between the slowest and the fastest club, the grey tick the league's average. Rebuilt from the play by play.");
   box.classList.add("lg-pace-live");
-  const R=_paceLeague(L);
-  if(!R.rows.length){ box.appendChild(h("div",{class:"lg-empty"},"The clubs' seasons are being read; this fills in club by club.")); try{ _lgLeadLoad(L); }catch(e){} return box; }
+  const R=_paceLeague(L), n=(L.teams||[]).length, ready=R.rows.filter(r=>r.o.eP!=null).length;
+  /* until every club is read the panel only says so: the table comes in whole, once */
+  if(ready<n){ try{ _lgLeadLoad(L); }catch(e){}
+    if(_lgLeadBusy>0 || _lgLeadTodo(L).ids.length){
+      box.appendChild(h("div",{class:"ld lg-pace-wait"}, "Reading the clubs' seasons… ", h("b",{class:"lg-pace-n"}, ready+" of "+n), h("span",{class:"ld-bar"})));
+      return box; } }
+  if(!R.rows.length){ box.appendChild(h("div",{class:"lg-empty"},"The clubs' seasons could not be read yet.")); return box; }
   box.appendChild(_paceTable(L, R, R.rows, { sortable:true, sel:_lgPanelClub(L), onPick:r=>{ _lgSetClub(L, r.id); persist(); _lgRerender(); } }));
-  const wait=R.rows.filter(r=>r.o.eP==null).length;
-  if(wait){ box.appendChild(h("div",{class:"lg-sub", style:"margin-top:6px"}, "Points a possession still being read for "+wait+" club"+(wait>1? "s" : "")+" (…) - it fills in by itself.")); try{ _lgLeadLoad(L); }catch(e){} }
-  if(R.rows.length<(L.teams||[]).length){ box.appendChild(h("div",{class:"lg-sub", style:"margin-top:6px"}, R.rows.length+" of "+(L.teams||[]).length+" clubs read so far; the rest fill in as they are read."));
-    try{ _lgLeadLoad(L); }catch(e){} }
-  box.classList.add("lg-pace-live");
   return box;
 }
 /* Pre game: them, us and the league in League's own table, both sides for the overview and
