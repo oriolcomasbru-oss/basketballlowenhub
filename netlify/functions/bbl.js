@@ -591,11 +591,12 @@ function clockSplit(actions, poss, code) {
   const times = actions.map(gameClock);
   poss.forEach(p => {
     const side = (p.team === code) ? out.team : out.opp;
-    let len = 24, ref = p.from, shot = false, el0 = -1;
+    let len = 24, ref = p.from, shot = false, el0 = -1, ended = false;
     const own = p.acts || [];
     for (let n = 0; n < own.length; n++) {
       const i = own[n], t = times[i], a = actions[i];
       if (S(a.teamcode) !== p.team) continue;
+      if (a.action === "TO" || a.action === "TTO" || a.action === "FT") ended = true;
       if (a.action === "REB" && S(a.info1) === "O") { len = 14; ref = t; continue; }
       const rem = Math.max(0, Math.min(len, len - (t - ref)));
       const b = clockBlock(rem);
@@ -629,8 +630,8 @@ function clockSplit(actions, poss, code) {
     }
     if (!shot) { if (p.team === code) out.first.teamNo++; else out.first.oppNo++; }
     else (p.team === code ? out.first.teamPts : out.first.oppPts)[el0] += p.pts || 0;
-    /* a possession with no shot goes, with its points (a foul trip), in the second it ended in, so a range's points a possession counts its turnovers */
-    if (!shot && own.length) { const ee = Math.max(0, Math.min(24, Math.floor((p.to || p.from) - p.from))); (p.team === code ? out.first.teamNoB : out.first.oppNoB)[ee]++; (p.team === code ? out.first.teamPts : out.first.oppPts)[ee] += p.pts || 0; }
+    /* a possession with no shot goes, with its points (a foul trip), in the second it ended in, so a range's points a possession counts its turnovers; one that ended with neither a turnover nor a free throw is the clock running out and goes nowhere */
+    if (!shot && ended) { const ee = Math.max(0, Math.min(24, Math.floor((p.to || p.from) - p.from))); (p.team === code ? out.first.teamNoB : out.first.oppNoB)[ee]++; (p.team === code ? out.first.teamPts : out.first.oppPts)[ee] += p.pts || 0; }
     { const qq = out.first.q[Math.min(4, qIndex(p.quarter))]; if (p.team === code) qq.tp++; else qq.op++; }
     const remEnd = Math.max(0, Math.min(len, len - (p.to - ref)));
     const be = clockBlock(remEnd);

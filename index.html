@@ -19355,7 +19355,7 @@ function pbVideoPanel(canEd){
 const LG_DATA_VER=15;
 /* what the server is asked for: moved on when the server adds to an answer (16: when the
    shot comes in the possession), without throwing away what this browser already has */
-const LG_FETCH_VER=20;
+const LG_FETCH_VER=21;
 function leagueState(){
   const L=state.league||(state.league={});
   if(L.dataVer!==LG_DATA_VER){
@@ -22103,7 +22103,7 @@ const _lgLeadInFlight={};
 const _lgLeadTried={};
 function _lgLeadSlim(tid, j, done){
   const tot=(j.team_tot&&j.team_tot.all)||null;
-  return { games:j.games||0, done:done||0, at:Date.now(),
+  return { games:j.games||0, done:done||0, at:Date.now(), fv:LG_FETCH_VER,
     first:(j.clock && j.clock.first) || null,
     tot: tot? { sec:tot.sec||0, fga:tot.fga||0, fta:tot.fta||0, tov:tot.tov||0 } : null,
     players:(j.players||[]).filter(p=>p && p.all && p.all.gp).map(p=>{ const t=p.all;
@@ -22146,7 +22146,7 @@ function _lgLeadTodo(L){
   const lead=L.lead||{};
   return { done:done, ids:(L.teams||[]).map(t=>t.id).filter(id=>{
     const have=lead[id];
-    const stale=!have || (done[id]||0)>(have.done||0) || !have.first || !have.first.teamNoB;
+    const stale=!have || (done[id]||0)>(have.done||0) || !have.first || have.fv!==LG_FETCH_VER;
     return stale && _lgLeadTried[id]!==(done[id]||0); }) };
 }
 /* FOUR CLUBS AT A TIME: each is its own call on the server, so asking for four together
@@ -25192,15 +25192,20 @@ function _paceStats(hist, no, games, pts, noB){
   const sh=(a,b)=>{ let c=0; for(let i=a;i<=b;i++) c+=hist[i]||0; return c/n; };
   /* the points a possession of the range: the possessions whose first shot fell in it, and those with no shot that ended in it */
   const pp=(a,b)=>{ if(!Array.isArray(pts)) return null; let c=0, p=0; for(let i=a;i<=b;i++){ c+=(hist[i]||0)+((noB&&noB[i])||0); p+=pts[i]||0; } return c? p/c : null; };
+  /* the share of a range is of the same possessions its points a possession is of: the first
+     shots in it and the possessions with no shot that ended in it, over all of them */
+  const nb=Array.isArray(noB)? noB.reduce((x,y)=>x+(y||0),0) : 0, nAll=n+nb;
+  const shA=(a,b)=>{ let c=0; for(let i=a;i<=b;i++) c+=(hist[i]||0)+((noB&&noB[i])||0); return c/nAll; };
   const poss=n+(no||0);
-  return { n:n, avg:s/n, med:med, early:sh(0,7), mid:sh(8,15), late:sh(16,24), eP:pp(0,7), mP:pp(8,15), lP:pp(16,24), no:no||0, poss:poss,
+  return { n:n, avg:s/n, med:med, early:shA(0,7), mid:shA(8,15), late:shA(16,24), eP:pp(0,7), mP:pp(8,15), lP:pp(16,24), no:no||0, poss:poss,
     ppg:games? poss/games : null, bins:PACE_BINS.map(b=>sh(b[0],b[1])) };
 }
 function _paceOf(first, side){ if(!first) return null;
   return side==="opp"? _paceStats(first.opp, first.oppNo, first.games, first.oppNoB? first.oppPts : null, first.oppNoB) : _paceStats(first.team, first.teamNo, first.games, first.teamNoB? first.teamPts : null, first.teamNoB); }
 function _paceFirst(L, tid){
   const full=(((L.players||{})[tid]||{}).clock||{}).first;
-  const lead=((L.lead||{})[tid]||{}).first;
+  const ld=(L.lead||{})[tid]||{}, lead=ld.first;
+  if(lead && ld.fv===LG_FETCH_VER) return lead;
   return (full && (full.teamNoB || !(lead && lead.teamNoB)))? full : (lead || full || null); }
 /* every club the league has been read for, and the league as one - with the spread of
    the clubs' averages, so a chart can show where the league runs from and to */
@@ -25272,7 +25277,7 @@ function _paceBand(P, lg, b, def, mx, tip){
      points a possession written on it, green or red only when it is 0.05 off the league's */
   const tone=_paceTone(v, lv, def), col=tone==="g1"||tone==="g2"? "up" : tone==="r1"||tone==="r2"? "dn" : "";
   const dv=ls!=null? Math.round(100*(sh-ls)) : null;
-  const cell=h("td",{class:"pbd", title:(tip||"")+b[3]+": "+Math.round(100*sh)+"% of the first shots"+(ls!=null? " (league "+Math.round(100*ls)+"%, "+(dv>0? "+" : dv<0? "−" : "±")+Math.abs(dv)+")" : "")
+  const cell=h("td",{class:"pbd", title:(tip||"")+b[3]+": "+Math.round(100*sh)+"% of the possessions"+(ls!=null? " (league "+Math.round(100*ls)+"%, "+(dv>0? "+" : dv<0? "−" : "±")+Math.abs(dv)+")" : "")
     +(v!=null? " · "+v.toFixed(2)+" points a possession"+(lv!=null? " (league "+lv.toFixed(2)+")" : "") : " · points still being read")});
   const W=x=>Math.round(100*Math.min(1, x/Math.max(mx,0.01)));
   cell.appendChild(h("div",{class:"pbd-n"}, h("b",{class:col}, v==null? "…" : v.toFixed(2)), h("em",{}, Math.round(100*sh)+"%")));
@@ -25310,7 +25315,7 @@ function _paceTable(L, R, rows, opts){
       const pick=(key, lab, tip)=>h("span",{class:"pbh-k"+(sk===key? " on" : ""), title:tip, onclick:opts.sortable? e=>{ e.stopPropagation(); _lgPaceSort=_lgPaceSort.k===key? { k:key, d:-_lgPaceSort.d } : { k:key, d:1 }; _lgRerender(); } : null},
         lab+(sk===key? (_lgPaceSort.d>0? " ▲" : " ▼") : ""));
       hr.appendChild(h("th",{class:"pbh"+(on? " on" : "")}, h("div",{}, b[3]),
-        opts.sortable? h("div",{class:"pbh-ks"}, pick(k, s==="o"? "OER" : "DER", "sort by the points a possession in "+b[3]), pick(kv, "Vol", "sort by the share of first shots in "+b[3])) : null)); }); });
+        opts.sortable? h("div",{class:"pbh-ks"}, pick(k, s==="o"? "OER" : "DER", "sort by the points a possession in "+b[3]), pick(kv, "Vol", "sort by the share of the possessions in "+b[3])) : null)); }); });
   t.appendChild(hr);
   const avgTone=(v, lv, s)=>{ if(v==null || lv==null) return ""; const d=v-lv; return Math.abs(d)<0.6? "" : (d<0)===(s==="o")? "fast" : "slow"; };
   list.forEach((r,i)=>{
@@ -25329,7 +25334,7 @@ function _paceTable(L, R, rows, opts){
     PACE_BANDS.forEach(b=>{ const c=_paceBand(lg, null, b, s==="d", mx[s][b[0]]); c.classList.add("n"); lt.appendChild(c); }); });
   t.appendChild(lt);
   const leg=h("div",{class:"pace-vleg"},
-h("span",{}, h("b",{},"Bar"), " the share of the first shots in that range · the black tick: the league's share"), h("span",{}, h("b",{},"Number"), " OER (offense) / DER (defense) · ", h("em",{class:"up"},"green"), " better than the league in that range by 0.05 or more, ", h("em",{class:"dn"},"red"), " worse"));
+h("span",{}, h("b",{},"Bar"), " the share of the possessions in that range (first shot in it, or ended in it with no shot) · the black tick: the league's share"), h("span",{}, h("b",{},"Number"), " OER (offense) / DER (defense) · ", h("em",{class:"up"},"green"), " better than the league in that range by 0.05 or more, ", h("em",{class:"dn"},"red"), " worse"));
   return h("div",{}, h("div",{class:"pb-scroll"}, t), leg);
 }
 /* League: every club */
