@@ -25189,11 +25189,14 @@ function _paceTone(v, lv, def){
 function _paceBand(P, lg, b, def, mx, tip){
   const v=P? P[b[1]] : null, sh=P? P[b[2]] : null, lv=lg? lg[b[1]] : null, ls=lg? lg[b[2]] : null;
   if(sh==null) return h("td",{class:"pbd"},"—");
-  const cell=h("td",{class:"pbd "+_paceTone(v, lv, def), title:(tip||"")+b[3]+": "+Math.round(100*sh)+"% of the first shots"+(ls!=null? " (league "+Math.round(100*ls)+"%)" : "")
+  /* two floors: on top the points a possession, green to red against the league's in the
+     range; under it the share of the first shots, blue the more it plays there than the league */
+  const dv=ls!=null? Math.round(100*(sh-ls)) : null;
+  const vt=dv==null? "vn" : dv>=6? "v2" : dv>=3? "v1" : dv<=-6? "vm2" : dv<=-3? "vm1" : "vn";
+  const cell=h("td",{class:"pbd", title:(tip||"")+b[3]+": "+Math.round(100*sh)+"% of the first shots"+(ls!=null? " (league "+Math.round(100*ls)+"%, "+(dv>0? "+" : dv<0? "−" : "±")+Math.abs(dv)+")" : "")
     +(v!=null? " · "+v.toFixed(2)+" points a possession"+(lv!=null? " (league "+lv.toFixed(2)+")" : "") : " · points still being read")});
-  cell.appendChild(h("b",{}, v==null? "…" : v.toFixed(2)));
-  cell.appendChild(h("span",{class:"pbd-s"}, h("span",{class:"pbd-bar"}, h("i",{style:"width:"+Math.round(100*Math.min(1, sh/Math.max(mx,0.01)))+"%"}),
-    ls!=null? h("u",{style:"left:"+Math.round(100*Math.min(1, ls/Math.max(mx,0.01)))+"%"}) : null), h("em",{}, Math.round(100*sh)+"%")));
+  cell.appendChild(h("div",{class:"pbd-o "+(_paceTone(v, lv, def)||"n")}, v==null? "…" : v.toFixed(2)));
+  cell.appendChild(h("div",{class:"pbd-v "+vt}, Math.round(100*sh)+"%"));
   return cell;
 }
 let _lgPaceSort={ k:"o", d:1 };
@@ -25240,8 +25243,7 @@ function _paceTable(L, R, rows, opts){
     PACE_BANDS.forEach(b=>{ const c=_paceBand(lg, null, b, s==="d", mx[s]); c.classList.add("n"); lt.appendChild(c); }); });
   t.appendChild(lt);
   const leg=h("div",{class:"pace-vleg"},
-    h("span",{}, h("i",{class:"g2"}), h("i",{class:"g1"}), "better than the league in that range"), h("span",{}, h("i",{class:"n"}), "around it (±0.05)"),
-    h("span",{}, h("i",{class:"r1"}), h("i",{class:"r2"}), "worse"), h("span",{}, h("b",{},"1.12"), " points a possession · the bar: share of first shots, the tick the league's"));
+h("span",{}, h("b",{},"Top · OER / DER"), " ", h("i",{class:"g2"}), h("i",{class:"g1"}), "better than the league in that range ·", h("i",{class:"n"}), "±0.05 ·", h("i",{class:"r1"}), h("i",{class:"r2"}), "worse"),    h("span",{}, h("b",{},"Bottom · volume"), " ", h("i",{class:"v2"}), h("i",{class:"v1"}), "more of the first shots there than the league (+6 / +3 points) ·", h("i",{class:"n"}), "±2 ·", h("i",{class:"vm1"}), h("i",{class:"vm2"}), "fewer"));
   return h("div",{}, h("div",{class:"pb-scroll"}, t), leg);
 }
 /* League: every club */
@@ -37427,25 +37429,23 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .modal-box.hl-key{box-shadow:0 0 0 4px #1f4e9a,0 20px 60px rgba(0,0,0,.35)!important}.modal-box.hl-stop{box-shadow:0 0 0 4px #c62828,0 20px 60px rgba(0,0,0,.35)!important}
 /* OUT: he will not play - the card in grey, its OUT badge in full colour */
 /* pace: when the shot comes */
-.pace-v td.pbd{padding:4px 6px;min-width:82px;text-align:center;border-left:2px solid var(--panel,#fff)}
-.pace-v td.pbd > b{display:block;font:700 16px 'IBM Plex Mono',monospace;line-height:1.15;font-variant-numeric:tabular-nums}
-.pace-v .pbd-s{display:flex;align-items:center;gap:5px;margin-top:2px}
-.pace-v .pbd-bar{position:relative;flex:1;height:5px;border-radius:3px;background:rgba(20,24,33,.10)}
-.pace-v .pbd-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:currentColor;opacity:.55}
-.pace-v .pbd-bar u{position:absolute;top:-2px;bottom:-2px;width:2px;margin-left:-1px;background:var(--ink,#141821);opacity:.55}
-.pace-v .pbd-s em{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;min-width:26px;text-align:right;opacity:.8}
-.pace-v td.pbd.g2{background:#2f9e86;color:#fff}.pace-v td.pbd.g2 .pbd-bar{background:rgba(255,255,255,.28)}.pace-v td.pbd.g2 .pbd-bar i{background:#fff;opacity:.9}.pace-v td.pbd.g2 .pbd-bar u{background:#fff}
-.pace-v td.pbd.g1{background:rgba(47,158,134,.20);color:#17694d}
-.pace-v td.pbd.n{background:var(--panel-2,#f3f4f6);color:var(--ink,#141821)}
-.pace-v td.pbd.r1{background:rgba(216,82,78,.18);color:#a8322f}
-.pace-v td.pbd.r2{background:#d8524e;color:#fff}.pace-v td.pbd.r2 .pbd-bar{background:rgba(255,255,255,.28)}.pace-v td.pbd.r2 .pbd-bar i{background:#fff;opacity:.9}.pace-v td.pbd.r2 .pbd-bar u{background:#fff}
+.pace-v td.pbd{padding:3px 3px;min-width:74px;text-align:center}
+.pace-v .pbd-o{font:700 16px 'IBM Plex Mono',monospace;line-height:1.2;padding:4px 0 3px;border-radius:5px 5px 0 0;font-variant-numeric:tabular-nums}
+.pace-v .pbd-v{font:700 11px 'IBM Plex Mono',monospace;padding:2px 0;border-radius:0 0 5px 5px;border:1px solid transparent;border-top:0}
+.pace-v .pbd-o.g2{background:#2f9e86;color:#fff}.pace-v .pbd-o.g1{background:rgba(47,158,134,.22);color:#17694d}
+.pace-v .pbd-o.n{background:var(--panel-2,#f1f2f5);color:var(--ink,#141821)}
+.pace-v .pbd-o.r1{background:rgba(216,82,78,.2);color:#a8322f}.pace-v .pbd-o.r2{background:#d8524e;color:#fff}
+.pace-v .pbd-v.v2{background:#2563b8;color:#fff}.pace-v .pbd-v.v1{background:#8fb3e6;color:#0f2f63}
+.pace-v .pbd-v.vn{background:var(--panel-2,#f1f2f5);color:var(--ink-soft,#5b6472)}
+.pace-v .pbd-v.vm1{background:#e8f0fb;color:#3d5f93}.pace-v .pbd-v.vm2{background:var(--panel,#fff);color:#3d5f93;border-color:#8fb3e6}
 .pace-v td.pnum{font:600 13px 'IBM Plex Mono',monospace;text-align:center;white-space:nowrap}
 .pace-v td.pnum.fast{color:#17805a}.pace-v td.pnum.slow{color:#c0403c}
 .pace-v tr.pace-lg td{border-top:2px solid var(--ink,#141821)}
-.pace-vleg{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:8px;font-size:11px;color:var(--ink-soft,#5b6472);align-items:center}
+.pace-vleg{display:flex;flex-direction:column;align-items:flex-start;gap:5px;margin-top:8px;font-size:11px;color:var(--ink-soft,#5b6472);align-items:center}
 .pace-vleg i{display:inline-block;width:14px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:2px}
+.pace-vleg i.v2{background:#2563b8}.pace-vleg i.v1{background:#8fb3e6}.pace-vleg i.vm1{background:#e8f0fb}.pace-vleg i.vm2{background:#fff;border:1px solid #8fb3e6}
 .pace-vleg i.g2{background:#2f9e86}.pace-vleg i.g1{background:rgba(47,158,134,.25)}.pace-vleg i.n{background:var(--panel-2,#f3f4f6);border:1px solid var(--line,#e6e8ec)}.pace-vleg i.r1{background:rgba(216,82,78,.22)}.pace-vleg i.r2{background:#d8524e}
-.pace-vleg b{font:700 13px 'IBM Plex Mono',monospace;color:var(--ink,#141821)}
+.pace-vleg b{font:700 10.5px "Oswald",sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--ink,#141821)}
 .pace-tbl th.oer{color:var(--gold,#b8913f)}
 .pace-tbl td.oer{background:rgba(199,167,106,.08)}
 .pace{border:1px solid var(--line,#e6e8ec);border-radius:10px;padding:10px 12px;background:var(--panel,#fff);min-width:0}
