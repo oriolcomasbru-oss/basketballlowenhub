@@ -25210,7 +25210,7 @@ function _paceTable(L, R, rows, opts){
   sides.forEach(s=>{ const def=s==="d";
     KEYS[s+"p"]={ get:r=>side(r,s)? side(r,s).ppg : null, hi:true };
     KEYS[s]={ get:r=>side(r,s)? side(r,s).avg : null, hi:false };
-    PACE_BANDS.forEach(b=>{ KEYS[s+b[0]]={ get:r=>side(r,s)? side(r,s)[b[1]] : null, hi:!def }; }); });
+    PACE_BANDS.forEach(b=>{ KEYS[s+b[0]]={ get:r=>side(r,s)? side(r,s)[b[1]] : null, hi:!def }; KEYS[s+b[0]+"v"]={ get:r=>side(r,s)? side(r,s)[b[2]] : null, hi:true }; }); });
   let list=rows.slice();
   const sk=opts.sortable && KEYS[_lgPaceSort.k]? _lgPaceSort.k : null;
   if(sk){ const K=KEYS[sk]; list.sort((a,b)=>{ const x=K.get(a), y=K.get(b); if(x==null) return 1; if(y==null) return -1; return (K.hi? y-x : x-y)*_lgPaceSort.d; }); }
@@ -25226,7 +25226,12 @@ function _paceTable(L, R, rows, opts){
   const hr=h("tr",{class:"lg-tbl-h"}, h("th",{}, opts.sortable? "#" : ""), h("th",{class:"l"},"Team"));
   sides.forEach(s=>{ hr.appendChild(th(s+"p","Poss/G","grp", "possessions a game"));
     hr.appendChild(th(s,"Avg","", s==="o"? "average second of the first shot" : "average second the opponents shoot"));
-    PACE_BANDS.forEach(b=>hr.appendChild(th(s+b[0], b[3], "", (s==="o"? "OER" : "DER")+" of the possessions whose first shot went up in "+b[3]+" (those with no shot, in the second they ended) · the bar: the share of first shots"))); });
+    /* a range's header sorts two ways: by its OER / DER, or by its volume */
+    PACE_BANDS.forEach(b=>{ const k=s+b[0], kv=k+"v", on=sk===k||sk===kv;
+      const pick=(key, lab, tip)=>h("span",{class:"pbh-k"+(sk===key? " on" : ""), title:tip, onclick:opts.sortable? e=>{ e.stopPropagation(); _lgPaceSort=_lgPaceSort.k===key? { k:key, d:-_lgPaceSort.d } : { k:key, d:1 }; _lgRerender(); } : null},
+        lab+(sk===key? (_lgPaceSort.d>0? " ▲" : " ▼") : ""));
+      hr.appendChild(h("th",{class:"pbh"+(on? " on" : "")}, h("div",{}, b[3]),
+        opts.sortable? h("div",{class:"pbh-ks"}, pick(k, s==="o"? "OER" : "DER", "sort by the points a possession in "+b[3]), pick(kv, "Vol", "sort by the share of first shots in "+b[3])) : null)); }); });
   t.appendChild(hr);
   const avgTone=(v, lv, s)=>{ if(v==null || lv==null) return ""; const d=v-lv; return Math.abs(d)<0.6? "" : (d<0)===(s==="o")? "fast" : "slow"; };
   list.forEach((r,i)=>{
@@ -37431,6 +37436,11 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .modal-box.hl-key{box-shadow:0 0 0 4px #1f4e9a,0 20px 60px rgba(0,0,0,.35)!important}.modal-box.hl-stop{box-shadow:0 0 0 4px #c62828,0 20px 60px rgba(0,0,0,.35)!important}
 /* OUT: he will not play - the card in grey, its OUT badge in full colour */
 /* pace: when the shot comes */
+.pace-v th.pbh{text-align:center}
+.pace-v .pbh-ks{display:flex;justify-content:center;gap:4px;margin-top:3px}
+.pace-v .pbh-k{cursor:pointer;padding:1px 6px;border-radius:9px;border:1px solid var(--line,#dfe2e7);font-size:9px;letter-spacing:.06em;color:var(--ink-soft,#5b6472);white-space:nowrap}
+.pace-v .pbh-k:hover{border-color:var(--ink,#141821);color:var(--ink,#141821)}
+.pace-v .pbh-k.on{background:var(--ink,#141821);border-color:var(--ink,#141821);color:var(--panel,#fff)}
 .pace-v td.pbd{padding:5px 8px;min-width:92px}
 .pace-v .pbd-n{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
 .pace-v .pbd-n b{font:700 15px 'IBM Plex Mono',monospace;color:var(--ink,#141821);font-variant-numeric:tabular-nums}
