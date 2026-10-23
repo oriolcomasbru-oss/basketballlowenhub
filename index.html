@@ -15501,7 +15501,7 @@ function _gpSeat(planned, real, pos){
 function _gpDur(s){ s=Math.max(0,Math.round(s)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
 function _gpLiveWin(feed, uc, inWin, names){
   const mk=()=>({ pts:0, fgm:0, fga:0, p3m:0, p3a:0, ftm:0, fta:0, or:0, dr:0, tov:0, pf:0, ast:0, sc:0, pto:0, fast:0,
-    clk:[{ n:0, pts:0 },{ n:0, pts:0 },{ n:0, pts:0 }], men:{}, first:new Array(25).fill(0), firstPts:new Array(25).fill(0) });
+    clk:[{ n:0, pts:0 },{ n:0, pts:0 },{ n:0, pts:0 }], men:{}, first:new Array(25).fill(0), firstPts:new Array(25).fill(0), firstNo:new Array(25).fill(0) });
   const W={ u:mk(), t:mk(), lastT:0, run:null, five:null };
   const acts=(feed.actions||[]).map((a,i)=>{ const e=_lgGameElapsed(a.quarter, a.time); return { a:a, t:e.t, qi:e.qi, i:i }; })
     .sort((p,q)=>(p.t-q.t)||(p.i-q.i));
@@ -15518,13 +15518,13 @@ function _gpLiveWin(feed, uc, inWin, names){
     if(c!=="A" && c!=="B") return;
     const S=(c===uc)? W.u : W.t, on=!!inWin(o);
     if(k==="REB"||k==="TREB"){
-      if(a.info1==="O"){ if(on) S.or++; cur=fresh(c,{ oreb:true, to:!!(cur&&cur.team===c&&cur.to), el:(cur&&cur.team===c)? cur.el : null }); }
+      if(a.info1==="O"){ if(on) S.or++; cur=fresh(c,{ oreb:true, to:!!(cur&&cur.team===c&&cur.to), el:(cur&&cur.team===c)? cur.el : null, ne:(cur&&cur.team===c)? cur.ne : null }); }
       else { if(on) S.dr++; cur=fresh(c,{ t0:o.t, trans:true }); }
       pend=null; return;
     }
     if(k==="TO"||k==="TTO"||(k==="FOUL" && a.info1==="O")){
       if(on){ S.tov++; if(k==="FOUL") S.pf++;
-        if(cur && cur.team===c && cur.t0!=null && cur.b<0 && !cur.oreb) S.clk[bucket(o.t-cur.t0)].n++; }
+        if(cur && cur.team===c && cur.t0!=null && cur.b<0 && !cur.oreb){ S.clk[bucket(o.t-cur.t0)].n++; S.firstNo[Math.max(0,Math.min(24,Math.floor(o.t-cur.t0)))]++; } }
       cur=fresh(other(c),{ to:true, trans:true, t0:o.t }); pend=null; return;
     }
     if(k==="FOUL"){ if(on) S.pf++; return; }
@@ -15533,7 +15533,7 @@ function _gpLiveWin(feed, uc, inWin, names){
     if(!cur || cur.team!==c || (cur.done && shot))
       cur=(pend && pend.team===c)? fresh(c,{ t0:pend.t0 }) : fresh(c);
     pend=null;
-    if(cur.b<0 && cur.t0!=null && !cur.oreb){ cur.b=bucket(o.t-cur.t0); if(on){ S.clk[cur.b].n++; if(shot){ cur.el=Math.max(0,Math.min(24,Math.floor(o.t-cur.t0))); S.first[cur.el]++; } } }
+    if(cur.b<0 && cur.t0!=null && !cur.oreb){ cur.b=bucket(o.t-cur.t0); if(on){ S.clk[cur.b].n++; const sec=Math.max(0,Math.min(24,Math.floor(o.t-cur.t0))); if(shot){ cur.el=sec; S.first[sec]++; } else { cur.ne=sec; S.firstNo[sec]++; } } }
     if(on){
       if(k==="P3"){ S.p3a++; S.fga++; } else if(k==="P2") S.fga++; else S.fta++;
       if(made){
@@ -15543,7 +15543,7 @@ function _gpLiveWin(feed, uc, inWin, names){
         if(cur.to) S.pto+=v;
         if(cur.trans && cur.t0!=null && o.t-cur.t0<=8) S.fast+=v;
         if(cur.b>=0) S.clk[cur.b].pts+=v;
-        if(cur.el!=null) S.firstPts[cur.el]+=v;
+        if(cur.el!=null) S.firstPts[cur.el]+=v; else if(cur.ne!=null) S.firstPts[cur.ne]+=v;
         const p2=String(a.player_id2||"");
         if(shot && p2 && p2!=="0" && nums[p2]!==undefined) S.ast++;
         const id=String(a.player_id1||"");
@@ -19297,7 +19297,7 @@ function pbVideoPanel(canEd){
 const LG_DATA_VER=15;
 /* what the server is asked for: moved on when the server adds to an answer (16: when the
    shot comes in the possession), without throwing away what this browser already has */
-const LG_FETCH_VER=19;
+const LG_FETCH_VER=20;
 function leagueState(){
   const L=state.league||(state.league={});
   if(L.dataVer!==LG_DATA_VER){
@@ -22089,7 +22089,7 @@ function _lgLeadLoad(L){
   if(_lgLeadBusy) return;
   const todo=(L.teams||[]).map(t=>t.id).filter(id=>{
     const have=L.lead[id];
-    const stale=!have || (done[id]||0)>(have.done||0) || !have.first || !have.first.teamPts;
+    const stale=!have || (done[id]||0)>(have.done||0) || !have.first || !have.first.teamNoB;
     return stale && _lgLeadTried[id]!==(done[id]||0);
   });
   if(!todo.length) return;
@@ -22110,7 +22110,8 @@ function _lgLeadLoad(L){
         /* the boards fill in as the clubs land, but only while they are on screen */
         const v=document.getElementById("viewLeague");
         if(v && v.style.display!=="none"){ const old=v.querySelector(".ldr"); if(old){ const y=document.getElementById("workspace"); const top=y? y.scrollTop : 0;
-          old.parentNode.replaceChild(_lgLeaders(L2), old); if(y) y.scrollTop=top; } }
+          old.parentNode.replaceChild(_lgLeaders(L2), old); if(y) y.scrollTop=top; }
+          const op=v.querySelector(".lg-pace-live"); if(op){ const y2=document.getElementById("workspace"), t2=y2? y2.scrollTop : 0; op.parentNode.replaceChild(_lgPace(L2), op); if(y2) y2.scrollTop=t2; } }
       }catch(e){} }, 700); });
 }
 function _lgLeadPool(L){
@@ -25104,33 +25105,33 @@ function _lgLateSummary(L, c, names, nG, per){
    shot - a turnover, a foul trip - is counted apart and not in the seconds, but it is a
    possession, so it is in the possessions per game. The league is drawn on every chart. */
 const PACE_BINS=[[0,3,"0–3"],[4,7,"4–7"],[8,11,"8–11"],[12,15,"12–15"],[16,19,"16–19"],[20,24,"20–24"]];
-function _paceStats(hist, no, games, pts){
+function _paceStats(hist, no, games, pts, noB){
   if(!Array.isArray(hist)) return null;
   const n=hist.reduce((a,b)=>a+(b||0),0); if(!n) return null;
   let s=0; hist.forEach((c,i)=>{ s+=(c||0)*(i+0.5); });
   let acc=0, med=0; for(let i=0;i<hist.length;i++){ acc+=hist[i]||0; if(acc>=n/2){ med=i+0.5; break; } }
   const sh=(a,b)=>{ let c=0; for(let i=a;i<=b;i++) c+=hist[i]||0; return c/n; };
-  /* the points a possession of the possessions whose first shot fell in the range */
-  const pp=(a,b)=>{ if(!Array.isArray(pts)) return null; let c=0, p=0; for(let i=a;i<=b;i++){ c+=hist[i]||0; p+=pts[i]||0; } return c? p/c : null; };
+  /* the points a possession of the range: the possessions whose first shot fell in it, and those with no shot that ended in it */
+  const pp=(a,b)=>{ if(!Array.isArray(pts)) return null; let c=0, p=0; for(let i=a;i<=b;i++){ c+=(hist[i]||0)+((noB&&noB[i])||0); p+=pts[i]||0; } return c? p/c : null; };
   const poss=n+(no||0);
   return { n:n, avg:s/n, med:med, early:sh(0,7), mid:sh(8,15), late:sh(16,24), eP:pp(0,7), mP:pp(8,15), lP:pp(16,24), no:no||0, poss:poss,
     ppg:games? poss/games : null, bins:PACE_BINS.map(b=>sh(b[0],b[1])) };
 }
 function _paceOf(first, side){ if(!first) return null;
-  return side==="opp"? _paceStats(first.opp, first.oppNo, first.games, first.oppPts) : _paceStats(first.team, first.teamNo, first.games, first.teamPts); }
+  return side==="opp"? _paceStats(first.opp, first.oppNo, first.games, first.oppNoB? first.oppPts : null, first.oppNoB) : _paceStats(first.team, first.teamNo, first.games, first.teamNoB? first.teamPts : null, first.teamNoB); }
 function _paceFirst(L, tid){
   const full=(((L.players||{})[tid]||{}).clock||{}).first;
   const lead=((L.lead||{})[tid]||{}).first;
-  return (full && (full.teamPts || !(lead && lead.teamPts)))? full : (lead || full || null); }
+  return (full && (full.teamNoB || !(lead && lead.teamNoB)))? full : (lead || full || null); }
 /* every club the league has been read for, and the league as one - with the spread of
    the clubs' averages, so a chart can show where the league runs from and to */
 function _paceLeague(L){
-  const rows=[], sumO=new Array(25).fill(0), sumD=new Array(25).fill(0), ptO=new Array(25).fill(0), ptD=new Array(25).fill(0); let noO=0, noD=0, gm=0, allPts=true;
+  const rows=[], sumO=new Array(25).fill(0), sumD=new Array(25).fill(0), ptO=new Array(25).fill(0), ptD=new Array(25).fill(0), nbO=new Array(25).fill(0), nbD=new Array(25).fill(0); let noO=0, noD=0, gm=0, allPts=true;
   (L.teams||[]).forEach(t=>{ const f=_paceFirst(L, t.id); const o=_paceOf(f,"team"), d=_paceOf(f,"opp");
     if(!o) return; rows.push({ id:t.id, name:t.name, o:o, d:d, games:f.games||0 });
     f.team.forEach((c,i)=>sumO[i]+=c||0); f.opp.forEach((c,i)=>sumD[i]+=c||0); noO+=f.teamNo||0; noD+=f.oppNo||0; gm+=f.games||0;
-    if(f.teamPts && f.oppPts){ f.teamPts.forEach((c,i)=>ptO[i]+=c||0); f.oppPts.forEach((c,i)=>ptD[i]+=c||0); } else allPts=false; });
-  const lg=_paceStats(sumO, noO, gm, allPts? ptO : null), lgD=_paceStats(sumD, noD, gm, allPts? ptD : null);
+    if(f.teamPts && f.teamNoB){ f.teamPts.forEach((c,i)=>ptO[i]+=c||0); f.oppPts.forEach((c,i)=>ptD[i]+=c||0); f.teamNoB.forEach((c,i)=>nbO[i]+=c||0); f.oppNoB.forEach((c,i)=>nbD[i]+=c||0); } else allPts=false; });
+  const lg=_paceStats(sumO, noO, gm, allPts? ptO : null, nbO), lgD=_paceStats(sumD, noD, gm, allPts? ptD : null, nbD);
   const rng=get=>{ const v=rows.map(get).filter(x=>x!=null); return v.length? [Math.min.apply(null,v), Math.max.apply(null,v)] : null; };
   if(lg){ lg.rAvg=rng(r=>r.o.avg); lg.rPpg=rng(r=>r.o.ppg); ["early","mid","late","eP","mP","lP"].forEach(k=>{ lg["r_"+k]=rng(r=>r.o[k]); }); }
   if(lgD){ lgD.rAvg=rng(r=>r.d? r.d.avg : null); lgD.rPpg=rng(r=>r.d? r.d.ppg : null); ["early","mid","late","eP","mP","lP"].forEach(k=>{ lgD["r_"+k]=rng(r=>r.d? r.d[k] : null); }); }
@@ -25173,83 +25174,89 @@ function _paceEl(title, P, ref, sub){
   if(ref) box.appendChild(h("div",{class:"pace-leg"}, h("span",{}, h("i",{class:"me"}), "this side"), h("span",{}, h("u",{}), "league average")));
   return box;
 }
-/* THE TABLE, League's and the pre game's. Columns per side: possessions per game, the
-   average second, and the three ranges; every value ranked against all eighteen, the top
-   three marked; a bar behind each share for where it sits in the league's spread */
-function _paceCols(side){
-  const o=side==="o", P=r=>o? r.o : r.d;
-  const C=[
-    { k:side+"p", lab:"Poss/G", get:r=>P(r)? P(r).ppg : null, f:v=>v.toFixed(1), tip:o? "possessions a game - 1 plays the most" : "the opponents' possessions a game", rng:"rPpg" },
-    { k:side, lab:"Avg", get:r=>P(r)? P(r).avg : null, asc:o, f:v=>v.toFixed(1)+" s", avg:true, tip:o? "average second of the first shot - 1 is the fastest offense" : "average second their opponents shoot - 1 makes the other side wait the longest", rng:"rAvg" },
-    { k:side+"e", lab:"0–7 s", get:r=>P(r)? P(r).early : null, asc:!o, share:true, tip:o? "share of first shots in the first seven seconds" : "share of the opponents' first shots in the first seven seconds - 1 allows the fewest", rng:"r_early" },
-    { k:side+"m", lab:"8–15 s", get:r=>P(r)? P(r).mid : null, share:true, tip:o? "share of first shots between eight and fifteen seconds" : "share of the opponents' first shots between eight and fifteen seconds", rng:"r_mid" },
-    { k:side+"l", lab:"16–24 s", get:r=>P(r)? P(r).late : null, share:true, tip:o? "share of first shots after sixteen seconds" : "share of the opponents' first shots after sixteen seconds - 1 forces the most late shots", rng:"r_late" }
-  ];
-  /* what each range scores (offense) or allows (defense) - points a possession, putbacks included - after its share */
-  const oer=(at, lk, lab)=>({ k:side+lk, lk:lk, lab:o? "OER" : "DER", get:r=>P(r)? P(r)[lk] : null, f:v=>v.toFixed(2), oer:true, asc:!o,
-    tip:o? "points a possession of the possessions whose first shot went up in "+lab+" - 1 scores the most" : "points a possession allowed when the opponents' first shot went up in "+lab+" - 1 allows the fewest", rng:"r_"+lk, at:at });
-  [oer(3,"eP","0–7 s"), oer(5,"mP","8–15 s"), oer(7,"lP","16–24 s")].forEach(c=>C.splice(c.at, 0, c));
-  return C;
+/* THE TABLE, League's and the pre game's, read at a glance. Per side: possessions a game,
+   the average second of the first shot, and the three ranges. A range is one cell: its
+   points a possession big (OER in attack, DER in defense), coloured against the league's
+   own figure for that range - green better, red worse - and under it, as a bar, the share
+   of the first shots that went up in it. */
+const PACE_BANDS=[["e","eP","early","0–7 s"],["m","mP","mid","8–15 s"],["l","lP","late","16–24 s"]];
+function _paceTone(v, lv, def){
+  if(v==null || lv==null) return "";
+  const d=def? lv-v : v-lv;
+  return d>=0.12? "g2" : d>=0.05? "g1" : d<=-0.12? "r2" : d<=-0.05? "r1" : "n";
 }
-/* the league's value of a column */
-function _paceLgVal(c, lg){ return c.k===c.side+"p"? lg.ppg : c.avg? lg.avg : c.lk? lg[c.lk] : lg[{ e:"early", m:"mid", l:"late" }[c.k.slice(1)]]; }
+/* one range: the points a possession and the share */
+function _paceBand(P, lg, b, def, mx, tip){
+  const v=P? P[b[1]] : null, sh=P? P[b[2]] : null, lv=lg? lg[b[1]] : null, ls=lg? lg[b[2]] : null;
+  if(sh==null) return h("td",{class:"pbd"},"—");
+  const cell=h("td",{class:"pbd "+_paceTone(v, lv, def), title:(tip||"")+b[3]+": "+Math.round(100*sh)+"% of the first shots"+(ls!=null? " (league "+Math.round(100*ls)+"%)" : "")
+    +(v!=null? " · "+v.toFixed(2)+" points a possession"+(lv!=null? " (league "+lv.toFixed(2)+")" : "") : " · points still being read")});
+  cell.appendChild(h("b",{}, v==null? "…" : v.toFixed(2)));
+  cell.appendChild(h("span",{class:"pbd-s"}, h("span",{class:"pbd-bar"}, h("i",{style:"width:"+Math.round(100*Math.min(1, sh/Math.max(mx,0.01)))+"%"}),
+    ls!=null? h("u",{style:"left:"+Math.round(100*Math.min(1, ls/Math.max(mx,0.01)))+"%"}) : null), h("em",{}, Math.round(100*sh)+"%")));
+  return cell;
+}
 let _lgPaceSort={ k:"o", d:1 };
 function _paceTable(L, R, rows, opts){
   opts=opts||{};
   const sides=opts.sides||["o","d"];
-  const COLS=[]; sides.forEach(s=>_paceCols(s).forEach((c,i)=>{ c.side=s; c.first=i===0; COLS.push(c); }));
-  const RK={};
-  COLS.forEach(c=>{ const vals=R.rows.map(c.get).filter(v=>v!=null).sort((a,b)=>c.asc? a-b : b-a);
-    RK[c.k]=r=>{ const v=c.get(r); if(v==null) return null; return 1+vals.findIndex(x=>x===v); }; });
+  const side=(r,s)=>s==="o"? r.o : r.d, lgOf=s=>s==="o"? R.lg : R.lgD;
+  /* what each header sorts by: possessions, the average second, a range's points a possession */
+  const KEYS={};
+  sides.forEach(s=>{ const def=s==="d";
+    KEYS[s+"p"]={ get:r=>side(r,s)? side(r,s).ppg : null, hi:true };
+    KEYS[s]={ get:r=>side(r,s)? side(r,s).avg : null, hi:false };
+    PACE_BANDS.forEach(b=>{ KEYS[s+b[0]]={ get:r=>side(r,s)? side(r,s)[b[1]] : null, hi:!def }; }); });
   let list=rows.slice();
-  const sc=opts.sortable? (COLS.filter(c=>c.k===_lgPaceSort.k)[0]||COLS[1]) : null;
-  if(sc) list.sort((a,b)=>((RK[sc.k](a)||99)-(RK[sc.k](b)||99))*_lgPaceSort.d);
-  const t=h("table",{class:"lg-tbl pace-tbl"});
+  const sk=opts.sortable && KEYS[_lgPaceSort.k]? _lgPaceSort.k : null;
+  if(sk){ const K=KEYS[sk]; list.sort((a,b)=>{ const x=K.get(a), y=K.get(b); if(x==null) return 1; if(y==null) return -1; return (K.hi? y-x : x-y)*_lgPaceSort.d; }); }
+  const mx={}; sides.forEach(s=>{ mx[s]=Math.max.apply(null, [0.01].concat(...R.rows.map(r=>side(r,s)? PACE_BANDS.map(b=>side(r,s)[b[2]]||0) : []))); });
+  const t=h("table",{class:"lg-tbl pace-tbl pace-v"});
   const g=h("tr",{class:"lg-grph"}, h("th",{},""), h("th",{},""));
-  sides.forEach(s=>g.appendChild(h("th",{colspan:String(COLS.filter(c=>c.side===s).length), class:"grp "+(s==="o"? "pace-go" : "pace-gd")}, s==="o"? "Offense · how fast they shoot" : "Defense · how fast they let you shoot")));
+  sides.forEach(s=>g.appendChild(h("th",{colspan:"5", class:"grp "+(s==="o"? "pace-go" : "pace-gd")}, s==="o"? "Offense · OER by when they shoot" : "Defense · DER by when they let you shoot")));
   t.appendChild(g);
+  const th=(k, lab, cls, tip)=>h("th",{class:(cls||"")+(sk===k? " on" : ""), title:tip||"", style:opts.sortable? "cursor:pointer" : "",
+    onclick:opts.sortable? ()=>{ _lgPaceSort=_lgPaceSort.k===k? { k:k, d:-_lgPaceSort.d } : { k:k, d:1 }; _lgRerender(); } : null},
+    lab+(sk===k? (_lgPaceSort.d>0? " ▲" : " ▼") : ""));
   const hr=h("tr",{class:"lg-tbl-h"}, h("th",{}, opts.sortable? "#" : ""), h("th",{class:"l"},"Team"));
-  COLS.forEach((c,ci)=>hr.appendChild(h("th",{class:(sc && c.k===sc.k? "on " : "")+(c.oer? "oer " : "")+(c.first? "grp" : ""), title:c.tip, style:opts.sortable? "cursor:pointer" : "",
-    onclick:opts.sortable? ()=>{ _lgPaceSort=_lgPaceSort.k===c.k? { k:c.k, d:-_lgPaceSort.d } : { k:c.k, d:1 }; _lgRerender(); } : null},
-    c.lab+(sc && c.k===sc.k? (_lgPaceSort.d>0? " ▲" : " ▼") : ""))));
+  sides.forEach(s=>{ hr.appendChild(th(s+"p","Poss/G","grp", "possessions a game"));
+    hr.appendChild(th(s,"Avg","", s==="o"? "average second of the first shot" : "average second the opponents shoot"));
+    PACE_BANDS.forEach(b=>hr.appendChild(th(s+b[0], b[3], "", (s==="o"? "OER" : "DER")+" of the possessions whose first shot went up in "+b[3]+" (those with no shot, in the second they ended) · the bar: the share of first shots"))); });
   t.appendChild(hr);
-  const lgOf=s=>s==="o"? R.lg : R.lgD;
-  const pc=v=>Math.round(100*v)+"%";
+  const avgTone=(v, lv, s)=>{ if(v==null || lv==null) return ""; const d=v-lv; return Math.abs(d)<0.6? "" : (d<0)===(s==="o")? "fast" : "slow"; };
   list.forEach((r,i)=>{
-    const tr=h("tr",{class:(_lgOurs(r.name)? "ours " : "")+(r.cls||"")+(opts.sel && String(r.id)===String(opts.sel)? " sel" : ""),
-      onclick:opts.onPick? ()=>opts.onPick(r) : null},
+    const tr=h("tr",{class:(_lgOurs(r.name)? "ours " : "")+(r.cls||"")+(opts.sel && String(r.id)===String(opts.sel)? " sel" : ""), onclick:opts.onPick? ()=>opts.onPick(r) : null},
       h("td",{class:"lg-pos"}, opts.sortable? String(i+1) : ""), h("td",{class:"l lg-team"}, r.id? _lgCrest(L, r.id) : null, h("span",{}, r.label||r.name)));
-    COLS.forEach((c,ci)=>{ const v=c.get(r), rk=RK[c.k](r);
-      if(v==null){ tr.appendChild(h("td",{class:c.first? "grp" : ""},"—")); return; }
-      const top=rk!=null && rk<=3;
-      const cell=h("td",{class:"pace-c"+(c.oer? " oer" : "")+(c.first? " grp" : "")+(c.side==="d"? " def" : ""), title:c.tip+(rk? " · "+rk+" of "+R.rows.length : "")});
-      const lg=lgOf(c.side), rg=lg && lg[c.rng];
-      if(rg && rg[1]>rg[0]){ const w=Math.max(0, Math.min(1, (v-rg[0])/(rg[1]-rg[0])));
-        const lv=_paceLgVal(c, lg);
-        cell.appendChild(h("span",{class:"pace-cb"}, h("i",{style:"width:"+Math.round(12+88*w)+"%"}),
-          lv!=null? h("u",{style:"left:"+Math.round(12+88*Math.max(0,Math.min(1,(lv-rg[0])/(rg[1]-rg[0]))))+"%"}) : null)); }
-      cell.appendChild(h("span",{class:"pace-in"}, h("b",{}, c.share? pc(v) : c.f(v)), rk? h("em",{class:top? "top" : ""}, String(rk)) : null));
-      tr.appendChild(cell); });
+    sides.forEach(s=>{ const P=side(r,s), lg=lgOf(s);
+      tr.appendChild(h("td",{class:"grp pnum"}, P && P.ppg!=null? P.ppg.toFixed(1) : "—"));
+      tr.appendChild(h("td",{class:"pnum "+avgTone(P&&P.avg, lg&&lg.avg, s)}, P? P.avg.toFixed(1)+" s" : "—"));
+      PACE_BANDS.forEach(b=>tr.appendChild(_paceBand(P, lg, b, s==="d", mx[s], (r.label||r.name)+" · "))); });
     t.appendChild(tr);
   });
-  /* the league: its average, and the range from the slowest club to the fastest */
-  const lt=h("tr",{class:"pace-lg"}, h("td",{}), h("td",{class:"l"},"League · average", h("small",{},"and range")));
-  COLS.forEach((c,ci)=>{ const lg=lgOf(c.side); if(!lg){ lt.appendChild(h("td",{},"—")); return; }
-    const v=_paceLgVal(c, lg), rg=lg[c.rng];
-    const fm=x=>c.share? pc(x) : c.f(x);
-    lt.appendChild(h("td",{class:c.first? "grp" : ""}, h("b",{}, v==null? "—" : fm(v)), rg? h("small",{}, fm(rg[0])+"–"+fm(rg[1])) : null)); });
+  const lt=h("tr",{class:"pace-lg"}, h("td",{}), h("td",{class:"l"},"League · average"));
+  sides.forEach(s=>{ const lg=lgOf(s);
+    lt.appendChild(h("td",{class:"grp pnum"}, lg && lg.ppg!=null? lg.ppg.toFixed(1) : "—"));
+    lt.appendChild(h("td",{class:"pnum"}, lg? lg.avg.toFixed(1)+" s" : "—"));
+    PACE_BANDS.forEach(b=>{ const c=_paceBand(lg, null, b, s==="d", mx[s]); c.classList.add("n"); lt.appendChild(c); }); });
   t.appendChild(lt);
-  return h("div",{class:"pb-scroll"}, t);
+  const leg=h("div",{class:"pace-vleg"},
+    h("span",{}, h("i",{class:"g2"}), h("i",{class:"g1"}), "better than the league in that range"), h("span",{}, h("i",{class:"n"}), "around it (±0.05)"),
+    h("span",{}, h("i",{class:"r1"}), h("i",{class:"r2"}), "worse"), h("span",{}, h("b",{},"1.12"), " points a possession · the bar: share of first shots, the tick the league's"));
+  return h("div",{}, h("div",{class:"pb-scroll"}, t), leg);
 }
 /* League: every club */
 function _lgPace(L){
   const box=_lgPanel("Pace · when the shot comes", null,
     "For every possession, the second its first shot went up in, counted from the moment the ball changed hands (a defensive rebound, a turnover, a basket at the other end). Offense: how fast the club shoots. Defense: how fast its opponents shoot against it. OER (offense) and DER (defense) after each range: the points a possession of the possessions whose first shot went up in it, putbacks included. Every column is ranked; the gold chips are the top three; the bar behind a value is where it sits between the slowest and the fastest club, the grey tick the league's average. Rebuilt from the play by play.");
+  box.classList.add("lg-pace-live");
   const R=_paceLeague(L);
   if(!R.rows.length){ box.appendChild(h("div",{class:"lg-empty"},"The clubs' seasons are being read; this fills in club by club.")); try{ _lgLeadLoad(L); }catch(e){} return box; }
   box.appendChild(_paceTable(L, R, R.rows, { sortable:true, sel:_lgPanelClub(L), onPick:r=>{ _lgSetClub(L, r.id); persist(); _lgRerender(); } }));
+  const wait=R.rows.filter(r=>r.o.eP==null).length;
+  if(wait){ box.appendChild(h("div",{class:"lg-sub", style:"margin-top:6px"}, "Points a possession still being read for "+wait+" club"+(wait>1? "s" : "")+" (…) - it fills in by itself.")); try{ _lgLeadLoad(L); }catch(e){} }
   if(R.rows.length<(L.teams||[]).length){ box.appendChild(h("div",{class:"lg-sub", style:"margin-top:6px"}, R.rows.length+" of "+(L.teams||[]).length+" clubs read so far; the rest fill in as they are read."));
     try{ _lgLeadLoad(L); }catch(e){} }
+  box.classList.add("lg-pace-live");
   return box;
 }
 /* Pre game: them, us and the league in League's own table, both sides for the overview and
@@ -25308,22 +25315,25 @@ function _postPace(P, home){
     const L=leagueState(), M=_lgGameModel(P.G, P.j, null);
     const uc=home? M.hc : (M.hc==="A"? "B" : "A");
     const W=_gpLiveWin(P.j.feed, uc, ()=>true, {});
-    const u=_paceStats(W.u.first, 0, 0, W.u.firstPts), t=_paceStats(W.t.first, 0, 0, W.t.firstPts);
+    const u=_paceStats(W.u.first, 0, 0, W.u.firstPts, W.u.firstNo), t=_paceStats(W.t.first, 0, 0, W.t.firstPts, W.t.firstNo);
     if(!u && !t) return null;
     const R=_paceLeague(L), us=_lgOurTeamId(L), season=_paceOf(_paceFirst(L, us),"team");
     const box=h("div",{class:"lg-panel pace-post"}, h("div",{class:"lg-h"}, h("span",{},"Pace · when the shot came"),
       h("span",{class:"lg-sub"},"this game, us and them, against our season and the league")));
     const pc=v=>v==null? "—" : Math.round(100*v)+"%", f1=v=>v==null? "—" : v.toFixed(1)+" s";
     const rows=[["Us · this game", u, "us"], ["Them · this game", t, "them"], ["Us · season", season, "seas"], ["League", R.lg, "lg"]].filter(r=>r[1]);
-    const tb=h("table",{class:"lg-tbl pace-tbl pace-post-t"});
-    tb.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{class:"l"},""), h("th",{},"Avg"), h("th",{},"0–7 s"), h("th",{class:"oer", title:"points a possession when the first shot went up in 0–7 s"},"OER"), h("th",{},"8–15 s"), h("th",{class:"oer", title:"points a possession when the first shot went up in 8–15 s"},"OER"), h("th",{},"16–24 s"), h("th",{class:"oer", title:"points a possession when the first shot went up in 16–24 s"},"OER"), h("th",{},"Shots")));
-    rows.forEach(r=>{ const S=r[1], ref=R.lg;
-      const oc=(v, lv)=>h("td",{class:"oer"+(v!=null && lv!=null && r[2]!=="lg"? (v-lv>=0.1? " pp-hi" : v-lv<=-0.1? " pp-lo" : "") : "")}, h("b",{}, v==null? "—" : v.toFixed(2)));
-      const cell=(v, lv, fm)=>h("td",{class:"pace-c"}, (lv!=null && r[2]!=="lg")? h("span",{class:"pace-cb"}, h("i",{style:"width:"+Math.round(100*Math.min(1,v/Math.max(v,lv,0.01)))+"%"}), h("u",{style:"left:"+Math.round(100*Math.min(1,lv/Math.max(v,lv,0.01)))+"%"})) : null,
-        h("span",{class:"pace-in"}, h("b",{}, fm(v))));
-      tb.appendChild(h("tr",{class:"pp-"+r[2]}, h("td",{class:"l lg-team"}, h("i",{class:"pp-dot "+r[2]}), r[0]),
-        h("td",{class:"grp"}, h("b",{}, f1(S.avg)), ref && r[2]!=="lg"? h("small",{class:S.avg-ref.avg<=-0.6? "fast" : S.avg-ref.avg>=0.6? "slow" : ""}, " "+(S.avg-ref.avg>0? "+" : "−")+Math.abs(S.avg-ref.avg).toFixed(1)) : null),
-        cell(S.early, ref&&ref.early, pc), oc(S.eP, ref&&ref.eP), cell(S.mid, ref&&ref.mid, pc), oc(S.mP, ref&&ref.mP), cell(S.late, ref&&ref.late, pc), oc(S.lP, ref&&ref.lP), h("td",{}, String(S.n)))); });
+    /* the same cells as League's table: each range's points a possession big, coloured against
+       the league's in that range (their row the other way round - their points are ours
+       allowed), the share of the first shots as the bar under it */
+    const tb=h("table",{class:"lg-tbl pace-tbl pace-v pace-post-t"});
+    tb.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{class:"l"},""), h("th",{},"Avg"), ...PACE_BANDS.map(b=>h("th",{title:"points a possession of the possessions whose first shot went up in "+b[3]+" · the bar: the share of first shots"}, b[3])), h("th",{},"Shots")));
+    const mx=Math.max.apply(null, [0.01].concat(...rows.map(r=>PACE_BANDS.map(b=>r[1][b[2]]||0))));
+    rows.forEach(r=>{ const S=r[1], ref=R.lg, isLg=r[2]==="lg";
+      const tr=h("tr",{class:"pp-"+r[2]}, h("td",{class:"l lg-team"}, h("i",{class:"pp-dot "+r[2]}), r[0]),
+        h("td",{class:"pnum"}, h("b",{}, f1(S.avg)), ref && !isLg? h("small",{class:S.avg-ref.avg<=-0.6? "fast" : S.avg-ref.avg>=0.6? "slow" : ""}, " "+(S.avg-ref.avg>0? "+" : "−")+Math.abs(S.avg-ref.avg).toFixed(1)) : null));
+      PACE_BANDS.forEach(b=>{ const c=_paceBand(S, isLg? null : ref, b, r[2]==="them", mx, r[0]+" · "); if(isLg) c.classList.add("n"); tr.appendChild(c); });
+      tr.appendChild(h("td",{class:"pnum"}, String(S.n)));
+      tb.appendChild(tr); });
     box.appendChild(h("div",{class:"pb-scroll"}, tb));
     box.appendChild(_paceStack(rows.map(r=>({ lab:r[0], P:r[1], cls:r[2] }))));
     return box;
@@ -37417,6 +37427,25 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .modal-box.hl-key{box-shadow:0 0 0 4px #1f4e9a,0 20px 60px rgba(0,0,0,.35)!important}.modal-box.hl-stop{box-shadow:0 0 0 4px #c62828,0 20px 60px rgba(0,0,0,.35)!important}
 /* OUT: he will not play - the card in grey, its OUT badge in full colour */
 /* pace: when the shot comes */
+.pace-v td.pbd{padding:4px 6px;min-width:82px;text-align:center;border-left:2px solid var(--panel,#fff)}
+.pace-v td.pbd > b{display:block;font:700 16px 'IBM Plex Mono',monospace;line-height:1.15;font-variant-numeric:tabular-nums}
+.pace-v .pbd-s{display:flex;align-items:center;gap:5px;margin-top:2px}
+.pace-v .pbd-bar{position:relative;flex:1;height:5px;border-radius:3px;background:rgba(20,24,33,.10)}
+.pace-v .pbd-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:currentColor;opacity:.55}
+.pace-v .pbd-bar u{position:absolute;top:-2px;bottom:-2px;width:2px;margin-left:-1px;background:var(--ink,#141821);opacity:.55}
+.pace-v .pbd-s em{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;min-width:26px;text-align:right;opacity:.8}
+.pace-v td.pbd.g2{background:#2f9e86;color:#fff}.pace-v td.pbd.g2 .pbd-bar{background:rgba(255,255,255,.28)}.pace-v td.pbd.g2 .pbd-bar i{background:#fff;opacity:.9}.pace-v td.pbd.g2 .pbd-bar u{background:#fff}
+.pace-v td.pbd.g1{background:rgba(47,158,134,.20);color:#17694d}
+.pace-v td.pbd.n{background:var(--panel-2,#f3f4f6);color:var(--ink,#141821)}
+.pace-v td.pbd.r1{background:rgba(216,82,78,.18);color:#a8322f}
+.pace-v td.pbd.r2{background:#d8524e;color:#fff}.pace-v td.pbd.r2 .pbd-bar{background:rgba(255,255,255,.28)}.pace-v td.pbd.r2 .pbd-bar i{background:#fff;opacity:.9}.pace-v td.pbd.r2 .pbd-bar u{background:#fff}
+.pace-v td.pnum{font:600 13px 'IBM Plex Mono',monospace;text-align:center;white-space:nowrap}
+.pace-v td.pnum.fast{color:#17805a}.pace-v td.pnum.slow{color:#c0403c}
+.pace-v tr.pace-lg td{border-top:2px solid var(--ink,#141821)}
+.pace-vleg{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:8px;font-size:11px;color:var(--ink-soft,#5b6472);align-items:center}
+.pace-vleg i{display:inline-block;width:14px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:2px}
+.pace-vleg i.g2{background:#2f9e86}.pace-vleg i.g1{background:rgba(47,158,134,.25)}.pace-vleg i.n{background:var(--panel-2,#f3f4f6);border:1px solid var(--line,#e6e8ec)}.pace-vleg i.r1{background:rgba(216,82,78,.22)}.pace-vleg i.r2{background:#d8524e}
+.pace-vleg b{font:700 13px 'IBM Plex Mono',monospace;color:var(--ink,#141821)}
 .pace-tbl th.oer{color:var(--gold,#b8913f)}
 .pace-tbl td.oer{background:rgba(199,167,106,.08)}
 .pace{border:1px solid var(--line,#e6e8ec);border-radius:10px;padding:10px 12px;background:var(--panel,#fff);min-width:0}
