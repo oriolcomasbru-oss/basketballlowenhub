@@ -21363,6 +21363,7 @@ function _postRebounds(sg){
   })().then(P=>{ box.innerHTML="";
     if(!P){ box.appendChild(h("div",{class:"lg-empty"},"The league's play by play of this game is not in yet.")); return; }
     const L=leagueState(), M=_lgGameModel(P.G, P.j, null), uc=P.home? M.hc : (M.hc==="A"? "B" : "A");
+    _lgFourFresh(L);
     const R=_rebGame(P.j.feed, uc);
     const names={}; ((P.home? M.H : M.A).pl||[]).forEach(p=>{ names[String(p.id)]={ num:p.num, name:p.name }; });
     const namesT={}; ((P.home? M.A : M.H).pl||[]).forEach(p=>{ namesT[String(p.id)]={ num:p.num, name:p.name }; });
@@ -23043,15 +23044,25 @@ async function syncEuro(force){
   finally{ _lgEuroBusy=false; _lgRerender(); }
 }
 let _lgFourBusy=false, _lgFourTried=false;
+/* the league games already played: when this moves, everything read off the season is old */
+function _lgDoneCount(L){ return (L.games||[]).filter(g=>_lgDone(g) && g.phase==="main").length; }
+/* the four factors are asked for again as soon as a game has been played since they were read -
+   the request carries the count, so neither the server's cache nor the CDN can hand back the old */
+let _lgFourAskedAt=-1;
+function _lgFourFresh(L){
+  try{ const n=_lgDoneCount(L);
+    if(!L.demo && !_lgFourBusy && n && L.fourDone!==n && _lgFourAskedAt!==n){ _lgFourAskedAt=n; syncFour(false); } }catch(e){}
+}
 async function syncFour(force){
   const L=leagueState();
   if(_lgFourBusy) return;
   _lgFourBusy=true; _lgFourTried=true; L.fourErr=""; _lgRerender();
   try{
-    const r=await fetch("/.netlify/functions/bbl?res=four&season="+encodeURIComponent(L.season)+(force?"&fresh=1":""));
+    const done=_lgDoneCount(L);
+    const r=await fetch("/.netlify/functions/bbl?res=four&season="+encodeURIComponent(L.season)+"&v="+LG_FETCH_VER+"-"+done+(force?"&fresh=1":""));
     const j=await r.json();
     if(!j||!j.ok) throw new Error((j&&j.errors&&j.errors.length)? j.errors.join(" · ") : "no data returned");
-    L.four=j.four||[]; L.fourUpdated=j.updated||new Date().toISOString(); L.fourErr=""; persist();
+    L.four=j.four||[]; L.fourUpdated=j.updated||new Date().toISOString(); L.fourDone=done; L.fourErr=""; persist();
   }catch(e){ L.fourErr=(e&&e.message)||String(e); }
   finally{ _lgFourBusy=false; _lgRerender(); }
 }
@@ -25585,6 +25596,7 @@ function _rebClubRows(L){
 function _lgReb(L){
   const box=_lgPanel("Rebounding", null,
     "OREB%: the share of its own misses a club gets back. DREB%: the share of the other side's misses it keeps. Margin: OREB% minus the OREB% it allows - above zero, a club wins the glass. Off. and def. reb a game: the club's rebounds a game from its players' lines. Best rebounders: the club's three with the most rebounds a game, the offensive ones in brackets. Green or red: 3 points better or worse than the league's average.");
+  _lgFourFresh(L);
   const rows=_rebClubRows(L);
   if(!rows.length){ box.appendChild(h("div",{class:"lg-empty"},"The four factors are being read.")); return box; }
   const avg=k=>{ const v=rows.map(r=>r[k]).filter(x=>x!=null); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; };
@@ -25616,6 +25628,7 @@ function _lgReb(L){
 function _preRebCompare(L, tid, cards){
   const box=h("div",{class:"lg-panel pre-reb"}, h("div",{class:"lg-h"}, h("span",{},"Rebounding · them and us"),
     h("span",{class:"lg-sub"},"the league's four factors and the players' lines · positions from the pre game's cards, else the league's roster")));
+  _lgFourFresh(L);
   const rows=_rebClubRows(L), us=String(_lgOurTeamId(L)||"");
   const T=rows.filter(r=>r.id===String(tid))[0], U=rows.filter(r=>r.id===us)[0];
   if(!T || !U){ box.appendChild(h("div",{class:"lg-empty"},"The league's four factors are being read.")); return box; }
@@ -29298,6 +29311,7 @@ function renderLeague(){
   add(_lgReb(L));
   add(_lgFold(L,"diag","the reader \u2014 what loaded and what did not",()=>_lgDiag(L)));
   if(!(L.four||[]).length && !_lgFourTried && !_lgFourBusy && !L.demo) syncFour(false);
+  else _lgFourFresh(L);
 }
 
 function renderOppScout(){
