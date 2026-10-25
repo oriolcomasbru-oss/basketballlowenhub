@@ -25570,34 +25570,39 @@ h("span",{}, h("b",{},"Bar"), " the share of the possessions in that range (firs
 let _lgRebSort={ k:"m", d:1 };
 function _rebClubRows(L){
   return (L.four||[]).filter(f=>f.off && f.def).map(f=>{ const tid=String(f.teamId), t=(L.teams||[]).filter(x=>String(x.id)===tid)[0]||{};
-    const ld=(L.lead||{})[tid], pls=(ld && ld.players)||[], gp=f.gp||(ld && ld.games)||0;
-    let or=0, dr=0, best=null;
-    pls.forEach(p=>{ const a=p.all||{}; or+=a.oreb||0; dr+=a.dreb||0; const r=(a.reb||((a.oreb||0)+(a.dreb||0)))/Math.max(1,a.gp||1);
-      if(a.gp>=2 && (!best || r>best.r)) best={ p:p, r:r, o:(a.oreb||0)/Math.max(1,a.gp) }; });
+    const ld=(L.lead||{})[tid], pls=(ld && ld.players)||[];
+    /* a game a club: the games its sheets were read for - the most any of its men played -
+       never the league's count, which can run ahead of what has been read */
+    const gp=Math.max(0, ...pls.map(p=>(p.all||{}).gp||0)) || (ld && ld.games) || 0;
+    let or=0, dr=0;
+    pls.forEach(p=>{ const a=p.all||{}; or+=a.oreb||0; dr+=a.dreb||0; });
+    /* the club's three best rebounders, a game, with two games at least */
+    const top=pls.map(p=>{ const a=p.all||{}, g=Math.max(1,a.gp||1); return { p:p, r:((a.oreb||0)+(a.dreb||0))/g, o:(a.oreb||0)/g, gp:a.gp||0 }; })
+      .filter(x=>x.gp>=2).sort((a,b)=>b.r-a.r).slice(0,3);
     return { id:tid, name:t.name||f.team, o:100*f.off.reb, d:100*f.def.reb, m:100*(f.off.reb-(1-f.def.reb)),
-      og:pls.length && gp? or/gp : null, dg:pls.length && gp? dr/gp : null, best:best }; });
+      og:pls.length && gp? or/gp : null, dg:pls.length && gp? dr/gp : null, top:top, gp:gp }; });
 }
 function _lgReb(L){
   const box=_lgPanel("Rebounding", null,
-    "OREB%: the share of its own misses a club gets back. DREB%: the share of the other side's misses it keeps. Margin: OREB% minus the OREB% it allows - above zero, a club wins the glass. Rebounds a game and the best rebounder from the players' lines. Green or red: 3 points better or worse than the league's average.");
+    "OREB%: the share of its own misses a club gets back. DREB%: the share of the other side's misses it keeps. Margin: OREB% minus the OREB% it allows - above zero, a club wins the glass. Off. and def. reb a game: the club's rebounds a game from its players' lines. Best rebounders: the club's three with the most rebounds a game, the offensive ones in brackets. Green or red: 3 points better or worse than the league's average.");
   const rows=_rebClubRows(L);
   if(!rows.length){ box.appendChild(h("div",{class:"lg-empty"},"The four factors are being read.")); return box; }
   const avg=k=>{ const v=rows.map(r=>r[k]).filter(x=>x!=null); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; };
   const A={ o:avg("o"), d:avg("d"), m:0, og:avg("og"), dg:avg("dg") };
   const K={ o:{ lab:"OREB%", f:v=>v.toFixed(1)+"%" }, d:{ lab:"DREB%", f:v=>v.toFixed(1)+"%" }, m:{ lab:"Margin", f:v=>(v>0? "+" : v<0? "−" : "±")+Math.abs(v).toFixed(1) },
-    og:{ lab:"OREB/G", f:v=>v.toFixed(1) }, dg:{ lab:"DREB/G", f:v=>v.toFixed(1) } };
+    og:{ lab:"Off. reb a game", f:v=>v.toFixed(1) }, dg:{ lab:"Def. reb a game", f:v=>v.toFixed(1) } };
   const sk=K[_lgRebSort.k]? _lgRebSort.k : "m";
   const list=rows.slice().sort((a,b)=>{ const x=a[sk], y=b[sk]; if(x==null) return 1; if(y==null) return -1; return (y-x)*_lgRebSort.d; });
   const rank={}; Object.keys(K).forEach(k=>{ const v=rows.map(r=>r[k]).filter(x=>x!=null).sort((a,b)=>b-a); rank[k]=x=>x==null? null : 1+v.indexOf(x); });
   const t=h("table",{class:"lg-tbl reb-lg"});
   t.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Team"),
     ...Object.keys(K).map(k=>h("th",{class:(k===sk? "on " : "")+(k==="og"? "grp" : ""), style:"cursor:pointer", onclick:()=>{ _lgRebSort=_lgRebSort.k===k? { k:k, d:-_lgRebSort.d } : { k:k, d:1 }; _lgRerender(); }},
-      K[k].lab+(k===sk? (_lgRebSort.d>0? " ▼" : " ▲") : ""))), h("th",{class:"l grp"},"Best rebounder")));
+      K[k].lab+(k===sk? (_lgRebSort.d>0? " ▼" : " ▲") : ""))), h("th",{class:"l grp", title:"rebounds a game, the offensive ones in brackets · two games at least"},"Best rebounders")));
   list.forEach((r,i)=>{
     const tr=h("tr",{class:_lgOurs(r.name)? "ours" : ""}, h("td",{class:"lg-pos"}, String(i+1)), h("td",{class:"l lg-team"}, _lgCrest(L, r.id), h("span",{}, r.name)));
     Object.keys(K).forEach(k=>{ const v=r[k], rk=rank[k](v), lim=k==="og"||k==="dg"? 1.5 : 3;
       tr.appendChild(h("td",{class:"pnum"+(k==="og"? " grp" : "")+(v!=null && A[k]!=null? (v-A[k]>=lim? " up" : v-A[k]<=-lim? " dn" : "") : "")}, v==null? "—" : K[k].f(v), rk && rk<=3? h("em",{class:"top"}, String(rk)) : null)); });
-    tr.appendChild(h("td",{class:"l grp"}, r.best? h("span",{}, h("u",{}, "#"+(r.best.p.num||"")), " "+_lgLastName(r.best.p.name||""), h("small",{}, " "+r.best.r.toFixed(1)+" a game · "+r.best.o.toFixed(1)+" off.")) : "—"));
+    tr.appendChild(h("td",{class:"l grp reb-top"}, r.top.length? r.top.map(x=>h("span",{}, h("u",{}, "#"+(x.p.num||"")), " "+_lgLastName(x.p.name||"")+" ", h("b",{}, x.r.toFixed(1)), h("small",{}, " ("+x.o.toFixed(1)+")"))) : "—"));
     t.appendChild(tr); });
   t.appendChild(h("tr",{class:"pace-lg"}, h("td",{}), h("td",{class:"l"},"League · average"), ...Object.keys(K).map(k=>h("td",{class:"pnum"+(k==="og"? " grp" : "")}, A[k]==null? "—" : K[k].f(A[k]))), h("td",{class:"grp"})));
   box.appendChild(h("div",{class:"pb-scroll"}, t));
@@ -37890,6 +37895,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .reb-t td em.top,.reb-lg td em.top{display:inline-block;min-width:15px;padding:0 3px;border-radius:8px;background:#e8c766;color:#3b2f0b}
 .reb-pre th.them{color:#b34a2e}.reb-pre th.us{color:#1e5aa8}
 .reb-lg td.pnum{text-align:center;font:600 13px 'IBM Plex Mono',monospace;white-space:nowrap}
+.reb-lg td.reb-top{display:flex;flex-wrap:wrap;gap:2px 12px;white-space:nowrap}.reb-lg td.reb-top span{font-size:12px}.reb-lg td.reb-top b{font:700 12px 'IBM Plex Mono',monospace}.reb-lg td.reb-top u{text-decoration:none;font:600 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}.reb-lg td.reb-top small{color:var(--ink-faint,#8a93a2);font-size:10px}
 .reb-lg td.l small{color:var(--ink-faint,#8a93a2);font-size:10.5px}.reb-lg td.l u{text-decoration:none;font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
 .reb-edge{margin-top:8px;padding:7px 10px;border-radius:8px;font-size:12px;background:var(--panel-2,#f3f4f6);color:var(--ink,#141821)}
 .reb-edge.dn{background:rgba(216,82,78,.12);color:#9c2f24}.reb-edge.up{background:rgba(47,158,134,.14);color:#145f44}
