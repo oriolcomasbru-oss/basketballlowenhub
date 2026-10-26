@@ -1157,7 +1157,7 @@ body.dark .pos-t.on{background:var(--accent);color:#14181f;border-color:var(--ac
   border-radius:8px;padding:9px 14px}
 body:not(.dark) .gate-card{background:#f2f3f5}
 /* admin panel */
-.admin{width:min(780px,92vw);max-height:78vh;overflow:auto}
+.admin{width:min(1240px,96vw);max-height:90vh;overflow-y:auto;overflow-x:hidden}
 .adm-hint{font-size:12.5px;color:var(--ink-faint);margin-bottom:14px;line-height:1.5}
 .adm-user{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px;background:var(--panel)}
 .adm-uname{font-weight:800;font-size:14px;margin-bottom:8px}
@@ -5677,7 +5677,10 @@ const PDEV_WHO=["Oriol","Ramon","Keith","Liviu","Pedro","Nils","Joan Marc","Marc
 function canView(sect){
   /* a dashboard is a person's, not a section with permissions: whoever has one sees it */
   if(sect==="dashboard") return !!currentUser && ((isPlayerUser() && !_isDLUser(currentUser)) || (!isPlayerUser() && _dashList(currentUser).length>0));
-  if(sect==="playerdev") return !!currentUser && !isPlayerUser() && PDEV_WHO.indexOf(currentUser)>=0;
+  /* player development: what the permissions say, and the list of the staff it was built for until someone says otherwise */
+  if(sect==="playerdev"){ if(!currentUser || isPlayerUser()) return false; if(isAdmin()) return true;
+    const pp=state.perms&&state.perms[currentUser]; if(pp && pp.view && pp.view.playerdev!==undefined) return !!pp.view.playerdev;
+    return PDEV_WHO.indexOf(currentUser)>=0; }
   if(!currentUser) return true;
   if(sectHidden(sect)) return false;
   if(isPlayerUser()) return PLAYER_VIEW.sects.indexOf(sect)>=0;
@@ -6008,7 +6011,7 @@ async function savePlayerView(sects, blocks){
 /* The admin always edits. Without this a missing permission row from the server
    leaves the owner of the app looking at a read-only page with no way to fix it. */
 function canEdit(sect){ if(!currentUser) return false; if(typeof _viewAs!=="undefined" && _viewAs) return false; if(isPlayerUser() || isReader()) return false; if(isAdmin()) return true;
-  if(sect==="playerdev") return false;
+
   const p=state.perms&&state.perms[currentUser]; return p?!!(p.edit&&p.edit[sect]):false; }
 function phxPark(){ try{ var p=document.getElementById("phxRoot"), park=document.getElementById("phxPark"); if(p&&park&&p.parentElement!==park){ park.appendChild(p); p.style.display="none"; } }catch(e){} }
 function phxHideSub(){ var s=document.getElementById("preSubmenu"); var phx=document.getElementById("phxRoot"); var ctr=s?s.querySelector(".controls"):null; if(ctr&&phx){ phx.appendChild(ctr); } if(s){ s.style.display="none"; } phxPark(); }
@@ -6086,9 +6089,7 @@ function renderGate(root, label, onOk){
     may? h("button",{class:"btn primary", onclick:onOk},"Accept & continue")
        : h("span",{class:"gate-locked"},"🔒 Restricted"))));
 }
-const SB_SECTS=[["league","League"],["planification","Planning"],["calendar","Calendar"],["pregame","Pre game"],["postgame","Post game"],["trends","Trends"],["gameplan","Game plan"],["playbook","Playbook"],["playerdev","Player dev"],["playerdb","Player DB"],["rooster","Rooster"],["prob","PROB"],["backup","Backups"],
-  /* not a screen: the right to go past the under-construction notice on any of them */
-  [WIP_KEY,"Under construction"]];
+const SB_SECTS=[["league","League"],["planification","Planning"],["pregame","Pre game"],["gameplan","Game plan"],["postgame","Post game"],["trends","Trends"],["playbook","Playbook"],["playerdev","Player dev"],["prob","Pro B"]];
 async function openAdmin(){
   if(!SB_TOKEN){ toast("Sign in again"); return; }
   const wrap=h("div",{class:"admin"});
@@ -6171,137 +6172,83 @@ async function refreshAdmin(body){
   bulkBar.appendChild(bulkBtn); bulkBar.appendChild(bulkNote);
   body.appendChild(bulkBar);
 
+  /* ONE BOX, WHAT THE ACCOUNT REALLY GETS. A screen nobody has decided about is visible -
+     canView reads absence that way - except Player development, which falls back to its own
+     list; nothing is editable until somebody says so. */
   const permToggle=(a,kind,sec)=>{
-    /* The box shows what the account actually gets, not only what is written down. A
-       screen nobody has decided about is visible - canView reads absence that way - so
-       its Sees box is ticked. Backups and the under-construction pass are the two that
-       have to be granted, and nothing is ever editable until somebody says so. */
     const pv=a.perms&&a.perms[kind]?a.perms[kind][sec]:undefined;
     const cb=h("input",{type:"checkbox"});
-    cb.checked=(pv===undefined && kind==="view" && sec!=="backup" && sec!==WIP_KEY) ? true : !!pv;
-    cb.addEventListener("change",async ()=>{ try{ const r=await sbrpc("admin_set_perm",{p_token:SB_TOKEN,p_username:a.username,p_kind:kind,p_section:sec,p_value:cb.checked}); if(!r||r.ok!==true){ cb.checked=!cb.checked; toast("Could not save"); } }catch(e){ cb.checked=!cb.checked; toast("Error"); } });
-    /* the name used to ride beside every box; it is the column heading now, so the label
-       keeps only the title, which is what a cursor resting on a bare box needs */
-    const lb=h("label",{class:"adm-chk"}, cb);
-    lb.title=(kind==="edit"?"Edits ":"Sees ")+(SB_SECTS.find(s=>s[0]===sec)||["",sec])[1];
+    cb.checked=(pv===undefined && kind==="view")? (sec==="playerdev"? PDEV_WHO.indexOf(a.username)>=0 : true) : !!pv;
+    cb.addEventListener("change",async ()=>{ try{ const r=await sbrpc("admin_set_perm",{p_token:SB_TOKEN,p_username:a.username,p_kind:kind,p_section:sec,p_value:cb.checked}); if(!r||r.ok!==true){ cb.checked=!cb.checked; toast("Could not save: "+((r&&r.error)||"error")); } else toast((cb.checked? (kind==="edit"? "Edits " : "Sees ") : (kind==="edit"? "No longer edits " : "No longer sees "))+((SB_SECTS.find(s=>s[0]===sec)||["",sec])[1])+" · "+a.username); }catch(e){ cb.checked=!cb.checked; toast("Could not save"); } });
+    const lb=h("label",{class:"adm-tg "+kind, title:a.username+" · "+(kind==="edit"?"edits ":"sees ")+(SB_SECTS.find(s=>s[0]===sec)||["",sec])[1]}, cb, h("span",{}, kind==="edit"? "✎" : "👁"));
     return lb;
   };
-  /* THE SAME ELEVEN WORDS, TWICE PER PERSON, WAS THE WHOLE PROBLEM. Each coach carried
-     two wrapping rows of labelled boxes - twenty-two names to read before you could tell
-     whether he edits Planning. The names are written once now, across the top, and the
-     two rows underneath are just boxes: Sees above, Edits below, one column per screen.
-     You read down a column to compare the two, and across a row to see what a man has.
-     Alternate columns are shaded because eleven of anything in a line is hard to track. */
-  const PERM_SHORT={planification:"Planning",calendar:"Calendar",pregame:"Pre game",
-    postgame:"Post game",trends:"Trends",playerdev:"Player dev",playerdb:"Player DB",
-    rooster:"Rooster",prob:"PROB",backup:"Backups",
-    league:"League",gameplan:"Game plan",playbook:"Playbook",
-    /* the only name too long for a column of eleven; the full one is on the hover */
-    [WIP_KEY]:"Under constr."};
-  const permGrid=(a)=>{
-    const g=h("div",{class:"adm-perm"});
-    g.style.setProperty("--n", String(SB_SECTS.length));
-    g.appendChild(h("div",{class:"adm-ph adm-ph0"}));
-    SB_SECTS.forEach(([k,label],i)=>
-      g.appendChild(h("div",{class:"adm-ph"+(i%2?" c2":"")}, PERM_SHORT[k]||label)));
-    [["view","Sees"],["edit","Edits"]].forEach(([kind,lbl])=>{
-      g.appendChild(h("div",{class:"adm-rl"}, lbl));
-      SB_SECTS.forEach(([k],i)=>{
-        const cell=h("div",{class:"adm-cell"+(i%2?" c2":"")});
-        cell.appendChild(permToggle(a,kind,k));
-        g.appendChild(cell);
-      });
-    });
-    /* On a narrow window eleven columns cannot be honestly reflowed - four columns with
-       eleven headings is just a broken table - so the grid keeps its shape and slides
-       sideways instead. */
-    return h("div",{class:"adm-permwrap"}, g);
-  };
-  const resetBtn=(a)=>{ const b=h("button",{class:"btn"},"Reset pass"); b.onclick=async ()=>{
+  const resetBtn=(a)=>{ const b=h("button",{class:"btn sm"},"Reset password"); b.onclick=async ()=>{
       const tmp=prompt("Temporary password for "+a.username+" (changed on next sign-in, 8 characters or more):",tempPass()); if(!tmp) return;
       try{ const r=await sbrpc("admin_reset_password",{p_token:SB_TOKEN,p_username:a.username,p_temp:tmp});
         if(r&&r.ok){ admTempAdd(a.username, tmp); toast("Reset OK"); refreshAdmin(body); }
         else toast((r&&r.error)||"Error"); }catch(e){ toast("Error"); } }; return b; };
-  const removeBtn=(a)=>{ const b=h("button",{class:"btn danger adm-x"},"✕"); b.title="Deactivate"; b.onclick=()=>confirmDialog("Deactivate","Deactivate "+a.username+"?","Deactivate",async ()=>{ try{ await sbrpc("admin_remove_account",{p_token:SB_TOKEN,p_scope:a.scope,p_username:a.username}); refreshAdmin(body); }catch(e){ toast("Error"); } },true); return b; };
+  const removeBtn=(a)=>{ const b=h("button",{class:"btn sm adm-del"},"Delete account"); b.onclick=()=>confirmDialog("Delete account","Deactivate "+a.username+"? The account can no longer sign in.","Deactivate",async ()=>{ try{ await sbrpc("admin_remove_account",{p_token:SB_TOKEN,p_scope:a.scope,p_username:a.username}); toast("Deactivated"); refreshAdmin(body); }catch(e){ toast("Error"); } }, true); return b; };
+  const sec=(title, sub, tools)=>h("div",{class:"adm-sec"}, h("div",{class:"adm-sec-h"}, h("b",{}, title), sub? h("span",{}, sub) : null, tools? h("span",{class:"adm-sec-t"}, tools) : null));
 
-  // Coaches
-  body.appendChild(h("div",{class:"adm-secttitle"},"Coaches  ", h("button",{class:"btn", onclick:()=>addAccountDlg("coach",body)},"＋ Add coach")));
-  coaches.forEach(a=>{
-    body.appendChild(h("div",{class:"adm-user"},
-      h("div",{class:"adm-uname"}, a.username, a.must_change?h("span",{class:"adm-badge"},"must change password"):null, a.role==="admin"?h("span",{class:"adm-badge admin"},"admin"):null),
-      permGrid(a),
-      h("div",{class:"adm-pwrow"}, resetBtn(a), a.username==="Oriol"?null:removeBtn(a), h("span",{class:"adm-last"}, a.last_login?("last: "+new Date(a.last_login).toLocaleString("en-GB")):"never signed in"))));
-  });
-  // Players
-  body.appendChild(h("div",{class:"adm-secttitle"},"Players (Players Hub)  ", h("button",{class:"btn", onclick:()=>addAccountDlg("player",body)},"＋ Add player")));
+  /* ---- COACHES: one row a coach, one column a screen, the two switches in each cell */
+  { const s=sec("Coaches · what each one sees and edits", "👁 sees · ✎ edits · an admin sees and edits everything",
+      h("button",{class:"btn sm", onclick:()=>addAccountDlg("coach",body)},"＋ Add coach"));
+    const t=h("table",{class:"adm-t adm-perm-t"});
+    t.appendChild(h("tr",{}, h("th",{class:"l"},"Coach"), ...SB_SECTS.map(([k,l])=>h("th",{}, l))));
+    coaches.slice().sort((x,y)=>(x.role==="admin"? -1 : 0)-(y.role==="admin"? -1 : 0) || String(x.username).localeCompare(String(y.username))).forEach(a=>{
+      const adm=a.role==="admin";
+      t.appendChild(h("tr",{class:adm? "adm-isadmin" : ""}, h("td",{class:"l"}, h("b",{}, a.username), adm? h("span",{class:"adm-badge admin"},"admin") : null),
+        ...SB_SECTS.map(([k])=>h("td",{}, adm? h("span",{class:"adm-all"},"👁 ✎") : h("div",{class:"adm-tgs"}, permToggle(a,"view",k), permToggle(a,"edit",k)))))); });
+    s.appendChild(h("div",{class:"adm-tw"}, t));
+    body.appendChild(s); }
 
-  /* ONE SETTING FOR THE WHOLE SQUAD. Staff are given different parts of the app one by
-     one, because they do different jobs. Players are one audience: twenty identical rows
-     of checkboxes would only be twenty chances to make two of them disagree by accident.
-     This writes a single document to the server and every player's browser reads it as
-     he signs in - which also means a player who is signed in right now keeps what he had
-     until his next visit. If his browser cannot read it, he falls back to Pre game and
-     the three roster blocks, which is less than this panel can grant and never more. */
-  (function(){
-    const box=h("div",{class:"adm-pv"});
-    box.appendChild(h("div",{class:"adm-pv-h"},"What every player sees",
-      h("span",{class:"adm-pv-sub"},"the same for all of them")));
-    const sects=PLAYER_VIEW.sects.slice(), blocks=PLAYER_VIEW.blocks.slice();
-    const saveBar=h("div",{class:"adm-pv-save"});
-    const btn=h("button",{class:"btn primary"},"Save for all players");
+  /* ---- PLAYERS: the same for every player, one setting for the squad */
+  { const sects=PLAYER_VIEW.sects.slice(), blocks=PLAYER_VIEW.blocks.slice();
+    const btn=h("button",{class:"btn sm primary"},"Save for all players"); btn.disabled=true;
     const note=h("span",{class:"adm-pv-note"},"");
-    let dirty=false;
-    const touch=()=>{ dirty=true; btn.disabled=false; note.textContent=""; };
-    const row=(title, opts, picked, hint)=>{
-      const r=h("div",{class:"adm-pv-row"}, h("div",{class:"adm-pv-t"}, title,
-        hint? h("span",{class:"adm-pv-hint"}, hint) : null));
-      const chks=h("div",{class:"adm-pv-chks"});
-      opts.forEach(([k,label])=>{
-        const cb=h("input",{type:"checkbox"}); cb.checked=picked.indexOf(k)>=0;
-        cb.addEventListener("change",()=>{
-          const i=picked.indexOf(k);
-          if(cb.checked){ if(i<0) picked.push(k); } else if(i>=0) picked.splice(i,1);
-          touch();
-        });
-        chks.appendChild(h("label",{class:"adm-pv-c"}, cb, label));
-      });
-      r.appendChild(chks);
-      return r;
-    };
-    box.appendChild(row("Screens", SECT_KEYS.map(k=>[k,SECT_LABELS[k]||k]), sects,
-      "which tabs exist for a player at all"));
-    box.appendChild(row("Inside a pre game report", PLAYER_BLOCKS, blocks,
-      "and only for the games you set to Published"));
-    btn.disabled=true;
-    btn.onclick=async ()=>{
-      btn.disabled=true; note.textContent="Saving…";
-      try{ await savePlayerView(sects, blocks);
-        dirty=false; note.textContent="Saved · each player picks it up next time he signs in";
-        note.className="adm-pv-note ok";
-      }catch(e){
-        note.textContent="Could not save: "+((e&&e.message)||e);
-        note.className="adm-pv-note bad"; btn.disabled=false;
-      }
-    };
-    saveBar.appendChild(btn); saveBar.appendChild(note);
-    box.appendChild(saveBar);
-    body.appendChild(box);
-  })();
+    const s=sec("Players · what every player sees", "the same for all of them · each one picks it up the next time he signs in", h("span",{}, note, btn));
+    /* each screen or block a chip that wraps: lit when players see it */
+    const tbl=(label, opts, picked)=>h("div",{class:"adm-chips"}, h("span",{class:"adm-chips-l"}, label),
+      ...opts.map(([k,l])=>{ const cb=h("input",{type:"checkbox"}); cb.checked=picked.indexOf(k)>=0;
+        cb.addEventListener("change",()=>{ const i=picked.indexOf(k); if(cb.checked){ if(i<0) picked.push(k); } else if(i>=0) picked.splice(i,1); btn.disabled=false; note.textContent="not saved yet"; note.className="adm-pv-note"; });
+        return h("label",{class:"adm-chip"}, cb, h("span",{}, "👁 "+l)); }));
+    s.appendChild(tbl("Screens", SECT_KEYS.filter(k=>!sectHidden(k)).map(k=>[k,SECT_LABELS[k]||k]), sects));
+    s.appendChild(tbl("Inside a published pre game", PLAYER_BLOCKS, blocks));
+    btn.onclick=async ()=>{ btn.disabled=true; note.textContent="Saving…";
+      try{ await savePlayerView(sects, blocks); note.textContent="Saved"; note.className="adm-pv-note ok"; }
+      catch(e){ note.textContent="Could not save: "+((e&&e.message)||e); note.className="adm-pv-note bad"; btn.disabled=false; } };
+    body.appendChild(s); }
 
-  const pgrid=h("div",{class:"adm-pgrid"});
-  players.forEach(a=> pgrid.appendChild(h("div",{class:"adm-pcard"}, h("span",{class:"adm-pnm"},a.username), resetBtn(a), removeBtn(a))));
-  body.appendChild(pgrid);
+  /* ---- EVERY ACCOUNT: passwords and deleting, coaches and players in one table */
+  { const s=sec("Accounts · password and delete", coaches.length+" coaches · "+players.length+" players",
+      h("span",{}, h("button",{class:"btn sm", onclick:()=>addAccountDlg("coach",body)},"＋ Coach"), " ", h("button",{class:"btn sm", onclick:()=>addAccountDlg("player",body)},"＋ Player")));
+    const t=h("table",{class:"adm-t adm-acc-t"});
+    t.appendChild(h("tr",{}, h("th",{class:"l"},"Account"), h("th",{},"Type"), h("th",{class:"l"},"Last sign-in"), h("th",{},"Password"), h("th",{}), h("th",{})));
+    coaches.concat(players).forEach(a=>t.appendChild(h("tr",{},
+      h("td",{class:"l"}, h("b",{}, a.username), a.role==="admin"? h("span",{class:"adm-badge admin"},"admin") : null),
+      h("td",{}, h("span",{class:"adm-type "+(a.scope==="player"? "pl" : "co")}, a.scope==="player"? "player" : "coach")),
+      h("td",{class:"l mu"}, a.last_login? new Date(a.last_login).toLocaleString("en-GB",{ day:"2-digit", month:"2-digit", year:"2-digit", hour:"2-digit", minute:"2-digit" }) : "never"),
+      h("td",{}, a.must_change? h("span",{class:"adm-badge"},"must change") : h("span",{class:"mu"},"set")),
+      h("td",{}, resetBtn(a)), h("td",{}, a.username==="Oriol"? null : removeBtn(a)))));
+    s.appendChild(h("div",{class:"adm-tw"}, t));
+    body.appendChild(s); }
   // Drive sources
-  body.appendChild(h("div",{class:"adm-secttitle"},"Drive connections"));
+  body.appendChild(h("div",{class:"adm-sec-h", style:"margin-top:18px"}, h("b",{},"Drive connections"), h("span",{},"the Drive sheets the hub reads from")));
   sources.forEach(s=>{ const inp=h("input",{class:"adm-src"}); inp.value=s.sheet_id||"";
     inp.addEventListener("change",async ()=>{ try{ await sbrpc("admin_set_source",{p_token:SB_TOKEN,p_key:s.key,p_sheet_id:inp.value.trim(),p_label:s.label}); toast("Saved"); }catch(e){ toast("Error"); } });
     body.appendChild(h("div",{class:"adm-srcrow"}, h("span",{class:"adm-srck"}, s.label||s.key), inp)); });
-  // Session history
-  body.appendChild(h("div",{class:"adm-secttitle"},"Session history"));
-  const logbox=h("div",{class:"adm-log"});
-  if(!log.length) logbox.appendChild(h("div",{class:"empty-state"},"No sessions yet."));
-  log.forEach(e=>logbox.appendChild(h("div",{class:"adm-logrow"}, h("b",{},e.username), h("span",{}, new Date(e.ts).toLocaleString("en-GB")))));
-  body.appendChild(logbox);
+  // Session history: one row a person, the sign-ins of the last eighty, the last one, a bar
+  { const s=sec("Sign-ins", "the last "+log.length+" sign-ins, by person");
+    if(!log.length) s.appendChild(h("div",{class:"empty-state"},"No sessions yet."));
+    else { const by={}; log.forEach(e=>{ const r=by[e.username]||(by[e.username]={ n:0, last:0 }); r.n++; const t=new Date(e.ts).getTime(); if(t>r.last) r.last=t; });
+      const rows=Object.keys(by).map(u=>({ u:u, n:by[u].n, last:by[u].last })).sort((a,b)=>b.last-a.last), mx=Math.max(1, ...rows.map(r=>r.n));
+      const t=h("table",{class:"adm-t"}, h("tr",{}, h("th",{class:"l"},"Who"), h("th",{class:"l"},"Sign-ins"), h("th",{class:"l"},"Last")));
+      rows.forEach(r=>t.appendChild(h("tr",{}, h("td",{class:"l"}, h("b",{}, r.u)),
+        h("td",{class:"l"}, h("span",{class:"pb-bar"}, h("i",{style:"width:"+Math.round(100*r.n/mx)+"%"})), " "+r.n),
+        h("td",{class:"l mu"}, new Date(r.last).toLocaleString("en-GB",{ weekday:"short", day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" })))));
+      s.appendChild(h("div",{class:"adm-tw"}, t)); }
+    body.appendChild(s); }
 
   /* Usage. This panel is the owner's and nobody else's - the admin screen is already
      his alone, and this is the part of it that is about people rather than about
@@ -38060,6 +38007,36 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .pb-bar i{display:block;height:100%;border-radius:3px;background:#9fb4d1}.pb-bar.pts i{background:#c7a76a}.pb-bar.reb i{background:#4a86d8}.pb-bar.ast i{background:#2f9e86}.pb-bar.eff i{background:#8a6fd1}
 .pb-ro td.pb-bc b{font:700 12px 'IBM Plex Mono',monospace}
 .pb-ro td small.pb-sub{color:var(--ink-faint,#8a93a2);font-size:10.5px}
+/* permissions & users */
+.adm-sec{margin:18px 0 6px;border:1px solid var(--line,#e6e8ec);border-radius:12px;padding:12px 14px;background:var(--panel,#fff)}
+.adm-sec-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin-bottom:10px}
+.adm-sec-h b{font:700 13px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase}
+.adm-sec-h > span{font-size:11.5px;color:var(--ink-soft,#5b6472)}
+.adm-sec-t{margin-left:auto;display:flex;align-items:center;gap:8px}
+.adm-tw{overflow-x:auto;margin-bottom:8px}
+.adm-t{width:100%;border-collapse:collapse;font-size:12.5px}
+.adm-t th{font:700 9.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472);padding:5px 6px;border-bottom:2px solid var(--ink,#141821);text-align:center;white-space:nowrap}
+.adm-t td{padding:5px 6px;border-bottom:1px solid var(--line,#eef0f3);text-align:center;white-space:nowrap}
+.adm-t th.l,.adm-t td.l{text-align:left}
+.adm-t td.mu,.adm-t .mu{color:var(--ink-faint,#8a93a2)}
+.adm-t tr:nth-child(even) td{background:rgba(20,24,33,.02)}
+.adm-tgs{display:inline-flex;gap:3px}
+.adm-tg{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;position:relative}
+.adm-tg input{position:absolute;opacity:0;pointer-events:none}
+.adm-tg span{display:inline-flex;align-items:center;justify-content:center;width:26px;height:22px;border-radius:6px;border:1px solid var(--line,#dfe2e7);font-size:12px;filter:grayscale(1);opacity:.35;background:var(--panel,#fff)}
+.adm-tg input:checked + span{filter:none;opacity:1;border-color:transparent}
+.adm-tg.view input:checked + span{background:rgba(74,134,216,.16)}
+.adm-tg.edit input:checked + span{background:rgba(232,199,102,.35)}
+.adm-tg input:focus-visible + span{outline:2px solid var(--ink,#141821)}
+.adm-all{font-size:12px;color:var(--ink-soft,#5b6472)}
+.adm-type{display:inline-block;padding:1px 8px;border-radius:9px;font:700 10px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase}
+.adm-type.co{background:rgba(20,24,33,.08)}.adm-type.pl{background:rgba(74,134,216,.14);color:#1e5aa8}
+.adm-acc-t .btn.sm{padding:3px 9px;font-size:11px}
+.adm-acc-t .adm-del{background:transparent;border:1px solid rgba(216,82,78,.5);color:#c0392b}.adm-acc-t .adm-del:hover{background:#d8524e;color:#fff}
+.adm-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0 10px}.adm-chips-l{font:700 9.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472);min-width:150px}
+.adm-chip{cursor:pointer;position:relative}.adm-chip input{position:absolute;opacity:0;pointer-events:none}
+.adm-chip span{display:inline-block;padding:4px 10px;border-radius:14px;border:1px solid var(--line,#dfe2e7);font-size:12px;color:var(--ink-faint,#8a93a2);background:var(--panel,#fff)}
+.adm-chip input:checked + span{background:rgba(74,134,216,.14);border-color:rgba(74,134,216,.45);color:var(--ink,#141821);font-weight:600}
 /* pace: when the shot comes */
 .pace-v th.pbh{text-align:center}
 .pace-v .pbh-ks{display:flex;justify-content:center;gap:4px;margin-top:3px}
