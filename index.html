@@ -12380,8 +12380,11 @@ function _preHl(L, card, c, canEd, save, tid){
   let pick={};
   const man=c.hlStats && typeof c.hlStats==="object" && Object.keys(c.hlStats).length;
   if(man){ Object.keys(c.hlStats).forEach(k=>{ if(c.hlStats[k]==="hot"||c.hlStats[k]==="warm") pick[k]=c.hlStats[k]; }); }
-  else if(ranks){ const order=ranks.map((r,i)=>r? { i:i, s:r.score } : null).filter(Boolean).sort((a,b)=>a.s-b.s);
-    if(order[0]) pick[order[0].i]="hot"; if(order[1]) pick[order[1].i]="warm"; }
+  /* EVERY NUMBER THAT STANDS OUT IS LIT, not the two best: kept to two, Wishart's 4.0
+     assists - first in Würzburg - stayed dark behind a 16th in the BBL at free throws.
+     Solid: top 10 of the BBL or first in his team; light: 11th to 25th of the BBL, or 2nd
+     and 3rd in his team when it is above the league's middle */
+  else if(ranks){ ranks.forEach((r,i)=>{ if(r) pick[i]=(r.score<=10 || r.score===101)? "hot" : "warm"; }); }
   cells.forEach((cell,i)=>{
     const lvl=pick[i];
     /* the rank on one line and the season numbers it stands on under it, so neither is cut */
