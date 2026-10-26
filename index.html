@@ -14120,7 +14120,7 @@ function pbxDrag(row, key, targets, opts){
    rim run, press break, trailer, transition) is transition; anything else keeps the kind
    the tagging filed it under. A set tagged after a timeout is also listed under ATO. */
 const PB_KIND={ H:"Half court", T:"Transition", S:"SLOB", B:"BLOB", P:"Concepts" };
-const PB_KINDS=["Half court","Transition","SLOB","BLOB"];
+const PB_KINDS=["Transition","Half court","BLOB","SLOB"];   /* open floor, half court, baseline, sideline: the order of the blocks */
 function _pbClass(r){
   const tok=String(r.label||"").trim().split(/\s+/)[0]||"";
   let kind=null, fam="", variant="";
@@ -14292,12 +14292,23 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
       head.appendChild(s); });
     head.appendChild(gmHead()); head.appendChild(h("span",{class:"pbb-c-adj"},"Our adjustment"));
     tableBox.appendChild(head);
-    const shown=ROWS.filter(inFilter).sort(cmp());
+    /* FOUR BLOCKS, ALWAYS IN THIS ORDER: open floor T, half court H, baseline B, sideline S - and
+       whatever has no kind after them. The one header on top sorts each block inside itself. */
+    const KORD=["Transition","Half court","BLOB","SLOB"], kIdx=k=>{ const i=KORD.indexOf(k); return i<0? KORD.length : i; };
+    const KLAB={ "Transition":"Open floor · T", "Half court":"Half court · H", "BLOB":"Baseline · B", "SLOB":"Sideline · S" };
+    const byCmp=cmp();
+    const shown=ROWS.filter(inFilter).sort((a,b)=>(kIdx(a.c.kind)-kIdx(b.c.kind)) || byCmp(a,b));
+    let lastKind=null;
     const gmMax=Math.max.apply(null, [1].concat(ROWS.map(r=>{ const pg=perGame(r); return Math.max.apply(null, [0].concat(Object.keys(pg).map(k=>pg[k]))); })));
     wrap.style.setProperty("--ng", String(Math.max(1, GAMES.length)));
     if(ROWS.length && !shown.length) tableBox.appendChild(h("div",{class:"pbx-none"},"No set under this filter."));
     let lastFam=null;
     shown.forEach(r=>{
+      if(r.c.kind!==lastKind){ lastKind=r.c.kind; lastFam=null;
+        const ks=shown.filter(x=>x.c.kind===r.c.kind), n=ks.reduce((a,x)=>a+x.n,0), pts=ks.reduce((a,x)=>a+(x.ppp||0)*x.n,0);
+        const hb=h("div",{class:"pbb-kind"}, h("b",{}, KLAB[r.c.kind]||r.c.kind||"Other"), h("span",{}, ks.length+" set"+(ks.length===1? "" : "s")+" · "+n+" runs · "+(n? (pts/n).toFixed(2) : "—")+" per possession"));
+        if(PB_HUE[r.c.kind]!=null) hb.style.setProperty("--kc", "hsl("+PB_HUE[r.c.kind]+",62%,40%)");
+        tableBox.appendChild(hb); }
       /* sorted by code, a series is introduced once, with what its variants add up to */
       if(ORDER==="code" && r.c.fam && r.c.fam!==lastFam){
         const fam=ROWS.filter(x=>x.c.fam===r.c.fam);
@@ -38280,6 +38291,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .rb-kf .rb-two{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:4px 0 2px}.rb-h{display:flex;flex-direction:column;gap:2px;min-width:0}.rb-h > i{font-style:normal;font:700 9.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;opacity:.75}.rb-h > b{font:700 26px 'Oswald',sans-serif;line-height:1.05}.rb-h > b.good{color:#13804f}.rb-h > b.bad{color:#c0392b}.rb-h .row{display:flex;gap:8px;flex-wrap:wrap}.rb-h small{font-size:10px;opacity:.7}
 .rs-block.ts-wait > *:not(.rs-banner){display:none!important}
 .rs-block.ts-wait::after{content:"Loading the team stats…";display:block;padding:18px 20px;font:600 13px 'Inter',sans-serif;color:var(--ink-soft,#5b6472)}
+.pbb-kind{display:flex;align-items:baseline;gap:10px;margin:12px 0 4px;padding:5px 10px;border-left:4px solid var(--kc,#8a93a2);background:rgba(20,24,33,.04);border-radius:0 6px 6px 0}.pbb-kind b{font:700 12px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--kc,var(--ink,#141821))}.pbb-kind span{font-size:11.5px;color:var(--ink-soft,#5b6472)}
 /* pace: when the shot comes */
 .pace-v th.pbh{text-align:center}
 .pace-v .pbh-ks{display:flex;justify-content:center;gap:4px;margin-top:3px}
