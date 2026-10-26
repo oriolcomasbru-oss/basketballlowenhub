@@ -19513,7 +19513,7 @@ function pbVideoPanel(canEd){
 const LG_DATA_VER=15;
 /* what the server is asked for: moved on when the server adds to an answer (16: when the
    shot comes in the possession), without throwing away what this browser already has */
-const LG_FETCH_VER=23;
+const LG_FETCH_VER=24;
 function leagueState(){
   const L=state.league||(state.league={});
   if(L.dataVer!==LG_DATA_VER){
@@ -22332,6 +22332,8 @@ const _lgLeadTried={};
 function _lgLeadSlim(tid, j, done){
   const tot=(j.team_tot&&j.team_tot.all)||null;
   return { games:j.games||0, done:done||0, at:Date.now(), fv:LG_FETCH_VER,
+    /* the last three games, each with its best rebounders */
+    last:(j.by_game||[]).slice(-3).map(g=>({ d:g.date, opp:g.opp, home:g.home, rb:(g.rb||[]).slice(0,3) })),
     first:(j.clock && j.clock.first) || null,
     tot: tot? { sec:tot.sec||0, fga:tot.fga||0, fta:tot.fta||0, tov:tot.tov||0 } : null,
     players:(j.players||[]).filter(p=>p && p.all && p.all.gp).map(p=>{ const t=p.all;
@@ -25591,7 +25593,9 @@ function _rebClubRows(L){
     const top=pls.map(p=>{ const a=p.all||{}, g=Math.max(1,a.gp||1); return { p:p, r:((a.oreb||0)+(a.dreb||0))/g, o:(a.oreb||0)/g, gp:a.gp||0 }; })
       .filter(x=>x.gp>=2).sort((a,b)=>b.r-a.r).slice(0,3);
     return { id:tid, name:t.name||f.team, o:100*f.off.reb, d:100*f.def.reb, m:100*(f.off.reb-(1-f.def.reb)),
-      og:pls.length && gp? or/gp : null, dg:pls.length && gp? dr/gp : null, top:top, gp:gp }; });
+      og:pls.length && gp? or/gp : null, dg:pls.length && gp? dr/gp : null, top:top, gp:gp,
+      /* its last three games, oldest first, each with its best rebounders by name */
+      last:((ld && ld.last)||[]).map(g=>({ d:g.d, opp:g.opp, home:g.home, rb:(g.rb||[]).map(x=>({ p:pls.filter(p=>String(p.id)===String(x.i)||String(p.pid)===String(x.i))[0]||{ num:"", name:"" }, r:x.r, o:x.o })) })) }; });
 }
 function _lgReb(L){
   const box=_lgPanel("Rebounding", null,
@@ -25614,9 +25618,12 @@ function _lgReb(L){
     const tr=h("tr",{class:_lgOurs(r.name)? "ours" : ""}, h("td",{class:"lg-pos"}, String(i+1)), h("td",{class:"l lg-team"}, _lgCrest(L, r.id), h("span",{}, r.name)));
     Object.keys(K).forEach(k=>{ const v=r[k], rk=rank[k](v), lim=k==="og"||k==="dg"? 1.5 : 3;
       tr.appendChild(h("td",{class:"pnum"+(k==="og"? " grp" : "")+(v!=null && A[k]!=null? (v-A[k]>=lim? " up" : v-A[k]<=-lim? " dn" : "") : "")}, v==null? "—" : K[k].f(v), rk && rk<=3? h("em",{class:"top"}, String(rk)) : null)); });
-    tr.appendChild(h("td",{class:"l grp reb-top"}, r.top.length? r.top.map(x=>h("span",{}, h("u",{}, "#"+(x.p.num||"")), " "+_lgLastName(x.p.name||"")+" ", h("b",{}, x.r.toFixed(1)), h("small",{}, " ("+x.o.toFixed(1)+")"))) : "—"));
+    tr.appendChild(h("td",{class:"l grp reb-top"}, r.top.length? r.top.map(x=>h("div",{}, h("u",{}, "#"+(x.p.num||"")), " "+_lgLastName(x.p.name||"")+" ", h("b",{}, x.r.toFixed(1)), h("small",{}, " ("+x.o.toFixed(1)+")"))) : "—"));
+    /* the last three games, each in its own column, the most recent on the right */
+    const lst=r.last.slice(-3); while(lst.length<3) lst.unshift(null);
+    lst.forEach((g,i)=>tr.appendChild(h("td",{class:"l reb-top reb-gm"+(i? "" : " grp")}, g? [h("em",{}, (g.home? "vs " : "@ ")+(_lgShort(g.opp)||g.opp||"")+" · "+String(g.d||"").slice(8,10)+"/"+String(g.d||"").slice(5,7))].concat(g.rb.slice(0,2).map(x=>h("div",{}, h("u",{}, "#"+(x.p.num||"")), " "+_lgLastName(x.p.name||"")+" ", h("b",{}, String(x.r)), h("small",{}, " ("+x.o+")")))) : "—")));
     t.appendChild(tr); });
-  t.appendChild(h("tr",{class:"pace-lg"}, h("td",{}), h("td",{class:"l"},"League · average"), ...Object.keys(K).map(k=>h("td",{class:"pnum"+(k==="og"? " grp" : "")}, A[k]==null? "—" : K[k].f(A[k]))), h("td",{class:"grp"})));
+  t.appendChild(h("tr",{class:"pace-lg"}, h("td",{}), h("td",{class:"l"},"League · average"), ...Object.keys(K).map(k=>h("td",{class:"pnum"+(k==="og"? " grp" : "")}, A[k]==null? "—" : K[k].f(A[k]))), h("td",{class:"grp"}), h("td",{class:"grp"}), h("td",{}), h("td",{})));
   box.appendChild(h("div",{class:"pb-scroll"}, t));
   try{ _lgLeadLoad(L); }catch(e){}
   return box;
@@ -25680,8 +25687,8 @@ function _preRebCompare(L, tid, cards){
 }
 /* League: every club */
 function _lgPace(L){
-  const box=_lgPanel("Pace · when the shot comes", null,
-    "For every possession, the second its first shot went up in, counted from the moment the ball changed hands (a defensive rebound, a turnover, a basket at the other end). Offense: how fast the club shoots. Defense: how fast its opponents shoot against it. OER (offense) and DER (defense) after each range: the points a possession of the possessions whose first shot went up in it, putbacks included. Every column is ranked; the gold chips are the top three; the bar behind a value is where it sits between the slowest and the fastest club, the grey tick the league's average. Rebuilt from the play by play.");
+  const box=_lgPanel("Game pace · how fast they play and when they shoot", null,
+    "How fast each club plays - its possessions a game - and when in the possession it shoots: the average second of its first shot, and for each range of the clock its share of the possessions (the bar, the black tick the league's) and what they scored (OER; DER for what it allows). Green or red: 0.05 better or worse than the league in that range. From the play by play, league games only.");
   box.classList.add("lg-pace-live");
   const R=_paceLeague(L), n=(L.teams||[]).length, ready=R.rows.filter(r=>r.o.eP!=null).length;
   /* until every club is read the panel only says so: the table comes in whole, once */
@@ -29272,24 +29279,10 @@ function renderLeague(){
       h("div",{class:"scout-placeholder"},"Press Sync. Without an API key you get clearly marked demo data so the layout can be checked; with the key the same screen fills with the real league.")));
     return;
   }
-  /* the club being shown, read from every panel below, before the first of them */
-  /* TWO LEVELS, LIKE THE REPORTS. The club chosen first, in one card that opens on demand;
-     then the league analysis, cut into the questions it answers, each under its own
-     heading. Every panel is the one it was - only where it sits and what it is under. */
+  /* THE LEAGUE ANALYSIS, cut into the questions it answers, each under its own heading. */
   const L1=(title, sub, tools)=>h("div",{class:"lg-l1"}, h("b",{}, title), sub? h("span",{}, sub) : null, tools? h("span",{class:"lg-l1-t"}, tools) : null);
   const L2=title=>h("div",{class:"lg-l2"}, title);
   const add=(el, top)=>{ try{ root.appendChild(top===false? el : h("div",{style:"margin-top:12px"}, el)); }catch(e){} };
-  try{
-    const dash=_lgTeamDash(L);
-    if(dash){
-      const open=!!_lgClubOpen;
-      const pill=h("button",{class:"lg-fold-b lg-l1-b", type:"button", onclick:()=>{ _lgClubOpen=!_lgClubOpen; holder.style.display=_lgClubOpen? "" : "none"; pill.textContent=_lgClubOpen? "Hide" : "Show"; }}, open? "Hide" : "Show");
-      const holder=h("div",{style:open? "" : "display:none"}, dash);
-      const club=(L.teams||[]).filter(t=>String(t.id)===String(L.team))[0];
-      root.appendChild(L1("The club", (club&&club.name)||"", pill));
-      root.appendChild(holder);
-    }
-  }catch(e){ try{ console.warn("league dash", e); }catch(_){} }
   root.appendChild(L1("League analysis", "every club, from the league's feed"));
   root.appendChild(L2("Results and the table"));
   add(_lgResults(L), false);
@@ -29306,7 +29299,8 @@ function renderLeague(){
   add(_lgRot(L), false);
   add(_lgUnits(L));
   add(_lgClock(L));
-  add(_lgPace(L));
+  root.appendChild(L2("Game pace"));
+  add(_lgPace(L), false);
   root.appendChild(L2("Rebounding"));
   add(_lgReb(L));
   add(_lgFold(L,"diag","the reader \u2014 what loaded and what did not",()=>_lgDiag(L)));
@@ -37909,7 +37903,8 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .reb-t td em.top,.reb-lg td em.top{display:inline-block;min-width:15px;padding:0 3px;border-radius:8px;background:#e8c766;color:#3b2f0b}
 .reb-pre th.them{color:#b34a2e}.reb-pre th.us{color:#1e5aa8}
 .reb-lg td.pnum{text-align:center;font:600 13px 'IBM Plex Mono',monospace;white-space:nowrap}
-.reb-lg td.reb-top{display:flex;flex-wrap:wrap;gap:2px 12px;white-space:nowrap}.reb-lg td.reb-top span{font-size:12px}.reb-lg td.reb-top b{font:700 12px 'IBM Plex Mono',monospace}.reb-lg td.reb-top u{text-decoration:none;font:600 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}.reb-lg td.reb-top small{color:var(--ink-faint,#8a93a2);font-size:10px}
+.reb-lg td.reb-top{white-space:nowrap;font-size:12px;vertical-align:top}.reb-lg td.reb-top > div{line-height:1.35}.reb-lg td.reb-top b{font:700 12px 'IBM Plex Mono',monospace}.reb-lg td.reb-top u{text-decoration:none;font:600 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}.reb-lg td.reb-top small{color:var(--ink-faint,#8a93a2);font-size:10px}
+.reb-lg td.reb-gm em{display:block;font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);margin-bottom:1px}
 .reb-lg td.l small{color:var(--ink-faint,#8a93a2);font-size:10.5px}.reb-lg td.l u{text-decoration:none;font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
 .reb-edge{margin-top:8px;padding:7px 10px;border-radius:8px;font-size:12px;background:var(--panel-2,#f3f4f6);color:var(--ink,#141821)}
 .reb-edge.dn{background:rgba(216,82,78,.12);color:#9c2f24}.reb-edge.up{background:rgba(47,158,134,.14);color:#145f44}

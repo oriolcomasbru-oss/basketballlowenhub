@@ -1665,7 +1665,9 @@ exports.handler = async (event) => {
           home: home ? 1 : 0,
           opp: home ? (g.away || "") : (g.home || ""),
           hs: g.hs, as: g.as,
-          us: perGameUs, them: perGameThem });
+          us: perGameUs, them: perGameThem,
+          /* the night's three best rebounders of the club: id, rebounds, offensive */
+          rb: Object.keys(mineBox).map(pid => ({ i: pid, r: mineBox[pid].t.reb || 0, o: mineBox[pid].t.oreb || 0 })).filter(x => x.r > 0).sort((x, y) => y.r - x.r || y.o - x.o).slice(0, 3) });
 
         acts.forEach(a => {
           if (S(a.teamcode) !== code) return;
