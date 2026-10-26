@@ -405,10 +405,7 @@
       /* the block is the defense, so every row does not need to say so */
       q.label = String(q.first || "\u2014").replace(/\s*defense\s*$/i, "");
     });
-    /* NO BALANCE. The staff reads its transition defense as TAG and BACK (their own table),
-       so a possession tagged BALANCE is not counted in what we concede, nor in the points
-       allowed per possession, nor in the trends */
-    return out.filter(function (q) { return !/^balance$/i.test(String(q.first || "")); });
+    return out;
   }
 
   /* --------------------------------------------------- transition defense
@@ -647,12 +644,9 @@
     });
 
     var def = rows.filter(function (r) { return r.def; });
+    var oppPts = def.reduce(function (s, r) { return s + points(r.tags); }, 0);
     var dposs = chainDef(rows);
-    /* what they scored on the possessions counted - BALANCE is left out of both */
-    var oppPts = dposs.reduce(function (s, q) { return s + q.pts; }, 0);
     return { poss: poss, clips: off.length, oppPts: oppPts, kind: "game",
-             /* every point they scored, BALANCE included: the score line, not a rate */
-             oppAll: def.reduce(function (s, r) { return s + points(r.tags); }, 0),
              rows: rows, dposs: dposs, dclips: def.length,
              trans: buildTransDef(rows),
              playUs: playAgg(poss), playThem: playAgg(dposs) };
@@ -742,7 +736,7 @@
     return { poss: poss, kind: "practice", oreb: orebSplit(offRows),
              trans: buildTransPractice(rows), defN: defN,
              /* the defensive clips of the 5x5, chained into possessions, and what they gave up */
-             dposs: chainDef(rows), oppPts: chainDef(rows).reduce(function (s, q) { return s + q.pts; }, 0) };
+             dposs: chainDef(rows), oppPts: rows.filter(function (r) { return r.def; }).reduce(function (s, r) { return s + points(r.tags); }, 0) };
   }
 
   function touchTable(poss) {
@@ -1713,7 +1707,7 @@
 
     try{ if(window.LowenColourKey) box.appendChild(window.LowenColourKey("us")); }catch(e){}
     box.appendChild(el("div", "sx-meta", meta + " · " + N + " possessions · " +
-      all.pts + "–" + (model.oppAll != null ? model.oppAll : model.oppPts) + " from the tagging · " + f2(all.ppp) + " PPP"));
+      all.pts + "–" + model.oppPts + " from the tagging · " + f2(all.ppp) + " PPP"));
 
     var menu = el("div", "sx-menu");
     box.appendChild(menu);
@@ -2053,6 +2047,10 @@
         byCat[k].push(q);
       });
       catOrder.sort(function (a, b) { return byCat[b].length - byCat[a].length; });
+      /* BALANCE is not a row: transition defense is read as TAG and BACK. Its possessions
+         still count in the total and in the points allowed per possession */
+      catOrder = catOrder.filter(function (k) { return !/^balance$/i.test(k); });
+      if (!catOrder.length) catOrder = ["—"], byCat["—"] = byCat["—"] || [];
       var dMax = byCat[catOrder[0]].length || 1;
       var s51 = section("By situation");
       var dRows = catOrder.map(function (k) { return effCells(k, byCat[k], DN, dMax, { def: 1 }); });
@@ -2166,7 +2164,7 @@
         { label: "TAG · after a long shot", value: f2(tdP(TD.tag)), note: (TD.tag.pts || 0) + " conceded in " + (TD.tag.n || 0) + " situations", tone: tdT(tdP(TD.tag)) },
         { label: "BACK · after a miss at the rim or a turnover", value: f2(tdP(TD.back)), note: (TD.back.pts || 0) + " conceded in " + (TD.back.n || 0) + " situations", tone: tdT(tdP(TD.back)) }] });
       if (DN) {
-        var dAll = shotLine(DP), cats = Object.keys(byCat || {}).sort(function (a, b) { return byCat[b].length - byCat[a].length; });
+        var dAll = shotLine(DP), cats = Object.keys(byCat || {}).filter(function (k) { return !/^balance$/i.test(k); }).sort(function (a, b) { return byCat[b].length - byCat[a].length; });
         var head = cats.slice(0, 6), restN = 0; cats.slice(6).forEach(function (k) { restN += byCat[k].length; });
         var parts = head.map(function (k) { var s = shotLine(byCat[k]);
           return { label: k, share: byCat[k].length / DN, value: f2(s.ppp), tone: s.ppp == null ? "neutral" : s.ppp <= dAll.ppp - 0.08 ? "good" : s.ppp >= dAll.ppp + 0.08 ? "bad" : "neutral" }; });
