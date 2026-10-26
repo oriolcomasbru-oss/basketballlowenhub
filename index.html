@@ -23818,15 +23818,13 @@ function _lgRsKey(){
     w!=null? h("span",{class:"rx-b"}, h("i",{style:"width:"+w+"%"}), h("u",{style:"left:"+(tick||50)+"%"})) : null);
   const row=(sample, text)=>h("div",{class:"rx-kr"}, sample, h("span",{}, text));
   return h("div",{class:"rx-key"},
-    h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"Compared with the league"),
-      row(ex("14.3","g",85,45), "Green with a bar: one of the best 15% of the league in that column"),
-      row(ex("3.3","r",10,45), "Red with a bar: one of the weakest 15% of the league"),
-      row(h("span",{class:"rx-ex"}, h("span",{class:"rx-b big"}, h("i",{style:"width:62%"}), h("u",{style:"left:45%"}))), "The bar goes from the league's worst (left) to its best (right); the black line is the league's middle player"),
-      h("div",{class:"rx-kn"}, "No colour: close to the rest of the league. Every player with 2 games and 10 minutes a game counts.")),
-    h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"Compared inside the team"),
-      row(h("span",{class:"rx-ex"}, h("b",{class:"rx-v rx-tb"},"16.8")), "Gold line: the best of the team in that column"),
-      row(h("span",{class:"rx-ex"}, h("b",{class:"rx-v rx-tw"},"0.3")), "Grey line: the weakest of the team, among the players who really play"),
-      h("div",{class:"rx-kn"}, "Percentages (2P%, 3P%, FT%…) count only with at least one attempt a game.")));
+    h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"The colour · inside the team"),
+      row(ex("14.3","g"), "Green: one of the best of the team in that column"),
+      row(ex("0.3","r"), "Red: one of the weakest of the team in that column")),
+    h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"The bar · against the whole league"),
+      row(ex("16.8","",88,45), "A bar under a number: he is at one end of the league - among its best 15% or its weakest 15%"),
+      row(h("span",{class:"rx-ex"}, h("span",{class:"rx-b big"}, h("i",{style:"width:62%"}), h("u",{style:"left:45%"}))), "The bar runs from the league's weakest (left) to its best (right); the black line is the league's middle player"),
+      h("div",{class:"rx-kn"}, "No bar: he is close to the rest of the league. League: every player with 2 games and 10 minutes a game; a percentage needs one attempt a game.")));
 }
 function _lgRsVal(c, t, per, ctx){
   if(c.pair) return null;
@@ -23938,7 +23936,7 @@ function _lgRoster(L){
      sits between the league's worst and best, the tick its median - green or red; the rest is
      left plain. Inside the team, the best in each column is underlined gold and the weakest of
      those who play grey. A percentage counts only on one attempt a game or more. */
-  const LX={}, TM={};
+  const LX={};
   const dirOf=c=>(c.k==="tov"||c.k==="pf"||c.k==="tovp") ? -1 : 1;
   { const pool=[], seen={};
     const add=(key,t)=>{ if(!t || seen[key]) return; seen[key]=1; pool.push(t); };
@@ -23950,14 +23948,6 @@ function _lgRoster(L){
       if(vs.length<30) return;
       const q=f=>vs[Math.min(vs.length-1, Math.max(0, Math.round(f*(vs.length-1))))];
       LX[c.k]={ lo:q(0.15), hi:q(0.85), min:q(0.02), max:q(0.98), med:q(0.5) }; }); }
-  cols.forEach(c=>{ if(c.pair || c.k==="pm") return; const dir=dirOf(c);
-    const vals=rows.filter(r=>!thin[r.id] && _lgRsElig(c, r[split], false)).map(r=>({ id:r.id, v:_lgRsVal(c,r[split],per,ctx) })).filter(x=>x.v!=null && isFinite(x.v));
-    if(vals.length<3) return;
-    const best=Math.max(...vals.map(x=>dir*x.v)), worst=Math.min(...vals.map(x=>dir*x.v));
-    if(best===worst) return;
-    /* a mark three players share says nothing: a tie of more than two is left unmarked */
-    const o={ b:{}, w:{} }; vals.forEach(x=>{ if(dir*x.v===best) o.b[x.id]=1; else if(dir*x.v===worst) o.w[x.id]=1; });
-    if(Object.keys(o.b).length>2) o.b={}; if(Object.keys(o.w).length>2) o.w={}; TM[c.k]=o; });
 
   /* ONE TABLE A PLAYER. Inside a pre game report the same line carries what our own
      tagging says about him: how much he finishes, what it returns, and where his
@@ -23988,13 +23978,11 @@ function _lgRoster(L){
   const tgCells=(tr, r, t)=>{
     if(!TG) return;
     const dash=(cls)=>h("td",{class:"rt-x "+(cls||"")},"—");
-    if(!r){ tr.appendChild(dash("grp")); tr.appendChild(dash()); tr.appendChild(lgCell(t)); for(let i=0;i<4+tgUsed.length;i++) tr.appendChild(dash(i===4? "grp" : "")); return; }
+    if(!r){ tr.appendChild(dash("grp")); tr.appendChild(dash()); tr.appendChild(lgCell(t)); for(let i=0;i<2+tgUsed.length;i++) tr.appendChild(dash(i===2? "grp" : "")); return; }
     const avg=TG.avg;
     tr.appendChild(h("td",{class:"grp"}, String(r.n)));
     const use=h("td",{class:"lg-minbar rt-use"}, r.use+"%"); use.style.setProperty("--s", String(Math.min(1, r.use/30))); tr.appendChild(use);
     tr.appendChild(lgCell(t));
-    tr.appendChild(h("td",{class:"rt-q", title:"tagging: points per possession he finished with a shot or free throws (the tagging does not put every turnover on a name) · their average "+(avg==null? "—" : Number(avg).toFixed(2))}, Number(r.ppp).toFixed(2)));
-    tr.appendChild(h("td",{class:"rt-q", title:"tagging: what those shots are worth on average"}, r.xppp==null? "—" : Number(r.xppp).toFixed(2)));
     tr.appendChild(h("td",{}, r.efg+"%"));
     tr.appendChild(h("td",{}, r.tov+"%"));
     tgUsed.forEach((k,i)=>{ const v=r.roles[k]||0, s=v? Math.min(5, 1+Math.floor(4.999*v/tgMax)) : 0;
@@ -24004,7 +23992,7 @@ function _lgRoster(L){
     "Hand Off":"HO", "Pick & Pop":"Pop", "Post Up":"Post", "Drive & Drop Off":"Drop", "Duck In":"Duck", "Pass & Chase":"P&C", "Back Pick":"Back pk" };
   const tbl=h("table",{class:"lg-tbl lg-rost"+(TG? " lg-rost-one" : "")});
   if(TG) tbl.appendChild(h("tr",{class:"lg-tbl-g"}, h("th",{colspan:"3"}), h("th",{colspan:String(cols.length), class:"g-lg"}, "League · "+(per? "per game" : "totals")),
-    h("th",{colspan:"7", class:"g-tg grp"}, TG.empty? "Our tagging · "+(_preTagState()==="busy"? "reading…" : "none yet") : "Our tagging · "+(TG.games||"")+" game"+(TG.games===1? "" : "s")),
+    h("th",{colspan:"5", class:"g-tg grp"}, TG.empty? "Our tagging · "+(_preTagState()==="busy"? "reading…" : "none yet") : "Our tagging · "+(TG.games||"")+" game"+(TG.games===1? "" : "s")),
     tgUsed.length? h("th",{colspan:String(tgUsed.length), class:"g-en grp"}, "Where his possessions end") : null));
   const hr=h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Player"), h("th",{},"GP"));
   cols.forEach(c=>{
@@ -24013,8 +24001,8 @@ function _lgRoster(L){
       c.t+(c.k===sort.k?(sort.dir<0?" ▾":" ▴"):"")));
   });
   if(TG){
-    [["Poss","Possessions he finished in the games tagged"],["Use","His share of their tagged possessions"],["PPP","Points per possession he used - from the league's box score, so his turnovers are in it. Red is above their players' average, which is what hurts us"],["Pts/shot","Tagging: points per possession he finished with a shot or free throws. The tagging does not put every turnover on a name, so this reads higher than PPP"],
-     ["xPts/shot","Tagging: what those shots are worth on average"],["eFG","Effective field goal %"],["TO","Turnover rate"]]
+    [["Poss","Possessions he finished in the games tagged"],["Use","His share of their tagged possessions"],["PPP","Points per possession he used - from the league's box score, so his turnovers are in it. Red is above their players' average, which is what hurts us"],
+     ["eFG","Effective field goal %"],["TO","Turnover rate"]]
       .forEach((c,i)=>hr.appendChild(h("th",{class:i===0? "grp" : "", title:c[1]}, c[0])));
     tgUsed.forEach((k,i)=>hr.appendChild(h("th",{class:(i===0? "grp " : "")+"rt-hh", title:k}, TG_SHORT[k]||k)));
   }
@@ -24028,17 +24016,16 @@ function _lgRoster(L){
       h("td",{class:"l lg-team"}, _lgFace(L, {n:p.num, photo:p.photo, pid:p.pid, id:p.id}), h("span",{}, p.name||("#"+p.num))),
       h("td",{}, String(t.gp)));
     cols.forEach(c=>{
-      /* the league's extremes as a bar, the team's best and weakest as an underline */
-      let cls="", bar=null, tip="";
+      /* ONE THING EACH: the colour is the team - green its best in the column, red its weakest -
+         and a bar under the number appears only when he is at one end of the whole league */
+      let cls=(edge[c.k]||{})[p.id]||"", bar=null, tip=cls==="pos"? "one of the team's best in this column" : cls==="neg"? "one of the team's weakest in this column" : "";
       const v=c.pair? null : _lgRsVal(c,t,per,ctx), lx=LX[c.k], dir=dirOf(c);
       if(lx && v!=null && !thin[p.id] && _lgRsElig(c,t,true)){
         const good=dir>0? v>=lx.hi : v<=lx.lo, bad=dir>0? v<=lx.lo : v>=lx.hi;
         if(good || bad){ const sp=(lx.max-lx.min)||1, cl=x=>Math.max(0, Math.min(100, Math.round(100*x)));
-          cls=good? "rx-g" : "rx-r"; tip=good? "among the league's best 15%" : "among the league's weakest 15%";
+          tip=(tip? tip+" · " : "")+(good? "and among the league's best 15%" : "and among the league's weakest 15%");
           bar=h("span",{class:"rx-b"}, h("i",{style:"width:"+cl((v-lx.min)/sp)+"%"}), h("u",{style:"left:"+cl((lx.med-lx.min)/sp)+"%"})); } }
-      const tm=TM[c.k]||null, ucls=tm && tm.b[p.id]? " rx-tb" : tm && tm.w[p.id]? " rx-tw" : "";
-      if(ucls) tip=(tip? tip+" · " : "")+(ucls===" rx-tb"? "the best of the team" : "the weakest of the team");
-      const td=h("td",{class:cls, title:tip}, h("span",{class:"rx-v"+ucls}, _lgRsTxt(c,t,per,ctx)), bar);
+      const td=h("td",{class:cls, title:tip}, h("span",{class:"rx-v"}, _lgRsTxt(c,t,per,ctx)), bar);
       if(c.k==="min"){
         /* a bar behind the minutes, the way the pre-game sheets read */
         td.className=(cls+" lg-minbar").trim();
@@ -24063,7 +24050,7 @@ function _lgRoster(L){
      that looks like one */
   cols.forEach(c=>ar.appendChild(h("td",{}, c.solo? "\u2014" : _lgRsTxt(c, tot, per, ctx))));
   if(TG){ ar.appendChild(h("td",{class:"grp"},"")); ar.appendChild(h("td",{},"")); ar.appendChild(h("td",{}, TG.avg==null? "" : Number(TG.avg).toFixed(2)));
-    for(let i=0;i<3+tgUsed.length;i++) ar.appendChild(h("td",{class:i===3? "grp" : ""},"")); }
+    for(let i=0;i<2+tgUsed.length;i++) ar.appendChild(h("td",{class:i===2? "grp" : ""},"")); }
   tbl.appendChild(ar);
   /* Inside a report the full box score is not what is read first - the cards above are -
      so the panel opens on one line that says who carries the club, and the table is one
@@ -38386,7 +38373,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .lg-rost td.rx-g{color:#13804f;font-weight:700}.lg-rost td.rx-r{color:#c0392b;font-weight:700}
 .lg-rost .rx-b{display:block;position:relative;height:4px;margin:2px 4px 0;border-radius:2px;background:var(--line,#e6e8ec)}
 .lg-rost .rx-b i{position:absolute;left:0;top:0;bottom:0;border-radius:2px}
-.lg-rost td.rx-g .rx-b i{background:#2f9e86}.lg-rost td.rx-r .rx-b i{background:#d8524e}
+.lg-rost .rx-b i{background:#4a86d8}
 .lg-rost .rx-b u{position:absolute;top:-2px;bottom:-2px;width:1.5px;margin-left:-1px;background:var(--ink,#141821)}
 .rx-key{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin:12px 0 14px}
 .rx-kc{border:1px solid var(--line,#e6e8ec);border-radius:10px;background:var(--panel,#fff);padding:10px 12px;display:flex;flex-direction:column;gap:7px}
@@ -38399,7 +38386,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .rx-ex .rx-b{display:block;position:relative;width:46px;height:4px;margin-top:3px;border-radius:2px;background:var(--line,#e2e5ea)}
 .rx-ex .rx-b.big{width:52px;height:6px;margin:0}
 .rx-ex .rx-b i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:#9fb4d1}
-.rx-ex.g .rx-b i{background:#2f9e86}.rx-ex.r .rx-b i{background:#d8524e}
+.rx-ex .rx-b i{background:#4a86d8}
 .rx-ex .rx-b u{position:absolute;top:-2px;bottom:-2px;width:1.5px;margin-left:-1px;background:var(--ink,#141821)}
 .rx-ex .rx-v{display:inline-block;padding:0 3px}.rx-ex .rx-v.rx-tb{box-shadow:inset 0 -2px 0 #d9a521}.rx-ex .rx-v.rx-tw{box-shadow:inset 0 -2px 0 #9aa1ac;color:var(--ink-soft,#5b6472)}
 .rx-sw{display:inline-block;position:relative;width:28px;height:4px;border-radius:2px;background:var(--line,#e6e8ec)}
