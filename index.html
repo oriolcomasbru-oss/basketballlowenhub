@@ -6681,6 +6681,10 @@ function seasonGrid(kind){
      the instant it is empty the page has no height: whoever had already scrolled down it
      was thrown back. The place is kept across the redraw. */
   const redraw = ()=>{
+    /* the list answers late - statuses, the Drive - and by then somebody may have opened a game:
+       a report on screen is never thrown away and drawn again because the list behind it got news */
+    const ui=kind==="gameplan"? state.ui.gp : kind==="oppscout"? state.ui.os : state.ui.ts;
+    if(ui && ui.mode==="game") return;
     const ws=document.getElementById("workspace"), y=ws? ws.scrollTop : 0;
     if(kind==="gameplan") renderGamePlan(); else if(kind==="oppscout") renderOppScout(); else renderTeamScout();
     if(ws && y){ ws.scrollTop=y; }
@@ -7170,6 +7174,12 @@ function _repWeight(rep){
   return n;
 }
 function renderScout(body, g, key, kind, from, rep){
+  /* DRAWN AGAIN WITHOUT A JUMP. The report is rebuilt when the server's copy lands or a switch
+     is pressed; it keeps the height it had while the new one fills in, and the reader stays
+     where he was on the page instead of being thrown back to the top. */
+  { const ws=document.getElementById("workspace"), y=ws? ws.scrollTop : 0, hg=body.offsetHeight;
+    if(hg>200){ body.style.minHeight=hg+"px"; clearTimeout(body.__mhT); body.__mhT=setTimeout(()=>{ body.style.minHeight=""; }, 4000); }
+    if(ws && y) requestAnimationFrame(()=>{ if(Math.abs(ws.scrollTop-y)>4) ws.scrollTop=y; }); }
   /* #phxRoot is a single node that gets moved into this body. Clearing the body
      would destroy it, and the player cards would simply vanish on the next
      render — which is what pressing Edit used to do. Park it first. */
@@ -9688,6 +9698,10 @@ function _preInj(){
   if(!blk.__injT0) blk.__injT0=Date.now();
   const stillReading=!!blk.querySelector(".sxp-loading") && Date.now()-blk.__injT0<90000;
   blk.classList.toggle("ts-wait", stillReading);
+  /* the one loader of the page, not a line of text of its own */
+  { const ld=blk.querySelector(":scope > .ts-wait-ld");
+    if(stillReading && !ld) blk.appendChild(h("div",{class:"ld ts-wait-ld"},"Loading the team stats…", h("span",{class:"ld-bar"})));
+    if(!stillReading && ld) ld.remove(); }
   if(stillReading){ clearTimeout(blk.__injTO); blk.__injTO=setTimeout(()=>{ try{ _preInj(); }catch(e){} }, 600); return; }
   let I=blk.__inj;
   if(!I || I.key!==X.key){
@@ -22669,7 +22683,7 @@ function _lgGamePanel(g, close){
       h("div",{class:"lgg-team"+(aw?" w":"")}, _lgCrest(L, g.awayId||g.away, "lgg-crest"), h("span",{}, g.away||""))),
     qs.length? h("div",{class:"lgg-qtw"}, qt) : null,
     body);
-  body.appendChild(h("div",{class:"lg-empty"},"Reading the game sheet…"));
+  body.appendChild(h("div",{class:"ld"},"Reading the game sheet…", h("span",{class:"ld-bar"})));
   _anCount(panel, ".lgg-score b, .lgg-qt td.f", 1400);
   const ask=_lgGameMemo[g.id] || (_lgGameMemo[g.id]=
     fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(g.id)).then(r=>r.json()));
@@ -25746,7 +25760,7 @@ function _lgReb(L){
     "OREB%: the share of its own misses a club gets back. DREB%: the share of the other side's misses it keeps. Margin: OREB% minus the OREB% it allows - above zero, a club wins the glass. Off. and def. reb a game: the club's rebounds a game from its players' lines. Best rebounders: the club's three with the most rebounds a game, the offensive ones in brackets. Green or red: 3 points better or worse than the league's average.");
   _lgFourFresh(L);
   const rows=_rebClubRows(L);
-  if(!rows.length){ box.appendChild(h("div",{class:"lg-empty"},"The four factors are being read.")); return box; }
+  if(!rows.length){ box.appendChild(h("div",{class:"ld"},"The four factors are being read.", h("span",{class:"ld-bar"}))); return box; }
   const avg=k=>{ const v=rows.map(r=>r[k]).filter(x=>x!=null); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; };
   const A={ o:avg("o"), d:avg("d"), m:0, og:avg("og"), dg:avg("dg") };
   const K={ o:{ lab:"OREB%", f:v=>v.toFixed(1)+"%" }, d:{ lab:"DREB%", f:v=>v.toFixed(1)+"%" }, m:{ lab:"Margin", f:v=>(v>0? "+" : v<0? "−" : "±")+Math.abs(v).toFixed(1) },
@@ -25786,7 +25800,7 @@ function _preRebCompare(L, tid, cards){
   _lgFourFresh(L);
   const rows=_rebClubRows(L), us=String(_lgOurTeamId(L)||"");
   const T=rows.filter(r=>r.id===String(tid))[0], U=rows.filter(r=>r.id===us)[0];
-  if(!T || !U){ box.appendChild(h("div",{class:"lg-empty"},"The league's four factors are being read.")); return box; }
+  if(!T || !U){ box.appendChild(h("div",{class:"ld"},"The league's four factors are being read.", h("span",{class:"ld-bar"}))); return box; }
   const rk=(k,v)=>1+rows.map(r=>r[k]).filter(x=>x!=null).sort((a,b)=>b-a).indexOf(v);
   const avg=k=>{ const v=rows.map(r=>r[k]).filter(x=>x!=null); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; };
   try{ if(!((L.roster||{})[tid]) && !_lgRosBusy[tid] && !_lgRosTried[tid] && !L.demo) syncRoster(tid, false); }catch(e){}
@@ -25824,7 +25838,7 @@ function _preRebCompare(L, tid, cards){
     const l=((ld && ld.players)||[]).map(p=>{ const a=p.all||{}, min=(a.sec||0)/60; return { p:p, a:a, min:min, o10:min? 10*(a.oreb||0)/min : 0, g:pm.byNum[String(p.num)]||pm.byId[String(p.id)]||null }; })
       .filter(x=>x.min>=40 && (x.a.oreb||0)>0).sort((a,b)=>b.o10-a.o10).slice(0,4);
     const c=h("div",{class:"reb-card"}, h("h5",{}, lab));
-    if(!l.length){ c.appendChild(h("div",{class:"lg-empty"},"Their players' lines are being read.")); return c; }
+    if(!l.length){ c.appendChild(h("div",{class:"ld"},"Their players' lines are being read.", h("span",{class:"ld-bar"}))); return c; }
     const tt=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},""), h("th",{},"OREB/G"), h("th",{title:"offensive rebounds every 10 minutes on the floor"},"OREB/10′"), h("th",{},"DREB/G"), h("th",{},"Min/G")));
     l.forEach(x=>tt.appendChild(h("tr",{}, h("td",{class:"l"}, h("u",{}, "#"+(x.p.num||"")), " "+_lgLastName(x.p.name||""), x.g? h("small",{}, " · "+(x.g==="B"? "int." : "ext.")) : null),
       h("td",{class:"pnum"}, ((x.a.oreb||0)/Math.max(1,x.a.gp||1)).toFixed(1)), h("td",{class:"pnum"}, h("b",{}, x.o10.toFixed(1))), h("td",{class:"pnum"}, ((x.a.dreb||0)/Math.max(1,x.a.gp||1)).toFixed(1)), h("td",{class:"pnum"}, (x.min/Math.max(1,x.a.gp||1)).toFixed(0)))));
@@ -25861,7 +25875,7 @@ function _prePaceSummary(L, tid){
   const box=h("div",{class:"lg-panel pre-pace-sum"}, h("div",{class:"lg-h"}, h("span",{},"Pace · when the shot comes"),
     h("span",{class:"lg-sub"},"them, us and the league · the second of the possession the first shot goes up in")));
   const R=_paceLeague(L);
-  if(!_paceFirst(L, tid)){ box.appendChild(h("div",{class:"lg-empty"},"Their season is being read for this; it fills in by itself.")); try{ _lgLeadLoad(L); }catch(e){} return box; }
+  if(!_paceFirst(L, tid)){ box.appendChild(h("div",{class:"ld"},"Their season is being read for this; it fills in by itself.", h("span",{class:"ld-bar"}))); try{ _lgLeadLoad(L); }catch(e){} return box; }
   box.appendChild(_paceTable(L, R, _prePaceRows(L, R, tid), {}));
   return box;
 }
@@ -25869,7 +25883,7 @@ function _prePaceSide(L, tid, side){
   const box=h("div",{class:"lg-panel pre-pace"}, h("div",{class:"lg-h"}, h("span",{}, side==="o"? "Pace · their offense" : "Pace · their defense"),
     h("span",{class:"lg-sub"}, side==="o"? "how fast they shoot, against us and the league" : "how fast they let you shoot, against us and the league")));
   const R=_paceLeague(L), f=_paceFirst(L, tid);
-  if(!f){ box.appendChild(h("div",{class:"lg-empty"},"Their season is being read for this; it fills in by itself.")); try{ _lgLeadLoad(L); }catch(e){} return box; }
+  if(!f){ box.appendChild(h("div",{class:"ld"},"Their season is being read for this; it fills in by itself.", h("span",{class:"ld-bar"}))); try{ _lgLeadLoad(L); }catch(e){} return box; }
   box.appendChild(_paceTable(L, R, _prePaceRows(L, R, tid), { sides:[side] }));
   box.appendChild(_paceEl(side==="o"? "Their offense" : "Their defense", _paceOf(f, side==="o"? "team" : "opp"), side==="o"? R.lg : R.lgD, "against the league"));
   return box;
@@ -26587,6 +26601,8 @@ function _lgEmbed(teamId, panels, cls){
     L.team=teamId; L.rsTeam=teamId; L.noClub=false;
     _lgEmbedding=true;
     try{
+      /* drawn again in the height it had, so what is under it does not jump up and back */
+      { const hg=el.offsetHeight; if(hg>80){ el.style.minHeight=hg+"px"; clearTimeout(el.__mhT); el.__mhT=setTimeout(()=>{ el.style.minHeight=""; }, 3000); } }
       el.innerHTML="";
       panels.forEach(fn=>{
         try{ el.appendChild(h("div",{class:"lg-emb-p"}, fn(L))); }
@@ -27277,7 +27293,7 @@ async function _dashScGet(cyc){ const d=await _staffDocGet(_dashScKey(cyc), _das
    game-to-game cycle in Planning, where the physical coach works. Three lines at most;
    the app never writes one of its own. */
 function _scNoteBox(cyc){
-  const note=h("div",{class:"sc-note"}, h("div",{class:"dash-ld"},"Reading the S&C note…"));
+  const note=h("div",{class:"sc-note"}, h("div",{class:"ld dash-ld"},"Reading the S&C note…", h("span",{class:"ld-bar"})));
   /* the physical coach writes it, whatever else he may edit */
   const mayEd=canEdit("planification") || currentUser==="Pedro";
   const fmt=d=>(d && d.at)? String(d.at).slice(5,10).split("-").reverse().join("/") : "";
@@ -27303,7 +27319,7 @@ function _scNoteBox(cyc){
    ideas, the closeout - with who started and how long each man plays from their last games.
    Used by the pre game card and by the roster card on its own. */
 function _dashRosterInto(box, g, wide){
-  box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading…"));
+  box.innerHTML=""; box.appendChild(h("div",{class:"ld dash-ld"},"Reading…", h("span",{class:"ld-bar"})));
   Promise.all([ _gpOppFive(g.opponent, g.date).catch(()=>null), _dashRep(g), wide? _dashClubReady(_lgTeamIdByName(leagueState(), g.opponent)).catch(()=>null) : null ]).then(([R, rep])=>{ box.innerHTML="";
     const POS=["PG","SG","SF","PF","C"], CO={ red:"#d8524e", yellow:"#d9a521", green:"#2f9e86" };
     const cards=((rep && rep.data && rep.data.cards && rep.data.cards.pos)||{});
@@ -27357,7 +27373,7 @@ function _dashRosterInto(box, g, wide){
    often, and what it gives up - from our tagging of their games, the table the pre game
    draws, read here in one block */
 function _dashCoverInto(box, opp){
-  box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading their ball screen defense…"));
+  box.innerHTML=""; box.appendChild(h("div",{class:"ld dash-ld"},"Reading their ball screen defense…", h("span",{class:"ld-bar"})));
   _dashNeed(()=>window.ScoutPre && window.ScoutPre.report).then(()=>window.ScoutPre.report(opp)).then(R=>{ box.innerHTML="";
     const D=R && R.D, cb=D && D.covbybig;
     const cbT=D && D.covbybigTr, has=x=>x && (x.rows||[]).length;
@@ -27384,7 +27400,7 @@ function _dashCoverInto(box, opp){
 /* THEIR BEST PLAYERS AND WHY: the three with the highest PIR, each with the categories in
    which he is among the league's best, and what our tagging says he does with the ball */
 function _dashBestInto(box, opp){
-  box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading their players…"));
+  box.innerHTML=""; box.appendChild(h("div",{class:"ld dash-ld"},"Reading their players…", h("span",{class:"ld-bar"})));
   const L=leagueState(), tid=_lgTeamIdByName(L, opp);
   if(!tid){ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"This club is not in the league feed.")); return; }
   const SP=window.ScoutPre;
@@ -27420,7 +27436,7 @@ function _dashBestInto(box, opp){
    (possessions he finishes, his share of theirs, what they return, where they end). Ranked
    by PIR; a man our tagging makes their first option is kept even when his PIR is lower. */
 function _dashKeyPlayersInto(box, opp){
-  box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading their players…"));
+  box.innerHTML=""; box.appendChild(h("div",{class:"ld dash-ld"},"Reading their players…", h("span",{class:"ld-bar"})));
   const L=leagueState(), tid=_lgTeamIdByName(L, opp);
   if(!tid){ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"This club is not in the league feed.")); return; }
   const SP=window.ScoutPre;
@@ -27478,7 +27494,7 @@ function _dashKeyPlayersInto(box, opp){
 /* THE KEY SETS OF AN OPPONENT: the ones the staff starred in the pre game playbook, with the
    names it gave them, how often they run and what they return */
 function _dashKeySetsInto(box, g){
-  box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading their sets…"));
+  box.innerHTML=""; box.appendChild(h("div",{class:"ld dash-ld"},"Reading their sets…", h("span",{class:"ld-bar"})));
   const L=leagueState(), tid=_lgTeamIdByName(L, g.opponent);
   _dashNeed(()=>window.ScoutPre && window.ScoutPre.sets, 20000).then(ok=>Promise.all([ ok? window.ScoutPre.sets(g.opponent, null).catch(()=>null) : null, _dashRep(g) ])).then(async ([res, rep])=>{
     await new Promise(r2=>{ try{ if(!tid || _clubPulled[tid]) return r2(); _clubPull(tid, null, r2); setTimeout(r2, 8000); }catch(e){ r2(); } });
@@ -27565,7 +27581,7 @@ function _dashOppPrint(card, title){
    the staff's names, calls and splits, how often and what they return, and game by game, as the
    pre game playbook shows it: one box a tagged game, oldest first, the runs in each */
 function _dashTopSetsInto(box, g){
-  box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading their playbook…"));
+  box.innerHTML=""; box.appendChild(h("div",{class:"ld dash-ld"},"Reading their playbook…", h("span",{class:"ld-bar"})));
   const L=leagueState(), tid=_lgTeamIdByName(L, g.opponent);
   _dashNeed(()=>window.ScoutPre && window.ScoutPre.sets, 20000).then(ok=>Promise.all([ ok? window.ScoutPre.sets(g.opponent, null).catch(()=>null) : null, _dashRep(g) ])).then(async ([res, rep])=>{
     await new Promise(r2=>{ try{ if(!tid || _clubPulled[tid]) return r2(); _clubPull(tid, null, r2); setTimeout(r2, 8000); }catch(e){ r2(); } });
@@ -27730,7 +27746,7 @@ function _dashKeyIdeas(rep){
   return areas;
 }
 function _dashNotesInto(box, g){
-  box.innerHTML=""; box.appendChild(h("div",{class:"dash-ld"},"Reading the pre game…"));
+  box.innerHTML=""; box.appendChild(h("div",{class:"ld dash-ld"},"Reading the pre game…", h("span",{class:"ld-bar"})));
   _dashRep(g).then(rep=>{ box.innerHTML="";
     if(!rep){ box.appendChild(h("div",{class:"dash-miss"},"No pre game for this game yet.")); return; }
     const areas=_dashKeyIdeas(rep);
@@ -27766,7 +27782,7 @@ function _dashNotesInto(box, g){
    that worked and did not; DER, what TAG and BACK conceded and each defensive concept with
    what it gave up */
 function _dashPostSplit(box, g){
-  box.appendChild(h("div",{class:"dash-ld"},"Reading our tagging of the game…"));
+  box.appendChild(h("div",{class:"ld dash-ld"},"Reading our tagging of the game…", h("span",{class:"ld-bar"})));
   _dashNeed(()=>window.LowenPostStats && window.LowenPostStats.gameModel && window.LowenPostStats.summarise).then(()=>window.LowenPostStats.gameModel(g.opponent, g.date)).then(GM=>{
     box.innerHTML="";
     const m=GM && GM.model;
@@ -27916,7 +27932,7 @@ async function _playerDash(root, who){
   page.appendChild(top);
   const ph=g=>{ try{ return _gamePlaceholder(g.opponent); }catch(e){ return false; } };
   const crest=g=>{ try{ return _lgOppCrest(g, "opp big")||h("span",{class:"dash-crest"}, String(g.opponent||"?").slice(0,3).toUpperCase()); }catch(e){ return null; } };
-  const bNow=h("div",{class:"p3-now"}, h("div",{class:"dash-ld"},"Reading your time…"));
+  const bNow=h("div",{class:"p3-now"}, h("div",{class:"ld dash-ld"},"Reading your time…", h("span",{class:"ld-bar"})));
   const bHist=h("div",{class:"p3-hist"});
   const bGames=h("div",{class:"p3-games"});
   page.appendChild(h("div",{class:"p3-tag"},"This game")); page.appendChild(bNow);
@@ -28035,7 +28051,7 @@ function renderDashboard(){
     if(!list || !list.length) return h("div",{class:"dash-miss"}, empty);
     return h("ul",{class:"dash-ideas"}, list.map((x,i)=>h("li",{class:x.tone||""}, h("i",{}, String(i+1)), h("span",{}, x.text, x.src? h("small",{}, x.src) : null))));
   };
-  const loading=t=>h("div",{class:"dash-ld"}, t||"Reading…");
+  const loading=t=>h("div",{class:"ld dash-ld"},t||"Reading…", h("span",{class:"ld-bar"}));
   const crest=g=>{ try{ return _lgOppCrest(g, "opp big")||h("span",{class:"dash-crest"}, String(g.opponent||"?").slice(0,3).toUpperCase()); }catch(e){ return null; } };
 
   let monthCard=()=>{}, videoCard=()=>{};
@@ -29350,7 +29366,7 @@ function renderProB(root){
     P&&P.updated? h("span",{class:"ro-badge"}, (_pbBusy? "refreshing… " : "")+_lgAgo(P.updated)) : null,
     h("button",{class:"btn primary", type:"button", onclick:()=>_pbLoad(true)},"↻ Sync"));
   root.appendChild(head);
-  if(!P){ root.appendChild(h("div",{class:"lg-empty"},"Reading the ProB league…")); if(!_pbBusy) _pbLoad(false); return; }
+  if(!P){ root.appendChild(h("div",{class:"ld"},"Reading the ProB league…", h("span",{class:"ld-bar"}))); if(!_pbBusy) _pbLoad(false); return; }
   if(Date.now()-_pbAt>5*60000 && !_pbBusy) _pbLoad(false);
   if(P.nokey){ root.appendChild(h("div",{class:"lg-warn"},"The ProB key is not set yet. In Netlify → Site configuration → Environment variables add PROB_API_KEY with the key from the league, then publish again.")); return; }
   if((P.errors||[]).length) root.appendChild(h("div",{class:"lg-warn err"},"Feed warnings: "+P.errors.join(" · ")));
@@ -38289,8 +38305,12 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .reb-lg .reb-tog{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:6px;border-radius:50%;border:1px solid var(--line-strong,#cfd4dc);font:700 11px/1 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}
 .shr{width:min(1100px,94vw);max-height:86vh;overflow-y:auto}.shr-two{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px}.shr-two h5{margin:0 0 6px;font:700 11px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}.shr-raw{font:12px/1.5 'IBM Plex Mono',monospace;max-height:420px;overflow:auto;padding:8px;border:1px solid var(--line,#e6e8ec);border-radius:8px;white-space:pre-wrap;color:var(--ink-soft,#5b6472)}
 .rb-kf .rb-two{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:4px 0 2px}.rb-h{display:flex;flex-direction:column;gap:2px;min-width:0}.rb-h > i{font-style:normal;font:700 9.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;opacity:.75}.rb-h > b{font:700 26px 'Oswald',sans-serif;line-height:1.05}.rb-h > b.good{color:#13804f}.rb-h > b.bad{color:#c0392b}.rb-h .row{display:flex;gap:8px;flex-wrap:wrap}.rb-h small{font-size:10px;opacity:.7}
-.rs-block.ts-wait > *:not(.rs-banner){display:none!important}
-.rs-block.ts-wait::after{content:"Loading the team stats…";display:block;padding:18px 20px;font:600 13px 'Inter',sans-serif;color:var(--ink-soft,#5b6472)}
+.rs-block.ts-wait > *:not(.rs-banner):not(.ts-wait-ld){display:none!important}
+.ts-wait-ld{padding:14px 20px!important}
+/* ONE LOADER FOR THE WHOLE PAGE: the turning ring, its words and the line - the tagging's boxes
+   and skeleton bars are gone, so every part that is still loading looks the same */
+.sx-loading,.sxp-loading{border:0!important;background:none!important;padding:0!important;text-align:left!important}
+.ld-skel{display:none!important}
 .pbb-kind{display:flex;align-items:baseline;gap:10px;margin:12px 0 4px;padding:5px 10px;border-left:4px solid var(--kc,#8a93a2);background:rgba(20,24,33,.04);border-radius:0 6px 6px 0}.pbb-kind b{font:700 12px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--kc,var(--ink,#141821))}.pbb-kind span{font-size:11.5px;color:var(--ink-soft,#5b6472)}
 /* pace: when the shot comes */
 .pace-v th.pbh{text-align:center}

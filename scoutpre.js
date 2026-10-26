@@ -2496,7 +2496,7 @@
      heavy animation belongs to the splash; this is the quiet version of it. */
   function loadingBox(txt) {
     var box = el("div", "sxp-loading");
-    box.appendChild(el("div", "ld", txt));
+    var ld = el("div", "ld", txt); ld.appendChild(el("span", "ld-bar")); box.appendChild(ld);
     var sk = el("div", "ld-skel");
     for (var i = 0; i < 5; i++) sk.appendChild(el("i"));
     box.appendChild(sk);
