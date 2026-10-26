@@ -6210,11 +6210,10 @@ let _admTemps=[];   /* [{u,p}] made in this visit to the panel, newest last */
 function admTempAdd(u,p){ _admTemps=_admTemps.filter(x=>x.u!==u); _admTemps.push({u:u,p:p}); }
 async function refreshAdmin(body){
   body.innerHTML="";
-  let data, sources=[], log=[];
+  let data, log=[];
   try{ data=await sbrpc("admin_accounts",{p_token:SB_TOKEN}); }
   catch(e){ body.appendChild(h("div",{class:"login-err"},"Error: "+e.message)); return; }
   if(!data||data.ok!==true){ body.appendChild(h("div",{class:"login-err"},(data&&data.error)||"No admin")); return; }
-  try{ const s=await sbrpc("admin_sources",{p_token:SB_TOKEN}); sources=(s&&s.sources)||[]; }catch(e){}
   try{ const l=await sbrpc("admin_sessions",{p_token:SB_TOKEN,p_limit:80}); log=(l&&l.log)||[]; }catch(e){}
   const accounts=(data.accounts||[]);
   const coaches=accounts.filter(a=>a.scope==="coach"), players=accounts.filter(a=>a.scope==="player");
@@ -6323,11 +6322,27 @@ async function refreshAdmin(body){
       h("td",{}, resetBtn(a)), h("td",{}, a.username==="Oriol"? null : removeBtn(a)))));
     s.appendChild(h("div",{class:"adm-tw"}, t));
     body.appendChild(s); }
-  // Drive sources
-  body.appendChild(h("div",{class:"adm-sec-h", style:"margin-top:18px"}, h("b",{},"Drive connections"), h("span",{},"the Drive sheets the hub reads from")));
-  sources.forEach(s=>{ const inp=h("input",{class:"adm-src"}); inp.value=s.sheet_id||"";
-    inp.addEventListener("change",async ()=>{ try{ await sbrpc("admin_set_source",{p_token:SB_TOKEN,p_key:s.key,p_sheet_id:inp.value.trim(),p_label:s.label}); toast("Saved"); }catch(e){ toast("Error"); } });
-    body.appendChild(h("div",{class:"adm-srcrow"}, h("span",{class:"adm-srck"}, s.label||s.key), inp)); });
+  /* ---- DRIVE CONNECTIONS: what the hub really reads, asked now. The addresses live in the
+     Netlify functions (drive, sheets), so nothing here is edited - the old boxes wrote ids
+     nobody read. Each line says whether it answers, how much it holds and how fresh it is. */
+  { const s=sec("Drive connections · what the hub reads", "checked now · the addresses are set in Netlify");
+    const CONN=[["folder","game","Game tagging (CSV)"],["folder","practice","Practice tagging (CSV)"],["folder","pregame","Opponent tagging (CSV)"],
+      ["folder","gameplan","Game plans"],["folder","practicedoc","Session sheets"],
+      ["sheet","games","DB_Games · schedule"],["sheet","medical","Medical · availability"],["sheet","weekly","Weekly load"],["sheet","monthly","Monthly load"],
+      ["sheet","kinexon","Kinexon"],["sheet","pfweekly","PF weekly plan"],["sheet","calendar","Calendar"]];
+    const t=h("table",{class:"adm-t adm-conn-t"}, h("tr",{}, h("th",{class:"l"},"Source"), h("th",{},"Kind"), h("th",{},"State"), h("th",{class:"l"},"What it holds")));
+    CONN.forEach(([kind,key,label])=>{ const st=h("td",{}, h("span",{class:"adm-cs wait"},"…")), det=h("td",{class:"l mu"},"");
+      t.appendChild(h("tr",{}, h("td",{class:"l"}, h("b",{}, label)), h("td",{class:"mu"}, kind==="folder"? "Drive folder" : "Sheet"), st, det));
+      const ok=(txt)=>{ st.innerHTML=""; st.appendChild(h("span",{class:"adm-cs ok"},"✓ reads")); det.textContent=txt; };
+      const bad=(e)=>{ st.innerHTML=""; st.appendChild(h("span",{class:"adm-cs bad"},"✗ fails")); det.textContent=String((e&&e.message)||e||"error").slice(0,140); };
+      (async ()=>{ try{
+        if(kind==="folder"){ const r=await driveFetch(DOCS_FN+"?folder="+key); const j=await r.json(); if(j.error) throw new Error(j.error);
+          const fs=j.files||[], last=fs.map(f=>f.modifiedTime||"").sort().pop();
+          ok(fs.length+" file"+(fs.length===1? "" : "s")+(last? " · newest "+_dashFmt(last.slice(0,10)) : "")); }
+        else { const rows=await _sheetGet("?src="+encodeURIComponent(key)); ok(Math.max(0,rows.length-1)+" rows"); }
+      }catch(e){ bad(e); } })(); });
+    s.appendChild(h("div",{class:"adm-tw"}, t));
+    body.appendChild(s); }
   // Session history: one row a person, the sign-ins of the last eighty, the last one, a bar
   { const s=sec("Sign-ins", "the last "+log.length+" sign-ins, by person");
     if(!log.length) s.appendChild(h("div",{class:"empty-state"},"No sessions yet."));
@@ -38370,6 +38385,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .adm-tg input:focus-visible + span{outline:2px solid var(--ink,#141821)}
 .adm-all{font-size:12px;color:var(--ink-soft,#5b6472)}
 .adm-type{display:inline-block;padding:1px 8px;border-radius:9px;font:700 10px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase}
+.adm-cs{display:inline-block;padding:1px 8px;border-radius:9px;font:700 10px 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}.adm-cs.ok{background:#e3f4e8;color:#1f7a3d}.adm-cs.bad{background:#fde6e6;color:#b42318}.adm-cs.wait{color:#888}
 .adm-type.co{background:rgba(20,24,33,.08)}.adm-type.pl{background:rgba(74,134,216,.14);color:#1e5aa8}
 .adm-acc-t .btn.sm{padding:3px 9px;font-size:11px}
 .adm-acc-t .adm-del{background:transparent;border:1px solid rgba(216,82,78,.5);color:#c0392b}.adm-acc-t .adm-del:hover{background:#d8524e;color:#fff}
