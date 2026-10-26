@@ -612,6 +612,12 @@
     var f2a = fga - f3a, f2m = fgm - f3m;
     var poss = fga - orb + tov + 0.44 * fta;
     var xpts = f2a * 2 * BASE_2P + f3a * 3 * BASE_3P + fta * BASE_FT;
+    /* THE INTERVAL IS WORKED OUT ONLY WHEN SOMETHING READS IT. Three thousand resamples on
+       every call, the whole league's reference included, was four seconds with the page
+       frozen - the dashboard sat grey - for a number two panels show. */
+    var ci = null;
+    var ciOf = function () {
+    if (ci) return ci;
     var lo = NaN, hi = NaN;
     if (n >= 8) {
       var r = rng(11 + n * 2654435761), ms = [], k, j, idx, p, pp;
@@ -630,11 +636,13 @@
         hi = ms[Math.floor(0.975 * ms.length)];
       }
     }
-    return {
+    ci = { lo: lo, hi: hi };
+    return ci;
+    };
+    var out = {
       n: n, poss: poss, pts: pts,
       ppp: poss > 0 ? pts / poss : 0,
       xppp: poss > 0 ? xpts / poss : 0,
-      ciLo: lo, ciHi: hi,
       fga: fga, fgm: fgm, f3a: f3a, f3m: f3m, f2a: f2a, f2m: f2m, fta: fta, orb: orb, tov: tov,
       efg: fga ? (fgm + 0.5 * f3m) / fga : 0,
       p3r: fga ? f3a / fga : 0,
@@ -644,6 +652,9 @@
       tovr: poss > 0 ? tov / poss : 0,
       orbr: (fga - fgm) > 0 ? orb / (fga - fgm) : 0
     };
+    Object.defineProperty(out, "ciLo", { enumerable: true, get: function () { return ciOf().lo; } });
+    Object.defineProperty(out, "ciHi", { enumerable: true, get: function () { return ciOf().hi; } });
+    return out;
   }
 
   /* ============================================== buckets and orientation */
@@ -753,7 +764,6 @@
     var r = { label: label, n: a.n, poss: r1(a.poss), ppp: r2(a.ppp), xppp: r2(a.xppp),
       efg: rp(a.efg), p3r: rp(a.p3r), p2: rp(a.p2), p3: rp(a.p3),
       tov: rp(a.tovr), ftr: rp(a.ftr), conf: conf(a.poss), side: side };
-    if (a.ciLo === a.ciLo) r.ci = [r2(a.ciLo), r2(a.ciHi)];
     if (ref != null) {
       r.ref = r2(ref);
       r.edge = Math.round(((side === "O" ? ref - a.ppp : a.ppp - ref)) * 1000) / 1000;
@@ -881,12 +891,15 @@
 
     /* -------------------------------------------------------- 1. identity */
     function panel(a, side) {
-      return { ppp: r2(a.ppp), ci: [r2(a.ciLo), r2(a.ciHi)], xppp: r2(a.xppp),
+      var P = { ppp: r2(a.ppp), xppp: r2(a.xppp),
         luck: r2(a.ppp - a.xppp), poss: r1(a.poss),
         efg: rp(a.efg), p2: rp(a.p2), p3: rp(a.p3), tov: rp(a.tovr), ftr: rp(a.ftr),
         s2: a.fga ? Math.round(a.f2a / a.fga * 100) : 0,
         s3: a.fga ? Math.round(a.f3a / a.fga * 100) : 0,
         f2a: a.f2a, f3a: a.f3a, fta: a.fta, side: side };
+      /* the interval when it is read, not before */
+      Object.defineProperty(P, "ci", { enumerable: true, get: function () { return [r2(a.ciLo), r2(a.ciHi)]; } });
+      return P;
     }
     D.panelOff = panel(ao, "O"); D.panelDef = panel(ad, "D");
     D.panelRefOff = panel(A_ALL_O, "O"); D.panelRefDef = panel(A_ALL_D, "D");
