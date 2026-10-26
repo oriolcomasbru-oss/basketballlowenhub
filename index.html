@@ -12312,10 +12312,18 @@ function _preHlRanks(L, c, tid){
     /* third in his team is a strength only when it is above the league's middle: a 64% free
        throw shooter was lit "#3 WÜR" because his team shoots them worse */
     const vs=pool.map(y=>val(y,d)).filter(w=>w!=null).sort((a,b)=>a-b), med=vs.length? vs[Math.floor(vs.length/2)] : null, mine=val(me,d);
-    if(!(rb!=null && rb<=25) && (med==null || mine==null || mine<med)) return null;
+    if(!(rb!=null && rb<=25) && rt!==1 && (med==null || mine==null || mine<med)) return null;
     /* the season's numbers the rank stands on, when the card may show older ones */
     const t=me.t||{}, basis=d[0]==="p3"? " · "+(t.p3m||0)+"/"+(t.p3a||0) : d[0]==="p2"? " · "+(t.p2m||0)+"/"+(t.p2a||0) : d[0]==="ft"? " · "+(t.ftm||0)+"/"+(t.fta||0) : "";
-    return (rb!=null && rb<=25)? { score:rb, why:ord(rb)+" BBL"+basis } : (rt!=null && rt<=3)? { score:100+rt, why:ord(rt)+" "+short+basis } : null; });
+    /* the leader of his team is always solid and says so - "#1 WÜR" - unless he is top 10 of
+       the BBL: Wishart, first of Würzburg in assists and 19th of the league, was lit lighter
+       than it reads beside Dye's "2nd WÜR" */
+    const both=(rb!=null? " · "+ord(rb)+" BBL" : "")+(rt!=null? " · "+ord(rt)+" "+short : "");
+    if(rb!=null && rb<=10) return { score:rb, hot:true, why:ord(rb)+" BBL"+basis+both };
+    if(rt===1) return { score:11, hot:true, why:"1st "+short+basis+both };
+    if(rb!=null && rb<=25) return { score:rb, hot:false, why:ord(rb)+" BBL"+basis+both };
+    if(rt!=null && rt<=3) return { score:100+rt, hot:false, why:ord(rt)+" "+short+basis+both };
+    return null; });
 }
 /* A FIFTH BOX. The card asks each position its own four questions - a wing is never
    asked about his passes - so a wing who is one of the league's best passers had no box
@@ -12392,7 +12400,7 @@ function _preHl(L, card, c, canEd, save, tid){
      assists - first in Würzburg - stayed dark behind a 16th in the BBL at free throws.
      Solid: top 10 of the BBL or first in his team; light: 11th to 25th of the BBL, or 2nd
      and 3rd in his team when it is above the league's middle */
-  else if(ranks){ ranks.forEach((r,i)=>{ if(r) pick[i]=(r.score<=10 || r.score===101)? "hot" : "warm"; }); }
+  else if(ranks){ ranks.forEach((r,i)=>{ if(r) pick[i]=(r.hot || r.score<=10)? "hot" : "warm"; }); }
   cells.forEach((cell,i)=>{
     const lvl=pick[i];
     /* the rank on one line and the season numbers it stands on under it, so neither is cut */
