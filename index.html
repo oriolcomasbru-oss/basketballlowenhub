@@ -7368,8 +7368,22 @@ function defaultSummarySection(kind){
 }
 /* The point titles below are a starting suggestion, not a structure. Every one
    of them can be renamed, reordered or removed per game, and new ones added. */
-const PRE_OFF_POINTS =["3 keys","Game plan","Early offense","PNR","Offscreens","Backpicks","Special defenses","Players to attack"];
-const PRE_DEF_POINTS =["3 keys","Game plan","Transition defense & off rebound","Early offense","1x1","PNR","Offscreens","Postup","Backpicks","Entries","ATO's"];
+/* the areas of the two tables, as the staff set them after Hagen (October 2026) */
+const PRE_OFF_POINTS =["Transition","Early offense","PNR","Postup/Backpicks","Offscreens","Special defense","Players to attack"];
+const PRE_DEF_POINTS =["Transition","Early offense","PNR","Postup/Backpicks","Offscreens","Entries","Out of set","ATO's"];
+const PRE_AREAS_FROM="2026-10-26";
+/* a pre game after Hagen that still carries the old areas with nothing written in them takes
+   the new ones; a table somebody has written in is never touched */
+function _preAreasNow(secs, date){
+  if(!date || String(date)<PRE_AREAS_FROM) return false;
+  let ch=false;
+  [[RE_PRE_OFF, PRE_OFF_POINTS],[RE_PRE_DEF, PRE_DEF_POINTS]].forEach(([re, pts])=>{
+    const s=(secs||[]).find(x=>x && re.test(String(x.title||"").trim())); if(!s || s.areas2026) return;
+    const empty=(s.items||[]).every(it=>it && it.kind!=="table" && !String(it.them||"").replace(/<[^>]*>/g,"").trim() && !String(it.us||"").replace(/<[^>]*>/g,"").trim() && !String(it.v||"").replace(/<[^>]*>/g,"").trim());
+    if(empty){ s.items=pts.map(t=>({t:t, v:""})); ch=true; }
+    s.areas2026=true; });
+  return ch;
+}
 const POST_Q_POINTS  =["Q1","Q2","Q3","Q4"];
 const POST_OTHER_PTS =["Team objectives","Individual video","Individual work"];
 const PB_POINTS=["Transition","Half court","SLOB","BLOB"];
@@ -10525,6 +10539,7 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
   rep.data = rep.data || {};
   if(!Array.isArray(rep.data[bag]) || !rep.data[bag].length) rep.data[bag] = (kind==="postgame") ? defaultPostSections() : defaultReportSections();
   const secs=rep.data[bag];
+  try{ if(kind!=="postgame" && typeof g!=="undefined" && g && _preAreasNow(secs, g.date) && canEd) setTimeout(()=>{ try{ save(); }catch(e){} }, 0); }catch(e){}
   const wrap=h("div",{class:"rs-sections rs-"+kind});
 
   /* ---- history over the written report --------------------------------
@@ -27659,7 +27674,7 @@ function _dashFormInto(box, opp){
    its list under it, a "LABEL:" in bold. Nothing is written by the app, and only one concept
    is open at a time, so the card never has to scroll inside itself. */
 const DASH_AREAS=[["Transition",/transition/i],["Early offense",/early/i],["PNR",/\bpnr\b|pick ?(and|&|n) ?roll/i],["Offscreens",/off ?screen/i],
-  ["Post · backpicks",/post|back ?pick/i],["Special defenses",/special/i],["Players to attack",/players to attack/i],["ATO's",/\bato/i],["Entries",/entr/i],["1x1",/1x1|1v1|\biso\b/i]];
+  ["Postup · backpicks",/post|back ?pick/i],["Special defense",/special/i],["Players to attack",/players to attack/i],["Out of set",/out of set/i],["ATO's",/\bato/i],["Entries",/entr/i],["1x1",/1x1|1v1|\biso\b/i]];
 function _dashArea(t){ const c=DASH_AREAS.filter(x=>x[1].test(String(t||"")))[0]; return c? c[0] : String(t||"").trim(); }
 /* a cell's marked text as groups: [{ h:title line or null, items:[...] }] */
 function _dashMarkedGroups(html){
