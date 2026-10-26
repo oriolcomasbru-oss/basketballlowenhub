@@ -6303,17 +6303,19 @@ async function renderUsage(body, accounts, log){
       return { user:r.user, scope:r.scope, last:r.last, days:days.length, sec, opens, top, views,
                plays, vidn:Object.keys(vids).length, vids, err:r.err };
     }).sort((a,b)=>b.sec-a.sec);
+    const mxSec=Math.max(1, ...sum.map(r=>r.sec));
     const t=h("table",{class:"use-t"});
     t.appendChild(h("tr",{class:"use-h"}, h("th",{class:"l"},"User"), h("th",{},"Days"),
       h("th",{},"Opens"), h("th",{},"Time"), h("th",{},"Per day"),
       h("th",{class:"l"},"Where the time went"), h("th",{},"Videos"), h("th",{class:"l"},"Last seen")));
     sum.forEach(r=>{
-      const where=r.top.length? r.top.map(v=>(SECT_LABELS[v]||v)+" "+_useFmtMin(r.views[v])).join(" \u00b7 ") : "\u2014";
+      /* where the time went, as chips: the screen and its minutes */
+      const where=r.top.length? r.top.map(v=>h("span",{class:"use-chip"}, (SECT_LABELS[v]||v)+" ", h("b",{}, _useFmtMin(r.views[v])))) : "—";
       const row=h("tr",{class:r.sec?"":"use-cold"},
         h("td",{class:"l"}, h("b",{}, r.user), r.scope==="player"? h("span",{class:"use-tag"},"player") : null),
         h("td",{}, r.days? String(r.days) : "\u2014"),
         h("td",{}, r.opens? String(r.opens) : "\u2014"),
-        h("td",{}, r.sec? _useFmtMin(r.sec) : "\u2014"),
+        h("td",{class:"use-time"}, r.sec? [h("span",{class:"use-bar"}, h("i",{style:"width:"+Math.round(100*r.sec/mxSec)+"%"})), h("b",{}, _useFmtMin(r.sec))] : "—"),
         h("td",{}, r.days? _useFmtMin(r.sec/r.days) : "\u2014"),
         h("td",{class:"l use-where"}, where),
         h("td",{title:Object.keys(r.vids).map(k=>(r.vids[k].title||k)+" \u00d7"+r.vids[k].n
@@ -27016,16 +27018,22 @@ function _preJoinedPlayers(tid){
    automatic reading is used and says so; where there is nothing, the card says what is
    missing. The only thing that is new is the S&C note of the cycle, kept on the server
    with the reports so everybody reads the same one. */
+/* WHAT ORIOL IS BUILDING: one line each with the way in - in his to-do table */
+const OWIP=[
+  ["Game plan", "the bench's control panel: rotation, player status, their team, key sets, the game", ()=>_dashOpen("gameplan",{})],
+  ["When he fades", "player development: when each man drops, to rotate ours and attack theirs", ()=>_dashOpen("playerdev",{})],
+  ["Pace", "trends: how fast we play, game by game and inside the games", ()=>_dashOpen("trends",{})],
+  ["ATO's", "playbook: the after-time-out plays, a sheet of their own", ()=>{ state.ui.pbTab="ato"; _dashOpen("playbook",{}); }]];
 var DASHES={
   Ramon:{ name:"Ramón", role:"Head coach", cards:["oppr","post","pdevc","players","league","trends2","week","month"] },
-  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["owork","opend","owip","league","trends2","oppr","week","month"] },
+  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["owork","opend","scoutv","trends2","oppr","week","month"] },
   Keith:{ name:"Keith", role:"Coaching staff", cards:["pdevc","oppr","post","players","league","trends2","week","monthP"] },
   Liviu:{ name:"Liviu", role:"Coaching staff", cards:["quick","month","pdevc"] },
   /* Joan Marc does the games and sees what Marc has done and owes; Marc the trainings */
   "Joan Marc":{ name:"Joan Marc", role:"Video · games", cards:["vgames","vrivals","vcal","vtrain"] },
   "Marc Ribas":{ name:"Marc", role:"Video · trainings", cards:["vtrain","month"] },
   Pedro:{ name:"Pedro", role:"Physical coach", cards:["week","avail","minutes","month"] },
-  Jonas:{ name:"Jonas", role:"Staff", cards:["us","month"] },
+  Jonas:{ name:"Jonas", role:"Staff", cards:["week","month3"] },
   Alex:{ name:"Alex", role:"Staff", cards:["monthP","week","oppr","trends2","pdevc","league"] },
   Fabienne:{ name:"Fabienne", role:"Media · articles", cards:["month","fquick","us","rivals"] }
 };
@@ -28159,6 +28167,8 @@ function renderDashboard(){
     month:()=>monthCard(false),
     /* the same month with the ProB games of the club's second team on it */
     monthP:()=>monthCard(true),
+    /* the next three months, one calendar each */
+    month3:()=>{ [0,1,2].forEach(i=>builders.month0(false, i)); },
     /* ---------------------------------------------------- player development, the cards */
     pdev:()=>{
       if(!canView("playerdev")) return;
@@ -28405,14 +28415,20 @@ function renderDashboard(){
       const av=(state.plan && state.plan.avail)||{}, sq=(state.plan && state.plan.squad)||[];
       const days=[0,1,2,3,4,5,6].map(i=>addDays(T,i));
       const keys={}; days.forEach(d=>Object.keys(av[d]||{}).forEach(k=>{ if((av[d]||{})[k]) keys[k]=1; }));
-      const ks=Object.keys(keys);
-      if(!ks.length){ c.__b.appendChild(h("div",{class:"dash-miss ok"},"Everybody available for the next seven days, as the medical sheet has it.")); return; }
+      /* EVERY PLAYER, the ones missing a day first: who is out is read straight off the top */
+      const out=Object.keys(keys);
+      const ks=out.concat(sq.map(s=>s.key).filter(k=>out.indexOf(k)<0));
+      if(!ks.length){ c.__b.appendChild(h("div",{class:"dash-miss ok"},"No squad in Planning yet.")); return; }
+      const nm=k=>{ const p=sq.filter(s=>s.key===k)[0]; return (p&&p.name)||k; };
+      const today=out.filter(k=>(av[T]||{})[k]);
+      c.__b.appendChild(h("div",{class:"dash-avsum "+(today.length? "bad" : "ok")}, today.length? h("span",{}, h("b",{}, today.length+" out today: "), today.map(k=>nm(k)+" ("+(AV_LABEL[(av[T]||{})[k]]||(av[T]||{})[k])+")").join(" · ")) : "Everybody available today",
+        out.length>today.length? h("span",{class:"mu"}, " · "+(out.length-today.length)+" more with a restriction in the next days") : null));
       const t=h("div",{class:"dash-av7"}, h("span",{class:"hd"},"Player"), ...days.map(d=>h("span",{class:"hd"+(d===T? " t" : "")}, _dashFmt(d))));
       ks.forEach(k=>{ const p=sq.filter(s=>s.key===k)[0];
-        t.appendChild(h("span",{class:"n"}, (p&&p.name)||k));
+        t.appendChild(h("span",{class:"n"+(out.indexOf(k)>=0? " out" : "")}, (p&&p.name)||k));
         days.forEach(d=>{ const v=(av[d]||{})[k]; t.appendChild(h("span",{class:"c "+(v||"ok")}, v? (AV_LABEL[v]||v) : "✓")); }); });
       c.__b.appendChild(t);
-      c.__b.appendChild(h("div",{class:"dash-src"},"From the medical sheet in Planning · only the players with a restriction on one of the next seven days"));
+      c.__b.appendChild(h("div",{class:"dash-src"},"From the medical sheet in Planning · every player of the squad, the ones with a restriction first"));
     },
     /* ORIOL'S WORK, ON A LINE OF DAYS. A pre game is started the week before the game and
        handed in the day before it; a post game is done and handed in within 24 hours of
@@ -28420,7 +28436,46 @@ function renderDashboard(){
        ready, the videos are ticked here. The line shows each window, today and the
        deadlines; under it every game with its parts. */
     /* THE PARTS BEING REBUILT, one line each with the way in: what Oriol is improving */
+    /* WHO HAS WATCHED THE SCOUT. For the next game: each player's time on its pre game since
+       the day after our game before (the pre game screen, or the report itself when that is more),
+       the videos he played and
+       the days he came - the same reading as his own dashboard. The ones who have not opened
+       it are named first, in red. */
+    scoutv:()=>{
+      const nx=G.upcoming[0];
+      const c=card("wide", "The scout · who has watched it", nx? ()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:nx.g.id } }) : null, "Pre game");
+      if(!nx){ c.__b.appendChild(h("div",{class:"dash-miss"},"No game in the calendar.")); return; }
+      const g=nx.g, prev=G.past[G.past.length-1], from=prev? addDays(prev.g.date,1) : addDays(g.date,-7), to=T<g.date? T : g.date;
+      const head=h("div",{class:"sv-head"}, crest(g), h("b",{}, (g.venue==="Away"? "@ " : "vs ")+_lgShort(g.opponent)), h("span",{}, _dashFmt(g.date)+(g.time? " · "+g.time : "")+" · from "+_dashFmt(from)), h("span",{class:"sv-pub"},"…"));
+      c.__b.appendChild(head);
+      _dashRep(g).then(rep=>{ const ok=!!(rep && rep.share_state==="published"); const p=head.querySelector(".sv-pub"); p.textContent=ok? "published for the players" : "not published yet"; p.className="sv-pub "+(ok? "ok" : "no"); }).catch(()=>{});
+      const names=(typeof rosterUsers==="function"? rosterUsers() : []).map(p=>p.name).filter(Boolean);
+      const body=h("div",{}, loading("Reading what each player opened…")); c.__b.appendChild(body);
+      const rows=names.map(n=>({ n:n, sec:0, rep:0, vids:0, days:0, last:null, done:false }));
+      const paint=()=>{ body.innerHTML="";
+        const seen=rows.filter(r=>Math.max(r.sec,r.rep)>=60 || r.vids>0), not=rows.filter(r=>r.done && seen.indexOf(r)<0), wait=rows.filter(r=>!r.done);
+        if(not.length) body.appendChild(h("div",{class:"sv-not"}, h("b",{}, not.length+" not yet: "), not.map(r=>r.n).join(" · ")));
+        if(seen.length){ const mx=Math.max(60, ...seen.map(r=>Math.max(r.sec,r.rep)));
+          const t=h("table",{class:"sv-t"}, h("tr",{}, h("th",{class:"l"},"Player"), h("th",{class:"l"},"Time on the scout"), h("th",{},"Videos"), h("th",{},"Days"), h("th",{class:"l"},"Last")));
+          seen.sort((a,b)=>Math.max(b.sec,b.rep)-Math.max(a.sec,a.rep)).forEach(r=>{ const s=Math.max(r.sec,r.rep), m=Math.round(s/60);
+            t.appendChild(h("tr",{}, h("td",{class:"l"}, h("b",{}, r.n)),
+              h("td",{class:"l"}, h("span",{class:"sv-bar"}, h("i",{style:"width:"+Math.round(100*s/mx)+"%"})), " "+(m<60? m+" min" : Math.floor(m/60)+" h "+String(m%60).padStart(2,"0"))),
+              h("td",{}, r.vids? String(r.vids) : "—"), h("td",{}, String(r.days)), h("td",{class:"l mu"}, r.last? _dashFmt(r.last) : "—"))); });
+          body.appendChild(t); }
+        if(wait.length) body.appendChild(h("div",{class:"dash-miss"}, "reading "+wait.length+" more…"));
+        if(!rows.length) body.appendChild(h("div",{class:"dash-miss"},"No player accounts in the roster."));
+        body.appendChild(h("div",{class:"dash-src"},"Time counts while the page is open and in use; a player who has not opened it for a minute counts as not yet. Videos: the plays he pressed."));
+      };
+      (async ()=>{ for(let i=0;i<rows.length;i+=4){ await Promise.all(rows.slice(i,i+4).map(async r=>{
+          try{ const x=await sbrpc("get_report",{ p_token:SB_TOKEN, p_key:useKey(r.n) }); const days=(x && x.ok && x.report && x.report.data && x.report.data.days)||{};
+            for(let d=from; d<=to; d=addDays(d,1)){ const y=days[d]; if(!y) continue; const s=(y.vsec||{}).oppscout||0, rs=((y.rsec||{})["pre:"+g.id])||0;
+              let v=0; Object.keys(y.vids||{}).forEach(id=>{ const z=y.vids[id]; if(z.where!=="playbook") v+=(z.n||0); });
+              r.sec+=s; r.rep+=rs; r.vids+=v; if(s+rs>0 || v>0){ r.days++; r.last=d; } } }catch(e){}
+          r.done=true; })); paint(); } })();
+      paint();
+    },
     owip:()=>{
+      if((DASHES[currentUser]||{}).cards && DASHES[currentUser].cards.indexOf("opend")>=0) return;   /* it is a part of the to-do table */
       const c=card("", "In development · what I am improving", null);
       const go=(lbl, fn)=>h("button",{type:"button", class:"dash-gp", onclick:fn}, lbl+" ›");
       const items=[
@@ -28435,7 +28490,7 @@ function renderDashboard(){
        CSV in the Drive and not ticked, and the post games flagged for a second look - each
        with the way in. Read from the same places as My work and the video cards. */
     opend:()=>{
-      const c=card("wide", "Still to hand in · and to review", null);
+      const c=card("wide", "To do · hand in, review, upload and in development", null);
       const KEY="work:oriol";
       const body=h("div",{}, loading("Checking the reports…")); c.__b.appendChild(body);
       const ph=g=>{ try{ return _gamePlaceholder(g.opponent); }catch(e){ return false; } };
@@ -28466,11 +28521,19 @@ function renderDashboard(){
         const review=postG.filter(x=>rv[x.g.id] && !rv[x.g.id].done && !hide["rev:"+x.g.id]).reverse().map(x=>row("rev:"+x.g.id, gl(x.g), x.g, "post game · "+_dashFmt(x.g.date)+" · to review", go("Open", ()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:x.g.id } })), "rev"));
         const tr=(P.train||[]).filter(t=>{ const f=practice? practice.filter(x=>window.LowenPostStats.fileDate(x.name)===t.d)[0] : null; return !f && !vt["train:"+t.d] && !hide["train:"+t.d]; })
           .slice().reverse().map(t=>row("train:"+t.d, _dashFmt(t.d), null, "training · no CSV in the Drive"+(t.pj && t.pj.md? " · "+t.pj.md : ""), null));
-        body.appendChild(h("div",{class:"dash-pend-g"},
-          col("Pre games to hand in", pre, nRep<need? "checking…" : "all handed in"),
-          col("Post games to hand in", post, nRep<need? "checking…" : "all handed in"),
-          col("Post games to review", review, srv? "nothing to review" : "…"),
-          col("Trainings to upload", tr, practice==null? "checking the Drive…" : "all uploaded or ticked")));
+        /* ONE TABLE: what is still to hand in, to review and to upload, and what is being built -
+           each line with its kind, what it is, and the way in */
+        const tag=(cls, t)=>h("span",{class:"dash-kind "+cls}, t);
+        const lines=[];
+        pre.forEach(r=>lines.push([tag("pre","Pre game · hand in"), r])); post.forEach(r=>lines.push([tag("post","Post game · hand in"), r]));
+        review.forEach(r=>lines.push([tag("rev","Post game · review"), r])); tr.forEach(r=>lines.push([tag("tr","Training · upload"), r]));
+        (OWIP||[]).forEach(x=>lines.push([tag("wip","In development"), h("div",{class:"dash-pend-r"}, h("div",{}, h("b",{}, x[0]), h("span",{}, x[1])), h("span",{class:"dash-pend-b"}, go("Open", x[2])))]));
+        const waiting=nRep<need || practice==null;
+        const tbl=h("div",{class:"dash-todo"});
+        lines.forEach(l=>{ l[1].classList.add("dash-todo-r"); l[1].insertBefore(l[0], l[1].firstChild); tbl.appendChild(l[1]); });
+        if(!lines.length) tbl.appendChild(h("div",{class:"dash-miss ok"}, waiting? "checking…" : "Nothing to hand in, review or upload."));
+        else if(waiting) tbl.appendChild(h("div",{class:"dash-miss"},"still checking the reports and the Drive…"));
+        body.appendChild(tbl);
         /* what was taken off, to bring back - a review marked done before this list existed included */
         const hid=Object.keys(hide).map(k=>({ k:k, label:hide[k].label||k, at:hide[k].at }));
         postG.forEach(x=>{ if(rv[x.g.id] && rv[x.g.id].done && !hide["rev:"+x.g.id]) hid.push({ k:"rev:"+x.g.id, label:gl(x.g)+" · post game · "+_dashFmt(x.g.date)+" · to review", at:rv[x.g.id].at }); });
@@ -28786,9 +28849,9 @@ function renderDashboard(){
       c.__b.appendChild(h("div",{class:"dash-src"},"Each opponent's BBL, cup and European games, newest first · green with ✓: cut (a file of theirs against that team is in the scouting folder) · the dots: games cut, three wanted, the fourth optional"));
     },
     /* ---------------------------------------------------- our month, game by game (with ProB on demand) */
-    month0:(prob)=>{
+    month0:(prob, off0)=>{
       const c=card("wide", prob? "Our month · with the ProB games" : "Our month", ()=>_dashOpen("planification"));
-      let off=0;
+      let off=off0||0;
       const box=h("div",{}); c.__b.appendChild(box);
       const draw=()=>{ box.innerHTML="";
         const d0=new Date(T+"T00:00:00"); d0.setDate(1); d0.setMonth(d0.getMonth()+off);
@@ -38037,6 +38100,27 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .adm-chip{cursor:pointer;position:relative}.adm-chip input{position:absolute;opacity:0;pointer-events:none}
 .adm-chip span{display:inline-block;padding:4px 10px;border-radius:14px;border:1px solid var(--line,#dfe2e7);font-size:12px;color:var(--ink-faint,#8a93a2);background:var(--panel,#fff)}
 .adm-chip input:checked + span{background:rgba(74,134,216,.14);border-color:rgba(74,134,216,.45);color:var(--ink,#141821);font-weight:600}
+.dash-avsum{margin:0 0 8px;padding:7px 10px;border-radius:8px;font-size:12.5px}.dash-avsum.bad{background:rgba(216,82,78,.1);color:#9c2f24}.dash-avsum.ok{background:rgba(47,158,134,.12);color:#145f44}.dash-avsum .mu{color:var(--ink-soft,#5b6472)}
+.dash-av7 .n.out{font-weight:800;color:#9c2f24}
+/* dashboard: the scout, who has watched it; the to-do table */
+.sv-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.sv-head b{font:700 15px 'Oswald',sans-serif;letter-spacing:.04em}.sv-head > span{font-size:12px;color:var(--ink-soft,#5b6472)}
+.sv-pub{margin-left:auto;padding:2px 9px;border-radius:10px;font:700 10px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;background:var(--panel-2,#f1f2f5)}
+.sv-pub.ok{background:rgba(47,158,134,.15);color:#13804f}.sv-pub.no{background:rgba(216,82,78,.12);color:#c0392b}
+.sv-not{padding:8px 10px;border-radius:8px;background:rgba(216,82,78,.1);color:#9c2f24;font-size:13px;margin-bottom:8px}
+.sv-t{width:100%;border-collapse:collapse;font-size:12.5px}
+.sv-t th{font:700 9.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472);padding:4px 6px;border-bottom:2px solid var(--ink,#141821);text-align:center}
+.sv-t td{padding:4px 6px;border-bottom:1px solid var(--line,#eef0f3);text-align:center}
+.sv-t th.l,.sv-t td.l{text-align:left}.sv-t td.mu{color:var(--ink-faint,#8a93a2)}
+.sv-bar{display:inline-block;width:120px;height:8px;border-radius:4px;background:var(--panel-2,#eef0f3);vertical-align:middle;overflow:hidden}
+.sv-bar i{display:block;height:100%;background:#2f9e86;border-radius:4px}
+.dash-todo{display:flex;flex-direction:column;gap:4px}
+.dash-todo-r{display:grid!important;grid-template-columns:150px auto minmax(0,1fr) auto;align-items:center;gap:10px}
+.dash-todo-r:not(:has(> .dash-crest, > img)){grid-template-columns:150px minmax(0,1fr) auto}
+.dash-kind{display:inline-block;padding:2px 8px;border-radius:9px;font:700 9.5px 'Oswald',sans-serif;letter-spacing:.07em;text-transform:uppercase;white-space:nowrap;text-align:center}
+.dash-kind.pre{background:rgba(74,134,216,.15);color:#1e5aa8}.dash-kind.post{background:rgba(232,199,102,.3);color:#7a5c12}.dash-kind.rev{background:rgba(138,111,209,.16);color:#5a3fa8}.dash-kind.tr{background:rgba(47,158,134,.15);color:#13804f}.dash-kind.wip{background:rgba(20,24,33,.08);color:var(--ink-soft,#5b6472)}
+.use-t td.use-time{white-space:nowrap;text-align:left}.use-bar{display:inline-block;width:90px;height:8px;border-radius:4px;background:var(--panel-2,#eef0f3);vertical-align:middle;margin-right:6px;overflow:hidden}.use-bar i{display:block;height:100%;background:#4a86d8;border-radius:4px}
+.use-chip{display:inline-block;margin:1px 4px 1px 0;padding:1px 8px;border-radius:10px;background:var(--panel-2,#f1f2f5);font-size:11.5px}.use-chip b{font-weight:700}
 /* pace: when the shot comes */
 .pace-v th.pbh{text-align:center}
 .pace-v .pbh-ks{display:flex;justify-content:center;gap:4px;margin-top:3px}
