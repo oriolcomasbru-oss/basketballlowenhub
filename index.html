@@ -3891,6 +3891,62 @@ function _pnHead(title, sub, right){
   if(right){ hd.appendChild(h("div",{class:"spacer"})); hd.appendChild(right); }
   return hd;
 }
+/* WHAT IS MISSING, UP TO TODAY. A training day is a day with a session in Planning, a session
+   sheet in the Drive or a practice tagging; each says which of the three it lacks. A game says
+   whether its game plan and its tagging are in (the next seven days included, for the plan).
+   And the weeks with no session in Planning at all, with what the Drive holds for them - a
+   week the Drive has sheets for but Planning shows empty is a week whose sessions were never
+   typed into Planning: the sheets are PDFs, and the hub reads their date, not their blocks. */
+function _planMissing(){
+  const box=h("section",{class:"pn pn-miss"});
+  const DX=docIndex(), TX=tagIndex(), sess=state.plan.sessions||{}, today=todayISO();
+  const sheetOn=d=>(DX.day[d]||[]).some(f=>f.folder==="practicedoc");
+  const tagOn=d=>(TX.day[d]||[]).length>0;
+  const games=(state.games||[]).filter(g=>isCycleGame(g) && g.date).sort((a,b)=>a.date.localeCompare(b.date));
+  const gameDay={}; games.forEach(g=>{ gameDay[g.date]=1; });
+  const days={};
+  Object.keys(sess).forEach(d=>{ if((sess[d]||[]).length) days[d]=1; });
+  Object.keys(DX.day).forEach(d=>{ if(sheetOn(d)) days[d]=1; });
+  Object.keys(TX.day).forEach(d=>{ if(!gameDay[d]) days[d]=1; });
+  const first=[...Object.keys(days), ...games.map(g=>g.date)].sort()[0];
+  const fd=d=>new Date(d+"T12:00:00").toLocaleDateString("en-GB",{ weekday:"short", day:"2-digit", month:"2-digit" });
+  const mk=v=>h("td",{class:v? "ok" : "no"}, v? "✓" : "✗");
+  /* the training days */
+  const tDays=Object.keys(days).filter(d=>d<=today && !gameDay[d]).sort().reverse();
+  const tMiss=tDays.filter(d=>!((sess[d]||[]).length) || !sheetOn(d) || !tagOn(d));
+  const t1=h("table",{class:"miss-t"}, h("tr",{}, h("th",{class:"l"},"Training"), h("th",{},"In Planning"), h("th",{},"Sheet in Drive"), h("th",{},"Tagging")));
+  tMiss.forEach(d=>t1.appendChild(h("tr",{}, h("td",{class:"l"}, h("button",{class:"miss-go", onclick:()=>{ state.ui.sessionDate=d; state.ui.sessionIdx=0; state.ui.planTab="session"; persist(); renderPlan(); }}, fd(d))),
+    mk((sess[d]||[]).length), mk(sheetOn(d)), mk(tagOn(d)))));
+  /* the games */
+  const lim=addDays(today, 7);
+  const gList=games.filter(g=>g.date<=lim).reverse();
+  const gMiss=gList.filter(g=>!DX.game[g.id] || (g.date<=today && !TX.game[g.id]));
+  const t2=h("table",{class:"miss-t"}, h("tr",{}, h("th",{class:"l"},"Game"), h("th",{},"Game plan"), h("th",{},"Tagging")));
+  gMiss.forEach(g=>t2.appendChild(h("tr",{}, h("td",{class:"l"}, fd(g.date)+" · "+(g.home||g.venue==="Home"? "vs " : "@ ")+_gTidy(g.opponent)),
+    mk(!!DX.game[g.id]), g.date<=today? mk(!!TX.game[g.id]) : h("td",{class:"mu"},"to come"))));
+  /* the empty weeks */
+  const weeks=[];
+  if(first){ let w=mondayOf(first); const end=mondayOf(today); let guard=0;
+    while(w<=end && guard++<80){ let nS=0, nSh=0, nT=0, nG=0;
+      for(let i=0;i<7;i++){ const d=addDays(w,i); nS+=(sess[d]||[]).length; if(sheetOn(d)) nSh++; if(tagOn(d) && !gameDay[d]) nT++; if(gameDay[d]) nG++; }
+      if(!nS) weeks.push({ w:w, nSh:nSh, nT:nT, nG:nG });
+      w=addDays(w,7); } }
+  const t3=h("table",{class:"miss-t"}, h("tr",{}, h("th",{class:"l"},"Week with no session in Planning"), h("th",{},"Sheets in Drive"), h("th",{},"Practice tagging"), h("th",{},"Games"), h("th",{class:"l"},"What it means")));
+  weeks.slice().reverse().forEach(x=>t3.appendChild(h("tr",{}, h("td",{class:"l"}, h("button",{class:"miss-go", onclick:()=>{ state.plan.weekStart=x.w; state.ui.planTab="cycle"; persist(); renderPlan(); }}, fd(x.w)+" → "+fd(addDays(x.w,6)))),
+    h("td",{class:x.nSh? "ok" : "mu"}, String(x.nSh)), h("td",{class:x.nT? "ok" : "mu"}, String(x.nT)), h("td",{class:"mu"}, String(x.nG)),
+    h("td",{class:"l why"}, x.nSh || x.nT? "the Drive has this week - its sessions were never put into Planning" : "nothing anywhere: no sheet, no tagging, no session"))));
+  const unplaced=(DX.unmatched||[]).filter(f=>f.folder==="practicedoc" || f.folder==="gameplan");
+  const all=Object.keys((docsState().files)||{}).length;
+  box.appendChild(_pnHead("What is missing", all? (tMiss.length+" training days · "+gMiss.length+" games · "+weeks.length+" empty weeks") : "reading the Drive…"));
+  const grid=h("div",{class:"miss-grid"});
+  grid.appendChild(h("div",{class:"miss-c"}, h("h5",{},"Training days"), tMiss.length? h("div",{class:"miss-s"}, t1) : h("div",{class:"miss-none"},"Every training day has its session, its sheet and its tagging.")));
+  grid.appendChild(h("div",{class:"miss-c"}, h("h5",{},"Games"), gMiss.length? h("div",{class:"miss-s"}, t2) : h("div",{class:"miss-none"},"Every game has its plan and its tagging.")));
+  box.appendChild(grid);
+  if(weeks.length) box.appendChild(h("div",{class:"miss-c"}, h("h5",{},"Weeks that show empty in game-to-game"), h("div",{class:"miss-s"}, t3)));
+  if(unplaced.length) box.appendChild(h("div",{class:"miss-c"}, h("h5",{},"In the Drive but not placed - the hub could not tell the day or the game"),
+    h("ul",{class:"miss-ul"}, ...unplaced.map(f=>h("li",{}, h("button",{class:"miss-go", onclick:()=>docOpen(f)}, f.name), f.how? h("small",{}, " · "+f.how) : null)))));
+  return box;
+}
 function planHome(){
   const wrap=h("div",{class:"phome"});
   /* the schedule is DB_Games, read on the way in - there is nothing here to choose and
@@ -3913,6 +3969,7 @@ function planHome(){
       null, monthNav(cur)),
     monthlyView({bare:true}));
   wrap.appendChild(h("div",{class:"phome-two"}, yp, mp));
+  try{ wrap.appendChild(_planMissing()); }catch(e){}
   return wrap;
 }
 function renderPlan(){
@@ -3925,7 +3982,7 @@ function renderPlan(){
   root.appendChild(h("div",{class:"plan-head"},
     h("div",{class:"plan-subtabs"},
       h("button",{class:"subtab"+(tab==="home"?" active":""), onclick:()=>{state.ui.planTab="home";persist();renderPlan();}},"Overview"),
-      h("button",{class:"subtab"+(tab==="cycle"?" active":""), onclick:()=>{state.ui.planTab="cycle";persist();renderPlan();}},"Game-to-game"),
+      h("button",{class:"subtab"+(tab==="cycle"?" active":""), onclick:()=>{state.ui.planTab="cycle"; state.plan.weekStart=todayISO(); persist();renderPlan();}},"Game-to-game"),
       h("button",{class:"subtab"+(tab==="session"?" active":""), onclick:()=>{state.ui.planTab="session";persist();renderPlan();}},"Session")),
     h("div",{class:"spacer"}),
     tab==="session"? (function(){
@@ -3943,7 +4000,10 @@ function renderPlan(){
   root.appendChild(tab==="home"? planHome() : tab==="session"? sessionSheetView() : cycleView());
 }
 
+/* game-to-game opens on the week of today, once a visit; after that it stays where it is taken */
+let _cycleOpened=false;
 function cycleView(){
+  if(!_cycleOpened){ _cycleOpened=true; state.plan.weekStart=todayISO(); }
   const anchor=state.plan.weekStart||todayISO(); const cyc=cycleFor(anchor);
   const n=cyc.days.length; const gridStyle="grid-template-columns:repeat("+n+",300px);gap:14px";
   const wrap=h("div",{});
@@ -37941,6 +38001,21 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .sx-prlook-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:#9fb4d1}
 .sx-prlook-b.g .sx-prlook-bar i{background:#2f9e86}.sx-prlook-b.a .sx-prlook-bar i{background:#d9a521}.sx-prlook-b.r .sx-prlook-bar i{background:#d8524e}
 .sx-prlook-bar u{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:var(--ink,#141821)}
+/* planning: what is missing */
+.pn-miss{margin-top:14px}
+.miss-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.miss-c{min-width:0;margin-top:8px}
+.miss-c h5{margin:0 0 6px;font:700 11px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}
+.miss-s{max-height:340px;overflow:auto;border:1px solid var(--line,#e6e8ec);border-radius:8px}
+.miss-t{width:100%;border-collapse:collapse;font-size:12.5px}
+.miss-t th{position:sticky;top:0;background:var(--panel,#fff);font:700 9.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472);padding:5px 8px;border-bottom:2px solid var(--ink,#141821);text-align:center}
+.miss-t td{padding:4px 8px;border-bottom:1px solid var(--line,#eef0f3);text-align:center}
+.miss-t th.l,.miss-t td.l{text-align:left}
+.miss-t td.ok{color:#13804f;font-weight:700}.miss-t td.no{color:#c0392b;font-weight:800;background:rgba(216,82,78,.08)}.miss-t td.mu{color:var(--ink-faint,#8a93a2)}
+.miss-t td.why{font-size:11.5px;color:var(--ink-soft,#5b6472)}
+.miss-go{border:0;background:none;padding:0;font:inherit;color:inherit;cursor:pointer;text-decoration:underline dotted}
+.miss-none{font-size:12px;color:#13804f;padding:6px 0}
+.miss-ul{margin:0;padding-left:18px;font-size:12px}
 /* pace: when the shot comes */
 .pace-v th.pbh{text-align:center}
 .pace-v .pbh-ks{display:flex;justify-content:center;gap:4px;margin-top:3px}
