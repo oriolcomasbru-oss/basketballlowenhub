@@ -82,8 +82,35 @@ function keepInFolder(folder, name, mime) {
   return true;
 }
 
+/* THE WHOLE FOLDER. The folder page below carries only the first fifty files - the rest
+   arrive as the page scrolls - so the session sheets stopped at fifty and every sheet after
+   it read as missing (Practice 58, 17/10, was in the Drive). The embedded view lists them
+   all. A "Còpia de …" next to its original is the same sheet twice and is left out. */
+async function listEmbedded(folderId, folder) {
+  const r = await fetch("https://drive.google.com/embeddedfolderview?id=" + encodeURIComponent(folderId), { headers: UA, redirect: "follow" });
+  if (!r.ok) throw new Error("embedded view returned " + r.status);
+  const html = await r.text();
+  const dec = s => s.replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n));
+  const out = [], seen = {};
+  const re = /<div class="flip-entry" id="entry-([A-Za-z0-9_-]{20,})"[\s\S]*?<a href="([^"]*)"[\s\S]*?class="flip-entry-title">([^<]*)</g;
+  let m;
+  while ((m = re.exec(html))) {
+    const id = m[1], href = m[2], name = dec(m[3]).trim();
+    if (/\/folders\//.test(href) || seen[id] || !name) continue;
+    const sheetByName = folder === "pregame" && !/\.[a-z0-9]{2,4}$/i.test(name) && /(^|[^a-z])calls?([^a-z]|$)/i.test(name);
+    if (!sheetByName && !keepInFolder(folder, name, "")) continue;
+    seen[id] = 1; out.push({ id: id, name: name });
+  }
+  const names = {}; out.forEach(f => { names[f.name] = 1; });
+  const kept = out.filter(f => { const o = /^(?:c[oò]pia de|copia de|copy of)\s+(.+)$/i.exec(f.name); return !(o && names[o[1]]); });
+  if (!kept.length) throw new Error("no files found on the embedded folder view");
+  kept.sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+  return kept;
+}
 async function listPublic(folderId, folder) {
-  const url = "https://drive.google.com/drive/folders/" + encodeURIComponent(folderId) + "?hl=en";
+  try { return await listEmbedded(folderId, folder); } catch (e) { /* the folder page below, as before */ }
+  const url ="https://drive.google.com/drive/folders/" + encodeURIComponent(folderId) + "?hl=en";
   const r = await fetch(url, { headers: UA, redirect: "follow" });
   if (!r.ok) throw new Error("folder page returned " + r.status);
   let html = await r.text();
