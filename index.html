@@ -28571,14 +28571,23 @@ function renderDashboard(){
           const rankD=me && me.def? 1+F.filter(t=>t.def && t.def.reb>me.def.reb).length : null;
           /* each half with what the other side got on the same misses: the rival's share is the
              rest of ours, shown so what we allowed is read without doing the sum */
-          const half=(lab, a, b3, s, rk, rivLab)=>h("div",{class:"rb-h"}, h("i",{}, lab), h("b",{class:tone(a, s)}, f0(a)),
-            h("div",{class:"row"}, h("em",{class:tone(b3, s)}, "last 3 ", h("u",{}, f0(b3))), h("em",{}, "season ", h("u",{}, f0(s)))),
-            h("div",{class:"rb-riv"}, h("span",{}, rivLab), h("b",{}, f0(a==null? null : 100-a)), h("span",{}, "· L3 "+f0(b3==null? null : 100-b3)+" · season "+f0(s==null? null : 100-s))),
-            rk? h("small",{}, _dashOrd(rk)+" of "+F.length) : null);
+          /* ONE BAR A SIDE: the misses of the last game split between us and them - ours in
+             colour, theirs in red with their code - and the league's average as a tick; the
+             last three and the season as two chips, the place in the league in the corner */
+          const opp=GL.length? (GL[GL.length-1].code || String(GL[GL.length-1].opp||"").slice(0,3).toUpperCase()) : "";
+          const lgAvgD=F.filter(t=>t.def).length? 100*F.filter(t=>t.def).reduce((a,t)=>a+t.def.reb,0)/F.filter(t=>t.def).length : null;
+          const half=(lab, a, b3, s, rk, lgv, cls)=>h("div",{class:"rb-h "+cls},
+            h("div",{class:"rb-top"}, h("i",{}, lab), rk? h("span",{class:"rb-rk", title:"Place in the league"}, "#"+rk+"/"+F.length) : null),
+            h("b",{class:tone(a, s)}, f0(a)),
+            a==null? null : h("div",{class:"rb-split", title:"Last game: we got "+f0(a)+", "+opp+" "+f0(100-a)+(lgv!=null? " · league average "+f0(lgv) : "")},
+              h("span",{class:"us", style:"width:"+Math.round(a)+"%"}), h("span",{class:"them", style:"width:"+Math.round(100-a)+"%"}),
+              lgv!=null? h("i",{class:"lg", style:"left:"+Math.round(lgv)+"%"}) : null),
+            a==null? null : h("div",{class:"rb-lbl"}, h("span",{}, "US"), h("span",{class:"opp"}, opp+" "+f0(100-a))),
+            h("div",{class:"row"}, h("em",{class:tone(b3, s)}, "L3 ", h("u",{}, f0(b3))), h("em",{}, "SEASON ", h("u",{}, f0(s)))));
           if(GL.length) orFig=h("div",{class:"dash-kf rb-kf"},
             h("i",{}, "Rebounding"), h("span",{}, "last game · "+(GL[GL.length-1].opp||"")),
-            h("div",{class:"rb-two"}, half("Offensive", vL, v3, vS, rank, "rival DREB"), half("Defensive", dL, d3, dS, rankD, "rival OREB allowed")),
-            h("small",{}, "of our misses / of theirs, from the league"+(lgAvg!=null? " · league OREB "+f0(lgAvg) : "")));
+            h("div",{class:"rb-two"}, half("Offensive", vL, v3, vS, rank, lgAvg, "o"), half("Defensive", dL, d3, dS, rankD, lgAvgD, "d")),
+            h("small",{class:"rb-key"}, h("i",{class:"lg"}), " league average"));
           /* the chart: both rates a game, the season's as dashed lines */
           { const labs=GL.map(x=>x.code||"?"), ov=GL.map(x=>orb([x])), dv=GL.map(x=>drb([x]));
             const SR=[{ name:"Our OREB%", v:ov, c:"#c7a76a" }, { name:"Our DREB%", v:dv, c:"#4a86d8" }, { name:"Rival OREB% · what we allowed", v:dv.map(x=>x==null? null : 100-x), c:"#d8524e" }];
@@ -38512,6 +38521,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .rx-sw i{position:absolute;left:0;top:0;bottom:0;width:82%;border-radius:2px}.rx-sw.g i{background:#2f9e86}.rx-sw.r i{background:#d8524e}
 .rx-ul{display:inline-block;width:18px;height:10px}.rx-ul.tb{box-shadow:inset 0 -2px 0 #d9a521}.rx-ul.tw{box-shadow:inset 0 -2px 0 #9aa1ac}
 .rb-riv{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px;font-size:10.5px;color:var(--ink-soft,#5b6472);margin-top:1px}.rb-riv b{font:700 12px 'IBM Plex Mono',monospace;color:#c0392b}
+.rb-top{display:flex;align-items:center;justify-content:space-between;gap:6px}.rb-top > i{font-style:normal;font:700 9.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;opacity:.75}.rb-rk{font:700 10px 'IBM Plex Mono',monospace;padding:1px 6px;border-radius:8px;background:var(--line,#e6e9ee);color:var(--ink-soft,#5b6472)}.rb-split{position:relative;display:flex;height:10px;border-radius:5px;overflow:visible;background:var(--line,#e6e9ee);margin:3px 0 1px}.rb-split > span{display:block;height:100%}.rb-split .us{background:#c7a76a;border-radius:5px 0 0 5px}.rb-h.d .rb-split .us{background:#4a86d8}.rb-split .them{background:#e8a19e;border-radius:0 5px 5px 0}.rb-split i.lg,.rb-key i.lg{position:absolute;top:-3px;width:2px;height:16px;background:var(--ink,#1d2330);border-radius:1px;transform:translateX(-1px)}.rb-key{display:flex;align-items:center;gap:4px;font-size:10px;opacity:.75;margin-top:2px}.rb-key i.lg{position:relative;top:0;height:11px;transform:none}.rb-lbl{display:flex;justify-content:space-between;font:700 9.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}.rb-lbl .opp{color:#c0392b}
 .rx-det{margin:10px 0 4px}.rx-det > summary{cursor:pointer;display:inline-flex;align-items:center;gap:6px;font:700 10.5px 'Oswald',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft,#5b6472);padding:4px 10px;border:1px solid var(--line,#e2e5ea);border-radius:14px;list-style:none}.rx-det > summary::-webkit-details-marker{display:none}.rx-det > summary::before{content:'▸'}.rx-det[open] > summary::before{content:'▾'}.rx-det[open] > summary{color:var(--ink,#141821)}
 .dash-mixes{display:flex;flex-direction:column;gap:5px;margin-top:4px}.dash-mixr{display:grid;grid-template-columns:90px minmax(0,1fr) 34px;gap:8px;align-items:center;font-size:12px}.dash-mixr .l{font-weight:600;white-space:nowrap}.dash-mixr .n{font:600 11px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);text-align:right}.dash-mixr .bar{display:flex;height:18px;border-radius:5px;overflow:hidden;background:var(--panel-2,#eef0f3)}.dash-mixr .bar i{display:flex;align-items:center;justify-content:center;font:600 10px 'Inter',sans-serif;font-style:normal;color:#fff;white-space:nowrap;overflow:hidden;min-width:0}
 /* pace: when the shot comes */
