@@ -23967,8 +23967,9 @@ function _lgRoster(L){
     const add=(key,t)=>{ if(!t || seen[key]) return; seen[key]=1; pool.push(t); };
     Object.keys(L.lead||{}).forEach(tid=>((L.lead[tid]||{}).players||[]).forEach(p=>add(tid+":"+p.id, p.all)));
     Object.keys(L.players||{}).forEach(tid=>((L.players[tid]||{}).players||[]).forEach(p=>add(tid+":"+p.id, p.all)));
-    if(pool.length<60){ try{ _lgLeadLoad(L); }catch(e){} }
-    else cols.forEach(c=>{ if(c.pair || c.solo || c.k==="pm") return;
+    /* the clubs read with older numbers are read again in the background, whatever the pool holds */
+    try{ _lgLeadLoad(L); }catch(e){}
+    if(pool.length>=60) cols.forEach(c=>{ if(c.pair || c.solo || c.k==="pm") return;
       const vs=pool.filter(t=>_lgRsElig(c,t,true)).map(t=>_lgRsVal(c,t,per,{tm:{},op:{}})).filter(v=>v!=null && isFinite(v)).sort((a,b)=>a-b);
       if(vs.length<30) return;
       const q=f=>vs[Math.min(vs.length-1, Math.max(0, Math.round(f*(vs.length-1))))];
