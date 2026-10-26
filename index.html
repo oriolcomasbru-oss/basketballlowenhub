@@ -28475,7 +28475,9 @@ function renderDashboard(){
          our misses we got back - the last game, the last three, the season and our place among
          the clubs. Drawn by whichever of the two readings arrives second. */
       let orFig=null, keyDone=false;
-      const putOr=()=>{ if(orFig && keyDone && !orFig.isConnected) key.appendChild(orFig); };
+      /* the rebounding comes from the league, not the Drive: it is shown as soon as it is in, and
+         put back at the end of the key figures when the tagging fills them */
+      const putOr=()=>{ if(orFig && !orFig.isConnected) key.appendChild(orFig); };
       const net=x=>(x.us.poss && x.them.poss)? 100*x.us.pts/x.us.poss-100*x.them.pts/x.them.poss : null;
       const fig=(k,v,n2,tone)=>h("div",{class:"dash-fig "+(tone||"")}, h("i",{},k), h("b",{},v), h("span",{},n2||""));
       const lastBits=[];
@@ -28563,7 +28565,7 @@ function renderDashboard(){
       _dashNeed(()=>window.LowenPostStats && window.LowenPostStats.seasonGames).then(()=>window.LowenPostStats.seasonGames()).then(list=>{
         [cP,cT,cR,cB,cW,cU,cD,cX].forEach(x=>{ x.__b.innerHTML=""; }); key.innerHTML="";
         const API=window.LowenPostStats;
-        if(!list || !list.length){ key.appendChild(h("div",{class:"dash-miss"},"No tagged games in the Drive folder yet.")); return; }
+        if(!list || !list.length){ key.appendChild(h("div",{class:"dash-miss"},"No tagged games in the Drive folder yet.")); putOr(); return; }
         const labs=list.map(x=>String(x.label||"").replace(/^(VS|@)\s+/,"").slice(0,3));
         const ms=(x,k)=>{ const v=API.measured(x.s,k); return isFinite(v)? v : null; };
         const msL=(L2,k)=>{ const s=API.addUp(L2.map(x=>x.s)); if(!s) return null; const v=API.measured(s,k); return isFinite(v)? v : null; };
@@ -28633,7 +28635,7 @@ function renderDashboard(){
         cU.__b.appendChild(up.length? h("div",{}, up.map(x=>mvRow(x,"good"))) : h("div",{class:"dash-src"},"No set has improved clearly (three runs or more in both)."));
         cD.__b.appendChild(dn.length? h("div",{}, dn.map(x=>mvRow(x,"bad"))) : h("div",{class:"dash-src"},"No set has dropped clearly."));
         cU.__b.appendChild(h("div",{class:"dash-src"},"Points per possession, the games before → the last three"));
-      }).catch(()=>{ [cP,cT,cR,cB,cW,cU,cD,cX].forEach(x=>{ x.__b.innerHTML=""; }); key.innerHTML=""; key.appendChild(h("div",{class:"dash-miss"},"Our tagging could not be read from the Drive.")); });
+      }).catch(()=>{ [cP,cT,cR,cB,cW,cU,cD,cX].forEach(x=>{ x.__b.innerHTML=""; }); key.innerHTML=""; key.appendChild(h("div",{class:"dash-miss"},"Our tagging could not be read from the Drive.")); putOr(); });
     },
     /* ---------------------------------------------------- Pedro: minutes from the games */
     minutes:()=>{
@@ -28717,7 +28719,7 @@ function renderDashboard(){
               h("td",{class:"l"}, h("span",{class:"sv-bar"}, h("i",{style:"width:"+Math.round(100*s/mx)+"%"})), " "+(m<60? m+" min" : Math.floor(m/60)+" h "+String(m%60).padStart(2,"0"))),
               h("td",{}, r.vids? String(r.vids) : "—"), h("td",{}, String(r.days)), h("td",{class:"l mu"}, r.last? _dashFmt(r.last) : "—"))); });
           body.appendChild(t); }
-        if(wait.length) body.appendChild(h("div",{class:"dash-miss"}, "reading "+wait.length+" more…"));
+        if(wait.length) body.appendChild(h("div",{class:"ld"}, "Reading "+wait.length+" more…", h("span",{class:"ld-bar"})));
         if(!rows.length) body.appendChild(h("div",{class:"dash-miss"},"No player accounts in the roster."));
         body.appendChild(h("div",{class:"dash-src"},"Time counts while the page is open and in use; a player who has not opened it for a minute counts as not yet. Videos: the plays he pressed."));
       };
@@ -28788,8 +28790,8 @@ function renderDashboard(){
         /* the first eight, the rest one press away: the card stays the size of a card */
         lines.forEach((l,i)=>{ l[1].classList.add("dash-todo-r"); l[1].insertBefore(l[0], l[1].firstChild); if(i<8 || showAllTodo) tbl.appendChild(l[1]); });
         if(lines.length>8) tbl.appendChild(h("button",{type:"button", class:"dash-pend-more", onclick:()=>{ showAllTodo=!showAllTodo; paint(); }}, showAllTodo? "▴ Show fewer" : "▾ The other "+(lines.length-8)));
-        if(!lines.length) tbl.appendChild(h("div",{class:"dash-miss ok"}, waiting? "checking…" : "Nothing to hand in, review or upload."));
-        else if(waiting) tbl.appendChild(h("div",{class:"dash-miss"},"still checking the reports and the Drive…"));
+        if(!lines.length) tbl.appendChild((waiting? h("div",{class:"ld"},"Checking the reports and the Drive…", h("span",{class:"ld-bar"})) : h("div",{class:"dash-miss ok"},"Nothing to hand in, review or upload.")));
+        else if(waiting) tbl.appendChild(h("div",{class:"ld"},"Still checking the reports and the Drive…", h("span",{class:"ld-bar"})));
         body.appendChild(tbl);
         /* what was taken off, to bring back - a review marked done before this list existed included */
         const hid=Object.keys(hide).map(k=>({ k:k, label:hide[k].label||k, at:hide[k].at }));

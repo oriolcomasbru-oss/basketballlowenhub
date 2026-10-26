@@ -132,10 +132,14 @@ exports.handler = async (event) => {
       const errors = [];
       const take = (p) => get(p, key).catch(e => { errors.push(clean(e.message)); return null; });
       /* the other group of the ProB, for the standings' switch: never an error if it is not there */
-      const otherLeague = /nord/.test(league) ? league.replace("nord", "sued") : league.replace(/s(ue|ü)d/, "nord");
+      /* the league does not say how the other group is spelt: the likely spellings are tried in
+         turn and the first that answers is the one - never an error when none does */
+      const otherNames = /nord/.test(league) ? ["sued", "sud", "süd", "south", "s"].map(s => league.replace("nord", s)).concat(["prob-sued", "prob_sued", "probsued", "prob-s"])
+        : ["nord", "north", "n"].map(s => league.replace(/s(ue|ü|u)d/, s)).concat(["prob-nord", "prob_nord", "probnord"]);
+      const tryOther = async () => { for (const nm of otherNames) { try { const r = await get("tabelle_" + nm, key); if (r && r.table && r.table.length) return { name: nm, r: r }; } catch (e) { } } return null; };
       const [sp, tb, lv, kd, st, tbo] = await Promise.all([
         take("spielplan/" + league + "/" + season), take("tabelle_" + league), take("gamesLive"), take("kader"), take("stats_hauptrunde"),
-        get("tabelle_" + otherLeague, key).catch(() => null)
+        tryOther()
       ]);
       const stats = st && st.g && st.g[0];
       const out = {
@@ -145,7 +149,7 @@ exports.handler = async (event) => {
         team: { id: stats ? S(stats.team_id) : "", name: (kd && kd.data && S(kd.data.team_caption)) || (stats ? S(stats.team_caption) : ""),
           short: kd && kd.data ? S(kd.data.team_shortname) : "", abbr: kd && kd.data ? S(kd.data.team_abbrev) : "" },
         games: sp ? schedule(sp) : [], table: tb ? table(tb) : [], live: lv ? live(lv) : [], roster: roster(kd, st),
-        other: tbo ? { league: (tbo.data && tbo.data.league) || otherLeague, table: table(tbo) } : null,
+        other: tbo ? { league: (tbo.r.data && tbo.r.data.league) || tbo.name, table: table(tbo.r) } : null,
         errors: errors
       };
       cache[ck] = { t: Date.now(), d: out };
