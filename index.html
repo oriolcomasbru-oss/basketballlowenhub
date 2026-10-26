@@ -5924,8 +5924,8 @@ async function useStart(){
   }
   const day = _useDay(); if(day) day.opens = (day.opens || 0) + 1;
   _useDirty = true;
-  ["pointerdown","keydown","wheel","touchstart"].forEach(ev =>
-    window.addEventListener(ev, () => { _useAct = Date.now(); }, { passive: true }));
+  ["pointerdown","pointermove","keydown","wheel","touchstart","scroll"].forEach(ev =>
+    window.addEventListener(ev, () => { _useAct = Date.now(); }, { passive: true, capture: true }));
   document.addEventListener("visibilitychange", () => { if(document.hidden) useFlush(); });
   window.addEventListener("pagehide", () => useFlush());
   let since = 0;
@@ -5934,7 +5934,7 @@ async function useStart(){
     if(typeof _viewAs!=="undefined" && _viewAs) return;
     /* a video being watched is time in use with no touch on the page: while its player is
        still open the time counts, up to twenty minutes without a touch */
-    const vo = _useVidOn && document.querySelector('iframe[src*="youtube.com/embed/' + _useVidOn.id + '"]');
+    const vo = _useVidOn && document.querySelector('iframe[src*="/embed/' + _useVidOn.id + '"]');
     if(!vo) _useVidOn = null;
     if(Date.now() - _useAct > (vo ? USE_VID_IDLE : USE_IDLE)) return;
     const d = _useDay(); if(!d) return;
@@ -5990,7 +5990,8 @@ async function useFlush(){
     }catch(e){}
     await sbrpc("save_report", { p_token: SB_TOKEN, p_key: useKey(currentUser), p_kind: "usage",
       p_opponent: "", p_date: null, p_data: _useTrim(merged), p_html: null });
-    _use = merged;
+    /* what the heartbeat added while this was on its way stays: the larger of the two again */
+    _use = _useMerge(merged, _use);
   }catch(e){ _useDirty = true; }
   _useBusy = false;
 }
@@ -6377,7 +6378,7 @@ async function renderUsage(body, accounts, log){
       h("span",{class:"use-note"}, live.length+" of "+rows.length+" account"
         +(rows.length===1?"":"s")+" have sent anything yet")));
     const since=(()=>{ const d=+_useWin; if(!d) return "0000-00-00";
-      const t=new Date(); t.setDate(t.getDate()-(d-1)); return t.toISOString().slice(0,10); })();
+      return addDays(todayISO(), -(d-1)); })();
     /* one line per account, the days folded into totals */
     const sum=rows.map(r=>{
       const days=Object.keys((r.doc&&r.doc.days)||{}).filter(d=>d>=since).sort();

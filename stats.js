@@ -35,12 +35,50 @@
     return window.LowenDriveFetch ? window.LowenDriveFetch(url) : fetch(url);
   }
 
+  /* THE FILES KEPT IN THIS BROWSER. A tagging export does not change once it is in the
+     folder, so each one is kept here with the date Drive gives it: the next visit reads it
+     from the browser, and only a new file - or one changed since - comes down again. */
+  var fileStamp = {};   // fileId -> Drive's modifiedTime, from the last listing
+  var _idbP = null;
+  function idb() {
+    if (_idbP) return _idbP;
+    _idbP = new Promise(function (ok) {
+      try {
+        var q = indexedDB.open("lowen-tagging", 1);
+        q.onupgradeneeded = function () { q.result.createObjectStore("files"); };
+        q.onsuccess = function () { ok(q.result); };
+        q.onerror = function () { ok(null); };
+      } catch (e) { ok(null); }
+    });
+    return _idbP;
+  }
+  function idbGet(id, stamp) {
+    return idb().then(function (db) {
+      if (!db || !stamp) return null;
+      return new Promise(function (ok) {
+        try {
+          var q = db.transaction("files").objectStore("files").get(id);
+          q.onsuccess = function () { var v = q.result; ok(v && v.m === stamp ? v.t : null); };
+          q.onerror = function () { ok(null); };
+        } catch (e) { ok(null); }
+      });
+    });
+  }
+  function idbPut(id, stamp, text) {
+    if (!stamp) return;
+    idb().then(function (db) {
+      if (!db) return;
+      try { db.transaction("files", "readwrite").objectStore("files").put({ m: stamp, t: text }, id); } catch (e) {}
+    });
+  }
+
   function listFolder(kind) {
     if (!cacheList[kind]) {
       cacheList[kind] = dfetch(FN + "?folder=" + kind)
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (j.error) throw new Error(j.error);
+          (j.files || []).forEach(function (f) { if (f && f.id) fileStamp[f.id] = (f.modifiedTime || "") + "|" + (f.size || ""); });
           return j.files || [];
         })
         /* a failed list must not be cached: asked before sign-in, it would stay failed */
@@ -61,13 +99,19 @@
   function getRows(fileId) {
     cacheKeep(fileId);
     if (!cacheFile[fileId]) {
-      cacheFile[fileId] = dfetch(FN + "?file=" + encodeURIComponent(fileId))
-        .then(function (r) {
-          if (!r.ok) return r.json().then(function (j) { throw new Error((j && j.error) || "download failed"); },
-                                          function () { throw new Error("download failed"); });
-          return r.arrayBuffer();
-        })
-        .then(function (buf) { return parseCsv(decodeBytes(buf)); });
+      var stamp = fileStamp[fileId] || "";
+      cacheFile[fileId] = idbGet(fileId, stamp).then(function (kept) {
+        if (kept != null) return parseCsv(kept);
+        return dfetch(FN + "?file=" + encodeURIComponent(fileId))
+          .then(function (r) {
+            if (!r.ok) return r.json().then(function (j) { throw new Error((j && j.error) || "download failed"); },
+                                            function () { throw new Error("download failed"); });
+            return r.arrayBuffer();
+          })
+          .then(function (buf) { var text = decodeBytes(buf); idbPut(fileId, stamp, text); return parseCsv(text); });
+      });
+      /* a failed read is not kept: the next ask tries again */
+      cacheFile[fileId].catch(function () { delete cacheFile[fileId]; });
     }
     return cacheFile[fileId];
   }
