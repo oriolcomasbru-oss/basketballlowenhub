@@ -902,7 +902,9 @@ exports.handler = async (event) => {
         five: five,
         text: text.length,
         kind: plain ? "exported text" : (isPdf ? "pdf" : "other"),
-        sample: text.slice(0, 180)
+        sample: text.slice(0, 180),
+        /* the whole of the words, when asked: Planning reads the blocks of a session sheet from them */
+        words: p.full === "1" ? text.slice(0, 30000) : undefined
       });
     }
 

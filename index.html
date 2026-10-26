@@ -3897,11 +3897,66 @@ function _pnHead(title, sub, right){
    And the weeks with no session in Planning at all, with what the Drive holds for them - a
    week the Drive has sheets for but Planning shows empty is a week whose sessions were never
    typed into Planning: the sheets are PDFs, and the hub reads their date, not their blocks. */
+/* THE BLOCKS OF A SESSION SHEET, READ OFF ITS WORDS. A sheet is a column of blocks, each a
+   title in capitals, its minutes (15', 15 min) and often the coach and the exercises under
+   it. The reading is a proposal: it is shown with the sheet's own words beside it, and goes
+   into Planning only when somebody presses Add. */
+const SHEET_COACHES=["PEDRO","ORIOL","KEITH","RAMON","RAMÓN","LIVIU","NILS","JONAS","JOAN MARC","MARC","ALEX","ALL"];
+function _sheetBlocks(words){
+  const txt=String(words||"").replace(/\s+/g," ").trim();
+  const start=(txt.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/)||[])[0]||"";
+  /* a block ends at its minutes: everything before a "15'" since the last one is that block */
+  const re=/(\d{1,3})\s?(?:'|’|min\b|mins\b|minutes\b)/gi;
+  const out=[]; let last=0, m;
+  while((m=re.exec(txt))){ const chunk=txt.slice(last, m.index).trim(); last=re.lastIndex;
+    const mins=+m[1]; if(!mins || mins>120) continue;
+    const caps=chunk.split(/\s*[·|•\-–—]\s*|\s{2,}/).join(" ").split(" ");
+    let coach=""; SHEET_COACHES.forEach(c=>{ if(new RegExp("\\b"+c+"\\b","i").test(chunk) && !coach) coach=c.toUpperCase(); });
+    /* the title: the first run of words in capitals of the block; what follows it is what is in it */
+    const words2=chunk.replace(new RegExp("\\b("+SHEET_COACHES.join("|")+")\\b","gi"),"").replace(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/g,"").trim().split(/\s+/).filter(Boolean);
+    const isCap=w=>/^[A-ZÄÖÜÁÉÍÓÚÑ0-9&/+().,-]{2,}$/.test(w) && /[A-ZÄÖÜÁÉÍÓÚÑ]/.test(w);
+    let k=0; while(k<words2.length && !isCap(words2[k])) k++;
+    const title=[]; while(k<words2.length && isCap(words2[k]) && title.length<5){ title.push(words2[k]); k++; }
+    const items=words2.slice(k).join(" ").split(/[,;]/).map(s=>s.trim()).filter(s=>s.length>2).slice(0,6);
+    if(title.length) out.push({ title:title.join(" "), min:mins, coach:coach, items:items });
+  }
+  return { start:start, blocks:out.slice(0,14) };
+}
+async function _sheetRead(f, iso){
+  const box=h("div",{class:"shr"}, h("h3",{},"Session sheet · "+(f.name||"")), h("div",{class:"ld"},"Reading the sheet…", h("span",{class:"ld-bar"})));
+  openDialog(box);
+  let j=null;
+  try{ const r=await driveFetch(DOCS_FN+"?doc="+encodeURIComponent(f.id)+"&name="+encodeURIComponent(f.name||"")+"&full=1"); j=await r.json(); }catch(e){ j={ err:(e&&e.message)||"error" }; }
+  box.innerHTML="";
+  box.appendChild(h("h3",{},"Session sheet · "+fmtDayShort(iso)));
+  if(!j || j.err || !j.words){ box.appendChild(h("div",{class:"lg-empty"}, "The sheet could not be read"+(j && j.err? ": "+j.err : (j && j.text===0? ": it gave up no words" : "")))); box.appendChild(h("div",{class:"dialog-foot"}, h("button",{class:"btn",onclick:closeDialog},"Close"))); return; }
+  const P=_sheetBlocks(j.words);
+  const t=h("table",{class:"miss-t"}, h("tr",{}, h("th",{class:"l"},"Block"), h("th",{},"Min"), h("th",{},"Coach"), h("th",{class:"l"},"In it")));
+  P.blocks.forEach(b=>t.appendChild(h("tr",{}, h("td",{class:"l"}, h("b",{}, b.title)), h("td",{}, String(b.min)), h("td",{}, b.coach||"—"), h("td",{class:"l why"}, b.items.join(" · ")))));
+  box.appendChild(h("div",{class:"shr-two"},
+    h("div",{}, h("h5",{}, P.blocks.length? "What the hub read · start "+(P.start||"—") : "No blocks found"), P.blocks.length? t : h("div",{class:"lg-empty"},"The sheet's words did not give blocks with their minutes.")),
+    h("div",{}, h("h5",{},"The sheet's own words"), h("div",{class:"shr-raw"}, j.words.slice(0, 4000)))));
+  const add=h("button",{class:"btn primary", onclick:()=>{ closeDialog();
+    commit(()=>{ const arr=(state.plan.sessions[iso]=state.plan.sessions[iso]||[]); const s=newSession("Session");
+      s.start=P.start||s.start; s.fromSheet=f.id; s.blocks=P.blocks.map(b=>({ title:b.title, min:b.min, coach:b.coach, items:b.items }));
+      arr.push(s); });
+    toast("Added to Planning · "+fmtDayShort(iso)); renderPlan(); }}, "Add to Planning");
+  if(!P.blocks.length) add.disabled=true;
+  box.appendChild(h("div",{class:"dialog-foot"}, h("button",{class:"btn",onclick:closeDialog},"Close"), add));
+}
+let _pmTag={ asked:false, game:null, practice:null };
 function _planMissing(){
   const box=h("section",{class:"pn pn-miss"});
   const DX=docIndex(), TX=tagIndex(), sess=state.plan.sessions||{}, today=todayISO();
   const sheetOn=d=>(DX.day[d]||[]).some(f=>f.folder==="practicedoc");
-  const tagOn=d=>(TX.day[d]||[]).length>0;
+  /* the tagging is looked for the way the post game and the post practice look for it - by the
+     date in the file name - so a file is not called missing here when its report finds it */
+  if(!_pmTag.asked){ _pmTag.asked=true; const API=window.LowenPostStats;
+    if(API && API.datesWithFiles) Promise.all([API.datesWithFiles("game"), API.datesWithFiles("practice")]).then(r=>{ _pmTag.game=r[0]||{}; _pmTag.practice=r[1]||{};
+      softRender(()=>{ if(state.ui.view==="planification") renderPlan(); }); }).catch(()=>{}); else _pmTag.asked=false; }
+  const near=(m,d)=>!!(m && (m[d] || m[addDays(d,1)] || m[addDays(d,-1)]));
+  const tagOn=d=>(TX.day[d]||[]).length>0 || !!(_pmTag.practice && _pmTag.practice[d]);
+  const gTag=g=>!!TX.game[g.id] || near(_pmTag.game, g.date);
   const games=(state.games||[]).filter(g=>isCycleGame(g) && g.date).sort((a,b)=>a.date.localeCompare(b.date));
   const gameDay={}; games.forEach(g=>{ gameDay[g.date]=1; });
   const days={};
@@ -3914,16 +3969,19 @@ function _planMissing(){
   /* the training days */
   const tDays=Object.keys(days).filter(d=>d<=today && !gameDay[d]).sort().reverse();
   const tMiss=tDays.filter(d=>!((sess[d]||[]).length) || !sheetOn(d) || !tagOn(d));
-  const t1=h("table",{class:"miss-t"}, h("tr",{}, h("th",{class:"l"},"Training"), h("th",{},"In Planning"), h("th",{},"Sheet in Drive"), h("th",{},"Tagging")));
+  const t1=h("table",{class:"miss-t"}, h("tr",{}, h("th",{class:"l"},"Training"), h("th",{},"In Planning"), h("th",{},"Sheet in Drive"), h("th",{},"Practice tagging"), h("th",{})));
+  const sheetOf=d=>(DX.day[d]||[]).filter(f=>f.folder==="practicedoc")[0]||null;
   tMiss.forEach(d=>t1.appendChild(h("tr",{}, h("td",{class:"l"}, h("button",{class:"miss-go", onclick:()=>{ state.ui.sessionDate=d; state.ui.sessionIdx=0; state.ui.planTab="session"; persist(); renderPlan(); }}, fd(d))),
-    mk((sess[d]||[]).length), mk(sheetOn(d)), mk(tagOn(d)))));
+    mk((sess[d]||[]).length), mk(sheetOn(d)), mk(tagOn(d)),
+    /* a sheet in the Drive and nothing in Planning: its blocks can be read in */
+    h("td",{}, (!(sess[d]||[]).length && sheetOf(d))? h("button",{class:"btn sm", onclick:()=>_sheetRead(sheetOf(d), d)},"Read the blocks") : null))));
   /* the games */
   const lim=addDays(today, 7);
   const gList=games.filter(g=>g.date<=lim).reverse();
-  const gMiss=gList.filter(g=>!DX.game[g.id] || (g.date<=today && !TX.game[g.id]));
-  const t2=h("table",{class:"miss-t"}, h("tr",{}, h("th",{class:"l"},"Game"), h("th",{},"Game plan"), h("th",{},"Tagging")));
+  const gMiss=gList.filter(g=>!DX.game[g.id] || (g.date<=today && !gTag(g)));
+  const t2=h("table",{class:"miss-t"}, h("tr",{}, h("th",{class:"l"},"Game"), h("th",{},"Game plan"), h("th",{},"Post-game tagging")));
   gMiss.forEach(g=>t2.appendChild(h("tr",{}, h("td",{class:"l"}, fd(g.date)+" · "+(g.home||g.venue==="Home"? "vs " : "@ ")+_gTidy(g.opponent)),
-    mk(!!DX.game[g.id]), g.date<=today? mk(!!TX.game[g.id]) : h("td",{class:"mu"},"to come"))));
+    mk(!!DX.game[g.id]), g.date<=today? (_pmTag.game? mk(gTag(g)) : h("td",{class:"mu"},"…")) : h("td",{class:"mu"},"to come"))));
   /* the empty weeks */
   const weeks=[];
   if(first){ let w=mondayOf(first); const end=mondayOf(today); let guard=0;
@@ -4038,7 +4096,7 @@ function cycleView(){
     const arr=sessionsFor(iso);
     const gms=state.games.filter(g=>g.date===iso && isCycleGame(g));
     const kl=(state.plan.kload||{})[iso];
-    const av=(state.plan.avail||{})[iso]||{};
+    const av=avOn(iso);
     const unavail=Object.keys(av).filter(k=>av[k]).map(k=>{ const p=(state.plan.squad||[]).find(x=>x.key===k); return {nm:(p?p.name:k), st:av[k]}; });
     const ds=dayGoalSummary(iso); const goal=ds.goal?GOALS.find(g=>g[0]===ds.goal):null;
     const md=mdLabel(iso,cyc);
@@ -4151,7 +4209,7 @@ function _semChip(key,av,dl){ const st=_semSt(key,av); return h("div",{class:"se
   h("span",{class:"sem-dot"}), h("span",{class:"sem-nm"}, _semName(key)),
   (st&&st!=="out")? h("span",{class:"sem-tag"}, ((typeof AV_SHORT!=="undefined"&&AV_SHORT[st])||st)) : null); }
 function availSemaforo(iso){
-  const av=(state.plan.avail||{})[iso]||{};
+  const av=avOn(iso);
   const grid=h("div",{class:"sem"});
   SEM_GROUPS.forEach(g=>{
     const col=h("div",{class:"sem-col"});
@@ -4163,7 +4221,7 @@ function availSemaforo(iso){
   return grid;
 }
 function availDayMini(iso){
-  const av=(state.plan.avail||{})[iso]||{};
+  const av=avOn(iso);
   const all=[]; SEM_GROUPS.forEach(g=>{ g.main.forEach(k=>all.push([k,false])); g.dl.forEach(k=>all.push([k,true])); });
   let inN=0,outN=0,limN=0; const outs=[],lims=[];
   all.forEach(function(e){ const st=_semSt(e[0],av); if(!st){inN++;} else if(st==="out"){outN++; outs.push(e);} else {limN++; lims.push(e);} });
@@ -4295,7 +4353,7 @@ function sessionSheetView(){
   paper.appendChild(h("div",{class:"ssv-pdfrow"}, h("span",{class:"ssv-pdflbl"},"Practice PDF"), sessionPdfSlot(iso, idx)));
 
   /* availability by POSITION, inside the paper (semaforo) + DL IN line */
-  const pav=(state.plan.avail||{})[iso]||{};
+  const pav=avOn(iso);
 
   const dropAt=(bi)=>{
     if(_dragBi!=null && _dragBi!==bi){ const from=_dragBi; _dragBi=null; commit(()=>{ const t=(bi>from?bi-1:bi); const [x]=se.blocks.splice(from,1); se.blocks.splice(Math.max(0,Math.min(se.blocks.length,t)),0,x); }); persist(); renderPlan(); }
@@ -4396,7 +4454,7 @@ function sessionView(){
   const total=s.blocks.reduce((a,b)=>a+(Number(b.min)||0),0);
   const endT=fmtTime(parseTime(s.start)+total);
   const kl=(state.plan.kload||{})[iso];
-  const av=(state.plan.avail||{})[iso]||{};
+  const av=avOn(iso);
   const unavail=Object.keys(av).filter(k=>av[k]).map(k=>{ const p=(state.plan.squad||[]).find(x=>x.key===k); return {nm:(p?p.name:k), st:av[k]}; });
   const goalObj = s.goal? GOALS.find(g=>g[0]===s.goal) : null;
   const labelInp=h("input",{class:"sess-label"}); labelInp.value=s.label; labelInp.addEventListener("input",()=>{s.label=labelInp.value;persist();}); labelInp.addEventListener("blur",()=>renderPlan());
@@ -4456,7 +4514,7 @@ function posMapFromRoster(){ const m={}; (state.players||[]).forEach(p=>{ const 
 function squadPosOf(pl,m){ const toks=(pl.name||"").toLowerCase().split(/\s+/); for(const t of toks){ const k=NAME_ALIAS[t]||t; if(m[k]) return m[k]; } return ""; }
 function availPanel(iso){
   const squad=state.plan.squad||[]; if(!squad.length) return null;
-  const av=(state.plan.avail||{})[iso]||{};
+  const av=avOn(iso);
   const m=posMapFromRoster();
   const groups={PG:[],SG:[],SF:[],PF:[],C:[],"—":[]};
   squad.forEach(pl=>{ const p=squadPosOf(pl,m)||"—"; groups[p].push(pl); });
@@ -4487,7 +4545,7 @@ function availPanel(iso){
    keeping the several availability levels visible through chip colour. */
 function availUnified(iso, compact){
   const squad=state.plan.squad||[]; if(!squad.length) return null;
-  const av=(state.plan.avail||{})[iso]||{};
+  const av=avOn(iso);
   const perLoad=(((state.plan.kload||{})[iso]||{}).per)||{};
   const m=posMapFromRoster();
   const order=["PG","SG","SF","PF","C","—"];
@@ -4970,7 +5028,25 @@ const NAME_ALIAS={christopher:"chris",ferdinand:"ferdi"};
 function isoFromMDY(s){ const m=(s||"").trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m? m[3]+"-"+m[1].padStart(2,"0")+"-"+m[2].padStart(2,"0") : null; }
 function isoFromMed(s){ const m=(s||"").trim().match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{2})/); if(!m) return null; const mo=MON3[m[2].toUpperCase()]; return mo? "20"+m[3]+"-"+mo+"-"+m[1].padStart(2,"0") : null; }
 function fkey(name){ let k=(name||"").trim().toLowerCase().split(/\s+/)[0]; return NAME_ALIAS[k]||k; }
-function medCode(s){ s=(s||"").toUpperCase(); if(s.includes("OUT"))return"out"; if(s.includes("NOT FULL"))return"notfull"; if(s.includes("NO CONTACT"))return"nocontact"; if(s.includes("IND"))return"ind"; return ""; }
+/* WHAT THE MEDICAL SHEET SAYS, IN FOUR WORDS. Anything it writes that is not one of them and
+   not plainly fit - injured, rehab, sick, surgery, away - used to be read as available, which
+   is how a man out for weeks looked fit. Now it is out; and any other word the staff writes is
+   at least a restriction, never "available". */
+function medCode(s){ s=(s||"").toUpperCase().trim();
+  if(!s) return "";
+  if(s.includes("NOT FULL")) return "notfull";
+  if(s.includes("NO CONTACT")) return "nocontact";
+  if(/OUT|INJ|REHAB|SICK|\bILL|SURG|BAJA|LESI|KRANK|VERLETZ|ABSEN|AWAY|NOT AVAIL|NO TRAIN|DOES NOT|DNP/.test(s)) return "out";
+  if(s.includes("IND")) return "ind";
+  if(/^(FULL|AVAILABLE|AVAIL|OK|FIT|YES|✓|TRAIN|ALL)\b/.test(s)) return "";
+  return "ind"; }
+/* the medical sheet on a day: that day's rows, or - a day it has no rows for yet, today or the
+   days ahead - the last day it has, so a long injury is still there tomorrow */
+function avOn(iso){ const A=(state.plan && state.plan.avail)||{};
+  if(A[iso]) return A[iso];
+  let last=""; Object.keys(A).forEach(d=>{ if(d<=iso && d>last) last=d; });
+  return last? A[last] : {}; }
+function avLastDay(){ const A=(state.plan && state.plan.avail)||{}, t=todayISO(); let last=""; Object.keys(A).forEach(d=>{ if(d<=t && d>last) last=d; }); return last; }
 async function syncMedical(){
   const rows=await fetchSheet(conn("medical"),"DATA"); const A={}, squad={};
   for(let i=1;i<rows.length;i++){ const r=rows[i]||[]; const iso=isoFromMed(r[0]); const player=(r[1]||"").trim(); if(!iso||!player||player==="??") continue;
@@ -5616,7 +5692,7 @@ function printSession(){
   // Panel 3: header + courts (your image) + plays
   const plays=h("div",{class:"ps-plays"});
   (state.plan.plays||PLAYS).forEach(pl=>{var a=pl[0],c=pl[1];plays.appendChild(h("div",{class:"ps-play"}, h("span",{class:"pp-k"},a), h("span",{class:"pp-v"},c)));});
-  const pav=(state.plan.avail||{})[iso]||{}; const psquad=state.plan.squad||[];
+  const pav=avOn(iso); const psquad=state.plan.squad||[];
   const availBox=h("div",{class:"ps-avail"}, h("div",{class:"ps-avail-h"},"AVAILABILITY"), availSemaforo(iso));
   area.appendChild(h("div",{class:"ps-wrap"},
     tbl,
@@ -25598,7 +25674,7 @@ h("span",{}, h("b",{},"Bar"), " the share of the possessions in that range (firs
 /* EVERY CLUB ON THE GLASS: OREB%, DREB% and the margin between them (our offensive
    rebounding minus what we let them take) from the league's four factors, the rebounds a
    game from the players' lines, and the club's best rebounder. Every column sorts. */
-let _lgRebSort={ k:"m", d:1 };
+let _lgRebSort={ k:"m", d:1 }, _lgRebOpen={};
 function _rebClubRows(L){
   return (L.four||[]).filter(f=>f.off && f.def).map(f=>{ const tid=String(f.teamId), t=(L.teams||[]).filter(x=>String(x.id)===tid)[0]||{};
     const ld=(L.lead||{})[tid], pls=(ld && ld.players)||[];
@@ -25633,13 +25709,17 @@ function _lgReb(L){
     ...Object.keys(K).map(k=>h("th",{class:(k===sk? "on " : "")+(k==="og"? "grp" : ""), style:"cursor:pointer", onclick:()=>{ _lgRebSort=_lgRebSort.k===k? { k:k, d:-_lgRebSort.d } : { k:k, d:1 }; _lgRerender(); }},
       K[k].lab+(k===sk? (_lgRebSort.d>0? " ▼" : " ▲") : ""))), h("th",{class:"l grp", title:"rebounds a game, the offensive ones in brackets · two games at least"},"Best rebounders")));
   list.forEach((r,i)=>{
-    const tr=h("tr",{class:_lgOurs(r.name)? "ours" : ""}, h("td",{class:"lg-pos"}, String(i+1)), h("td",{class:"l lg-team"}, _lgCrest(L, r.id), h("span",{}, r.name)));
+    /* each club on one line with its best man only; ours open with all three, any other opens with a press */
+    const open=_lgOurs(r.name) || !!_lgRebOpen[r.id];
+    const tr=h("tr",{class:(_lgOurs(r.name)? "ours " : "")+(open? "reb-open" : "reb-shut"), title:open? "" : "press to see the three best of each column",
+      onclick:()=>{ if(_lgOurs(r.name)) return; _lgRebOpen[r.id]=!_lgRebOpen[r.id]; _lgRerender(); }},
+      h("td",{class:"lg-pos"}, String(i+1)), h("td",{class:"l lg-team"}, _lgCrest(L, r.id), h("span",{}, r.name), _lgOurs(r.name)? null : h("i",{class:"reb-tog"}, open? "−" : "+")));
     Object.keys(K).forEach(k=>{ const v=r[k], rk=rank[k](v), lim=k==="og"||k==="dg"? 1.5 : 3;
       tr.appendChild(h("td",{class:"pnum"+(k==="og"? " grp" : "")+(v!=null && A[k]!=null? (v-A[k]>=lim? " up" : v-A[k]<=-lim? " dn" : "") : "")}, v==null? "—" : K[k].f(v), rk && rk<=3? h("em",{class:"top"}, String(rk)) : null)); });
     tr.appendChild(h("td",{class:"l grp reb-top"}, r.top.length? r.top.map(x=>h("div",{}, h("u",{}, "#"+(x.p.num||"")), " "+_lgLastName(x.p.name||"")+" ", h("b",{}, x.r.toFixed(1)), h("small",{}, " ("+x.o.toFixed(1)+")"))) : "—"));
     /* the last three games, each in its own column, the most recent on the right */
     const lst=r.last.slice(-3); while(lst.length<3) lst.unshift(null);
-    lst.forEach((g,i)=>tr.appendChild(h("td",{class:"l reb-top reb-gm"+(i? "" : " grp")}, g? [h("em",{}, (g.home? "vs " : "@ ")+(_lgShort(g.opp)||g.opp||"")+" · "+String(g.d||"").slice(8,10)+"/"+String(g.d||"").slice(5,7))].concat(g.rb.slice(0,2).map(x=>h("div",{}, h("u",{}, "#"+(x.p.num||"")), " "+_lgLastName(x.p.name||"")+" ", h("b",{}, String(x.r)), h("small",{}, " ("+x.o+")")))) : "—")));
+    lst.forEach((g,i)=>tr.appendChild(h("td",{class:"l reb-top reb-gm"+(i? "" : " grp")}, g? [h("em",{}, (g.home? "vs " : "@ ")+(_lgShort(g.opp)||g.opp||"")+" · "+String(g.d||"").slice(8,10)+"/"+String(g.d||"").slice(5,7))].concat(g.rb.slice(0,3).map(x=>h("div",{}, h("u",{}, "#"+(x.p.num||"")), " "+_lgLastName(x.p.name||"")+" ", h("b",{}, String(x.r)), h("small",{}, " ("+x.o+")")))) : "—")));
     t.appendChild(tr); });
   t.appendChild(h("tr",{class:"pace-lg"}, h("td",{}), h("td",{class:"l"},"League · average"), ...Object.keys(K).map(k=>h("td",{class:"pnum"+(k==="og"? " grp" : "")}, A[k]==null? "—" : K[k].f(A[k]))), h("td",{class:"grp"}), h("td",{class:"grp"}), h("td",{}), h("td",{})));
   box.appendChild(h("div",{class:"pb-scroll"}, t));
@@ -28168,7 +28248,9 @@ function renderDashboard(){
     /* the same month with the ProB games of the club's second team on it */
     monthP:()=>monthCard(true),
     /* the next three months, one calendar each */
-    month3:()=>{ [0,1,2].forEach(i=>builders.month0(false, i)); },
+    month3:()=>{ const c=card("wide", "The next three months", ()=>_dashOpen("planification"));
+      const row=h("div",{class:"dash-m3"}); c.__b.appendChild(row);
+      [0,1,2].forEach(i=>{ const box=h("div",{class:"dash-m3-c"}); row.appendChild(box); builders.month0(false, i, box); }); },
     /* ---------------------------------------------------- player development, the cards */
     pdev:()=>{
       if(!canView("playerdev")) return;
@@ -28412,8 +28494,11 @@ function renderDashboard(){
     /* ---------------------------------------------------- Pedro: who is available, the next days */
     avail:()=>{
       const c=card("wide", "Availability · today and the next days", ()=>_dashOpen("planification",{ planTab:"cycle" }), "Planning");
-      const av=(state.plan && state.plan.avail)||{}, sq=(state.plan && state.plan.squad)||[];
+      const sq=(state.plan && state.plan.squad)||[];
       const days=[0,1,2,3,4,5,6].map(i=>addDays(T,i));
+      /* each day as the medical sheet has it, or its last day when it has none for that day yet */
+      const av={}; days.forEach(d=>{ av[d]=avOn(d); });
+      const asOf=avLastDay();
       const keys={}; days.forEach(d=>Object.keys(av[d]||{}).forEach(k=>{ if((av[d]||{})[k]) keys[k]=1; }));
       /* EVERY PLAYER, the ones missing a day first: who is out is read straight off the top */
       const out=Object.keys(keys);
@@ -28428,7 +28513,7 @@ function renderDashboard(){
         t.appendChild(h("span",{class:"n"+(out.indexOf(k)>=0? " out" : "")}, (p&&p.name)||k));
         days.forEach(d=>{ const v=(av[d]||{})[k]; t.appendChild(h("span",{class:"c "+(v||"ok")}, v? (AV_LABEL[v]||v) : "✓")); }); });
       c.__b.appendChild(t);
-      c.__b.appendChild(h("div",{class:"dash-src"},"From the medical sheet in Planning · every player of the squad, the ones with a restriction first"));
+      c.__b.appendChild(h("div",{class:"dash-src"},"From the medical sheet in Planning"+(asOf? " · its last day: "+_dashFmt(asOf) : " · nothing in it yet")+" · every player of the squad, the ones with a restriction first"));
     },
     /* ORIOL'S WORK, ON A LINE OF DAYS. A pre game is started the week before the game and
        handed in the day before it; a post game is done and handed in within 24 hours of
@@ -28498,7 +28583,7 @@ function renderDashboard(){
       const P=_videoPlan(G, T);
       let reps={}, srv=null, vt={}, practice=null, nRep=0;
       const need=preG.length+postG.length;
-      let showHidden=false;
+      let showHidden=false, showAllTodo=false;
       /* OK takes a line off the card, and the hidden lines can be brought back: the staff
          decides what still needs doing, not only what the reports say */
       const setHide=async (k, on, label)=>{ const s=(await _staffDocGet(KEY))||{}; s.hide=s.hide||{};
@@ -28530,7 +28615,9 @@ function renderDashboard(){
         (OWIP||[]).forEach(x=>lines.push([tag("wip","In development"), h("div",{class:"dash-pend-r"}, h("div",{}, h("b",{}, x[0]), h("span",{}, x[1])), h("span",{class:"dash-pend-b"}, go("Open", x[2])))]));
         const waiting=nRep<need || practice==null;
         const tbl=h("div",{class:"dash-todo"});
-        lines.forEach(l=>{ l[1].classList.add("dash-todo-r"); l[1].insertBefore(l[0], l[1].firstChild); tbl.appendChild(l[1]); });
+        /* the first eight, the rest one press away: the card stays the size of a card */
+        lines.forEach((l,i)=>{ l[1].classList.add("dash-todo-r"); l[1].insertBefore(l[0], l[1].firstChild); if(i<8 || showAllTodo) tbl.appendChild(l[1]); });
+        if(lines.length>8) tbl.appendChild(h("button",{type:"button", class:"dash-pend-more", onclick:()=>{ showAllTodo=!showAllTodo; paint(); }}, showAllTodo? "▴ Show fewer" : "▾ The other "+(lines.length-8)));
         if(!lines.length) tbl.appendChild(h("div",{class:"dash-miss ok"}, waiting? "checking…" : "Nothing to hand in, review or upload."));
         else if(waiting) tbl.appendChild(h("div",{class:"dash-miss"},"still checking the reports and the Drive…"));
         body.appendChild(tbl);
@@ -28849,8 +28936,9 @@ function renderDashboard(){
       c.__b.appendChild(h("div",{class:"dash-src"},"Each opponent's BBL, cup and European games, newest first · green with ✓: cut (a file of theirs against that team is in the scouting folder) · the dots: games cut, three wanted, the fourth optional"));
     },
     /* ---------------------------------------------------- our month, game by game (with ProB on demand) */
-    month0:(prob, off0)=>{
-      const c=card("wide", prob? "Our month · with the ProB games" : "Our month", ()=>_dashOpen("planification"));
+    month0:(prob, off0, host)=>{
+      /* drawn in a card of its own, or into the box it is handed (the three months in one) */
+      const c=host? { __b:host } : card("wide", prob? "Our month · with the ProB games" : "Our month", ()=>_dashOpen("planification"));
       let off=off0||0;
       const box=h("div",{}); c.__b.appendChild(box);
       const draw=()=>{ box.innerHTML="";
@@ -28951,7 +29039,7 @@ function renderDashboard(){
         return day; })));
       if(!Object.keys(pf).length) c.__b.appendChild(h("div",{class:"dash-src"},"The PF's weekly proposal (DB_PLANNING) has not been read on this device yet — Planning → ↻ PF reads it."));
       /* who is not fully available today, from the medical sheet */
-      const av=(state.plan.avail||{})[T]||{}, sq=state.plan.squad||[];
+      const av=avOn(T), sq=state.plan.squad||[];
       const lim=Object.keys(av).filter(k=>av[k]).map(k=>{ const p=sq.filter(s=>s.key===k)[0]; return { n:(p&&p.name)||k, c:av[k] }; });
       if(lim.length){ c.__b.appendChild(h("div",{class:"dash-av"}, lim.map(x=>h("span",{class:"dash-avp "+x.c}, x.n, h("b",{}, AV_LABEL[x.c]||x.c)))));
         alerts.push({ tone:lim.some(x=>x.c==="out")? "bad" : "warn", text:lim.length+" player"+(lim.length===1?"":"s")+" not fully available", go:()=>_dashOpen("planification",{ planTab:"cycle" }) }); paintAtt(); }
@@ -29302,7 +29390,7 @@ function renderProB(root){
       ours.appendChild(b); ours.appendChild(more);
     }
   }
-  root.appendChild(h("div",{class:"pb-two"}, h("div",{class:"pb-col"}, tb, sched), h("div",{class:"pb-col"}, ours)));
+  root.appendChild(h("div",{class:"prob-two"}, h("div",{class:"prob-col"}, tb, sched), h("div",{class:"prob-col"}, ours)));
 
   /* --- our roster with its season averages, read at a glance ------------------------- */
   const ro=(P.roster||[]).filter(p=>!p.coach), coaches=(P.roster||[]).filter(p=>p.coach);
@@ -36730,6 +36818,9 @@ body.dark .pkc{background:rgba(255,255,255,.04);border-color:#262d3a}
 .us-v{text-align:right;font-variant-numeric:tabular-nums}
 .us-p{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--ink-faint,#9aa1ac);text-align:right}
 @media(max-width:860px){ .lgsum{grid-template-columns:1fr} .us-i{grid-template-columns:80px 1fr 46px 54px} }
+/* in the pre game's two-by-two the late clock is half the width: its readings go one under the other, and a cell never pushes past its column */
+.emb-2x2 .lgsum,.emb-2x2 .lgsum3{grid-template-columns:minmax(0,1fr)}
+.us-i{grid-template-columns:92px minmax(0,1fr) 52px minmax(0,62px)}.us-i > *{min-width:0}.us-p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* the names get the room the bar used to waste: a combination is read by who is in it */
 .lg-cmb{min-width:640px;table-layout:fixed}
 .lg-cmb th:nth-child(1),.lg-cmb td:nth-child(1){width:34%}
@@ -38046,9 +38137,9 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .miss-none{font-size:12px;color:#13804f;padding:6px 0}
 .miss-ul{margin:0;padding-left:18px;font-size:12px}
 /* pro b */
-.pb-two{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:14px;margin-top:14px;align-items:start}
-@media (max-width:980px){.pb-two{grid-template-columns:minmax(0,1fr)}}
-.pb-col{display:flex;flex-direction:column;gap:14px;min-width:0}
+.prob-two{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:14px;margin-top:14px;align-items:start}
+@media (max-width:980px){.prob-two{grid-template-columns:minmax(0,1fr)}}
+.prob-col{display:flex;flex-direction:column;gap:14px;min-width:0}
 .pb-seg{display:inline-flex;gap:2px;padding:3px;border-radius:9px;background:rgba(20,24,33,.06)}
 .pb-seg button{border:0;background:transparent;border-radius:7px;padding:4px 10px;cursor:pointer;font:700 10px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}
 .pb-seg button.on{background:var(--ink,#141821);color:var(--panel,#fff)}
@@ -38115,12 +38206,20 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .sv-bar{display:inline-block;width:120px;height:8px;border-radius:4px;background:var(--panel-2,#eef0f3);vertical-align:middle;overflow:hidden}
 .sv-bar i{display:block;height:100%;background:#2f9e86;border-radius:4px}
 .dash-todo{display:flex;flex-direction:column;gap:4px}
-.dash-todo-r{display:grid!important;grid-template-columns:150px auto minmax(0,1fr) auto;align-items:center;gap:10px}
-.dash-todo-r:not(:has(> .dash-crest, > img)){grid-template-columns:150px minmax(0,1fr) auto}
+.dash-todo-r{display:flex!important;flex-wrap:nowrap!important;align-items:center;gap:10px;padding:4px 8px!important;min-height:0!important}
+.dash-todo-r > .dash-kind{flex:0 0 150px}
+.dash-todo-r > div:not(.dash-pend-b){flex:1 1 auto;min-width:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.dash-todo-r > div > b{font-size:13px}.dash-todo-r > div > span{font-size:11.5px}
+.dash-todo-r > .dash-pend-b{margin-left:auto;flex:0 0 auto;display:flex;gap:4px}
+.dash-todo-r img,.dash-todo-r .dash-crest{width:22px!important;height:22px!important;flex:0 0 22px;font-size:8px}
 .dash-kind{display:inline-block;padding:2px 8px;border-radius:9px;font:700 9.5px 'Oswald',sans-serif;letter-spacing:.07em;text-transform:uppercase;white-space:nowrap;text-align:center}
 .dash-kind.pre{background:rgba(74,134,216,.15);color:#1e5aa8}.dash-kind.post{background:rgba(232,199,102,.3);color:#7a5c12}.dash-kind.rev{background:rgba(138,111,209,.16);color:#5a3fa8}.dash-kind.tr{background:rgba(47,158,134,.15);color:#13804f}.dash-kind.wip{background:rgba(20,24,33,.08);color:var(--ink-soft,#5b6472)}
 .use-t td.use-time{white-space:nowrap;text-align:left}.use-bar{display:inline-block;width:90px;height:8px;border-radius:4px;background:var(--panel-2,#eef0f3);vertical-align:middle;margin-right:6px;overflow:hidden}.use-bar i{display:block;height:100%;background:#4a86d8;border-radius:4px}
 .use-chip{display:inline-block;margin:1px 4px 1px 0;padding:1px 8px;border-radius:10px;background:var(--panel-2,#f1f2f5);font-size:11.5px}.use-chip b{font-weight:700}
+.dash-m3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}@media (max-width:900px){.dash-m3{grid-template-columns:minmax(0,1fr)}}.dash-m3-c{min-width:0}
+.reb-lg tr.reb-shut{cursor:pointer}.reb-lg tr.reb-shut td.reb-top > div:not(:first-of-type){display:none}.reb-lg tr.reb-shut:hover td{background:rgba(20,24,33,.03)}
+.reb-lg .reb-tog{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:6px;border-radius:50%;border:1px solid var(--line-strong,#cfd4dc);font:700 11px/1 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}
+.shr{width:min(1100px,94vw);max-height:86vh;overflow-y:auto}.shr-two{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px}.shr-two h5{margin:0 0 6px;font:700 11px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}.shr-raw{font:12px/1.5 'IBM Plex Mono',monospace;max-height:420px;overflow:auto;padding:8px;border:1px solid var(--line,#e6e8ec);border-radius:8px;white-space:pre-wrap;color:var(--ink-soft,#5b6472)}
 /* pace: when the shot comes */
 .pace-v th.pbh{text-align:center}
 .pace-v .pbh-ks{display:flex;justify-content:center;gap:4px;margin-top:3px}

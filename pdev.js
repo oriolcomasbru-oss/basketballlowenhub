@@ -685,7 +685,8 @@
     var gl = el("div", { class: "pd-lg" }, lastG.map(function (o) {
       var c = "";
       if (o.v != null && ref != null && m.hi != null && !o.sm) { var d = o.v - ref, th = m.pct ? 4 : Math.max(0.5, Math.abs(ref) * 0.15); if (Math.abs(d) >= th) c = (d > 0) === m.hi ? "u" : "d"; }
-      return el("span", { class: c + (o.sm ? " sm" : ""), title: ddmm(o.x.d) + " " + (o.x.home ? "vs " : "@ ") + o.x.opp + " · " + m.l + " " + fmt(m, o.v) }, o.v == null ? "—" : fmt(m, o.v)); }));
+      /* a game a cell: a figure of a hundred or more is written whole, so five fit in the box */
+      return el("span", { class: c + (o.sm ? " sm" : ""), title: ddmm(o.x.d) + " " + (o.x.home ? "vs " : "@ ") + o.x.opp + " · " + m.l + " " + fmt(m, o.v) }, o.v == null ? "—" : (Math.abs(o.v) >= 100 ? String(Math.round(o.v)) : fmt(m, o.v))); }));
     return { t: t, el: el("div", { class: "pd-tile " + t.tone + (t.small ? " sm" : ""), title: (m.note ? m.note + " · " : "") + (t.base != null ? "before " + fmt(m, t.base) : "") + (t.small ? " · small sample" : "") },
       el("i", {}, m.l),
       el("div", { class: "tv" }, el("b", {}, fmt(m, t.v)),
@@ -1302,17 +1303,17 @@
       ".pd-pcb{display:grid;gap:8px}",
       ".pd-grn{font:700 10px 'Oswald',sans-serif;letter-spacing:.13em;text-transform:uppercase;color:#7a5c12;margin-bottom:4px}",
       ".pd-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:5px}",
-      ".pd-tile{display:grid;gap:1px;border-radius:8px;padding:5px 7px 3px;background:var(--panel-2,#f4f5f7);border-top:3px solid #cfd4dc;min-width:0}",
+      ".pd-tile{display:grid;grid-template-columns:minmax(0,1fr);gap:1px;border-radius:8px;padding:5px 7px 3px;background:var(--panel-2,#f4f5f7);border-top:3px solid #cfd4dc;min-width:0;overflow:hidden}.pd-tile > *{min-width:0;max-width:100%}",
       ".pd-tile.up{background:rgba(47,158,134,.09);border-top-color:#2f9e86}.pd-tile.dn{background:rgba(216,82,78,.08);border-top-color:#d8524e}.pd-tile.sm{opacity:.55}.pd-tile.staff{border-top-style:dashed;border-top-color:#c6a15b}",
       ".pd-tile i{font:600 8.5px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint,#8a93a2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
       ".pd-tile .tv{display:flex;align-items:baseline;gap:6px}.pd-tile .tv b{font:700 17px 'Oswald',sans-serif}.pd-tile .tv em{font:700 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}",
       ".pd-tile.up .tv b,.pd-tile.up .tv em{color:#17805a}.pd-tile.dn .tv b,.pd-tile.dn .tv em{color:#c0403c}",
       ".pd-tile svg{width:100%;height:28px}",
-      ".pd-lg{display:flex;gap:2px;margin-top:1px}.pd-lg span{flex:1;text-align:center;font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);background:rgba(20,24,33,.05);border-radius:3px;padding:1px 0;min-width:0;overflow:hidden}",
+      ".pd-lg{display:flex;gap:2px;margin-top:1px;min-width:0;overflow:hidden}.pd-lg span{flex:1 1 0;white-space:nowrap;text-overflow:clip;text-align:center;font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);background:rgba(20,24,33,.05);border-radius:3px;padding:1px 0;min-width:0;overflow:hidden}",
       ".pd-lg span.u{background:rgba(47,158,134,.2);color:#17603f}.pd-lg span.d{background:rgba(216,82,78,.17);color:#9e302c}.pd-lg span.sm{opacity:.5}",
       ".pd .lg-l1.pd-l1{margin:8px 0 0}",
       /* last season */
-      ".pd-ly{display:flex;align-items:baseline;gap:5px;margin-top:3px;padding:2px 5px;border-radius:5px;background:rgba(20,24,33,.05);font-size:10px;min-width:0}",
+      ".pd-ly{display:flex;align-items:baseline;gap:5px;margin-top:3px;padding:2px 5px;border-radius:5px;background:rgba(20,24,33,.05);font-size:10px;min-width:0;overflow:hidden}.pd-ly i{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}",
       ".pd-ly i{font:600 8.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}.pd-ly b{font:700 11px 'IBM Plex Mono',monospace}.pd-ly u{text-decoration:none;margin-left:auto;font:700 9px 'IBM Plex Mono',monospace;white-space:nowrap}",
       ".pd-ly.up{background:rgba(47,158,134,.16)}.pd-ly.up u{color:#17805a}.pd-ly.dn{background:rgba(216,82,78,.13)}.pd-ly.dn u{color:#c0403c}.pd-ly.na{opacity:.55}",
       ".pd-lysrc{font:500 9.5px 'IBM Plex Mono',monospace;color:#7a5c12}.pd-lysrc.none{color:var(--ink-faint,#8a93a2)}",
