@@ -12161,7 +12161,11 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
   /* the toolbar says what it did: the eye says whether the players see him, and a duplicate
      or a card taken off is said out loud - both happened before, with nothing to show it */
   const pbt=q(".publish-toggle");
-  if(pbt){ const hid=c.pub===false; pbt.textContent=hid? "🚫 Hidden" : "👁 Visible"; pbt.classList.toggle("is-hidden", hid);
+  /* the bar is four small icons on the photograph, not a row of words over the card */
+  { const tb=q(".card-toolbar"); if(tb){ const dh=tb.querySelector(".drag-handle"); if(dh) dh.textContent="⠿";
+      const du=tb.querySelector(".card-duplicate"); if(du){ du.textContent="⧉"; du.title="Duplicate the card"; }
+      const de=tb.querySelector(".card-delete"); if(de){ de.textContent="✕"; de.title="Delete the card"; } } }
+  if(pbt){ const hid=c.pub===false; pbt.textContent=hid? "🚫" : "👁"; pbt.classList.toggle("is-hidden", hid);
     pbt.title=hid? "Players do not see this card - tap to show it to them" : "Players see this card - tap to hide it from them"; }
 }
 function _preRoleColsCap(){
@@ -34705,8 +34709,9 @@ body.dark .lg-g.c-eu{--c-hue:#9b85e8;--c-fill:#6a51c0}
 .lg-form-d.w{background:#2f9e86}
 .lg-form-d.l{background:#d8524e}
 .ro-badge.stale{color:#b5651d;border-color:rgba(181,101,29,.5)}
-.lg-rost{min-width:1180px}
-.lg-rost td,.lg-rost th{padding-left:4px;padding-right:4px}
+/* the table fits the box it is in: a fixed 1180 px made it slide sideways as soon as the box lost a few pixels - in edit mode, or on a smaller screen */
+.lg-rost{min-width:0;width:100%}
+.lg-rost td,.lg-rost th{padding-left:3px;padding-right:3px}
 .lg-rost td.lg-team{white-space:nowrap}
 .lg-rost tr.core td:first-child{box-shadow:inset 3px 0 0 var(--accent,#c9a227)}
 .lg-rost tr.core td.lg-team{font-weight:800}
@@ -42453,6 +42458,45 @@ body.edit-mode .phx.phx .card > .closeout-add{display:block;grid-column:1/-1}
   border-radius:0 0 3px 3px;padding:3px 5px;cursor:pointer}
 .phx.phx .card .add-co-btn:hover{color:var(--ink);border-color:var(--gold)}
 .phx.phx .card .ideas .idea-line{font-size:9.5px!important;line-height:1.3!important;white-space:normal!important}
+
+/* ##### EDIT MODE KEEPS THE CARD'S SHAPE ##### */
+/* In edit mode the card is the card: the same rows as when it is read, the toolbar four small
+   icons laid on the photograph, the crosses and the "add" buttons floating over the corner
+   they belong to instead of pushing the text aside - nothing moves when the switch is on. */
+body.edit-mode .phx.phx .roster-columns:not(.pre-cm-cols) .card{grid-template-rows:minmax(var(--pc-top,132px),auto) auto auto!important}
+body.edit-mode .phx.phx .roster-columns:not(.pre-cm-cols) .card > .photo,
+body.edit-mode .phx.phx .roster-columns:not(.pre-cm-cols) .card > .card-body{grid-row:1!important}
+body.edit-mode .phx.phx .roster-columns:not(.pre-cm-cols) .card > .stat-bar{grid-row:2!important}
+body.edit-mode .phx.phx .roster-columns:not(.pre-cm-cols) .card > .closeout-wrap,
+body.edit-mode .phx.phx .roster-columns:not(.pre-cm-cols) .card > .closeout-add{grid-row:3!important}
+body.edit-mode .phx.phx .roster-columns .card > .card-toolbar{position:absolute!important;top:4px!important;left:4px!important;
+  display:flex!important;flex-wrap:nowrap!important;gap:2px!important;padding:0!important;margin:0!important;
+  background:none!important;border:0!important;z-index:7!important;width:auto!important}
+body.edit-mode .phx.phx .roster-columns .card > .card-toolbar > *{font-size:10px!important;line-height:1!important;
+  min-height:0!important;width:20px;height:20px;padding:0!important;display:inline-flex!important;align-items:center;justify-content:center;
+  border-radius:5px!important;border:0!important;background:rgba(20,24,33,.72)!important;color:#fff!important;letter-spacing:0!important}
+body.edit-mode .phx.phx .roster-columns .card > .card-toolbar > .card-duplicate{background:rgba(199,167,106,.92)!important;color:#14130B!important}
+body.edit-mode .phx.phx .roster-columns .card > .card-toolbar > .card-delete{background:rgba(192,57,43,.9)!important}
+body.edit-mode .phx.phx .roster-columns .card > .card-toolbar > .publish-toggle.is-hidden{background:rgba(192,57,43,.9)!important}
+body.edit-mode .phx.phx .roster-columns .card .num-badge{top:28px!important}
+/* the crosses of the lines float at the end of their line, shown when the line is pointed at */
+body.edit-mode .phx.phx .card .idea-row,body.edit-mode .phx.phx .card .extra-block{position:relative}
+body.edit-mode .phx.phx .card .rm-x.rm-x-inline{position:absolute!important;right:-6px;top:50%;transform:translateY(-50%);
+  opacity:0;transition:opacity .12s;z-index:3}
+body.edit-mode .phx.phx .card .idea-row:hover .rm-x-inline,body.edit-mode .phx.phx .card .extra-block:hover .rm-x-inline{opacity:1}
+/* the add buttons sit on the edge instead of adding a line under the text */
+body.edit-mode .phx.phx .roster-columns .card > .card-body{position:relative}
+body.edit-mode .phx.phx .roster-columns .card .card-body .add-block-btn{position:absolute!important;right:6px;bottom:4px;width:auto!important;
+  margin:0!important;padding:1px 6px!important;font-size:8px!important;opacity:.55;z-index:3}
+body.edit-mode .phx.phx .roster-columns .card .card-body .add-block-btn:hover{opacity:1}
+body.edit-mode .phx.phx .roster-columns .card > .stat-bar .pc-addstat{position:absolute!important;right:2px;bottom:2px;margin:0!important;
+  width:16px!important;height:16px!important;min-height:0!important;padding:0!important;font-size:11px!important;line-height:1!important;opacity:.6;z-index:4}
+body.edit-mode .phx.phx .roster-columns .card > .stat-bar .pc-addstat:hover{opacity:1}
+body.edit-mode .phx.phx .roster-columns .card .card-body .add-block-btn.pc-lgstats{bottom:18px}
+/* the crosses are there when the card is pointed at, and only then */
+body.edit-mode .phx.phx .roster-columns .card .rm-x{opacity:0;transition:opacity .12s}
+body.edit-mode .phx.phx .roster-columns .card:hover .rm-x{opacity:.9}
+body.edit-mode .phx.phx .roster-columns .card .rm-x:hover{opacity:1}
 
 
 /* ##### THE REPORT HEADER — one line ##### */
