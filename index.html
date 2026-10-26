@@ -23801,6 +23801,25 @@ const LG_RS_COLS=[
   {k:"ato", t:"A/TO", set:"a", get:t=>t.tov? t.ast/t.tov : null, rate:true, d:2},
   {k:"pir", t:"PIR",  set:"x", get:t=>LG_PIR(t), avg:true, d:1}
 ];
+/* a line that can be read in a column: two games and ten minutes a game for the league's cuts,
+   and for a percentage one attempt a game or more */
+function _lgRsElig(c, t, strict){
+  if(!t || !t.gp) return false;
+  if(strict && (t.gp<2 || ((t.sec||0)/60)/t.gp<10)) return false;
+  const att={ twp:t.p2a, tpp:t.p3a, fgp:(t.p2a||0)+(t.p3a||0), ftp:t.fta, ts:(t.p2a||0)+(t.p3a||0)+(t.fta||0), efg:(t.p2a||0)+(t.p3a||0) }[c.k];
+  if(att!=null && (att/t.gp<1 || att<5)) return false;
+  return true;
+}
+/* the key under the roster: what the bar and the underlines say */
+function _lgRsKey(){
+  return h("div",{class:"rx-key"},
+    h("span",{}, h("span",{class:"rx-sw g"}, h("i",{})), "among the league's best 15% in that column"),
+    h("span",{}, h("span",{class:"rx-sw r"}, h("i",{style:"width:18%"})), "among the league's weakest 15%"),
+    h("span",{}, "the bar: where he sits between the league's worst and best · the tick: the league's median"),
+    h("span",{}, h("span",{class:"rx-ul tb"}), "the best of the team"),
+    h("span",{}, h("span",{class:"rx-ul tw"}), "the weakest of the team, among those who play"),
+    h("span",{class:"mu"}, "league: every player with two games and ten minutes a game · a percentage needs one attempt a game"));
+}
 function _lgRsVal(c, t, per, ctx){
   if(c.pair) return null;
   const v=c.get(t, ctx||{tm:{},op:{}});
@@ -23905,6 +23924,32 @@ function _lgRoster(L){
     const pool=rows.filter(r=>!thin[r.id]);
     edge[c.k]=_lgEdges(pool, r=>_lgRsVal(c,r[split],per,ctx), dir, r=>r.id, LG_EDGE_K);
   });
+  /* AGAINST THE LEAGUE, ONLY AT THE EXTREMES; INSIDE THE TEAM, THE BEST AND THE WEAKEST.
+     Every player of the league with two games and ten minutes a game sets the cuts of each
+     column: the top 15% and the bottom 15%. A number of ours past a cut gets a bar - where he
+     sits between the league's worst and best, the tick its median - green or red; the rest is
+     left plain. Inside the team, the best in each column is underlined gold and the weakest of
+     those who play grey. A percentage counts only on one attempt a game or more. */
+  const LX={}, TM={};
+  const dirOf=c=>(c.k==="tov"||c.k==="pf"||c.k==="tovp") ? -1 : 1;
+  { const pool=[], seen={};
+    const add=(key,t)=>{ if(!t || seen[key]) return; seen[key]=1; pool.push(t); };
+    Object.keys(L.lead||{}).forEach(tid=>((L.lead[tid]||{}).players||[]).forEach(p=>add(tid+":"+p.id, p.all)));
+    Object.keys(L.players||{}).forEach(tid=>((L.players[tid]||{}).players||[]).forEach(p=>add(tid+":"+p.id, p.all)));
+    if(pool.length<60){ try{ _lgLeadLoad(L); }catch(e){} }
+    else cols.forEach(c=>{ if(c.pair || c.solo || c.k==="pm") return;
+      const vs=pool.filter(t=>_lgRsElig(c,t,true)).map(t=>_lgRsVal(c,t,per,{tm:{},op:{}})).filter(v=>v!=null && isFinite(v)).sort((a,b)=>a-b);
+      if(vs.length<30) return;
+      const q=f=>vs[Math.min(vs.length-1, Math.max(0, Math.round(f*(vs.length-1))))];
+      LX[c.k]={ lo:q(0.15), hi:q(0.85), min:q(0.02), max:q(0.98), med:q(0.5) }; }); }
+  cols.forEach(c=>{ if(c.pair || c.k==="pm") return; const dir=dirOf(c);
+    const vals=rows.filter(r=>!thin[r.id] && _lgRsElig(c, r[split], false)).map(r=>({ id:r.id, v:_lgRsVal(c,r[split],per,ctx) })).filter(x=>x.v!=null && isFinite(x.v));
+    if(vals.length<3) return;
+    const best=Math.max(...vals.map(x=>dir*x.v)), worst=Math.min(...vals.map(x=>dir*x.v));
+    if(best===worst) return;
+    /* a mark three players share says nothing: a tie of more than two is left unmarked */
+    const o={ b:{}, w:{} }; vals.forEach(x=>{ if(dir*x.v===best) o.b[x.id]=1; else if(dir*x.v===worst) o.w[x.id]=1; });
+    if(Object.keys(o.b).length>2) o.b={}; if(Object.keys(o.w).length>2) o.w={}; TM[c.k]=o; });
 
   /* ONE TABLE A PLAYER. Inside a pre game report the same line carries what our own
      tagging says about him: how much he finishes, what it returns, and where his
@@ -23975,11 +24020,20 @@ function _lgRoster(L){
       h("td",{class:"l lg-team"}, _lgFace(L, {n:p.num, photo:p.photo, pid:p.pid, id:p.id}), h("span",{}, p.name||("#"+p.num))),
       h("td",{}, String(t.gp)));
     cols.forEach(c=>{
-      const mk=(edge[c.k]||{})[p.id]||"";
-      const td=h("td",{class:mk}, _lgRsTxt(c,t,per,ctx));
+      /* the league's extremes as a bar, the team's best and weakest as an underline */
+      let cls="", bar=null, tip="";
+      const v=c.pair? null : _lgRsVal(c,t,per,ctx), lx=LX[c.k], dir=dirOf(c);
+      if(lx && v!=null && !thin[p.id] && _lgRsElig(c,t,true)){
+        const good=dir>0? v>=lx.hi : v<=lx.lo, bad=dir>0? v<=lx.lo : v>=lx.hi;
+        if(good || bad){ const sp=(lx.max-lx.min)||1, cl=x=>Math.max(0, Math.min(100, Math.round(100*x)));
+          cls=good? "rx-g" : "rx-r"; tip=good? "among the league's best 15%" : "among the league's weakest 15%";
+          bar=h("span",{class:"rx-b"}, h("i",{style:"width:"+cl((v-lx.min)/sp)+"%"}), h("u",{style:"left:"+cl((lx.med-lx.min)/sp)+"%"})); } }
+      const tm=TM[c.k]||null, ucls=tm && tm.b[p.id]? " rx-tb" : tm && tm.w[p.id]? " rx-tw" : "";
+      if(ucls) tip=(tip? tip+" · " : "")+(ucls===" rx-tb"? "the best of the team" : "the weakest of the team");
+      const td=h("td",{class:cls, title:tip}, h("span",{class:"rx-v"+ucls}, _lgRsTxt(c,t,per,ctx)), bar);
       if(c.k==="min"){
         /* a bar behind the minutes, the way the pre-game sheets read */
-        td.className=(mk+" lg-minbar").trim();
+        td.className=(cls+" lg-minbar").trim();
         td.style.setProperty("--s", String(Math.round(1000*(t.sec||0)/maxMin)/1000));
       }
       tr.appendChild(td);
@@ -24028,12 +24082,12 @@ function _lgRoster(L){
     box.appendChild(_lgFold(L, "ros1", "the box score", ()=>{
       const w=h("div",{});
       w.appendChild(h("div",{class:"lg-scroll"}, tbl));
-      w.appendChild(_lgColourKey(false));
+      w.appendChild(_lgRsKey());
       return w;
     }));
   } else {
     box.appendChild(h("div",{class:"lg-scroll"}, tbl));
-    box.appendChild(_lgColourKey(false));
+    box.appendChild(_lgRsKey());
     /* how to read our columns, in one line - for the players above all */
     if(TG && !TG.empty) box.appendChild(h("div",{class:"gpo-note pre-tag-how"},
       h("b",{},"Our tagging: "), "Poss = possessions he finished · Use = his share of their possessions · ",
@@ -38317,6 +38371,20 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .sx-loading,.sxp-loading{border:0!important;background:none!important;padding:0!important;text-align:left!important}
 .ld-skel{display:none!important}
 .pbb-kind{display:flex;align-items:baseline;gap:10px;margin:12px 0 4px;padding:5px 10px;border-left:4px solid var(--kc,#8a93a2);background:rgba(20,24,33,.04);border-radius:0 6px 6px 0}.pbb-kind b{font:700 12px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--kc,var(--ink,#141821))}.pbb-kind span{font-size:11.5px;color:var(--ink-soft,#5b6472)}
+/* roster: the league's extremes and the team's best */
+.lg-rost td .rx-v{display:inline-block;padding:0 2px}
+.lg-rost td .rx-v.rx-tb{box-shadow:inset 0 -2px 0 #d9a521;font-weight:800}
+.lg-rost td .rx-v.rx-tw{box-shadow:inset 0 -2px 0 #9aa1ac;color:var(--ink-soft,#5b6472)}
+.lg-rost td.rx-g{color:#13804f;font-weight:700}.lg-rost td.rx-r{color:#c0392b;font-weight:700}
+.lg-rost .rx-b{display:block;position:relative;height:4px;margin:2px 4px 0;border-radius:2px;background:var(--line,#e6e8ec)}
+.lg-rost .rx-b i{position:absolute;left:0;top:0;bottom:0;border-radius:2px}
+.lg-rost td.rx-g .rx-b i{background:#2f9e86}.lg-rost td.rx-r .rx-b i{background:#d8524e}
+.lg-rost .rx-b u{position:absolute;top:-2px;bottom:-2px;width:1.5px;margin-left:-1px;background:var(--ink,#141821)}
+.rx-key{display:flex;flex-wrap:wrap;gap:5px 16px;align-items:center;margin-top:8px;font-size:11px;color:var(--ink-soft,#5b6472)}
+.rx-key > span{display:inline-flex;align-items:center;gap:6px}.rx-key .mu{color:var(--ink-faint,#8a93a2)}
+.rx-sw{display:inline-block;position:relative;width:28px;height:4px;border-radius:2px;background:var(--line,#e6e8ec)}
+.rx-sw i{position:absolute;left:0;top:0;bottom:0;width:82%;border-radius:2px}.rx-sw.g i{background:#2f9e86}.rx-sw.r i{background:#d8524e}
+.rx-ul{display:inline-block;width:18px;height:10px}.rx-ul.tb{box-shadow:inset 0 -2px 0 #d9a521}.rx-ul.tw{box-shadow:inset 0 -2px 0 #9aa1ac}
 /* pace: when the shot comes */
 .pace-v th.pbh{text-align:center}
 .pace-v .pbh-ks{display:flex;justify-content:center;gap:4px;margin-top:3px}
