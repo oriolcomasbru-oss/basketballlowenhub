@@ -9369,7 +9369,7 @@ function repSaveBadge(){ const el=h("span",{class:"rep-savestate "+_repSave.cls,
 /* The stat bar on a scouting card is a grid whose column count is measured from the
    widest cell. It used to be created inside the pre-game screen's own render, which
    meant the report's cards - drawn anywhere else - got one statistic per line. */
-window.phxStyleStats=function(){ try{ document.querySelectorAll('.phx .stat-value').forEach(function(el){ if(el.getAttribute('contenteditable')==='true') return; if(el.querySelector('.pct')||el.querySelector('.sv-pc')) return; var t=el.textContent, m=t.match(/^(.*?)(·\s*\d+%)$/); if(m){ el.innerHTML=m[1]+'<span class="pct">'+m[2]+'</span>'; } }); document.querySelectorAll('.phx .card .stat-bar').forEach(function(b){ var cells=b.querySelectorAll('.stat-cell'); var n=cells.length; if(!n) return; b.setAttribute('data-n',n); cells.forEach(function(c){ c.style.gridColumn=''; }); var need=0; cells.forEach(function(c){ var v=c.querySelector('.stat-value'), l=c.querySelector('.stat-label');   var w=Math.max(v?v.scrollWidth:0, l?l.scrollWidth:0); if(w>need) need=w; }); var cs=getComputedStyle(b.querySelector('.stat-cell')); need += (parseFloat(cs.paddingLeft)||0)+(parseFloat(cs.paddingRight)||0)+2; var avail=b.clientWidth||b.offsetWidth; var per=Math.max(1, Math.floor(avail/Math.max(need,1))); var rows=Math.max(1, Math.ceil(n/per)); var cols=Math.max(1, Math.ceil(n/rows)); b.style.gridTemplateColumns='repeat('+cols+',1fr)'; var rest=n%cols; if(rest) cells[n-1].style.gridColumn='span '+(cols-rest+1); }); }catch(e){} };
+window.phxStyleStats=function(){ try{ document.querySelectorAll('.phx .stat-value').forEach(function(el){ if(el.getAttribute('contenteditable')==='true') return; if(el.querySelector('.pct')||el.querySelector('.sv-pc')) return; var t=el.textContent, m=t.match(/^(.*?)(·\s*\d+%)$/); if(m){ el.innerHTML=m[1]+'<span class="pct">'+m[2]+'</span>'; } }); document.querySelectorAll('.phx .card .stat-bar').forEach(function(b){ var cells=b.querySelectorAll('.stat-cell'); var n=cells.length; if(!n) return; b.setAttribute('data-n',n); cells.forEach(function(c){ c.style.gridColumn=''; }); var need=0; cells.forEach(function(c){ var v=c.querySelector('.stat-value'), l=c.querySelector('.stat-label');   var w=Math.max(v?v.scrollWidth:0, l?l.scrollWidth:0); if(w>need) need=w; }); var cs=getComputedStyle(b.querySelector('.stat-cell')); need += (parseFloat(cs.paddingLeft)||0)+(parseFloat(cs.paddingRight)||0)+2; var avail=b.clientWidth||b.offsetWidth; var per=Math.max(1, Math.floor(avail/Math.max(need,1))); b.style.gridTemplateColumns="repeat("+n+",minmax(0,1fr))"; /* always one row: the figures step down a size instead */ }); }catch(e){} };
 
 /* ================= the report is boxes, and a box is as wide as its table ===========
 
@@ -12366,8 +12366,12 @@ function _preHl(L, card, c, canEd, save, tid){
     const lvl=pick[i];
     /* the rank on one line and the season numbers it stands on under it, so neither is cut */
     if(lvl){ cell.classList.add("hl-"+lvl); const why=ranks && ranks[i] && ranks[i].why;
-      if(why){ const k=String(why).indexOf(" · "); cell.appendChild(h("span",{class:"hl-why"}, k>0? why.slice(0,k) : why));
-        if(k>0) cell.appendChild(h("span",{class:"hl-basis"}, why.slice(k+3))); } }
+      /* the rank in one short line - "#2 WÜR", "#7 BBL" - and what it stands on under the pointer,
+         so six numbers still fit in one row */
+      if(why){ const k=String(why).indexOf(" · "), head=k>0? why.slice(0,k) : why;
+        const short=String(head).replace(/^(\d+)(st|nd|rd|th)\b/i, "#$1");
+        cell.appendChild(h("span",{class:"hl-why"}, short));
+        cell.title=head+(k>0? " · "+why.slice(k+3) : ""); } }
     if(canEd){ const t=h("button",{type:"button", class:"hl-cell", title:"Light this number: none → solid → light (your choice replaces the automatic one)"}, lvl==="hot"? "●" : lvl==="warm"? "◐" : "○");
       t.addEventListener("click",e=>{ e.stopPropagation(); e.preventDefault();
         const cur=Object.assign({}, man? c.hlStats : pick); const now=cur[i];
@@ -28438,7 +28442,8 @@ function renderDashboard(){
       const cT=sub("TAG / BACK conceded"), cP=sub("Paint touches"), cR=sub("Ball reversals"), cL=sub("The last game");
       c.__b.appendChild(h("div",{class:"dash-4"}, cT, cP, cR, cL));
       const cN=sub("Net rating · league"), cPU=sub("Players improving · PIR"), cPD=sub("Players dropping · PIR","bad"), cX=sub("Team trends");
-      c.__b.appendChild(h("div",{class:"dash-4 r2"}, cN, cPU, cPD, cX));
+      /* the players up and down and the list of trends are off the card: the net rating keeps the line */
+      c.__b.appendChild(h("div",{class:"dash-1 r2"}, cN));
       /* our offense and defense game by game, and how many possessions each game had */
       const cOD=sub("OER / DER · league"), cPS=sub("Possessions · league");
       /* our rebounding game by game, above the ratings: OREB% and DREB% from the league */
@@ -28472,16 +28477,19 @@ function renderDashboard(){
           const drb=l=>{ const o=l.reduce((a,x)=>a+(+x.us.dreb||0),0), d=l.reduce((a,x)=>a+(+x.them.oreb||0),0); return (o+d)? 100*o/(o+d) : null; };
           const dL=drb(lg), d3=drb(l3), dS=drb(GL);
           const rankD=me && me.def? 1+F.filter(t=>t.def && t.def.reb>me.def.reb).length : null;
-          const half=(lab, a, b3, s, rk)=>h("div",{class:"rb-h"}, h("i",{}, lab), h("b",{class:tone(a, s)}, f0(a)),
+          /* each half with what the other side got on the same misses: the rival's share is the
+             rest of ours, shown so what we allowed is read without doing the sum */
+          const half=(lab, a, b3, s, rk, rivLab)=>h("div",{class:"rb-h"}, h("i",{}, lab), h("b",{class:tone(a, s)}, f0(a)),
             h("div",{class:"row"}, h("em",{class:tone(b3, s)}, "last 3 ", h("u",{}, f0(b3))), h("em",{}, "season ", h("u",{}, f0(s)))),
+            h("div",{class:"rb-riv"}, h("span",{}, rivLab), h("b",{}, f0(a==null? null : 100-a)), h("span",{}, "· L3 "+f0(b3==null? null : 100-b3)+" · season "+f0(s==null? null : 100-s))),
             rk? h("small",{}, _dashOrd(rk)+" of "+F.length) : null);
           if(GL.length) orFig=h("div",{class:"dash-kf rb-kf"},
             h("i",{}, "Rebounding"), h("span",{}, "last game · "+(GL[GL.length-1].opp||"")),
-            h("div",{class:"rb-two"}, half("Offensive", vL, v3, vS, rank), half("Defensive", dL, d3, dS, rankD)),
+            h("div",{class:"rb-two"}, half("Offensive", vL, v3, vS, rank, "rival DREB"), half("Defensive", dL, d3, dS, rankD, "rival OREB allowed")),
             h("small",{}, "of our misses / of theirs, from the league"+(lgAvg!=null? " · league OREB "+f0(lgAvg) : "")));
           /* the chart: both rates a game, the season's as dashed lines */
           { const labs=GL.map(x=>x.code||"?"), ov=GL.map(x=>orb([x])), dv=GL.map(x=>drb([x]));
-            const SR=[{ name:"OREB%", v:ov, c:"#c7a76a" }, { name:"DREB%", v:dv, c:"#4a86d8" }];
+            const SR=[{ name:"Our OREB%", v:ov, c:"#c7a76a" }, { name:"Our DREB%", v:dv, c:"#4a86d8" }, { name:"Rival OREB% · what we allowed", v:dv.map(x=>x==null? null : 100-x), c:"#d8524e" }];
             cRB.__b.innerHTML="";
             const chR=_dashChart(SR, labs, { fmt:v=>Math.round(v)+"%", h:130, w:Math.max(300, Math.round(cRB.__b.clientWidth||900)) });
             if(chR){ cRB.__b.appendChild(chR); cRB.__b.appendChild(_dashLegend(SR)); }
@@ -28489,7 +28497,7 @@ function renderDashboard(){
           putOr(); }
         if(GL.length>=2){
           const v=GL.map(net), avg=v.reduce((a,b)=>a+b,0)/v.length;
-          const ch=_dashChart([{ name:"Net rating", v:v, c:"#141821" }], GL.map(x=>x.code||"?"), { zero:true, ref:avg, fmt:x=>(x>0? "+" : "")+x.toFixed(0), h:100 });
+          const ch=_dashChart([{ name:"Net rating", v:v, c:"#141821" }], GL.map(x=>x.code||"?"), { zero:true, ref:avg, fmt:x=>(x>0? "+" : "")+x.toFixed(0), h:110, w:Math.max(300, Math.round(cN.__b.clientWidth||900)) });
           if(ch) cN.__b.appendChild(ch);
           cN.__b.appendChild(h("div",{class:"dash-src"},"Ours minus theirs per 100 possessions · dashed: season "+(avg>0? "+" : "")+avg.toFixed(1)));
           /* OER and DER: our points and theirs per 100 possessions, the same box score as the net */
@@ -28511,7 +28519,12 @@ function renderDashboard(){
           lastBits.unshift(h("div",{class:"dash-lastg"}, h("b",{}, (us>th? "W " : "L ")+us+"–"+th+" · "+x.opp), h("span",{}, _dashFmt(x.g.date))),
             h("div",{class:"dash-figs"}, fig("Net", (n>0? "+" : "")+n.toFixed(1), "season "+((oS-dS)>0? "+" : "")+(oS-dS).toFixed(1), n-(oS-dS)>=5? "good" : n-(oS-dS)<=-5? "bad" : ""),
               fig("Off. rating", oL.toFixed(1), "season "+oS.toFixed(1), oL-oS>=4? "good" : oL-oS<=-4? "bad" : ""),
-              fig("Def. rating", dL.toFixed(1), "season "+dS.toFixed(1), dL-dS<=-4? "good" : dL-dS>=4? "bad" : "")));
+              fig("Def. rating", dL.toFixed(1), "season "+dS.toFixed(1), dL-dS<=-4? "good" : dL-dS>=4? "bad" : ""),
+              /* the game's rebounding, ours and what the rival got */
+              (()=>{ const o=100*(+x.us.oreb||0)/Math.max(1,(+x.us.oreb||0)+(+x.them.dreb||0)), oS2=100*S("oreb","us")/Math.max(1,S("oreb","us")+S("dreb","them"));
+                return fig("OREB%", Math.round(o)+"%", x.us.oreb+" of "+((+x.us.oreb||0)+(+x.them.dreb||0))+" · season "+Math.round(oS2)+"%", o-oS2>=4? "good" : o-oS2<=-4? "bad" : ""); })(),
+              (()=>{ const d=100*(+x.us.dreb||0)/Math.max(1,(+x.us.dreb||0)+(+x.them.oreb||0)), dS2=100*S("dreb","us")/Math.max(1,S("dreb","us")+S("oreb","them"));
+                return fig("DREB%", Math.round(d)+"%", "rival OREB "+Math.round(100-d)+"% · season "+Math.round(dS2)+"%", d-dS2>=4? "good" : d-dS2<=-4? "bad" : ""); })()));
           paintLast();
         } else [cN,cOD,cPS].forEach(x=>x.__b.appendChild(h("div",{class:"dash-miss"},"Two games are needed for a line.")));
         /* every player of ours with three games before his last three */
@@ -28596,7 +28609,8 @@ function renderDashboard(){
         const S3=runs(list.slice(-3)), SB=runs(list.slice(0,-3));
         const mv=Object.keys(S3).filter(k=>S3[k].n>=3 && SB[k] && SB[k].n>=3).map(k=>({ k:k, a:SB[k].p/SB[k].n, b:S3[k].p/S3[k].n, n:S3[k].n })).map(x=>Object.assign(x,{ d:x.b-x.a }));
         const mvRow=(x,t)=>h("div",{class:"dash-mv "+t}, h("span",{}, x.k+" · "+x.n+" runs"), h("b",{}, x.a.toFixed(2)+" → "+x.b.toFixed(2)));
-        const up=mv.filter(x=>x.d>=0.15).sort((a,b)=>b.d-a.d).slice(0,5), dn=mv.filter(x=>x.d<=-0.15).sort((a,b)=>a.d-b.d).slice(0,5);
+        /* ten each way: the sets that moved most, up and down */
+        const up=mv.filter(x=>x.d>0).sort((a,b)=>b.d-a.d).slice(0,10), dn=mv.filter(x=>x.d<0).sort((a,b)=>a.d-b.d).slice(0,10);
         cU.__b.appendChild(up.length? h("div",{}, up.map(x=>mvRow(x,"good"))) : h("div",{class:"dash-src"},"No set has improved clearly (three runs or more in both)."));
         cD.__b.appendChild(dn.length? h("div",{}, dn.map(x=>mvRow(x,"bad"))) : h("div",{class:"dash-src"},"No set has dropped clearly."));
         cU.__b.appendChild(h("div",{class:"dash-src"},"Points per possession, the games before → the last three"));
@@ -33336,6 +33350,15 @@ body.edit-mode .phx .card .extra-block:has(.extra-line:empty)::before{display:bl
 /* cuando no caben en una fila: rejilla ordenada (2 por fila hasta 4 datos, 3 por fila si hay más) */
 .phx .card .stat-bar.stat-wrap .stat-cell{flex:1 1 50%!important;border-bottom:1px solid #e7e9ee!important}
 .phx .card .stat-bar.stat-wrap[data-n="5"] .stat-cell,.phx .card .stat-bar.stat-wrap[data-n="6"] .stat-cell,.phx .card .stat-bar.stat-wrap.many .stat-cell{flex-basis:33.33%!important}
+/* ===== the numbers always in one row ===== */
+/* five or six numbers no longer go to a second row: every box shares the width, the figures
+   step down a size when there are five or more, and the rank is one short line */
+.phx .card .stat-bar,.phx .card .stat-bar.stat-wrap{flex-wrap:nowrap!important}
+.phx .card .stat-bar .stat-cell,.phx .card .stat-bar.stat-wrap .stat-cell{flex:1 1 0!important;min-width:0!important;border-bottom:0!important;padding:3cqw .8cqw!important;overflow:hidden!important}
+.phx .card .stat-bar:has(> .stat-cell:nth-of-type(5)) .stat-value{font-size:clamp(12px,7cqw,20px)!important}
+.phx .card .stat-bar:has(> .stat-cell:nth-of-type(5)) .stat-label{font-size:clamp(7px,3.4cqw,10px)!important}
+.phx .card .stat-cell .hl-why{display:block!important;font-size:clamp(7.5px,3.6cqw,10.5px)!important;line-height:1.1!important;margin-top:2px!important;white-space:nowrap!important;overflow:hidden;text-overflow:clip}
+.phx .card .stat-cell .hl-basis{display:none!important}
 
 /* ===== v45: cabecera club/temporada/fecha + logo pegada al borde DERECHO (hoja y print) ===== */
 .ssv-paper .ps-rest,.ps-rest{align-items:stretch!important}
@@ -38392,6 +38415,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .rx-sw{display:inline-block;position:relative;width:28px;height:4px;border-radius:2px;background:var(--line,#e6e8ec)}
 .rx-sw i{position:absolute;left:0;top:0;bottom:0;width:82%;border-radius:2px}.rx-sw.g i{background:#2f9e86}.rx-sw.r i{background:#d8524e}
 .rx-ul{display:inline-block;width:18px;height:10px}.rx-ul.tb{box-shadow:inset 0 -2px 0 #d9a521}.rx-ul.tw{box-shadow:inset 0 -2px 0 #9aa1ac}
+.rb-riv{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px;font-size:10.5px;color:var(--ink-soft,#5b6472);margin-top:1px}.rb-riv b{font:700 12px 'IBM Plex Mono',monospace;color:#c0392b}
 /* pace: when the shot comes */
 .pace-v th.pbh{text-align:center}
 .pace-v .pbh-ks{display:flex;justify-content:center;gap:4px;margin-top:3px}
