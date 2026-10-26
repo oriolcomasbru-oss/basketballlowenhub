@@ -48,12 +48,50 @@
     return window.LowenDriveFetch ? window.LowenDriveFetch(url) : fetch(url);
   }
 
+  /* THE FILES KEPT IN THIS BROWSER. The next opponent's card reads the whole folder - every
+     club's tagging is the league reference - and it came down again on every visit, twenty
+     and more files four at a time. Each is kept here with its version (Drive's date, or its
+     name when the public listing gives none); only a new one comes down. */
+  var fileStamp = {}, _idbP = null;
+  function idb() {
+    if (_idbP) return _idbP;
+    _idbP = new Promise(function (ok) {
+      try {
+        var q = indexedDB.open("lowen-scout", 1);
+        q.onupgradeneeded = function () { q.result.createObjectStore("files"); };
+        q.onsuccess = function () { ok(q.result); };
+        q.onerror = function () { ok(null); };
+      } catch (e) { ok(null); }
+    });
+    return _idbP;
+  }
+  function idbGet(id, stamp) {
+    return idb().then(function (db) {
+      if (!db || !stamp) return null;
+      return new Promise(function (ok) {
+        try {
+          var q = db.transaction("files").objectStore("files").get(id);
+          q.onsuccess = function () { var v = q.result; ok(v && v.m === stamp ? v.b : null); };
+          q.onerror = function () { ok(null); };
+        } catch (e) { ok(null); }
+      });
+    });
+  }
+  function idbPut(id, stamp, buf) {
+    if (!stamp) return;
+    idb().then(function (db) {
+      if (!db) return;
+      try { db.transaction("files", "readwrite").objectStore("files").put({ m: stamp, b: buf }, id); } catch (e) {}
+    });
+  }
+
   function listFolder() {
     if (!cacheList) {
       cacheList = dfetch(FN + "?folder=" + FOLDER)
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (j.error) throw new Error(j.error);
+          (j.files || []).forEach(function (f) { if (f && f.id) fileStamp[f.id] = f.modifiedTime ? (f.modifiedTime + "|" + (f.size || "")) : ("name:" + (f.name || "")); });
           return j.files || [];
         })
         /* a failed list must not be cached: one dropped request would leave
@@ -75,15 +113,20 @@
   function getBuf(fileId) {
     cacheKeep(fileId);
     if (!cacheFile[fileId]) {
-      cacheFile[fileId] = dfetch(FN + "?file=" + encodeURIComponent(fileId))
-        .then(function (r) {
-          if (!r.ok) {
-            return r.json().then(
-              function (j) { throw new Error((j && j.error) || "download failed"); },
-              function () { throw new Error("download failed"); });
-          }
-          return r.arrayBuffer();
-        })
+      var stamp = fileStamp[fileId] || "";
+      cacheFile[fileId] = idbGet(fileId, stamp).then(function (kept) {
+        if (kept) return kept.slice(0);
+        return dfetch(FN + "?file=" + encodeURIComponent(fileId))
+          .then(function (r) {
+            if (!r.ok) {
+              return r.json().then(
+                function (j) { throw new Error((j && j.error) || "download failed"); },
+                function () { throw new Error("download failed"); });
+            }
+            return r.arrayBuffer();
+          })
+          .then(function (buf) { idbPut(fileId, stamp, buf.slice(0)); return buf; });
+      })
         .catch(function (e) { delete cacheFile[fileId]; throw e; });
     }
     return cacheFile[fileId];
