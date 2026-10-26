@@ -13160,7 +13160,7 @@ function _preCardsBlock(L, tid, rep, canEd, save){
   /* the club's reading of its game sheets the same way: read once and kept, it stayed on the day
      before the club's last game (Hagen's from before Ulm) - again when it is more than two hours
      old, once a visit */
-  { const plx=(L.players||{})[tid], plOld=!!plx && (!plx.updated || Date.now()-Date.parse(plx.updated)>2*3600e3);
+  { const plx=(L.players||{})[tid], plOld=!!plx && (!plx.updated || plx.fv!==LG_FETCH_VER || Date.now()-Date.parse(plx.updated)>2*3600e3);
     if(plOld && !_lgPlBusy[tid] && !_prePlFresh[tid] && !L.demo){ _prePlFresh[tid]=1; try{ syncPlayers(tid, true); }catch(e){} } }
   if(!C){
     const draft=_preCardsDraft(L, tid);
@@ -19941,7 +19941,7 @@ function _lgFreshenPlayers(L){
   const done={};
   (L.games||[]).forEach(g=>{ if(_lgDone(g) && g.phase==="main"){ done[g.homeId]=(done[g.homeId]||0)+1; done[g.awayId]=(done[g.awayId]||0)+1; } });
   const todo=Object.keys(L.players||{}).filter(tid=>{ const d=L.players[tid];
-    return d && (d.players||[]).length && (done[tid]||0)>(d.games||0) && !_lgPlBusy[tid] && _lgFreshTried[tid]!==done[tid]; });
+    return d && (d.players||[]).length && ((done[tid]||0)>(d.games||0) || d.fv!==LG_FETCH_VER) && !_lgPlBusy[tid] && _lgFreshTried[tid]!==done[tid]; });
   todo.forEach((tid,i)=>{ _lgFreshTried[tid]=done[tid];
     setTimeout(()=>{ try{ _lgPlTried[tid]=false; syncPlayers(tid, true); }catch(e){} }, 800+i*2500); });
   /* what was read for a club before a game is not what is true after it */
@@ -23725,7 +23725,7 @@ async function syncPlayers(teamId, force, round){
       read:j.read||0, total:j.total||0, pending:j.pending||0, partial:!!j.partial,
       failed:j.failed||0, round:n+1, stalled:false,
       team:j.team||"", err:(j.errors&&j.errors.length)? j.errors.join(" · ") : "",
-      updated:j.updated||new Date().toISOString() };
+      updated:j.updated||new Date().toISOString(), fv:LG_FETCH_VER };
     _lgPlPend[teamId]=j.pending||0;
     again=!!j.partial && n<LG_MAX_ROUNDS;
     /* Out of passes with sheets still unread: the panel must say so rather than sit on
