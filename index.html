@@ -5047,6 +5047,19 @@ function avOn(iso){ const A=(state.plan && state.plan.avail)||{};
   let last=""; Object.keys(A).forEach(d=>{ if(d<=iso && d>last) last=d; });
   return last? A[last] : {}; }
 function avLastDay(){ const A=(state.plan && state.plan.avail)||{}, t=todayISO(); let last=""; Object.keys(A).forEach(d=>{ if(d<=t && d>last) last=d; }); return last; }
+/* WHICH ROW OF THE MEDICAL SHEET IS THIS PLAYER. The sheet was matched by first name only, so a
+   row written with the surname (Holloway, Edigin) never met its player, and two brothers would
+   have shared one row. Now the sheet's own name is read word by word against the player's: a
+   row whose every word is in his name is his, the one with the most words first. */
+function _medKey(name){
+  const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z\s'-]/g," ").split(/\s+/).filter(w=>w && !/^(jr|sr|ii|iii)$/.test(w));
+  const mine=norm(name); if(!mine.length) return "";
+  const sq=(state.plan && state.plan.squad)||[];
+  let best="", bestN=0;
+  sq.forEach(s=>{ const t=norm(s.name); if(!t.length) return;
+    if(t.every(w=>mine.indexOf(w)>=0 || mine.some(m=>m.length>2 && w.length>2 && (m.indexOf(w)===0 || w.indexOf(m)===0)))){ if(t.length>bestN){ best=s.key; bestN=t.length; } } });
+  return best || fkey(name);
+}
 async function syncMedical(){
   const rows=await fetchSheet(conn("medical"),"DATA"); const A={}, squad={};
   for(let i=1;i<rows.length;i++){ const r=rows[i]||[]; const iso=isoFromMed(r[0]); const player=(r[1]||"").trim(); if(!iso||!player||player==="??") continue;
@@ -21042,10 +21055,10 @@ function _lgGameAvail(g, j, M){
       const f1=v=>v.toFixed(1);
       Object.keys(sheet).forEach(id=>{ if(played[id]) return;
         const s=X.season[id], p=sheet[id];
-        let med=null; try{ med=X.ours? X.med[fkey(p.name)] : null; }catch(e){}
+        let med=null; try{ med=X.ours? X.med[_medKey(p.name)] : null; }catch(e){}
         if((s && s.gp>=2 && s.min>=12) || med) key.push({ p:p, s:s, med:med, on:true }); else bench.push(p); });
       Object.keys(X.season).forEach(id=>{ if(sheet[id]) return; const s=X.season[id];
-        if(s.gp>=2 && s.min>=12){ let med=null; try{ med=X.ours? X.med[fkey(s.name)] : null; }catch(e){}
+        if(s.gp>=2 && s.min>=12){ let med=null; try{ med=X.ours? X.med[_medKey(s.name)] : null; }catch(e){}
           key.push({ p:{ num:String(s.num||""), name:s.name||"" }, s:s, med:med, on:false }); } });
       key.sort((a,b)=>((b.s&&b.s.min)||0)-((a.s&&a.s.min)||0));
       col.appendChild(key.length? h("div",{class:"avl-chips"}, key.map(k=>h("span",{class:"avl-chip out"},
@@ -22105,7 +22118,7 @@ function _lgAvail(rows, X){
   /* a man with a season behind him who is on none of these five sheets */
   Object.keys(X.season||{}).forEach(id=>{ const s=X.season[id];
     if(!men[id] && s.gp>=2 && s.min>=12) men[id]={ id:id, num:String(s.num||""), name:s.name||"", sec:[], pir:0, pts:0, offSheet:true }; });
-  const medOf=name=>{ try{ return X.ours? (X.med[fkey(name)]||null) : null; }catch(e){ return null; } };
+  const medOf=name=>{ try{ return X.ours? (X.med[_medKey(name)]||null) : null; }catch(e){ return null; } };
   const list=Object.keys(men).map(k=>{ const e=men[k];
     const played=[]; for(let i=0;i<n;i++) played[i]=(e.sec[i]||0)>0;
     const gp=played.filter(Boolean).length;
@@ -28322,6 +28335,9 @@ function renderDashboard(){
       c.__b.appendChild(h("div",{class:"dash-4 r2"}, cN, cPU, cPD, cX));
       /* our offense and defense game by game, and how many possessions each game had */
       const cOD=sub("OER / DER · league"), cPS=sub("Possessions · league");
+      /* our rebounding game by game, above the ratings: OREB% and DREB% from the league */
+      const cRB=sub("Rebounding · offensive and defensive, game by game");
+      c.__b.appendChild(cRB);
       c.__b.appendChild(h("div",{class:"dash-2 r2"}, cOD, cPS));
       const cB=sub("Our 10 best sets · half court"), cW=sub("Our 10 worst sets · half court","bad"), cU=sub("Sets improving most · last 3 games"), cD=sub("Sets dropping most · last 3 games","bad");
       c.__b.appendChild(h("div",{class:"dash-4 r2"}, cB, cW, cU, cD));
@@ -28345,10 +28361,25 @@ function renderDashboard(){
           const lgAvg=F.length? 100*F.reduce((a,t)=>a+t.off.reb,0)/F.length : null, rank=me? 1+F.filter(t=>t.off.reb>me.off.reb).length : null;
           const f0=v=>v==null? "—" : Math.round(v)+"%";
           const tone=(a,b)=>(a==null||b==null||Math.abs(a-b)<3)? "" : a>b? "good" : "bad";
-          if(GL.length) orFig=h("div",{class:"dash-kf "+tone(vL, vS)},
-            h("i",{}, "Off. rebounding"), h("b",{}, f0(vL)), h("span",{}, "last game · "+(GL[GL.length-1].opp||"")),
-            h("div",{class:"row"}, h("em",{class:tone(v3, vS)}, "last 3 ", h("u",{}, f0(v3))), h("em",{}, "season ", h("u",{}, f0(vS)))),
-            h("small",{}, "of our misses, from the league"+(rank? " · "+_dashOrd(rank)+" of "+F.length+(lgAvg!=null? " · league "+f0(lgAvg) : "") : "")));
+          /* REBOUNDING: the share of our misses we got back and of theirs we kept, the last game big,
+             the last three and the season under each */
+          const drb=l=>{ const o=l.reduce((a,x)=>a+(+x.us.dreb||0),0), d=l.reduce((a,x)=>a+(+x.them.oreb||0),0); return (o+d)? 100*o/(o+d) : null; };
+          const dL=drb(lg), d3=drb(l3), dS=drb(GL);
+          const rankD=me && me.def? 1+F.filter(t=>t.def && t.def.reb>me.def.reb).length : null;
+          const half=(lab, a, b3, s, rk)=>h("div",{class:"rb-h"}, h("i",{}, lab), h("b",{class:tone(a, s)}, f0(a)),
+            h("div",{class:"row"}, h("em",{class:tone(b3, s)}, "last 3 ", h("u",{}, f0(b3))), h("em",{}, "season ", h("u",{}, f0(s)))),
+            rk? h("small",{}, _dashOrd(rk)+" of "+F.length) : null);
+          if(GL.length) orFig=h("div",{class:"dash-kf rb-kf"},
+            h("i",{}, "Rebounding"), h("span",{}, "last game · "+(GL[GL.length-1].opp||"")),
+            h("div",{class:"rb-two"}, half("Offensive", vL, v3, vS, rank), half("Defensive", dL, d3, dS, rankD)),
+            h("small",{}, "of our misses / of theirs, from the league"+(lgAvg!=null? " · league OREB "+f0(lgAvg) : "")));
+          /* the chart: both rates a game, the season's as dashed lines */
+          { const labs=GL.map(x=>x.code||"?"), ov=GL.map(x=>orb([x])), dv=GL.map(x=>drb([x]));
+            const SR=[{ name:"OREB%", v:ov, c:"#c7a76a" }, { name:"DREB%", v:dv, c:"#4a86d8" }];
+            cRB.__b.innerHTML="";
+            const chR=_dashChart(SR, labs, { fmt:v=>Math.round(v)+"%", h:130, w:Math.max(300, Math.round(cRB.__b.clientWidth||900)) });
+            if(chR){ cRB.__b.appendChild(chR); cRB.__b.appendChild(_dashLegend(SR)); }
+            cRB.__b.appendChild(h("div",{class:"dash-src"},"OREB%: our misses we got back · DREB%: their misses we kept · season "+f0(vS)+" and "+f0(dS)+(rank && rankD? " · "+_dashOrd(rank)+" and "+_dashOrd(rankD)+" in the league" : ""))); }
           putOr(); }
         if(GL.length>=2){
           const v=GL.map(net), avg=v.reduce((a,b)=>a+b,0)/v.length;
@@ -38220,6 +38251,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .reb-lg tr.reb-shut{cursor:pointer}.reb-lg tr.reb-shut td.reb-top > div:not(:first-of-type){display:none}.reb-lg tr.reb-shut:hover td{background:rgba(20,24,33,.03)}
 .reb-lg .reb-tog{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:6px;border-radius:50%;border:1px solid var(--line-strong,#cfd4dc);font:700 11px/1 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}
 .shr{width:min(1100px,94vw);max-height:86vh;overflow-y:auto}.shr-two{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px}.shr-two h5{margin:0 0 6px;font:700 11px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}.shr-raw{font:12px/1.5 'IBM Plex Mono',monospace;max-height:420px;overflow:auto;padding:8px;border:1px solid var(--line,#e6e8ec);border-radius:8px;white-space:pre-wrap;color:var(--ink-soft,#5b6472)}
+.rb-kf .rb-two{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:4px 0 2px}.rb-h{display:flex;flex-direction:column;gap:2px;min-width:0}.rb-h > i{font-style:normal;font:700 9.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;opacity:.75}.rb-h > b{font:700 26px 'Oswald',sans-serif;line-height:1.05}.rb-h > b.good{color:#13804f}.rb-h > b.bad{color:#c0392b}.rb-h .row{display:flex;gap:8px;flex-wrap:wrap}.rb-h small{font-size:10px;opacity:.7}
 /* pace: when the shot comes */
 .pace-v th.pbh{text-align:center}
 .pace-v .pbh-ks{display:flex;justify-content:center;gap:4px;margin-top:3px}
