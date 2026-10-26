@@ -689,7 +689,9 @@
     /* on the raw rows, not on the merged possessions: a SECOND CHANCE row folds
        into the one before it, and the merged tags would then hold two misses */
     return { poss: poss, kind: "practice", oreb: orebSplit(offRows),
-             trans: buildTransPractice(rows), defN: defN };
+             trans: buildTransPractice(rows), defN: defN,
+             /* the defensive clips of the 5x5, chained into possessions, and what they gave up */
+             dposs: chainDef(rows), oppPts: rows.filter(function (r) { return r.def; }).reduce(function (s, r) { return s + points(r.tags); }, 0) };
   }
 
   function touchTable(poss) {
@@ -1041,7 +1043,65 @@
 
   /* --------------------------------------------------- practice rendering */
 
-  function renderPractice(root, sets, label) {
+  /* THE PRACTICE IN ONE LOOK: the last ten sessions in one table, this one marked. For each:
+     the paint touch rate against the 70% the staff trains for (floor 60%), the points given
+     up in TAG and BACK, the ball reversal rate, and what the session scored and conceded a
+     possession (OER from the offensive possessions, DER from the defensive clips of the 5x5). */
+  function practiceLook(recent, current) {
+    var cur = {}; (current || []).forEach(function (s) { cur[s.label] = 1; });
+    var box = el("div", "sx-prlook");
+    var hd = el("div", "sx-prlook-h");
+    hd.appendChild(el("b", null, "The practice in one look"));
+    hd.appendChild(el("span", null, "the last " + recent.length + (recent.length === 1 ? " session" : " sessions") + " · paint touches against the 70% target, floor 60% · TAG and BACK: points given up a time · OER / DER: points a possession"));
+    box.appendChild(hd);
+    var t = el("table", "sx-prlook-t");
+    var head = el("tr");
+    ["Session", "Poss", "Paint touches", "TAG", "BACK", "Ball reversals", "OER", "DER"].forEach(function (x, i) {
+      var th = el("th", i ? "" : "l", x); head.appendChild(th); });
+    t.appendChild(head);
+    var ptTone = function (v) { return v >= 70 ? "g" : v >= 60 ? "a" : "r"; };
+    var tbTone = function (v) { return v == null ? "" : v <= 0.8 ? "g" : v >= 1.2 ? "r" : ""; };
+    var tb = function (o) { if (!o || !o.n) return el("td", "mu", "—"); var v = o.pts / o.n, c = el("td", tbTone(v), f2(v));
+      c.title = o.pts + " points in " + o.n; return c; };
+    var bar = function (v, tone, ref) {
+      var c = el("td", "sx-prlook-b " + tone);
+      var w = el("span", "sx-prlook-bar"); var i = el("i"); i.style.width = Math.max(0, Math.min(100, v)) + "%"; w.appendChild(i);
+      if (ref != null) { var u = el("u"); u.style.left = ref + "%"; w.appendChild(u); }
+      c.appendChild(el("b", null, Math.round(v) + "%")); c.appendChild(w); return c; };
+    var tot = { n: 0, pt: 0, br: 0, pts: 0, tag: { n: 0, pts: 0 }, back: { n: 0, pts: 0 }, dn: 0, dpts: 0 };
+    recent.forEach(function (s) {
+      var P = s.poss || [], n = P.length; if (!n) return;
+      var pt = P.filter(function (q) { return q.pt > 0; }).length, br = P.filter(function (q) { return (q.br || 0) > 0; }).length;
+      var all = shotLine(P), dp = s.dposs || [], dl = dp.length ? { pts: s.oppPts || 0, ppp: (s.oppPts || 0) / dp.length } : null;
+      var tr = el("tr", cur[s.label] ? "on" : "");
+      var d = String(s.label || ""), lab = d.slice(8, 10) + "/" + d.slice(5, 7);
+      var c0 = el("td", "l", lab + (cur[s.label] ? " · this session" : "")); tr.appendChild(c0);
+      tr.appendChild(el("td", null, String(n)));
+      tr.appendChild(bar(100 * pt / n, ptTone(100 * pt / n), 70));
+      tr.appendChild(tb(s.trans && s.trans.tag)); tr.appendChild(tb(s.trans && s.trans.back));
+      tr.appendChild(bar(100 * br / n, "v", null));
+      tr.appendChild(el("td", "o", f2(all.ppp)));
+      tr.appendChild(el("td", "o", dl ? f2(dl.ppp) : "—"));
+      t.appendChild(tr);
+      tot.n += n; tot.pt += pt; tot.br += br; tot.pts += all.pts;
+      if (s.trans) { tot.tag.n += s.trans.tag.n; tot.tag.pts += s.trans.tag.pts; tot.back.n += s.trans.back.n; tot.back.pts += s.trans.back.pts; }
+      if (dl) { tot.dn += dp.length; tot.dpts += dl.pts; }
+    });
+    if (tot.n) {
+      var tr = el("tr", "tot");
+      tr.appendChild(el("td", "l", "All " + recent.length));
+      tr.appendChild(el("td", null, String(tot.n)));
+      tr.appendChild(bar(100 * tot.pt / tot.n, ptTone(100 * tot.pt / tot.n), 70));
+      tr.appendChild(tb(tot.tag)); tr.appendChild(tb(tot.back));
+      tr.appendChild(bar(100 * tot.br / tot.n, "v", null));
+      tr.appendChild(el("td", "o", f2(tot.pts / tot.n)));
+      tr.appendChild(el("td", "o", tot.dn ? f2(tot.dpts / tot.dn) : "—"));
+      t.appendChild(tr);
+    }
+    var wrap = el("div", "sx-prlook-w"); wrap.appendChild(t); box.appendChild(wrap);
+    return box;
+  }
+  function renderPractice(root, sets, label, recent) {
     root.innerHTML = "";
     var P = [];
     sets.forEach(function (s) { P = P.concat(s.poss); });
@@ -1083,6 +1143,7 @@
           .filter(function (x) { return x.n > 0; }).sort(function (a, b) { return b.n - a.n; });
         var typeTot = 0; types.forEach(function (x) { typeTot += x.n; });
         var sP = shotLine(withPT), sN = shotLine(P.filter(function (q) { return !(q.pt > 0); }));
+        if (recent && recent.length) root.appendChild(practiceLook(recent, sets)); else
         root.appendChild(KP.summary({ cls: "sx-prsum", title: "The practice in one look", sub: label, figures: [
           { label: "Tagged", value: N, note: "possessions · " + sets.length + (sets.length === 1 ? " session" : " sessions"), tone: "vol" },
           { label: "Points per possession", value: f2(all.ppp), note: all.pts + " points · " + all.fgm + "/" + all.fga + " FG", tone: "vol" },
@@ -2180,11 +2241,14 @@
           return;
         }
 
-        return Promise.all(picked.map(function (x) {
-          return getRows(x.f.id).then(function (rows) { var m = buildPractice(rows); m.label = x.d; return m; });
-        })).then(function (sets) {
+        /* the sessions picked, and the last ten up to the last of them for the one-look table */
+        var lastD = picked[picked.length - 1].d;
+        var ten = dated.filter(function (x) { return x.d <= lastD; }).slice(-10);
+        var load = function (x) { return getRows(x.f.id).then(function (rows) { var m = buildPractice(rows); m.label = x.d; return m; }); };
+        return Promise.all([Promise.all(picked.map(load)), Promise.all(ten.map(function (x) { return load(x).catch(function () { return null; }); }))]).then(function (both) {
+          var sets = both[0], recent = both[1].filter(Boolean);
           var label = scope === "session" ? iso : (picked[0].d + " → " + picked[picked.length - 1].d);
-          renderPractice(box, sets, label);
+          renderPractice(box, sets, label, recent);
         });
       });
     });

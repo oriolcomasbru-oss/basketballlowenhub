@@ -6749,24 +6749,25 @@ function trainingCard(iso, idx){
      the Trends screen exists to answer, and having them here meant the same four tabs in
      two places with the one that matters sharing a row with three that belong elsewhere. */
   state.ui.tsScope="session";
-  const statsPanel=h("div",{class:"scout-panel"},
-    h("div",{class:"scout-h"},"Team stats"),
+  /* the same sections as the post game and the pre game: a block under a black banner */
+  const secBlk=(title, tool, ...kids)=>h("div",{class:"rs-block rs-block-auto ts-sec"},
+    h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"}, title), tool? h("span",{class:"ts-sec-tool"}, tool) : null), ...kids);
+  const statsPanel=secBlk("TEAM STATS", null,
     h("div",{class:"scout-placeholder", "data-sx":"training"}, "Team stats"));
   wrap.appendChild(statsPanel);
   /* training sheet — the actual practice schedule of this session */
   const openSheet=()=>{ state.ui.sessionDate=iso; state.ui.sessionIdx=Math.min(idx||0,Math.max(0,arr.length-1)); state.ui.planTab="session"; state.ui.view="planification"; persist(); setView("planification"); };
   if(se && (se.blocks||[]).length){
-    const sheet=h("div",{class:"scout-panel ts-sheet"});
-    sheet.appendChild(h("div",{class:"scout-h"}, h("span",{},"Training sheet"), h("button",{class:"btn sm ts-open",onclick:openSheet},"Open / edit →")));
-    sheet.appendChild(sessionPaperRO(iso, se));
+    const sheet=secBlk("TRAINING SHEET", h("button",{class:"btn sm ts-open",onclick:openSheet},"Open / edit →"), sessionPaperRO(iso, se));
+    sheet.classList.add("ts-sheet");
     wrap.appendChild(sheet);
   } else {
-    wrap.appendChild(h("div",{class:"scout-panel"}, h("div",{class:"scout-h"},"Training sheet"), h("div",{class:"scout-placeholder"}, "No blocks planned yet. ", h("button",{class:"btn sm",onclick:openSheet},"Build in Session →"))));
+    wrap.appendChild(secBlk("TRAINING SHEET", null, h("div",{class:"scout-placeholder"}, "No blocks planned yet. ", h("button",{class:"btn sm",onclick:openSheet},"Build in Session →"))));
   }
   /* notes last — they are written after reading the sheet, not before */
   const notesTa=h("textarea",{class:"scout-notes", placeholder:"Notes for this training…"}); notesTa.value=(se&&se.tsNotes)||"";
   notesTa.addEventListener("input",()=>{ if(se){ se.tsNotes=notesTa.value; persist(); } });
-  wrap.appendChild(h("div",{class:"scout-panel"}, h("div",{class:"scout-h"},"Notes"), notesTa));
+  wrap.appendChild(secBlk("NOTES", null, notesTa));
   return wrap;
 }
 function scoutSlug(s){ return (s||"").toLowerCase().replace(/[^a-zß0-9à-ÿ]/g,"").slice(0,20); }
@@ -17785,8 +17786,11 @@ function renderTrends(){
      paint-touch, reversal and PPP lines a second time. It is gone; the one thing in it
      that was not a repeat, the 70% measure, is section 06 of the dashboard. */
   /* the reading of the whole season, from both sources, before any chart */
-  try{ root.appendChild(_trendsDashboard()); }catch(e){}
-  root.appendChild(h("div",{class:"scout-panel"},
+  /* the same sections as the reports: each part under its black banner */
+  const secBlk=(title, ...kids)=>h("div",{class:"rs-block rs-block-auto ts-sec"},
+    h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"}, title)), ...kids);
+  try{ root.appendChild(secBlk("WHERE WE ARE", _trendsDashboard())); }catch(e){}
+  root.appendChild(secBlk("OUR TAGGING · EVERY TRAINING AND GAME",
     h("div",{class:"scout-placeholder", "data-sx":"trends"},
       "Trends across every training and game.")));
   /* and the league's own numbers, game by game, under the tagging's */
@@ -17798,8 +17802,8 @@ function renderTrends(){
      never answers does not hide it for ever. */
   const panel=root.lastChild;
   /* pace, under the systems efficiency the panel above ends with */
-  try{ root.appendChild(_trendsPace()); }catch(e){}
-  const lgBlock=_lgFourTrend();
+  try{ root.appendChild(secBlk("GAME PACE", _trendsPace())); }catch(e){}
+  const lgBlock=secBlk("THE LEAGUE'S NUMBERS · GAME BY GAME", _lgFourTrend());
   lgBlock.style.display="none";
   root.appendChild(lgBlock);
   let shown=false, mo=null;
@@ -37915,12 +37919,35 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .reb-edge{margin-top:8px;padding:7px 10px;border-radius:8px;font-size:12px;background:var(--panel-2,#f3f4f6);color:var(--ink,#141821)}
 .reb-edge.dn{background:rgba(216,82,78,.12);color:#9c2f24}.reb-edge.up{background:rgba(47,158,134,.14);color:#145f44}
 .pre-reb .reb-grid{margin-top:10px}
+/* post practice: the last ten sessions in one table */
+.sx-prlook{border:1px solid var(--line,#e6e8ec);border-radius:10px;background:var(--panel,#fff);padding:10px 12px;margin:8px 0 14px}
+.sx-prlook-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin-bottom:8px}
+.sx-prlook-h b{font:700 13px 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.sx-prlook-h span{font-size:11px;color:var(--ink-soft,#5b6472)}
+.sx-prlook-w{overflow-x:auto}
+.sx-prlook-t{width:100%;border-collapse:collapse;font:600 12.5px 'IBM Plex Mono',monospace}
+.sx-prlook-t th{font:700 9.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472);padding:4px 8px;border-bottom:2px solid var(--ink,#141821);text-align:center}
+.sx-prlook-t td{padding:5px 8px;text-align:center;border-bottom:1px solid var(--line,#eef0f3)}
+.sx-prlook-t th.l,.sx-prlook-t td.l{text-align:left;font-family:'Inter',sans-serif;white-space:nowrap}
+.sx-prlook-t tr.on td{background:rgba(232,199,102,.16);font-weight:800}
+.sx-prlook-t tr.tot td{border-top:2px solid var(--ink,#141821);font-weight:800}
+.sx-prlook-t td.mu{color:var(--ink-faint,#8a93a2)}
+.sx-prlook-t td.g{color:#13804f;font-weight:700}.sx-prlook-t td.r{color:#c0392b;font-weight:700}
+.sx-prlook-t td.o{font-weight:700}
+.sx-prlook-b{min-width:120px}
+.sx-prlook-b b{display:inline-block;min-width:36px;text-align:right;margin-right:6px}
+.sx-prlook-b.g b{color:#13804f}.sx-prlook-b.a b{color:#b7791f}.sx-prlook-b.r b{color:#c0392b}
+.sx-prlook-bar{position:relative;display:inline-block;width:70px;height:6px;border-radius:3px;background:var(--panel-2,#eef0f3);vertical-align:middle}
+.sx-prlook-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:#9fb4d1}
+.sx-prlook-b.g .sx-prlook-bar i{background:#2f9e86}.sx-prlook-b.a .sx-prlook-bar i{background:#d9a521}.sx-prlook-b.r .sx-prlook-bar i{background:#d8524e}
+.sx-prlook-bar u{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:var(--ink,#141821)}
 /* pace: when the shot comes */
 .pace-v th.pbh{text-align:center}
 .pace-v .pbh-ks{display:flex;justify-content:center;gap:4px;margin-top:3px}
 .pace-v .pbh-k{cursor:pointer;padding:1px 6px;border-radius:9px;border:1px solid var(--line,#dfe2e7);font-size:9px;letter-spacing:.06em;color:var(--ink-soft,#5b6472);white-space:nowrap}
 .pace-v .pbh-k:hover{border-color:var(--ink,#141821);color:var(--ink,#141821)}
 .pace-v .pbh-k.on{background:var(--ink,#141821);border-color:var(--ink,#141821);color:var(--panel,#fff)}
+.ts-sec .rs-banner{display:flex;align-items:center;gap:10px}.ts-sec-tool{margin-left:auto}
 .pace-v td.pbd{padding:5px 8px;min-width:92px}
 .pace-v .pbd-n{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
 .pace-v .pbd-n b{font:700 15px 'IBM Plex Mono',monospace;color:var(--ink,#141821);font-variant-numeric:tabular-nums}
