@@ -131,8 +131,11 @@ exports.handler = async (event) => {
       if (q.fresh !== "1") { const hit = getCache(ck, ttl); if (hit) return reply(200, Object.assign({}, hit, { cached: true }), 60e3); }
       const errors = [];
       const take = (p) => get(p, key).catch(e => { errors.push(clean(e.message)); return null; });
-      const [sp, tb, lv, kd, st] = await Promise.all([
-        take("spielplan/" + league + "/" + season), take("tabelle_" + league), take("gamesLive"), take("kader"), take("stats_hauptrunde")
+      /* the other group of the ProB, for the standings' switch: never an error if it is not there */
+      const otherLeague = /nord/.test(league) ? league.replace("nord", "sued") : league.replace(/s(ue|ü)d/, "nord");
+      const [sp, tb, lv, kd, st, tbo] = await Promise.all([
+        take("spielplan/" + league + "/" + season), take("tabelle_" + league), take("gamesLive"), take("kader"), take("stats_hauptrunde"),
+        get("tabelle_" + otherLeague, key).catch(() => null)
       ]);
       const stats = st && st.g && st.g[0];
       const out = {
@@ -142,6 +145,7 @@ exports.handler = async (event) => {
         team: { id: stats ? S(stats.team_id) : "", name: (kd && kd.data && S(kd.data.team_caption)) || (stats ? S(stats.team_caption) : ""),
           short: kd && kd.data ? S(kd.data.team_shortname) : "", abbr: kd && kd.data ? S(kd.data.team_abbrev) : "" },
         games: sp ? schedule(sp) : [], table: tb ? table(tb) : [], live: lv ? live(lv) : [], roster: roster(kd, st),
+        other: tbo ? { league: (tbo.data && tbo.data.league) || otherLeague, table: table(tbo) } : null,
         errors: errors
       };
       cache[ck] = { t: Date.now(), d: out };
