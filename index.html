@@ -23811,14 +23811,22 @@ function _lgRsElig(c, t, strict){
   return true;
 }
 /* the key under the roster: what the bar and the underlines say */
+/* HOW TO READ THE TABLE, for everybody who opens it - staff and players: two boxes, each mark
+   shown as it looks in the table with one plain sentence beside it */
 function _lgRsKey(){
+  const ex=(txt, cls, w, tick)=>h("span",{class:"rx-ex "+(cls||"")}, h("b",{}, txt),
+    w!=null? h("span",{class:"rx-b"}, h("i",{style:"width:"+w+"%"}), h("u",{style:"left:"+(tick||50)+"%"})) : null);
+  const row=(sample, text)=>h("div",{class:"rx-kr"}, sample, h("span",{}, text));
   return h("div",{class:"rx-key"},
-    h("span",{}, h("span",{class:"rx-sw g"}, h("i",{})), "among the league's best 15% in that column"),
-    h("span",{}, h("span",{class:"rx-sw r"}, h("i",{style:"width:18%"})), "among the league's weakest 15%"),
-    h("span",{}, "the bar: where he sits between the league's worst and best · the tick: the league's median"),
-    h("span",{}, h("span",{class:"rx-ul tb"}), "the best of the team"),
-    h("span",{}, h("span",{class:"rx-ul tw"}), "the weakest of the team, among those who play"),
-    h("span",{class:"mu"}, "league: every player with two games and ten minutes a game · a percentage needs one attempt a game"));
+    h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"Compared with the league"),
+      row(ex("14.3","g",85,45), "Green with a bar: one of the best 15% of the league in that column"),
+      row(ex("3.3","r",10,45), "Red with a bar: one of the weakest 15% of the league"),
+      row(h("span",{class:"rx-ex"}, h("span",{class:"rx-b big"}, h("i",{style:"width:62%"}), h("u",{style:"left:45%"}))), "The bar goes from the league's worst (left) to its best (right); the black line is the league's middle player"),
+      h("div",{class:"rx-kn"}, "No colour: close to the rest of the league. Every player with 2 games and 10 minutes a game counts.")),
+    h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"Compared inside the team"),
+      row(h("span",{class:"rx-ex"}, h("b",{class:"rx-v rx-tb"},"16.8")), "Gold line: the best of the team in that column"),
+      row(h("span",{class:"rx-ex"}, h("b",{class:"rx-v rx-tw"},"0.3")), "Grey line: the weakest of the team, among the players who really play"),
+      h("div",{class:"rx-kn"}, "Percentages (2P%, 3P%, FT%…) count only with at least one attempt a game.")));
 }
 function _lgRsVal(c, t, per, ctx){
   if(c.pair) return null;
@@ -38380,8 +38388,20 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .lg-rost .rx-b i{position:absolute;left:0;top:0;bottom:0;border-radius:2px}
 .lg-rost td.rx-g .rx-b i{background:#2f9e86}.lg-rost td.rx-r .rx-b i{background:#d8524e}
 .lg-rost .rx-b u{position:absolute;top:-2px;bottom:-2px;width:1.5px;margin-left:-1px;background:var(--ink,#141821)}
-.rx-key{display:flex;flex-wrap:wrap;gap:5px 16px;align-items:center;margin-top:8px;font-size:11px;color:var(--ink-soft,#5b6472)}
-.rx-key > span{display:inline-flex;align-items:center;gap:6px}.rx-key .mu{color:var(--ink-faint,#8a93a2)}
+.rx-key{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin:12px 0 14px}
+.rx-kc{border:1px solid var(--line,#e6e8ec);border-radius:10px;background:var(--panel,#fff);padding:10px 12px;display:flex;flex-direction:column;gap:7px}
+.rx-kh{font:700 11px 'Oswald',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--ink,#141821)}
+.rx-kr{display:grid;grid-template-columns:64px minmax(0,1fr);gap:10px;align-items:center;font-size:12.5px;line-height:1.35;color:var(--ink,#141821)}
+.rx-kn{font-size:11.5px;color:var(--ink-soft,#5b6472);line-height:1.35}
+.rx-ex{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:26px;padding:3px 4px;border-radius:6px;background:var(--panel-2,#f4f5f7)}
+.rx-ex b{font:700 13px 'IBM Plex Mono',monospace;color:var(--ink,#141821)}
+.rx-ex.g b{color:#13804f}.rx-ex.r b{color:#c0392b}
+.rx-ex .rx-b{display:block;position:relative;width:46px;height:4px;margin-top:3px;border-radius:2px;background:var(--line,#e2e5ea)}
+.rx-ex .rx-b.big{width:52px;height:6px;margin:0}
+.rx-ex .rx-b i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:#9fb4d1}
+.rx-ex.g .rx-b i{background:#2f9e86}.rx-ex.r .rx-b i{background:#d8524e}
+.rx-ex .rx-b u{position:absolute;top:-2px;bottom:-2px;width:1.5px;margin-left:-1px;background:var(--ink,#141821)}
+.rx-ex .rx-v{display:inline-block;padding:0 3px}.rx-ex .rx-v.rx-tb{box-shadow:inset 0 -2px 0 #d9a521}.rx-ex .rx-v.rx-tw{box-shadow:inset 0 -2px 0 #9aa1ac;color:var(--ink-soft,#5b6472)}
 .rx-sw{display:inline-block;position:relative;width:28px;height:4px;border-radius:2px;background:var(--line,#e6e8ec)}
 .rx-sw i{position:absolute;left:0;top:0;bottom:0;width:82%;border-radius:2px}.rx-sw.g i{background:#2f9e86}.rx-sw.r i{background:#d8524e}
 .rx-ul{display:inline-block;width:18px;height:10px}.rx-ul.tb{box-shadow:inset 0 -2px 0 #d9a521}.rx-ul.tw{box-shadow:inset 0 -2px 0 #9aa1ac}
@@ -42537,7 +42557,7 @@ body.edit-mode .phx.phx .roster-columns:not(.pre-cm-cols) .card > .card-body{gri
 body.edit-mode .phx.phx .roster-columns:not(.pre-cm-cols) .card > .stat-bar{grid-row:2!important}
 body.edit-mode .phx.phx .roster-columns:not(.pre-cm-cols) .card > .closeout-wrap,
 body.edit-mode .phx.phx .roster-columns:not(.pre-cm-cols) .card > .closeout-add{grid-row:3!important}
-body.edit-mode .phx.phx .roster-columns .card > .card-toolbar{position:absolute!important;top:4px!important;left:4px!important;
+body.edit-mode .phx.phx .roster-columns .card > .card-toolbar{position:absolute!important;top:4px!important;right:4px!important;left:auto!important;
   display:flex!important;flex-wrap:nowrap!important;gap:2px!important;padding:0!important;margin:0!important;
   background:none!important;border:0!important;z-index:7!important;width:auto!important}
 body.edit-mode .phx.phx .roster-columns .card > .card-toolbar > *{font-size:10px!important;line-height:1!important;
@@ -42546,7 +42566,8 @@ body.edit-mode .phx.phx .roster-columns .card > .card-toolbar > *{font-size:10px
 body.edit-mode .phx.phx .roster-columns .card > .card-toolbar > .card-duplicate{background:rgba(199,167,106,.92)!important;color:#14130B!important}
 body.edit-mode .phx.phx .roster-columns .card > .card-toolbar > .card-delete{background:rgba(192,57,43,.9)!important}
 body.edit-mode .phx.phx .roster-columns .card > .card-toolbar > .publish-toggle.is-hidden{background:rgba(192,57,43,.9)!important}
-body.edit-mode .phx.phx .roster-columns .card .num-badge{top:28px!important}
+/* the icons sit top right, over the empty end of the name line: the name keeps clear of them */
+body.edit-mode .phx.phx .roster-columns .card > .card-body > :first-child{margin-right:92px!important}
 /* the crosses of the lines float at the end of their line, shown when the line is pointed at */
 body.edit-mode .phx.phx .card .idea-row,body.edit-mode .phx.phx .card .extra-block{position:relative}
 body.edit-mode .phx.phx .card .rm-x.rm-x-inline{position:absolute!important;right:-6px;top:50%;transform:translateY(-50%);
