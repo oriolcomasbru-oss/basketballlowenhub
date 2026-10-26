@@ -2950,6 +2950,36 @@ body.edit-mode .rs-rich span[data-key]{text-decoration:underline;text-decoration
 
 <script>
 "use strict";
+/* A GAME THAT HAS BEEN PLAYED IS KEPT IN THIS BROWSER. Every visit asked the league again
+   for each finished game the screens use - eleven of them, 165 KB and two seconds each -
+   and a game played days ago does not change. Its answer is kept here once it is more than
+   a day and a half old, and read from here after; a read that asks for fresh numbers
+   (&fresh=1) always goes to the league, and so does any game still recent. */
+(function(){
+  try{
+    if(typeof indexedDB==="undefined" || !window.fetch) return;
+    var orig=window.fetch.bind(window), dbP=null;
+    var db=function(){ if(dbP) return dbP; dbP=new Promise(function(ok){ try{ var q=indexedDB.open("lowen-games",1);
+      q.onupgradeneeded=function(){ q.result.createObjectStore("g"); }; q.onsuccess=function(){ ok(q.result); }; q.onerror=function(){ ok(null); }; }catch(e){ ok(null); } }); return dbP; };
+    var get=function(id){ return db().then(function(d){ if(!d) return null; return new Promise(function(ok){ try{ var q=d.transaction("g").objectStore("g").get(id); q.onsuccess=function(){ ok(q.result||null); }; q.onerror=function(){ ok(null); }; }catch(e){ ok(null); } }); }); };
+    var put=function(id,t){ db().then(function(d){ if(!d) return; try{ d.transaction("g","readwrite").objectStore("g").put(t,id); }catch(e){} }); };
+    var OLD=36*3600e3;
+    window.fetch=function(input, init){
+      var url=typeof input==="string"? input : (input && input.url) || "";
+      var m=/\/\.netlify\/functions\/bbl\?res=game&id=([^&]+)$/.exec(url);
+      if(!m || (init && init.method && init.method!=="GET")) return orig(input, init);
+      var id=decodeURIComponent(m[1]);
+      return get(id).then(function(kept){
+        if(kept) return new Response(kept, { status:200, headers:{ "content-type":"application/json" } });
+        return orig(input, init).then(function(r){
+          if(!r.ok) return r;
+          r.clone().text().then(function(t){ try{ var j=JSON.parse(t), at=Date.parse((j.game||{}).scheduledTime||"");
+            if(j.ok!==false && j.feed && isFinite(at) && Date.now()-at>OLD) put(id, t); }catch(e){} });
+          return r; });
+      });
+    };
+  }catch(e){}
+})();
 /* OLDER IPADS. A bench iPad Air stays on iOS 12 (Safari 12): what the hub uses that Safari 12
    does not have is supplied here, and only where it is missing. */
 (function(){
@@ -5226,7 +5256,8 @@ async function syncFromGoogle(silent){
   /* the fixtures are not in this list: loadGamesOnce reads DB_Games on the way into
      whichever screen needs them, and nothing else writes the schedule */
   const jobs=[[syncCalendar,"calendar"],[syncMedical,"squad"],[syncKinexon,"load-days"],[syncPfWeekly,"PF lines"]];
-  for(const [fn,label] of jobs){ try{ const n=await fn(); ok++; msgs.push(n+" "+label); }catch(e){} }
+  /* the four at once: none needs another, and read one after the other they took five seconds */
+  await Promise.all(jobs.map(async ([fn,label])=>{ try{ const n=await fn(); ok++; msgs.push(n+" "+label); }catch(e){} }));
   persist();
   if(state.ui.view==="calendar") renderCal(); if(state.ui.view==="planification") renderPlan();
   /* the dashboard reads the same sheets: drawn again once they are in */
