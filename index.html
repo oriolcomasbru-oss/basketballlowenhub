@@ -9572,13 +9572,15 @@ function _preInj(){
   let I=blk.__inj;
   if(!I || I.key!==X.key){
     const part=(tab, title, node)=>{ const p=h("div",{class:"pre-inj-p sxp-blk sxp-card", "data-tabs":tab}); if(title) p.appendChild(h("div",{class:"sxp-sub"}, h("b",{}, title))); p.appendChild(node); return p; };
-    const ov=h("div",{class:"pre-inj-p", "data-tabs":"over"});
-    ov.appendChild(part("over", "", _lgEmbed(X.tid, [ L=>_prePaceSummary(L, X.tid) ])));
-    ov.appendChild(part("over", "", _lgEmbed(X.tid, [ L=>_preRebCompare(L, X.tid, X.rep? _preCardsStore(X.rep) : null) ])));
-    if(!X.pv && X.g){ try{ ov.appendChild(part("over", "Their last games · from the play by play", _preRecentForm(X.g))); }catch(e){} }
-    I=blk.__inj={ key:X.key, parts:[ ov,
-      part("off", "", _lgEmbed(X.tid, [ L=>_prePaceSide(L, X.tid, "o") ])),
-      part("def", "", _lgEmbed(X.tid, [ L=>_prePaceSide(L, X.tid, "d") ])) ] };
+    /* each in the team stats box under its own tab: pace (both sides, then each with its
+       picture), rebounding them and us, their last games with the games and quarters */
+    const parts=[
+      part("pace", "", _lgEmbed(X.tid, [ L=>_prePaceSummary(L, X.tid) ])),
+      part("pace", "", _lgEmbed(X.tid, [ L=>_prePaceSide(L, X.tid, "o") ])),
+      part("pace", "", _lgEmbed(X.tid, [ L=>_prePaceSide(L, X.tid, "d") ])),
+      part("reb", "", _lgEmbed(X.tid, [ L=>_preRebCompare(L, X.tid, X.rep? _preCardsStore(X.rep) : null) ])) ];
+    if(!X.pv && X.g){ try{ parts.push(part("games", "Their last games · from the play by play", _preRecentForm(X.g))); }catch(e){} }
+    I=blk.__inj={ key:X.key, parts:parts };
   }
   const sxp=blk.querySelector(".sxp");
   if(sxp){
@@ -10629,8 +10631,8 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
        part of our own tagging. The team stats section is drawn where it always was and
        moved into this block, so what is stored and how it is built do not change. */
     const uni=h("div",{class:"rs-block rs-block-auto pg-uni"},
-      h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"}, "THE GAME · PLAY BY PLAY AND TAGGING")));
-    const PT=[["ov","Overview"],["pbp","Game stats"],["min","Minute by minute"],["reb","Rebounds"],["pt","Paint touches"],["br","Ball reversals"],["eff","Efficiency"],["td","Transition D"],["def","What we concede"],["all","Everything"]];
+      h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"}, "TEAM STATS")));
+    const PT=[["ov","Overview"],["pbp","Game stats"],["min","Minute by minute"],["pace","Pace"],["reb","Rebounds"],["pt","Paint touches"],["br","Ball reversals"],["eff","Efficiency"],["td","Transition D"],["def","What we concede"],["all","Everything"]];
     const bar=h("div",{class:"sxp-tabs pg-tabs"});
     const pane=(k, build)=>{ const p=h("div",{class:"pg-pane", "data-pane":k});
       try{ p.appendChild(build()); }catch(e){ p.appendChild(h("div",{class:"lg-empty"}, "This block could not be drawn: "+((e&&e.message)||e))); }
@@ -10644,22 +10646,23 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
         makeRichBox(canEd, rep.data.postMain||"", html=>{ rep.data.postMain=html; save(); }, "The three or four things this game was about…", 3)); };
     const pOv=pane("ov", ()=>{ const w=h("div",{}); const mp=mainPoints(); if(mp) w.appendChild(mp); w.appendChild(_postOverview(g)); return w; }),
       pPbp=pane("pbp", ()=>_lgGameInline(g)), pMin=pane("min", ()=>_postMinutes(g)), pReb=pane("reb", ()=>_postRebounds(g)), pTs=h("div",{class:"pg-pane", "data-pane":"ts"}),
-      pQ=h("div",{class:"pg-pane", "data-pane":"q"});
+      pQ=h("div",{class:"pg-pane", "data-pane":"q"}), pPace=h("div",{class:"pg-pane", "data-pane":"pace"});
     /* the quarter-by-quarter table of the overview, drawn when the overview is, shown in Efficiency */
     if(_postOvKeep.q && _postOvKeep.key===g.date+"|"+(g.opponent||"")) pQ.appendChild(_postOvKeep.q);
+    if(_postOvKeep.pace && _postOvKeep.key===g.date+"|"+(g.opponent||"")) pPace.appendChild(_postOvKeep.pace);
     const show=k=>{
       window.__postCat=k; uni.dataset.tab=k;
       bar.querySelectorAll(".sxp-tab").forEach(b=>b.classList.toggle("on", b.dataset.t===k));
-      const tsOn=(k!=="ov" && k!=="pbp" && k!=="min" && k!=="reb");
-      pOv.classList.toggle("on", k==="ov"||k==="all"); pPbp.classList.toggle("on", k==="pbp"||k==="all"); pMin.classList.toggle("on", k==="min"||k==="all"); pReb.classList.toggle("on", k==="reb"||k==="all"); pQ.classList.toggle("on", k==="eff"||k==="all"); pTs.classList.toggle("on", tsOn);
+      const tsOn=(k!=="ov" && k!=="pbp" && k!=="min" && k!=="reb" && k!=="pace");
+      pOv.classList.toggle("on", k==="ov"||k==="all"); pPbp.classList.toggle("on", k==="pbp"||k==="all"); pMin.classList.toggle("on", k==="min"||k==="all"); pReb.classList.toggle("on", k==="reb"||k==="all"); pPace.classList.toggle("on", k==="pace"||k==="all"); pQ.classList.toggle("on", k==="eff"||k==="all"); pTs.classList.toggle("on", tsOn);
       const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && tsOn) sp.__setCat(k);
       try{ window.dispatchEvent(new Event("resize")); }catch(e){}
     };
     PT.forEach(t=>{ const b=h("button",{class:"sxp-tab", type:"button", onclick:()=>show(t[0])}, t[1]); b.dataset.t=t[0]; bar.appendChild(b); });
-    uni.appendChild(bar); uni.appendChild(pOv); uni.appendChild(pPbp); uni.appendChild(pMin); uni.appendChild(pReb); uni.appendChild(pQ); uni.appendChild(pTs);
+    uni.appendChild(bar); uni.appendChild(pOv); uni.appendChild(pPbp); uni.appendChild(pMin); uni.appendChild(pPace); uni.appendChild(pReb); uni.appendChild(pQ); uni.appendChild(pTs);
     uni.__ts=pTs;
     /* the team stats arrive later, from the Drive: when they land, they open on the tab chosen */
-    try{ new MutationObserver(()=>{ const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && !sp.__synced){ sp.__synced=1; const k=uni.dataset.tab; if(k!=="ov" && k!=="pbp" && k!=="min" && k!=="reb") sp.__setCat(k); } })
+    try{ new MutationObserver(()=>{ const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && !sp.__synced){ sp.__synced=1; const k=uni.dataset.tab; if(k!=="ov" && k!=="pbp" && k!=="min" && k!=="reb" && k!=="pace") sp.__setCat(k); } })
       .observe(pTs, { childList:true, subtree:true }); }catch(e){}
     wrap.appendChild(uni);
     _postUni=uni;
@@ -13385,7 +13388,8 @@ function _preRestBlocks(tid){
   f.appendChild(_preBlock("SHOT CHART", _lgEmbed(tid, [ _preShotChart ])));
   /* who plays, with whom, and what happens late: three readings of the same question,
      so they stand side by side instead of as three full-width bands */
-  f.appendChild(_preBlock("ROTATIONS", _lgEmbed(tid, [ _lgRot, _lgUnits, _lgClock ], "emb-cols")));
+  /* two rows of two: the rotation and who is available, then the combinations and the late clock */
+  f.appendChild(_preBlock("ROTATIONS", _lgEmbed(tid, [ L=>_lgRotCore(L), L=>{ const b=h("div",{class:"lg-panel"}); try{ b.appendChild(_lgAvailBlock(tid)); }catch(e){} return b; }, _lgUnits, _lgClock ], "emb-cols emb-2x2")));
   return f;
 }
 function _preSub(t){ return h("div",{class:"rs-sub2"}, t); }
@@ -21809,7 +21813,8 @@ function _postOverviewDraw(sg, P, Tg, API, K){
     if(qhost){ qhost.innerHTML=""; qhost.appendChild(qbox); }
   }
   /* ---- pace: the second of the possession the shot came in, ours and theirs */
-  if(P){ const pp=_postPace(P, home); if(pp) out.appendChild(pp); }
+  /* it has its own tab in the team stats box, drawn here with the rest of the overview */
+  if(P){ const pp=_postPace(P, home); if(pp){ _postOvKeep.pace=pp; const ph=document.querySelector('.pg-pane[data-pane="pace"]'); if(ph){ ph.innerHTML=""; ph.appendChild(pp); } } }
   const fold=(label, node)=>{ const d=document.createElement("details"); const s=document.createElement("summary"); s.textContent=label; d.appendChild(s); d.appendChild(node); return d; };
   if(sets.length){
     const rows=sets.slice().sort((a,b)=>b.n-a.n).map(s=>{ const per=[0,1,2,3].map(q=>{ const l=s.list.filter(x=>tagQ[x.q]===q); return l.length? l.length+" · "+f2(ppp(l)) : "—"; });
@@ -36171,6 +36176,7 @@ table.sxp-t.sxp-measure tbody td:first-child{white-space:nowrap!important}
 .pst-top > .sxp-host > .sxp-sec{margin-top:0;border-top:0;padding-top:0}
 .sxp.rst-sxp > .sxp-sec{min-width:0;margin:0}
 .lg-emb.emb-cols > .lg-emb-p{min-width:0;margin:0}
+@media (min-width:1100px){.lg-emb.emb-cols.emb-2x2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 .sxp-sec > .sxp-blk{min-width:0}
 .fitpad{min-width:0}
 /* ---- the mark: a gold edge on the row that matters, and a star to argue with ---- */

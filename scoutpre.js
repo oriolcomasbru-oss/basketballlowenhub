@@ -1540,7 +1540,7 @@
      answer the tab chosen - nothing is moved or rebuilt, so "Everything" is the old page.
      Inside a tab every table is a card, open, with the same heading. */
   var TABS = [["over", "Overview"], ["off", "Their offense"], ["def", "Their defense"],
-              ["bs", "Ball screen"], ["games", "Games and quarters"], ["all", "Everything"]];
+              ["bs", "Ball screen"], ["games", "Games and quarters"], ["pace", "Pace"], ["reb", "Rebounding"], ["all", "Everything"]];
   var TAB = "over";
   function tabOf(node, tabs) { try { node.setAttribute("data-tabs", tabs); } catch (e) {} return node; }
   function tabBar(root) {
@@ -2820,6 +2820,8 @@
       "body:not(.prt) .sxp[data-tab='def'] [data-tabs]:not([data-tabs~='def']){display:none!important}",
       "body:not(.prt) .sxp[data-tab='bs'] [data-tabs]:not([data-tabs~='bs']){display:none!important}",
       "body:not(.prt) .sxp[data-tab='games'] [data-tabs]:not([data-tabs~='games']){display:none!important}",
+      "body:not(.prt) .sxp[data-tab='pace'] [data-tabs]:not([data-tabs~='pace']){display:none!important}",
+      "body:not(.prt) .sxp[data-tab='reb'] [data-tabs]:not([data-tabs~='reb']){display:none!important}",
       "body:not(.prt) .sxp[data-tab='over'] .ts-analysis,body:not(.prt) .sxp[data-tab='off'] .ts-analysis{display:none!important}",
       "body:not(.prt) .sxp[data-tab]:not([data-tab='all']) .sxp-row.sxp-rowA,body:not(.prt) .sxp[data-tab]:not([data-tab='all']) .sxp-row.sxp-rowAn{grid-template-columns:minmax(0,1fr)!important}",
       "}",
