@@ -9689,6 +9689,10 @@ function _preInj(){
     let ref=kids.filter(k=>k.getAttribute && k.getAttribute("data-tabs")==="over")[0] || kids.filter(k=>k.classList.contains("sxp-tabs"))[0] || null;
     I.parts.forEach(p=>{ sxp.insertBefore(p, ref? ref.nextSibling : sxp.firstChild); ref=p; });
   } else {
+    /* the box they belong in is still being drawn: wait for it rather than drawing them
+       outside and moving them in - only a report that never gets the box has them under it */
+    if(!blk.__injT) blk.__injT=Date.now();
+    if(Date.now()-blk.__injT<10000){ setTimeout(()=>{ try{ _preInj(); }catch(e){} }, 600); return; }
     let fb=blk.querySelector(":scope > .pre-inj-fb");
     if(!fb){ fb=h("div",{class:"pre-inj-fb"}); blk.appendChild(fb); }
     I.parts.forEach(p=>{ if(p.parentNode!==fb) fb.appendChild(p); });
