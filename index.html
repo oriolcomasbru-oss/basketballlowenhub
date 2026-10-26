@@ -12301,6 +12301,10 @@ function _preHlRanks(L, c, tid){
   const short=_lgShort((L.teams||[]).filter(t=>String(t.id)===String(me.tid)).map(t=>t.name)[0]||"").slice(0,3).toUpperCase()||"TEAM";
   return (c.stats||[]).map(s=>{ const d=PRE_HL_STAT[String(s[1]||"").toUpperCase()]; if(!d) return null;
     const rb=rank(d, pool), rt=rank(d, team); if(rb==null && rt==null) return null;
+    /* third in his team is a strength only when it is above the league's middle: a 64% free
+       throw shooter was lit "#3 WÜR" because his team shoots them worse */
+    const vs=pool.map(y=>val(y,d)).filter(w=>w!=null).sort((a,b)=>a-b), med=vs.length? vs[Math.floor(vs.length/2)] : null, mine=val(me,d);
+    if(!(rb!=null && rb<=25) && (med==null || mine==null || mine<med)) return null;
     /* the season's numbers the rank stands on, when the card may show older ones */
     const t=me.t||{}, basis=d[0]==="p3"? " · "+(t.p3m||0)+"/"+(t.p3a||0) : d[0]==="p2"? " · "+(t.p2m||0)+"/"+(t.p2a||0) : d[0]==="ft"? " · "+(t.ftm||0)+"/"+(t.fta||0) : "";
     return (rb!=null && rb<=25)? { score:rb, why:ord(rb)+" BBL"+basis } : (rt!=null && rt<=3)? { score:100+rt, why:ord(rt)+" "+short+basis } : null; });
@@ -19694,7 +19698,7 @@ function pbVideoPanel(canEd){
 const LG_DATA_VER=15;
 /* what the server is asked for: moved on when the server adds to an answer (16: when the
    shot comes in the possession), without throwing away what this browser already has */
-const LG_FETCH_VER=24;
+const LG_FETCH_VER=25;
 function leagueState(){
   const L=state.league||(state.league={});
   if(L.dataVer!==LG_DATA_VER){

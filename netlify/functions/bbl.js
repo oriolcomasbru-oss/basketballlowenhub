@@ -1796,6 +1796,16 @@ exports.handler = async (event) => {
         p.pos = w.pos || ""; p.height = w.height || ""; p.weight = w.weight || "";
         p.nat = w.nat || ""; p.born = w.born || "";
         p.off = w.off || null;
+        /* THE SEASON LINE IS THE LEAGUE'S. Counted off the event feed, an assist that ends
+           in free throws is lost (Dye 10 where the league has 13), so a rank built on it put
+           a man second in his team with fewer assists than the man below him. When the
+           official line covers at least the games read, its counting numbers replace ours;
+           the splits (home, away, quarters) stay the feed's, the only place they exist. */
+        if (p.off && p.off.gp && p.off.gp >= (p.all.gp || 0)) {
+          ["gp", "sec", "pts", "p2m", "p2a", "p3m", "p3a", "ftm", "fta", "oreb", "dreb", "reb",
+           "ast", "stl", "blk", "tov", "pf", "fd", "pm", "eff"].forEach(k => { if (typeof p.off[k] === "number") p.all[k] = p.off[k]; });
+          p.all.src = "league";
+        }
         name[p.id] = { n: p.num || "", name: p.name || "", first: p.first, last: p.last,
                        photo: p.photo, pid: p.pid };
       });
