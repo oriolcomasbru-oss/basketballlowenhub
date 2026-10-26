@@ -9682,6 +9682,13 @@ function _preInj(){
   const view=document.getElementById("viewOppScout"); if(!view) return;
   const anchor=view.querySelector(".sxp") || view.querySelector(".scoutpre-slot");
   const blk=anchor && anchor.closest(".rs-block"); if(!blk) return;
+  /* THE BOX COMES IN WHOLE. While the tagging is still being read from the Drive the team stats
+     box shows only its banner and a loading line; the league's half, the tagging and the parts
+     put here all appear together once it is in (a Drive that never answers is given 90 s) */
+  if(!blk.__injT0) blk.__injT0=Date.now();
+  const stillReading=!!blk.querySelector(".sxp-loading") && Date.now()-blk.__injT0<90000;
+  blk.classList.toggle("ts-wait", stillReading);
+  if(stillReading){ clearTimeout(blk.__injTO); blk.__injTO=setTimeout(()=>{ try{ _preInj(); }catch(e){} }, 600); return; }
   let I=blk.__inj;
   if(!I || I.key!==X.key){
     const part=(tab, title, node)=>{ const p=h("div",{class:"pre-inj-p sxp-blk sxp-card", "data-tabs":tab}); if(title) p.appendChild(h("div",{class:"sxp-sub"}, h("b",{}, title))); p.appendChild(node); return p; };
@@ -38271,6 +38278,8 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .reb-lg .reb-tog{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:6px;border-radius:50%;border:1px solid var(--line-strong,#cfd4dc);font:700 11px/1 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}
 .shr{width:min(1100px,94vw);max-height:86vh;overflow-y:auto}.shr-two{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px}.shr-two h5{margin:0 0 6px;font:700 11px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}.shr-raw{font:12px/1.5 'IBM Plex Mono',monospace;max-height:420px;overflow:auto;padding:8px;border:1px solid var(--line,#e6e8ec);border-radius:8px;white-space:pre-wrap;color:var(--ink-soft,#5b6472)}
 .rb-kf .rb-two{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:4px 0 2px}.rb-h{display:flex;flex-direction:column;gap:2px;min-width:0}.rb-h > i{font-style:normal;font:700 9.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;opacity:.75}.rb-h > b{font:700 26px 'Oswald',sans-serif;line-height:1.05}.rb-h > b.good{color:#13804f}.rb-h > b.bad{color:#c0392b}.rb-h .row{display:flex;gap:8px;flex-wrap:wrap}.rb-h small{font-size:10px;opacity:.7}
+.rs-block.ts-wait > *:not(.rs-banner){display:none!important}
+.rs-block.ts-wait::after{content:"Loading the team stats…";display:block;padding:18px 20px;font:600 13px 'Inter',sans-serif;color:var(--ink-soft,#5b6472)}
 /* pace: when the shot comes */
 .pace-v th.pbh{text-align:center}
 .pace-v .pbh-ks{display:flex;justify-content:center;gap:4px;margin-top:3px}
