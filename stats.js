@@ -404,6 +404,18 @@
       q.pnr = PNR_DEF.indexOf(q.first) >= 0;
       /* the block is the defense, so every row does not need to say so */
       q.label = String(q.first || "\u2014").replace(/\s*defense\s*$/i, "");
+      /* NO "BALANCE": the staff reads its transition defense as TAG and BACK, so a BALANCE
+         clip is named by how our possession before it ended - a long shot is TAG, a miss at
+         the rim or a turnover is BACK (the same rule as the TAG / BACK table); anything else
+         (after our make, a dead ball) is their transition after our score */
+      if (/^balance$/i.test(String(q.first || ""))) {
+        var r0 = q.clips[0], pv = null;
+        for (var j = rows.length - 1; j >= 0; j--) { var x = rows[j]; if (!x.def && x.a < r0.a) { pv = x; break; } }
+        var near = pv && (r0.a - pv.b) <= TRANS_GAP;
+        q.label = (near && LONG_END.some(function (t) { return has(pv.tags, t); })) ? "TAG"
+          : (near && !has(pv.tags, "Offensive foul") && CLOSE_END.some(function (t) { return has(pv.tags, t); })) ? "BACK"
+          : "Transition after our score";
+      }
     });
     return out;
   }

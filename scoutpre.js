@@ -413,7 +413,7 @@
     [/^OVZ$/, "off_zone"]
   ];
   var PLAIN_CAT = {
-    "balance": ["D", "def_transition", "Defense Balance"],
+    "balance": ["D", "def_transition", "Defense Transition"],
     "defensive rebound": ["D", "def_second_chance", "Defense 2nd Chance"],
     "other def": ["D", "def_other", "Defense Other"],
     "off screen": ["D", "def_offball", "Defense Off Screens"],
@@ -621,7 +621,7 @@
       off_zone: "Vs Zone" })[f] || f;
   }
   var GD = { def_pnr: "Ball screen", def_offball: "Off-ball screens", def_iso: "On-ball 1on1",
-    def_transition: "Transition / balance", def_second_chance: "Defensive rebound",
+    def_transition: "Transition defense", def_second_chance: "Defensive rebound",
     def_post: "Post defense", def_press: "Full court press", def_other: "Other" };
   function gD(c) { return GD[c[0].fam] || c[0].fam; }
 
