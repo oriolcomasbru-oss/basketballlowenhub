@@ -9369,7 +9369,7 @@ function repSaveBadge(){ const el=h("span",{class:"rep-savestate "+_repSave.cls,
 /* The stat bar on a scouting card is a grid whose column count is measured from the
    widest cell. It used to be created inside the pre-game screen's own render, which
    meant the report's cards - drawn anywhere else - got one statistic per line. */
-window.phxStyleStats=function(){ try{ document.querySelectorAll('.phx .stat-value').forEach(function(el){ if(el.getAttribute('contenteditable')==='true') return; if(el.querySelector('.pct')||el.querySelector('.sv-pc')) return; var t=el.textContent, m=t.match(/^(.*?)(·\s*\d+%)$/); if(m){ el.innerHTML=m[1]+'<span class="pct">'+m[2]+'</span>'; } }); document.querySelectorAll('.phx .card .stat-bar').forEach(function(b){ var cells=b.querySelectorAll('.stat-cell'); var n=cells.length; if(!n) return; b.setAttribute('data-n',n); cells.forEach(function(c){ c.style.gridColumn=''; }); var need=0; cells.forEach(function(c){ var v=c.querySelector('.stat-value'), l=c.querySelector('.stat-label');   var w=Math.max(v?v.scrollWidth:0, l?l.scrollWidth:0); if(w>need) need=w; }); var cs=getComputedStyle(b.querySelector('.stat-cell')); need += (parseFloat(cs.paddingLeft)||0)+(parseFloat(cs.paddingRight)||0)+2; var avail=b.clientWidth||b.offsetWidth; var per=Math.max(1, Math.floor(avail/Math.max(need,1))); b.style.gridTemplateColumns="repeat("+n+",minmax(0,1fr))"; /* always one row: the figures step down a size instead */ }); }catch(e){} };
+window.phxStyleStats=function(){ try{ document.querySelectorAll('.phx .stat-value').forEach(function(el){ if(el.getAttribute('contenteditable')==='true') return; if(el.querySelector('.pct')||el.querySelector('.sv-pc')) return; var t=el.textContent, m=t.match(/^(.*?)(·\s*\d+%)$/); if(m){ el.innerHTML=m[1]+'<span class="pct">'+m[2]+'</span>'; } }); document.querySelectorAll('.phx .card .stat-bar').forEach(function(b){ var cells=b.querySelectorAll('.stat-cell'); var n=cells.length; if(!n) return; b.setAttribute('data-n',n); cells.forEach(function(c){ c.style.gridColumn=''; }); var need=0; cells.forEach(function(c){ var v=c.querySelector('.stat-value'), l=c.querySelector('.stat-label');   var w=Math.max(v?v.scrollWidth:0, l?l.scrollWidth:0); if(w>need) need=w; }); var cs=getComputedStyle(b.querySelector('.stat-cell')); need += (parseFloat(cs.paddingLeft)||0)+(parseFloat(cs.paddingRight)||0)+2; var avail=b.clientWidth||b.offsetWidth; var per=Math.max(1, Math.floor(avail/Math.max(need,1))); b.style.gridTemplateColumns="repeat("+n+",minmax(0,1fr))"; /* always one row: the figures step down a size instead */ }); document.querySelectorAll(".phx .card .stat-bar").forEach(function(b){ if(!b.clientWidth) return; var vs=[].slice.call(b.querySelectorAll(".stat-cell .stat-value")); if(!vs.length) return; vs.forEach(function(v){ v.style.removeProperty("font-size"); }); var fs=parseFloat(getComputedStyle(vs[0]).fontSize)||16, guard=0; var over=function(){ return vs.some(function(v){ var c=v.closest(".stat-cell"); return c && v.scrollWidth>c.clientWidth-4; }); }; while(over() && fs>8 && guard++<30){ fs-=0.5; vs.forEach(function(v){ v.style.setProperty("font-size", fs+"px", "important"); }); } }); /* every number of a row the same size, the largest at which all of them fit their box */ }catch(e){} };
 
 /* ================= the report is boxes, and a box is as wide as its table ===========
 
@@ -23821,14 +23821,15 @@ function _lgRsKey(){
   const ex=(txt, cls, w, tick)=>h("span",{class:"rx-ex "+(cls||"")}, h("b",{}, txt),
     w!=null? h("span",{class:"rx-b"}, h("i",{style:"width:"+w+"%"}), h("u",{style:"left:"+(tick||50)+"%"})) : null);
   const row=(sample, text)=>h("div",{class:"rx-kr"}, sample, h("span",{}, text));
-  return h("div",{class:"rx-key"},
+  /* folded: the table is read without it; one press opens it */
+  return h("details",{class:"rx-det"}, h("summary",{},"How to read this table"), h("div",{class:"rx-key"},
     h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"The colour · inside the team"),
       row(ex("14.3","g"), "Green: one of the best of the team in that column"),
       row(ex("0.3","r"), "Red: one of the weakest of the team in that column")),
     h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"The bar · against the whole league"),
-      row(ex("16.8","",88,45), "A bar under a number: he is at one end of the league - among its best 15% or its weakest 15%"),
+      row(ex("16.8","",88,45), "A bar under a number: he is at one end of the league - among its best 10% or its weakest 10%"),
       row(h("span",{class:"rx-ex"}, h("span",{class:"rx-b big"}, h("i",{style:"width:62%"}), h("u",{style:"left:45%"}))), "The bar runs from the league's weakest (left) to its best (right); the black line is the league's middle player"),
-      h("div",{class:"rx-kn"}, "No bar: he is close to the rest of the league. League: every player with 2 games and 10 minutes a game; a percentage needs one attempt a game.")));
+      h("div",{class:"rx-kn"}, "No bar: he is close to the rest of the league. League: every player with 2 games and 10 minutes a game; a percentage needs one attempt a game."))));
 }
 function _lgRsVal(c, t, per, ctx){
   if(c.pair) return null;
@@ -23936,7 +23937,7 @@ function _lgRoster(L){
   });
   /* AGAINST THE LEAGUE, ONLY AT THE EXTREMES; INSIDE THE TEAM, THE BEST AND THE WEAKEST.
      Every player of the league with two games and ten minutes a game sets the cuts of each
-     column: the top 15% and the bottom 15%. A number of ours past a cut gets a bar - where he
+     column: the top 10% and the bottom 10%. A number of ours past a cut gets a bar - where he
      sits between the league's worst and best, the tick its median - green or red; the rest is
      left plain. Inside the team, the best in each column is underlined gold and the weakest of
      those who play grey. A percentage counts only on one attempt a game or more. */
@@ -23951,7 +23952,7 @@ function _lgRoster(L){
       const vs=pool.filter(t=>_lgRsElig(c,t,true)).map(t=>_lgRsVal(c,t,per,{tm:{},op:{}})).filter(v=>v!=null && isFinite(v)).sort((a,b)=>a-b);
       if(vs.length<30) return;
       const q=f=>vs[Math.min(vs.length-1, Math.max(0, Math.round(f*(vs.length-1))))];
-      LX[c.k]={ lo:q(0.15), hi:q(0.85), min:q(0.02), max:q(0.98), med:q(0.5) }; }); }
+      LX[c.k]={ lo:q(0.10), hi:q(0.90), min:q(0.02), max:q(0.98), med:q(0.5) }; }); }
 
   /* ONE TABLE A PLAYER. Inside a pre game report the same line carries what our own
      tagging says about him: how much he finishes, what it returns, and where his
@@ -24027,7 +24028,7 @@ function _lgRoster(L){
       if(lx && v!=null && !thin[p.id] && _lgRsElig(c,t,true)){
         const good=dir>0? v>=lx.hi : v<=lx.lo, bad=dir>0? v<=lx.lo : v>=lx.hi;
         if(good || bad){ const sp=(lx.max-lx.min)||1, cl=x=>Math.max(0, Math.min(100, Math.round(100*x)));
-          tip=(tip? tip+" · " : "")+(good? "and among the league's best 15%" : "and among the league's weakest 15%");
+          tip=(tip? tip+" · " : "")+(good? "and among the league's best 10%" : "and among the league's weakest 10%");
           bar=h("span",{class:"rx-b"}, h("i",{style:"width:"+cl((v-lx.min)/sp)+"%"}), h("u",{style:"left:"+cl((lx.med-lx.min)/sp)+"%"})); } }
       const td=h("td",{class:cls, title:tip}, h("span",{class:"rx-v"}, _lgRsTxt(c,t,per,ctx)), bar);
       if(c.k==="min"){
@@ -24086,11 +24087,7 @@ function _lgRoster(L){
     }));
   } else {
     box.appendChild(h("div",{class:"lg-scroll"}, tbl));
-    box.appendChild(_lgRsKey());
-    /* how to read our columns, in one line - for the players above all */
-    if(TG && !TG.empty) box.appendChild(h("div",{class:"gpo-note pre-tag-how"},
-      h("b",{},"Our tagging: "), "Poss = possessions he finished · Use = his share of their possessions · ",
-      h("b",{},"PPP in red"), " = he scores more than their average — he is the one to stop · eFG and TO = how well he shoots and how often he loses it · the last columns = how his possessions end (spot up, pick and roll, post…)."));
+    const kd=_lgRsKey(); box.appendChild(kd);
     /* when the tagging columns are not there, say why rather than leave a plain table */
     if(TG && TG.empty){
       const st=_preTagState(), e=_preTagKeep.by[_scoutOpponent||""]||{};
@@ -27450,8 +27447,15 @@ function _dashCoverInto(box, opp){
     box.appendChild(t);
     };
     draw(cb, "Half court"); draw(cbT, "Transition · drag PnR");
-    (D.covbig||[]).forEach(r=>{ if(r.mix) box.appendChild(h("div",{class:"dash-src"}, h("b",{}, r.label+": "), r.mix)); });
-    box.appendChild(h("div",{class:"dash-src"},"% of the ball screens that big defends · PPP given up: green = attack it, red = it holds · pale: under 5 poss"));
+    /* HOW EACH OF THEIR BIGS DEFENDS IT, AS ONE BAR: a stretch a coverage, as wide as the times
+       he played it, its name and count in it */
+    const COVC=["#4a86d8","#2f9e86","#d9a521","#8a6fd1","#d8524e","#5b6472"];
+    const mixes=(D.covbig||[]).filter(r=>r.mix).map(r=>({ label:String(r.label||"").replace(/^Defended by their /,"Their ").replace(/^Two guards$/,"Two guards"),
+      parts:String(r.mix).split("·").map(s=>{ const m=/^(.*?)\s+(\d+)\s*$/.exec(s.trim()); return m? { k:m[1], n:+m[2] } : null; }).filter(Boolean) })).filter(x=>x.parts.length);
+    if(mixes.length){ box.appendChild(h("div",{class:"dash-covh"},"How each of them defends it"));
+      box.appendChild(h("div",{class:"dash-mixes"}, mixes.map(x=>{ const tot=x.parts.reduce((a,p)=>a+p.n,0)||1;
+        return h("div",{class:"dash-mixr"}, h("span",{class:"l"}, x.label), h("span",{class:"bar"}, x.parts.map((p,i)=>h("i",{style:"flex:"+p.n+";background:"+COVC[i%COVC.length], title:p.k+" · "+p.n+" times · "+Math.round(100*p.n/tot)+"%"}, 100*p.n/tot>=12? p.k+" "+p.n : ""))),
+          h("span",{class:"n"}, tot+"×")); }))); }
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their tagging could not be read from the Drive.")); });
 }
 /* THEIR BEST PLAYERS AND WHY: the three with the highest PIR, each with the categories in
@@ -27656,7 +27660,7 @@ function _dashTopSetsInto(box, g){
     const tot=base.reduce((a,x)=>a+(x.n||0),0)||1;
     const keep=_scoutOpponent; let keyOf={};
     try{ _scoutOpponent=g.opponent; all.forEach(r=>{ try{ keyOf[r.label]=_pbKeyRead(r.label); }catch(e){} }); } finally{ _scoutOpponent=keep; }
-    const top=all.filter(r=>{ if(!keyOf[r.label]) return false; try{ return _pbClass(r).kind!=="Concepts"; }catch(e){ return true; } }).sort((a,b)=>(b.n||0)-(a.n||0)).slice(0,10);
+    const top=all.filter(r=>{ if(!keyOf[r.label]) return false; try{ return _pbClass(r).kind!=="Concepts"; }catch(e){ return true; } }).sort((a,b)=>(b.n||0)-(a.n||0));   /* every key set, the most run first */
     if(!top.length){ box.appendChild(h("div",{class:"dash-miss"},"No key sets starred in the pre game playbook yet.")); return; }
     /* the games, oldest first, and what each set ran in each */
     const dates={}, games=_pbGameOrder(((res && res.games)||[]).filter((x,i,a)=>a.indexOf(x)===i), tid, dates);
@@ -27677,7 +27681,7 @@ function _dashTopSetsInto(box, g){
         return h("i",{class:k? "" : "z", title:x+": "+k, style:k? "background:rgba(74,134,216,"+a.toFixed(2)+");color:"+(a>0.55? "#fff" : "#1d3a66") : ""}, k? String(k) : "·"); })));
     });
     box.appendChild(t);
-    box.appendChild(h("div",{class:"dash-src"},"Key sets starred in the pre game playbook, the most run first · runs and % of their possessions · PPP (red: it hurts us) · runs in each tagged game, oldest first"));
+
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their playbook could not be read.")); });
 }
 /* THEIR IDENTITY IN FOUR NUMBERS. Seventeen team measures from the league - the ratings, the
@@ -27707,25 +27711,40 @@ function _dashTeamStatsInto(box, opp){
     const vals=F.map(m[2]).filter(x=>x!=null && isFinite(x));
     const r=1+vals.filter(x=>m[3]<0? x<v : x>v).length, avg=vals.reduce((a,b)=>a+b,0)/vals.length;
     return { m:m, v:v, r:r, avg:avg, us:us? m[2](us) : null, e:Math.abs(r-mid) }; }).filter(Boolean);
-  all.sort((a,b)=>(b.e-a.e) || ((b.m[3]? 1 : 0)-(a.m[3]? 1 : 0)));
-  const pick=[], fam={};
-  all.forEach(x=>{ if(pick.length<4 && !fam[x.m[4]]){ pick.push(x); fam[x.m[4]]=1; } });
-  /* both ends of the floor: the fourth gives way to the best of the end that is missing */
-  ["o","d"].forEach(sd=>{ if(!pick.some(x=>x.m[1]===sd)){ const b=all.filter(x=>x.m[1]===sd && !fam[x.m[4]])[0]; if(b && pick.length){ const out=pick.pop(); delete fam[out.m[4]]; pick.push(b); fam[b.m[4]]=1; } } });
+  /* FOUR IDEAS, EACH WITH A JOB. What a staff needs from the league's numbers is how to play
+     them: what their attack lives on (take it away), what their defense gives up (attack it),
+     what their defense takes away (beware), and how they play (their style). Each idea is the
+     most extreme measure of its kind, and the "us" line is the number of ours it meets - their
+     3P% allowed against our 3P%, their offensive rebounding against our defensive one. */
+  const byName={}; all.forEach(x=>{ byName[x.m[0]]=x; });
+  const MEET={ "Off. rating":"Def. rating", "eFG%":"Opp. eFG%", "2P%":"Opp. 2P%", "3P%":"Opp. 3P%", "Turnover rate":"Forced turnovers",
+    "Off. rebounding":"Def. rebounding", "Free throw rate":"Opp. free throw rate", "3PA rate":"Opp. 3PA rate" };
+  Object.keys(MEET).forEach(k=>{ MEET[MEET[k]]=k; });
+  const usOf=x=>{ const k=MEET[x.m[0]], m=DASH_TS.filter(y=>y[0]===k)[0]; if(!m || !us) return null;
+    const v=m[2](us); if(v==null || !isFinite(v)) return null;
+    const vals=F.map(m[2]).filter(z=>z!=null && isFinite(z)), r=1+vals.filter(z=>m[3]<0? z<v : z>v).length;
+    return { m:m, v:v, r:r }; };
+  const used={};
+  const best=(side, good)=>all.filter(x=>x.m[1]===side && x.m[3]!==0 && !used[x.m[4]]).sort((a,b)=>good? a.r-b.r : b.r-a.r)[0]||null;
+  const take=x=>{ if(x) used[x.m[4]]=1; return x; };
+  const style=all.filter(x=>x.m[3]===0).sort((a,b)=>b.e-a.e)[0]||null;
+  const IDEAS=[
+    { x:take(best("o", true)),  side:"Their attack", tag:"Take it away", tone:"thr" },
+    { x:take(best("d", false)), side:"Their defense gives up", tag:"Attack it", tone:"opp" },
+    { x:take(best("d", true)),  side:"Their defense takes away", tag:"Beware", tone:"bew" },
+    { x:style, side:"How they play", tag:"Style", tone:"sty" } ].filter(i=>i.x);
   const f1=v=>v==null? "—" : v.toFixed(1);
-  box.appendChild(h("div",{class:"dash-ts"}, pick.map(x=>{ const m=x.m, dir=m[3];
-    const tone=dir===0? "sty" : x.r<=Math.round(n/3)? "str" : x.r>n-Math.round(n/3)? "wk" : "";
-    const word=dir===0? "Style" : tone==="str"? "Strength" : tone==="wk"? "Weakness" : "";
+  box.appendChild(h("div",{class:"dash-ts"}, IDEAS.map(I=>{ const x=I.x, m=x.m, dir=m[3];
     const most=m[4]==="pace"? ["fastest","slowest"] : ["most","fewest"];
     const where=dir===0? (x.r<=mid? _dashOrd(x.r)+" "+most[0] : _dashOrd(n+1-x.r)+" "+most[1]) : _dashOrd(x.r)+" of "+n;
-    const pos=dir===0? (x.r-1)/(n-1) : (x.r-1)/(n-1);
-    return h("div",{class:"dash-t "+tone},
-      h("div",{class:"t1"}, h("i",{}, m[1]==="o"? "Offense" : m[1]==="d"? "Defense" : "Tempo"), word? h("em",{}, word) : null),
+    const pos=(x.r-1)/Math.max(1,n-1), u=usOf(x);
+    return h("div",{class:"dash-t "+I.tone},
+      h("div",{class:"t1"}, h("i",{}, I.side), h("em",{}, I.tag)),
       h("div",{class:"t2"}, m[0]),
       h("div",{class:"t3"}, h("b",{}, f1(x.v)+m[5]), h("span",{}, where)),
       h("div",{class:"trk"}, h("u",{style:"left:"+Math.round(100*pos)+"%"})),
-      h("div",{class:"t4"}, "League "+f1(x.avg)+m[5]+(x.us!=null? " · Us "+f1(x.us)+m[5] : ""))); })));
-  box.appendChild(h("div",{class:"dash-src"}, "The 4 of "+DASH_TS.length+" league measures where they are furthest from the middle · "+me.gp+" games · 1st = best"));
+      h("div",{class:"t4"}, "League "+f1(x.avg)+m[5]+(u? " · Our "+u.m[0]+" "+f1(u.v)+u.m[5]+" ("+_dashOrd(u.r)+")" : (x.us!=null && dir===0? " · Us "+f1(x.us)+m[5] : "")))); })));
+  box.appendChild(h("div",{class:"dash-src"}, "From the league's numbers, "+me.gp+" games · each idea the most extreme of its kind · 1st = best · the line under it: league average and the number of ours it meets"));
 }
 /* WHERE THEY COME FROM: their last five games from the league's calendar - won or lost and by
    how much - the run they are on, and the one result that says most (a big margin, a win over
@@ -37695,6 +37714,9 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-t .trk{position:relative;height:4px;border-radius:2px;background:var(--panel-2,#eef0f3);margin:4px 5px 3px}
 .dash-t .trk u{position:absolute;top:-3px;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:var(--ink-soft,#5b6472);border:2px solid var(--panel,#fff)}
 .dash-t.str .trk u{background:#d8524e}.dash-t.wk .trk u{background:#2f9e86}.dash-t.sty .trk u{background:#4a86d8}
+.dash-t.thr{border-top-color:#d8524e}.dash-t.thr .t1 em{background:rgba(216,82,78,.14);color:#c0403c}.dash-t.thr .t3 b{color:#c0403c}.dash-t.thr .trk u{background:#d8524e}
+.dash-t.opp{border-top-color:#2f9e86}.dash-t.opp .t1 em{background:rgba(47,158,134,.16);color:#17805a}.dash-t.opp .t3 b{color:#17805a}.dash-t.opp .trk u{background:#2f9e86}
+.dash-t.bew{border-top-color:#d9a521}.dash-t.bew .t1 em{background:rgba(217,165,33,.18);color:#8a5a0b}.dash-t.bew .t3 b{color:#8a5a0b}.dash-t.bew .trk u{background:#d9a521}
 .dash-t .t4{font:500 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media (max-width:900px){ .dash-ts{grid-template-columns:repeat(2,minmax(0,1fr))} .dash-2.r64{grid-template-columns:minmax(0,1fr)} }
 /* recent form: one box a game, oldest to newest */
@@ -38416,6 +38438,8 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .rx-sw i{position:absolute;left:0;top:0;bottom:0;width:82%;border-radius:2px}.rx-sw.g i{background:#2f9e86}.rx-sw.r i{background:#d8524e}
 .rx-ul{display:inline-block;width:18px;height:10px}.rx-ul.tb{box-shadow:inset 0 -2px 0 #d9a521}.rx-ul.tw{box-shadow:inset 0 -2px 0 #9aa1ac}
 .rb-riv{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px;font-size:10.5px;color:var(--ink-soft,#5b6472);margin-top:1px}.rb-riv b{font:700 12px 'IBM Plex Mono',monospace;color:#c0392b}
+.rx-det{margin:10px 0 4px}.rx-det > summary{cursor:pointer;display:inline-flex;align-items:center;gap:6px;font:700 10.5px 'Oswald',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft,#5b6472);padding:4px 10px;border:1px solid var(--line,#e2e5ea);border-radius:14px;list-style:none}.rx-det > summary::-webkit-details-marker{display:none}.rx-det > summary::before{content:'▸'}.rx-det[open] > summary::before{content:'▾'}.rx-det[open] > summary{color:var(--ink,#141821)}
+.dash-mixes{display:flex;flex-direction:column;gap:5px;margin-top:4px}.dash-mixr{display:grid;grid-template-columns:90px minmax(0,1fr) 34px;gap:8px;align-items:center;font-size:12px}.dash-mixr .l{font-weight:600;white-space:nowrap}.dash-mixr .n{font:600 11px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);text-align:right}.dash-mixr .bar{display:flex;height:18px;border-radius:5px;overflow:hidden;background:var(--panel-2,#eef0f3)}.dash-mixr .bar i{display:flex;align-items:center;justify-content:center;font:600 10px 'Inter',sans-serif;font-style:normal;color:#fff;white-space:nowrap;overflow:hidden;min-width:0}
 /* pace: when the shot comes */
 .pace-v th.pbh{text-align:center}
 .pace-v .pbh-ks{display:flex;justify-content:center;gap:4px;margin-top:3px}
