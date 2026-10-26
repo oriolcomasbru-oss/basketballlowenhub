@@ -5522,6 +5522,8 @@ function tagIndex(){
   const games=(state.games||[]).slice().sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));
   const opponents=[]; games.forEach(g=>{ if(g.opponent && opponents.indexOf(g.opponent)<0) opponents.push(g.opponent); });
   const byOpp={};
+  /* our own games, one a night, in order: the "G12" a tagging file carries counts these */
+  const ourGames=[]; { const nt={}; games.forEach(g=>{ if(g.date && isCycleGame(g) && !nt[g.date]){ nt[g.date]=1; ourGames.push(g); } }); }
   all.filter(f=>f.folder==="game").forEach(f=>{
     const op=_docOpponent(f.name, opponents);
     if(!op){ out.unmatched.push(f); return; }
@@ -5542,9 +5544,15 @@ function tagIndex(){
         if(k<gap){ gap=k; best=g; } });
       if(best){ taken[best.id]=1; out.game[best.id]=f; } else out.unmatched.push(f);
     });
-    const free=gs.filter(g=>!taken[g.id]);
-    fs.filter(f=>!_tagDate(f.name)).forEach((f,i)=>{
-      if(free[i]) out.game[free[i].id]=f; else out.unmatched.push(f);
+    /* No date in the name: "G12 BBL HAGEN" says which of our games it is - the twelfth of
+       the season - and that settles it. Given in date order instead, the file went to the
+       FIRST meeting (the August friendly) and the league game it is from read as missing.
+       Without a number, the latest meeting already played. */
+    const nth=f=>{ const m=/(?:^|[^A-Z0-9])G(\d{1,2})(?![0-9])/i.exec(String(f.name||"")); const g=m? ourGames[(+m[1])-1] : null; return (g && g.opponent===op && !taken[g.id])? g : null; };
+    fs.filter(f=>!_tagDate(f.name)).forEach(f=>{
+      let g=nth(f);
+      if(!g){ const free=gs.filter(x=>!taken[x.id]), done=free.filter(x=>x.date && x.date<=todayISO()); g=(done.length? done[done.length-1] : free[0])||null; }
+      if(g){ taken[g.id]=1; out.game[g.id]=f; } else out.unmatched.push(f);
     });
   });
   _txMemo=out;

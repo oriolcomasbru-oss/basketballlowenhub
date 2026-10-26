@@ -78,7 +78,8 @@
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (j.error) throw new Error(j.error);
-          (j.files || []).forEach(function (f) { if (f && f.id) fileStamp[f.id] = (f.modifiedTime || "") + "|" + (f.size || ""); });
+          /* the public listing gives no dates: then the name stands for the version (a new export is a new file, with its own id) */
+          (j.files || []).forEach(function (f) { if (f && f.id) fileStamp[f.id] = f.modifiedTime ? (f.modifiedTime + "|" + (f.size || "")) : ("name:" + (f.name || "")); });
           return j.files || [];
         })
         /* a failed list must not be cached: asked before sign-in, it would stay failed */
