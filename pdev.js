@@ -60,16 +60,15 @@
     { k: "net", l: "Net on", g: "Impact", t: "rate", hi: true, f: 1, sign: true, v: function (S) { return (S.uposs && S.tposs) ? 100 * S.up / S.uposs - 100 * S.tp / S.tposs : null; }, need: function (S) { return S.uposs >= 40; }, note: "net rating of the team with him on the floor" }
   ];
   var MK = {}; M.forEach(function (m) { MK[m.k] = m; });
+  /* LESS IS MORE: his goals, against this season and the last; one table of the rest - the
+     shooting, the rebounding, the creation and the impact - side by side; and when he fades */
   var VIEWS = [
-    ["goals", "By his goals", null],
-    ["fade", "When he fades", null],
-    ["over", "Overview", ["min", "pts", "ts", "ast", "reb", "pir", "net"]],
-    ["shoot", "Shooting", ["fga", "fgp", "p3a", "p3p", "ftp", "ts", "efg"]],
-    ["create", "Creation", ["ast", "tov", "astto", "usg", "pts", "ts"]],
-    ["impact", "Impact", ["net", "ortg", "drtg", "pm", "torb", "tdrb"]],
-    ["reb", "Rebounding", ["reb", "or", "dr", "orbp", "drbp", "torb"]],
-    ["mine", "Each player's own", null]
+    ["goals", "His goals", null],
+    ["table", "Everything in one table", ["min", "pts", "ts", "p3p", "reb", "orbp", "drbp", "ast", "astto", "usg", "net", "pir"]],
+    ["fade", "When he fades · in construction", null]
   ];
+  /* the families of the one table, over its columns (player and goals first) */
+  var TABLE_GROUPS = [["", 2], ["Minutes and points", 2], ["Shooting", 2], ["Rebounding", 3], ["Creation", 3], ["Impact", 2]];
   var MODES = [["pg", "Per game"], ["p40", "Per 40"], ["p100", "Per 100 poss."], ["tot", "Totals"]];
   var PERIODS = [["all", "Season"], ["10", "Last 10"], ["5", "Last 5"], ["3", "Last 3"]];
   /* what only the staff can judge: entered by hand, 1 to 5 */
@@ -421,19 +420,27 @@
       el("div", { class: "pd-tools" }, seg(VIEWS.map(function (v) { return [v[0], v[1]]; }), UI.view, function (v) { UI.view = v; }),
         seg(PERIODS, UI.period, function (v) { UI.period = v; }), seg(MODES, UI.mode, function (v) { UI.mode = v; })));
     root.appendChild(head);
+    /* a view saved by an older build that is gone opens his goals */
+    if (!VIEWS.some(function (v) { return v[0] === UI.view; })) UI.view = "goals";
     if (UI.view === "goals") return goalsView(root, P);
     if (UI.view === "fade") return fadeView(root, P);
     var vw = VIEWS.filter(function (v) { return v[0] === UI.view; })[0] || VIEWS[0];
     var tbl = el("div", { class: "pd-tbl" });
     var cols = vw[2];
-    var hd = el("div", { class: "pd-row hd" + (cols ? "" : " mine") }, el("span", {}, "Player"), el("span", {}, "Working on"));
+    var gridCols = cols ? "grid-template-columns:minmax(160px,1.5fr) minmax(120px,1.2fr) repeat(" + cols.length + ",minmax(60px,1fr))" : "";
+    if (cols) {
+      var gh = el("div", { class: "pd-row hd pd-grp", style: gridCols }), at = 0;
+      TABLE_GROUPS.forEach(function (g) { gh.appendChild(el("span", { class: g[0] ? "g" : "", style: "grid-column:" + (at + 1) + " / span " + g[1] }, g[0])); at += g[1]; });
+      tbl.appendChild(gh);
+    }
+    var hd = el("div", { class: "pd-row hd" + (cols ? "" : " mine"), style: gridCols }, el("span", {}, "Player"), el("span", {}, "Working on"));
     if (cols) cols.forEach(function (k) { hd.appendChild(el("span", { class: "c", title: MK[k].note || "" }, MK[k].l)); });
     else hd.appendChild(el("span", { class: "c wide" }, "His own measures"));
     tbl.appendChild(hd);
     var row = function (p, dl) {
       var r = rec(p.key), act = (r.goals || []).filter(function (g) { return g.status === "active"; });
       var lines = p.lines, gp = lines.length;
-      var tr = el("button", { type: "button", class: "pd-row" + (dl ? " dl" : "") + (cols ? "" : " mine"), onclick: function () { UI.open = p.key; draw(); } },
+      var tr = el("button", { type: "button", class: "pd-row" + (dl ? " dl" : "") + (cols ? "" : " mine"), style: gridCols, onclick: function () { UI.open = p.key; draw(); } },
         el("span", { class: "pl" }, face(p, "sm"), el("u", {}, p.num ? "#" + p.num : ""), el("b", {}, p.nm), el("i", {}, gp ? gp + " GP · " + (sum(lines).s / 60 / gp).toFixed(1) + " min" : (p.missing ? "not on the league roster" : dl ? "no stats yet (ProB)" : "no games yet"))),
         el("span", { class: "wk" }, act.length ? act.map(function (g) { return el("em", {}, g.name); }) : el("i", {}, dl ? "" : "—")));
       var ks = cols || (r.metrics && r.metrics.length ? r.metrics : ["min", "pts", "ts", "pir"]);
@@ -733,8 +740,6 @@
     root.appendChild(L1("The programme", "each player by his own goals · " + (UI.period === "all" ? "the season" : "last " + UI.period + " games against the games before")));
     root.appendChild(grid);
     root.appendChild(el("div", { class: "pd-foot" }, FOOT()));
-    root.appendChild(L1("Game by game", "every game of the season, each cell against that row's own season"));
-    overviewMatrix(root, P);
     var rest = el("div", { class: "pd-cards rest" });
     P.dl.forEach(function (p) { rest.appendChild(cardOf(p, true)); });
     root.appendChild(L1("Double licence and the rest of the roster", P.dl.length + " players · one line each, tap for the full page"));
@@ -1193,6 +1198,7 @@
       ".pd-row.mine{grid-template-columns:minmax(170px,1.6fr) minmax(150px,1.5fr) minmax(0,7fr)}",
       ".pd-row.hd{background:transparent;border:0;cursor:default;font:600 9px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint,#8a93a2);padding-top:0;padding-bottom:0}",
       ".pd-row.dl{opacity:.75}",
+      ".pd-row.pd-grp{padding-bottom:0}.pd-row.pd-grp .g{font:700 9.5px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink,#141821);border-bottom:2px solid var(--ink,#141821);padding-bottom:2px}",
       ".pd-row .pl{display:flex;flex-direction:column;min-width:0}.pd-row .pl b{font-size:13px}.pd-row .pl u{text-decoration:none;font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}.pd-row .pl i{font:500 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}",
       ".pd-row .wk{display:flex;flex-wrap:wrap;gap:3px}.pd-row .wk em{font:700 9.5px 'Oswald',sans-serif;font-style:normal;letter-spacing:.06em;text-transform:uppercase;background:rgba(198,161,91,.2);color:#7a5c12;border-radius:4px;padding:1px 6px}",
       ".pd-row .c{display:flex;flex-direction:column;align-items:flex-start;min-width:0;border-radius:6px;padding:2px 5px}",
