@@ -22101,7 +22101,7 @@ function _postOverviewDraw(sg, P, Tg, API, K){
   if(model && model.trans){
     const tg0=model.trans.tag, bk0=model.trans.back;
     [["TAG conceded", tg0],["BACK conceded", bk0]].forEach(x=>{ const o=x[1]; if(!o || !o.n) return; const v=o.pts/o.n;
-      figs.push({ label:x[0], value:f2(v), note:o.n+" transitions · points each"+(x[1]===bk0 && _backSplitTxt(bk0)? " · "+_backSplitTxt(bk0) : "") tone:v<=0.9? "good" : v>=1.2? "bad" : "neutral" }); });
+      figs.push({ label:x[0], value:f2(v), note:o.n+" transitions · points each"+(x[1]===bk0 && _backSplitTxt(bk0)? " · "+_backSplitTxt(bk0) : ""), tone:v<=0.9? "good" : v>=1.2? "bad" : "neutral" }); });
   }
   /* the order a coach reads them: the score, then TAG, BACK, paint touches, reversals, then the rest */
   { const rank=f=>({ "Score":0, "TAG conceded":1, "BACK conceded":2, "Paint touches":3, "Ball reversals":4 }[f.label]);
