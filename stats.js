@@ -424,7 +424,13 @@
      BACK is never written in a file and does not need to be: both are read off
      the rows. The literal TAG mark is a different thing and lives in its own
      block — it names the player who did NOT tag up, not the situation. */
-  var LONG_END = ["M3", "ML2", "C3", "CL2"], CLOSE_END = ["M2", "Turnover"];   /* after our make at the rim it is their full-court press, not BACK */
+  /* TAG is after our long shot, made or missed (after a made one the staff tags the next
+     defensive clip BALANCE with C3 on the clip before), and it is read in two lines - after
+     our miss and after our make - as BACK is. BACK is after our miss at the rim or our
+     turnover; after our make at the rim it is their full-court press, not BACK. */
+  var LONG_END = ["M3", "ML2", "C3", "CL2"], CLOSE_END = ["M2", "Turnover"];
+  function tagSub(pv) { return (has(pv.tags, "C3") || has(pv.tags, "CL2")) ? "make" : "miss"; }
+  var TAG_SUB = [["miss", " after our missed long shot", "M3 \u00b7 ML2"], ["make", " after our made long shot", "C3 \u00b7 CL2"]];
   var FG_MARKS = ["C2", "CL2", "C3", "M2", "ML2", "M3"];
   var TRANS_GAP = 10;
 
@@ -440,9 +446,9 @@
   var BACK_SUB = [["to", " after our turnover", "Turnover"], ["miss", " after our miss (their rebound)", "M2"]];
   /* the BACK row's three parts, for a table of `cols` columns: situations, points and PPP
      in the places the main rows have them, the rest left empty */
-  function backSubRows(back, all, cols) {
+  function backSubRows(back, all, cols, list) {
     var sub = back && back.sub; if (!sub) return [];
-    return BACK_SUB.map(function (s) {
+    return (list || BACK_SUB).map(function (s) {
       var o = sub[s[0]] || { n: 0, pts: 0 }, ppp = o.n ? o.pts / o.n : null;
       var cells = [s[1]];
       var at = cols === 9 ? 5 : 6;   /* where "situations" sits in each table */
@@ -462,7 +468,7 @@
   }
 
   function buildTransDef(rows) {
-    var o = { tag: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0 },
+    var o = { tag: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, sub: { miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } } },
               back: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, sub: { to: { n: 0, pts: 0 }, miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } } }, events: [] };
     /* how many of our possessions ended that way at all, paired or not: without
        it the table looks like the whole game when it is a slice of it */
@@ -495,8 +501,8 @@
       o[kind].n++; o[kind].pts += points(d.tags);
       /* BACK is two situations: after our turnover and after our miss at the rim (their rebound)
          the total, and each apart under it (after our make it is their full-court press, not BACK) */
-      var sub = kind === "back" ? backSub(pv) : null;
-      if (sub) { o.back.sub[sub].n++; o.back.sub[sub].pts += points(d.tags); }
+      var sub = kind === "back" ? backSub(pv) : tagSub(pv);
+      if (sub) { o[kind].sub[sub].n++; o[kind].sub[sub].pts += points(d.tags); }
       /* each one with where it is in the video and its quarter, for the minute-by-minute table */
       o.events.push({ a: d.a, q: periodOf(d.tags), kind: kind, sub: sub, pts: points(d.tags) });
     }
@@ -540,6 +546,7 @@
     var mk = function () { return { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, tn: 0, tpts: 0, mtu: 0 }; };
     var o = { tag: mk(), back: mk(), mtuOdd: 0, orebLoose: 0, mtuBy: {} };
     o.back.sub = { to: { n: 0, pts: 0 }, miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } };
+    o.tag.sub = { miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } };
     rows.forEach(function (r) {
       if (r.def) return;
       /* MISSED TAG UP is the one thing about TAG the staff writes down by hand: the long
@@ -585,6 +592,7 @@
       var p = points(d.tags);
       o[kind].n++; o[kind].pts += p;
       if (kind === "back") { var sb = backSub(pv); o.back.sub[sb].n++; o.back.sub[sb].pts += p; }
+      else { var st = tagSub(pv); o.tag.sub[st].n++; o.tag.sub[st].pts += p; }
       if (has(d.tags, "Transition Attack Poss")) { o[kind].tn++; o[kind].tpts += p; }
     }
     return o;
@@ -1271,6 +1279,8 @@
       });
       var sb = t.back && t.back.sub; TD.back.sub = TD.back.sub || { to: { n: 0, pts: 0 }, miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } };
       if (sb) ["to", "miss"].forEach(function (k) { TD.back.sub[k].n += (sb[k] && sb[k].n) || 0; TD.back.sub[k].pts += (sb[k] && sb[k].pts) || 0; });
+      var stg = t.tag && t.tag.sub; TD.tag.sub = TD.tag.sub || { miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } };
+      if (stg) ["miss", "make"].forEach(function (k) { TD.tag.sub[k].n += (stg[k] && stg[k].n) || 0; TD.tag.sub[k].pts += (stg[k] && stg[k].pts) || 0; });
     });
     var tdAny = (TD.tag.n + TD.back.n) > 0;
     /* A training has no defensive clips - it is two of our own fives - so the possession
@@ -1303,9 +1313,10 @@
       tdTot.cls = "sx-totrow";
       sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%", "Missed tag up",
         "Possessions", "Pts conceded", "DER", "In transition", "Trans. pts", "We finished on"], [
-        tdRowP("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2"),
+        tdRowP("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2")
+      ].concat(backSubRows(TD.tag, TD.tag.n + TD.back.n, 12, TAG_SUB)).concat([
         tdRowP("BACK \u00b7 after a miss at the rim or a turnover", TD.back, "M2 \u00b7 Turnover")
-      ].concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 12)).concat([
+      ]).concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 12)).concat([
         tdTot
       ])));
       sTD.appendChild(el("div", "sx-sub", sets.length + (sets.length === 1 ? " session" : " sessions") +
@@ -2037,9 +2048,10 @@
         marks] };
     }
     var tdRows = [
-      tdRow("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2"),
+      tdRow("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2")
+    ].concat(backSubRows(TD.tag, TD.tag.n + TD.back.n, 9, TAG_SUB)).concat([
       tdRow("BACK \u00b7 after a miss at the rim or a turnover", TD.back, "M2 \u00b7 Turnover")
-    ].concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 9));
+    ]).concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 9));
     var sTD = section("The two situations");
     sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%",
       "Situations", "Pts conceded", "PPP", "We finished on"], tdRows));
