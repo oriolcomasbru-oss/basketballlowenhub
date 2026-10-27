@@ -3994,8 +3994,11 @@ async function _sheetRead(f, iso){
   box.appendChild(h("div",{class:"dialog-foot"}, h("button",{class:"btn",onclick:closeDialog},"Close"), add));
 }
 let _pmTag={ asked:false, game:null, practice:null };
-function _planMissing(){
-  const box=h("section",{class:"pn pn-miss"});
+function _planMissing(opt){
+  opt=opt||{};
+  const box=h("section",{class:"pn pn-miss"+(opt.dash? " dash" : "")});
+  /* from the dashboard a click opens Planning on that day or week */
+  const goPlan=fn=>()=>{ fn(); if(opt.dash){ try{ _dashOpen("planification"); }catch(e){} } else renderPlan(); };
   const DX=docIndex(), TX=tagIndex(), sess=state.plan.sessions||{}, today=todayISO();
   const sheetOn=d=>(DX.day[d]||[]).some(f=>f.folder==="practicedoc");
   /* the tagging is looked for the way the post game and the post practice look for it - by the
@@ -4020,7 +4023,7 @@ function _planMissing(){
   const tMiss=tDays.filter(d=>!((sess[d]||[]).length) || !sheetOn(d) || !tagOn(d));
   const t1=h("table",{class:"miss-t"}, h("tr",{}, h("th",{class:"l"},"Training"), h("th",{},"In Planning"), h("th",{},"Sheet in Drive"), h("th",{},"Practice tagging"), h("th",{})));
   const sheetOf=d=>(DX.day[d]||[]).filter(f=>f.folder==="practicedoc")[0]||null;
-  tMiss.forEach(d=>t1.appendChild(h("tr",{}, h("td",{class:"l"}, h("button",{class:"miss-go", onclick:()=>{ state.ui.sessionDate=d; state.ui.sessionIdx=0; state.ui.planTab="session"; persist(); renderPlan(); }}, fd(d))),
+  tMiss.forEach(d=>t1.appendChild(h("tr",{}, h("td",{class:"l"}, h("button",{class:"miss-go", onclick:goPlan(()=>{ state.ui.sessionDate=d; state.ui.sessionIdx=0; state.ui.planTab="session"; persist(); })}, fd(d))),
     mk((sess[d]||[]).length), mk(sheetOn(d)), mk(tagOn(d)),
     /* a sheet in the Drive and nothing in Planning: its blocks can be read in */
     h("td",{}, (!(sess[d]||[]).length && sheetOf(d))? h("button",{class:"btn sm", onclick:()=>_sheetRead(sheetOf(d), d)},"Read the blocks") : null))));
@@ -4044,13 +4047,29 @@ function _planMissing(){
     h("td",{class:"l why"}, x.nSh || x.nT? "the Drive has this week - its sessions were never put into Planning" : "nothing anywhere: no sheet, no tagging, no session"))));
   const unplaced=(DX.unmatched||[]).filter(f=>f.folder==="practicedoc" || f.folder==="gameplan");
   const all=Object.keys((docsState().files)||{}).length;
-  box.appendChild(_pnHead("What is missing", all? (tMiss.length+" training days · "+gMiss.length+" games · "+weeks.length+" empty weeks") : "reading the Drive…"));
+  const sumTxt=all? (tMiss.length+" training days · "+gMiss.length+" games · "+weeks.length+" empty weeks") : "reading the Drive…";
+  /* ON THE DASHBOARD: the two tables, the latest first, nothing else */
+  if(opt.dash){
+    if(!all){ box.appendChild(h("div",{class:"dash-miss"},"Reading the Drive…")); return box; }
+    const cut=(t, n)=>{ [...t.querySelectorAll("tr")].slice(n+1).forEach(r=>r.remove()); return t; };
+    box.appendChild(h("div",{class:"miss-grid"},
+      h("div",{class:"miss-c"}, h("h5",{},"Training days · "+tMiss.length), tMiss.length? cut(t1, 8) : h("div",{class:"miss-none"},"Nothing missing.")),
+      h("div",{class:"miss-c"}, h("h5",{},"Games · "+gMiss.length), gMiss.length? cut(t2, 8) : h("div",{class:"miss-none"},"Nothing missing."))));
+    return box;
+  }
+  /* in Planning it opens folded: the line of what is missing, the tables one press away */
+  const open=!!state.ui.missOpen;
+  const tg=h("button",{class:"btn sm", type:"button"}, open? "Hide" : "Show");
+  const body=h("div",{class:"miss-body", style:open? "" : "display:none"});
+  tg.addEventListener("click",()=>{ state.ui.missOpen=!state.ui.missOpen; body.style.display=state.ui.missOpen? "" : "none"; tg.textContent=state.ui.missOpen? "Hide" : "Show"; });
+  box.appendChild(_pnHead("What is missing", sumTxt, tg));
+  box.appendChild(body);
   const grid=h("div",{class:"miss-grid"});
   grid.appendChild(h("div",{class:"miss-c"}, h("h5",{},"Training days"), tMiss.length? h("div",{class:"miss-s"}, t1) : h("div",{class:"miss-none"},"Every training day has its session, its sheet and its tagging.")));
   grid.appendChild(h("div",{class:"miss-c"}, h("h5",{},"Games"), gMiss.length? h("div",{class:"miss-s"}, t2) : h("div",{class:"miss-none"},"Every game has its plan and its tagging.")));
-  box.appendChild(grid);
-  if(weeks.length) box.appendChild(h("div",{class:"miss-c"}, h("h5",{},"Weeks that show empty in game-to-game"), h("div",{class:"miss-s"}, t3)));
-  if(unplaced.length) box.appendChild(h("div",{class:"miss-c"}, h("h5",{},"In the Drive but not placed - the hub could not tell the day or the game"),
+  body.appendChild(grid);
+  if(weeks.length) body.appendChild(h("div",{class:"miss-c"}, h("h5",{},"Weeks that show empty in game-to-game"), h("div",{class:"miss-s"}, t3)));
+  if(unplaced.length) body.appendChild(h("div",{class:"miss-c"}, h("h5",{},"In the Drive but not placed - the hub could not tell the day or the game"),
     h("ul",{class:"miss-ul"}, ...unplaced.map(f=>h("li",{}, h("button",{class:"miss-go", onclick:()=>docOpen(f)}, f.name), f.how? h("small",{}, " · "+f.how) : null)))));
   return box;
 }
@@ -21807,13 +21826,15 @@ function _postMinutes(sg, opt){
         ["OER", b=>oerC(b.u), v=>v>=1.1? "g" : v<=0.85? "b" : "", f2c],
         ["DER", b=>oerC(b.t), v=>v<=0.85? "g" : v>=1.1? "b" : "", f2c],
         ["OREB%", b=>{ const d=b.u.or+b.t.dr; return d? 100*b.u.or/d : null; }, v=>v>=35? "g" : v<=20? "b" : "", pcs],
-        ["DREB%", b=>{ const d=b.u.dr+b.t.or; return d? 100*b.u.dr/d : null; }, v=>v>=80? "g" : v<65? "b" : "", pcs]];
+        ["DREB%", b=>{ const d=b.u.dr+b.t.or; return d? 100*b.u.dr/d : null; }, v=>v>=80? "g" : v<65? "b" : "", pcs],
+        /* theirs: the share of their misses they got back - low is good for us */
+        ["Opp OREB%", b=>{ const d=b.t.or+b.u.dr; return d? 100*b.t.or/d : null; }, v=>v<=20? "g" : v>=35? "b" : "", pcs]];
       if(m) R.push(["Paint", b=>b.pn? 100*b.pt/b.pn : null, v=>v>=70? "g" : v<60? "b" : "", pcs],
         ["TAG", b=>b.tag[0]? b.tag[1]/b.tag[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", f2c],
         ["BACK", b=>b.back[0]? b.back[1]/b.back[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", f2c]);
       const qs=[]; for(let qi=0; qi<=maxQ; qi++) qs.push(qi);
       const tot=qs.reduce((a,qi)=>a+minsOf(qi),0);
-      const grid=h("div",{class:"pgmc", style:"grid-template-columns:52px repeat("+tot+",minmax(0,1fr))"});
+      const grid=h("div",{class:"pgmc", style:"grid-template-columns:62px repeat("+tot+",minmax(0,1fr))"});
       const put=(el, first)=>{ if(first) el.classList.add("q0"); grid.appendChild(el); };
       grid.appendChild(h("span",{class:"pgmc-l"}, ""));
       qs.forEach(qi=>{ let qu=0, qt=0; for(let mm=0; mm<minsOf(qi); mm++){ const b=B[qi+"|"+mm]; if(b){ qu+=b.u.pts; qt+=b.t.pts; } }
@@ -27386,8 +27407,8 @@ const OWIP=[
   ["Pace", "trends: how fast we play, game by game and inside the games", ()=>_dashOpen("trends",{})],
   ["ATO's", "playbook: the after-time-out plays, a sheet of their own", ()=>{ state.ui.pbTab="ato"; _dashOpen("playbook",{}); }]];
 var DASHES={
-  Ramon:{ name:"Ramón", role:"Head coach", cards:["oppr","post","pdevc","players","league","trends2","week","month"] },
-  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["owork","opend","scoutv","trends2","oppr","week","month"] },
+  Ramon:{ name:"Ramón", role:"Head coach", cards:["oppr","post","league","trends2","week","month"] },
+  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["owork","opend","omiss","scoutv","trends2","oppr","post","week","month"] },
   Keith:{ name:"Keith", role:"Coaching staff", cards:["pdevc","oppr","post","players","league","trends2","week","monthP"] },
   Liviu:{ name:"Liviu", role:"Coaching staff", cards:["quick","month","pdevc"] },
   /* Joan Marc does the games and sees what Marc has done and owes; Marc the trainings */
@@ -27395,7 +27416,8 @@ var DASHES={
   "Marc Ribas":{ name:"Marc", role:"Video · trainings", cards:["vtrain","month"] },
   Pedro:{ name:"Pedro", role:"Physical coach", cards:["week","avail","minutes","month"] },
   Jonas:{ name:"Jonas", role:"Staff", cards:["week","month3"] },
-  Alex:{ name:"Alex", role:"Staff", cards:["monthP","week","oppr","trends2","pdevc","league"] },
+  Alex:{ name:"Alex", role:"Staff", cards:["monthP","week","oppr","post","trends2","pdevc","league"] },
+  Nils:{ name:"Nils", role:"Staff", cards:["monthP","week","oppr","post","trends2","pdevc","league"] },
   Fabienne:{ name:"Fabienne", role:"Media · articles", cards:["month","fquick","us","rivals"] }
 };
 var _dashLanded=false;
@@ -28185,8 +28207,8 @@ function _dashPostSplit(box, g){
       h("div",{class:"dash-figs"}, fig("OER", f2(oer), m.poss.length+" possessions", oer==null? "" : oer>=1.1? "good" : oer<0.95? "bad" : ""),
         fig("Paint touches", fP(pt), "target 70%", isFinite(pt)? (pt>=70? "good" : pt<60? "bad" : "") : ""),
         fig("Ball reversals", fP(br), "of possessions", "")),
-      h("div",{class:"dash-h5"},"Sets that worked · half court"), good.length? two(good.map(setRow)) : h("div",{class:"dash-src"},"No half court set scored a point a possession on two runs or more."),
-      h("div",{class:"dash-h5 bad"},"Sets that did not"), bad.length? two(bad.map(setRow)) : h("div",{class:"dash-src"},"No set ran twice under 0.80."));
+      h("div",{class:"dash-h5"},"Sets that worked · half court"), good.length? two(good.map(setRow)) : h("div",{class:"dash-miss"},"No half court set scored a point a possession on two runs or more."),
+      h("div",{class:"dash-h5 bad"},"Sets that did not"), bad.length? two(bad.map(setRow)) : h("div",{class:"dash-miss"},"No set ran twice under 0.80."));
     const C={}; dp.forEach(q=>{ const k=q.label||"—"; (C[k]=C[k]||{ n:0, p:0 }); C[k].n++; C[k].p+=q.pts||0; });
     /* BALANCE counts in the DER above, it is only not a row of its own */
     const cs=Object.keys(C).map(k=>({ k:k, n:C[k].n, v:C[k].p/C[k].n })).filter(x=>x.n>=2 && !/^balance$/i.test(String(x.k).trim())).sort((a,b)=>b.n-a.n).slice(0,10);
@@ -28197,7 +28219,7 @@ function _dashPostSplit(box, g){
         fig("TAG", TAG? f2(TAG.ppp) : "—", TAG? TAG.n+" transitions · pts each" : "none", tbTone(TAG)),
         fig("BACK", BACK? f2(BACK.ppp) : "—", BACK? BACK.n+" transitions · pts each" : "none", tbTone(BACK))),
       h("div",{class:"dash-h5"},"Our defensive concepts · points allowed a possession"),
-      cs.length? two(cs.map(conRow)) : h("div",{class:"dash-src"},"No defensive situation tagged twice."));
+      cs.length? two(cs.map(conRow)) : h("div",{class:"dash-miss"},"No defensive situation tagged twice."));
     box.appendChild(h("div",{class:"dash-2"}, off, def));
     box.appendChild(h("div",{class:"dash-src"},"From our tagging of the game ("+(GM.name||"")+") · green is good for us, red is bad"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Our tagging could not be read from the Drive.")); });
@@ -28587,9 +28609,9 @@ function renderDashboard(){
         const up=mv.filter(x=>x.z>0).sort((a,b)=>b.z-a.z).slice(0,5), dn=mv.filter(x=>x.z<0).sort((a,b)=>a.z-b.z).slice(0,5);
         const mrow=(x,t)=>h("div",{class:"dash-mv "+t}, h("span",{}, x.k), h("b",{}, x.f(x.a)+" → "+x.f(x.b)));
         cC.appendChild(h("div",{class:"dash-h5"},"Improving most"));
-        cC.appendChild(up.length? h("div",{}, up.map(x=>mrow(x,"good"))) : h("div",{class:"dash-src"},"Nothing has improved clearly."));
+        cC.appendChild(up.length? h("div",{}, up.map(x=>mrow(x,"good"))) : h("div",{class:"dash-miss"},"Nothing has improved clearly."));
         cC.appendChild(h("div",{class:"dash-h5 bad"},"Getting worse"));
-        cC.appendChild(dn.length? h("div",{}, dn.map(x=>mrow(x,"bad"))) : h("div",{class:"dash-src"},"Nothing has dropped clearly."));
+        cC.appendChild(dn.length? h("div",{}, dn.map(x=>mrow(x,"bad"))) : h("div",{class:"dash-miss"},"Nothing has dropped clearly."));
         const M=[ ["Offensive rating", ortg(S.u), ortg(R3.u), avg(x=>x.ortg), f1, true, 2],
           ["Defensive rating", ortg(S.t), ortg(R3.t), avg(x=>x.drtg), f1, false, 2],
           ["eFG%", efg(S.u), efg(R3.u), avg(x=>x.off && 100*x.off.efg), fP, true, 1.5],
@@ -28958,8 +28980,8 @@ function renderDashboard(){
         const mvRow=(x,t)=>h("div",{class:"dash-mv "+t}, h("span",{}, x.k+" · "+x.n+" runs"), h("b",{}, x.a.toFixed(2)+" → "+x.b.toFixed(2)));
         /* ten each way: the sets that moved most, up and down */
         const up=mv.filter(x=>x.d>0).sort((a,b)=>b.d-a.d).slice(0,10), dn=mv.filter(x=>x.d<0).sort((a,b)=>a.d-b.d).slice(0,10);
-        cU.__b.appendChild(up.length? h("div",{}, up.map(x=>mvRow(x,"good"))) : h("div",{class:"dash-src"},"No set has improved clearly (three runs or more in both)."));
-        cD.__b.appendChild(dn.length? h("div",{}, dn.map(x=>mvRow(x,"bad"))) : h("div",{class:"dash-src"},"No set has dropped clearly."));
+        cU.__b.appendChild(up.length? h("div",{}, up.map(x=>mvRow(x,"good"))) : h("div",{class:"dash-miss"},"No set has improved clearly (three runs or more in both)."));
+        cD.__b.appendChild(dn.length? h("div",{}, dn.map(x=>mvRow(x,"bad"))) : h("div",{class:"dash-miss"},"No set has dropped clearly."));
         cU.__b.appendChild(h("div",{class:"dash-src"},"Points per possession, the games before → the last three"));
       }).catch(()=>{ [cP,cT,cR,cB,cW,cU,cD,cX].forEach(x=>{ x.__b.innerHTML=""; }); key.innerHTML=""; key.appendChild(h("div",{class:"dash-miss"},"Our tagging could not be read from the Drive.")); putOr(); });
     },
@@ -29072,6 +29094,17 @@ function renderDashboard(){
        the season whose report is not marked done, the trainings of the last two weeks with no
        CSV in the Drive and not ticked, and the post games flagged for a second look - each
        with the way in. Read from the same places as My work and the video cards. */
+    /* ---------------------------------------------------- Oriol: what is missing, from Planning */
+    omiss:()=>{
+      const c=card("wide", "What is missing · sessions, sheets, tagging and game plans", ()=>{ state.ui.missOpen=true; _dashOpen("planification"); }, "Planning");
+      const body=h("div",{}, loading("Reading the Drive…")); c.__b.appendChild(body);
+      const paint=()=>{ body.innerHTML=""; try{ body.appendChild(_planMissing({ dash:true })); }catch(e){ body.appendChild(h("div",{class:"dash-miss"},"Planning could not be read.")); } };
+      const ready=()=>Object.keys((docsState().files)||{}).length>0;
+      try{ loadGamesOnce(()=>{}); }catch(e){}
+      if(ready()) paint(); else { try{ (_docsTried? Promise.resolve() : syncDocs(false)).then(paint, paint); }catch(e){ paint(); } }
+      /* the tagging of the trainings arrives on its own: painted again when it has */
+      setTimeout(()=>{ if(c.isConnected) paint(); }, 6000);
+    },
     opend:()=>{
       const c=card("wide", "To do · hand in, review, upload and in development", null);
       const KEY="work:oriol";
@@ -37962,6 +37995,9 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-miss.ok{border-left-color:#2f9e86}
 .dash-src{font:500 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
 .dash-src:empty{display:none}
+/* THE DASHBOARDS ARE CLEAN: the grey lines under or over a table that explain where it comes
+   from are left to the screens themselves */
+#viewDash .dash-src,#viewDash .dash-keyh span,#viewDash .rb-key,#viewDash .pgm-leg,#viewDash .gpo-note,#viewDash .lg-sumline,#viewDash .lgg-note,#viewDash .trg-src,#viewDash .trg-src-r,#viewDash .pd-foot,#print-area .dash-src,#print-area .pgm-leg{display:none!important}
 .dash-ld{font-size:12px;color:var(--ink-faint,#8a93a2)}
 .dash-figs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .dash-fig{display:flex;flex-direction:column;border-radius:8px;padding:6px 8px;background:var(--panel-2,#f4f5f7);min-width:0}
