@@ -21673,8 +21673,9 @@ function _postRebounds(sg){
 function _backSplitTxt(back){ const s=back && back.sub; if(!s) return "";
   const one=(k,l)=>{ const o=s[k]||{ n:0, pts:0 }; return o.n? l+" "+(o.pts/o.n).toFixed(2)+" ("+o.n+")" : ""; };
   return [one("to","after TO"), one("miss","after a miss")].filter(Boolean).join(" · "); }
-function _postMinutes(sg){
-  const box=h("div",{class:"pgm"});
+function _postMinutes(sg, opt){
+  opt=opt||{};
+  const box=h("div",{class:"pgm"+(opt.compact? " pgm-c" : "")});
   if(!sg || !sg.date) return box;
   box.appendChild(h("div",{class:"ld"},"Reading the play by play and the tagging of this game…", h("span",{class:"ld-bar"})));
   const API=window.LowenPostStats;
@@ -21775,6 +21776,37 @@ function _postMinutes(sg){
       h("b",{}, r.s==="up"? "▲" : "▼"), h("span",{class:"w"}, ql(r.qi)+" "+(minsOf(r.qi)-r.m0)+"′–"+(minsOf(r.qi)-r.m1-1)+"′"),
       h("span",{class:"sc"}, r.u+"–"+r.t), h("span",{class:"men"}, r.men.map(x=>"#"+x.p.num+" "+short(x.p.name)).join(" · ")));
     const ups=big.filter(r=>r.s==="up"), dns=big.filter(r=>r.s==="dn");
+    /* COMPACT, FOR THE DASHBOARD: the whole game on one strip, a column a minute, a row a
+       measure - the spell, OER, DER, OREB%, DREB%, Paint, TAG, BACK - each cell in its colour */
+    if(opt.compact){
+      const f2c=v=>v.toFixed(2).replace(/^0\./,"."), pcs=v=>Math.round(v)+"";
+      const oerC=S=>{ const p=poss(S); return p<1.5? null : S.pts/p; };
+      const R=[["Spell", null],
+        ["OER", b=>oerC(b.u), v=>v>=1.1? "g" : v<=0.85? "b" : "", f2c],
+        ["DER", b=>oerC(b.t), v=>v<=0.85? "g" : v>=1.1? "b" : "", f2c],
+        ["OREB%", b=>{ const d=b.u.or+b.t.dr; return d? 100*b.u.or/d : null; }, v=>v>=35? "g" : v<=20? "b" : "", pcs],
+        ["DREB%", b=>{ const d=b.u.dr+b.t.or; return d? 100*b.u.dr/d : null; }, v=>v>=80? "g" : v<65? "b" : "", pcs]];
+      if(m) R.push(["Paint", b=>b.pn? 100*b.pt/b.pn : null, v=>v>=70? "g" : v<60? "b" : "", pcs],
+        ["TAG", b=>b.tag[0]? b.tag[1]/b.tag[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", f2c],
+        ["BACK", b=>b.back[0]? b.back[1]/b.back[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", f2c]);
+      const qs=[]; for(let qi=0; qi<=maxQ; qi++) qs.push(qi);
+      const tot=qs.reduce((a,qi)=>a+minsOf(qi),0);
+      const grid=h("div",{class:"pgmc", style:"grid-template-columns:52px repeat("+tot+",minmax(0,1fr))"});
+      const put=(el, first)=>{ if(first) el.classList.add("q0"); grid.appendChild(el); };
+      grid.appendChild(h("span",{class:"pgmc-l"}, ""));
+      qs.forEach(qi=>{ let qu=0, qt=0; for(let mm=0; mm<minsOf(qi); mm++){ const b=B[qi+"|"+mm]; if(b){ qu+=b.u.pts; qt+=b.t.pts; } }
+        grid.appendChild(h("span",{class:"pgmc-qh q0 "+(qu>qt? "up" : qu<qt? "dn" : ""), style:"grid-column:span "+minsOf(qi)}, h("b",{}, ql(qi)), " "+qu+"–"+qt)); });
+      R.forEach(r=>{ grid.appendChild(h("span",{class:"pgmc-l"}, r[0]));
+        qs.forEach(qi=>{ for(let mm=0; mm<minsOf(qi); mm++){ const b=B[qi+"|"+mm], when=ql(qi)+" "+(minsOf(qi)-mm)+"′";
+          if(!r[1]){ const rv=roll(qi,mm), u=b? b.u.pts : 0, t=b? b.t.pts : 0;
+            put(h("span",{class:"pgmc-c st "+state(rv), title:when+" · "+u+"–"+t+" this minute · "+(rv>0? "+" : "")+rv+" with the minute either side"}, rv>0? "+"+rv : rv<0? "−"+(-rv) : "0"), mm===0); continue; }
+          const v=b? r[1](b) : null;
+          put(v==null? h("span",{class:"pgmc-c mu", title:when},"") : h("span",{class:"pgmc-c "+r[2](v), title:when+" · "+r[0]+" "+r[3](v)}, r[3](v)), mm===0); } }); });
+      box.appendChild(h("div",{class:"pgmc-w"}, grid));
+      box.appendChild(h("div",{class:"pgm-leg"}, h("span",{}, h("i",{class:"up"}), "good spell: +4 or better over three minutes"), h("span",{}, h("i",{class:"dn"}), "slump: −4 or worse"),
+        h("span",{}, "· a column a minute, the clock running down · OER/DER/OREB/DREB: play by play"+(m? " · Paint/TAG/BACK: our tagging" : ""))));
+      return;
+    }
     box.appendChild(h("div",{class:"pgm-runs"},
       h("div",{class:"pgm-rc dn"}, h("h5",{},"Our slumps"), dns.length? dns.map(runEl) : h("i",{},"none of two minutes or more")),
       h("div",{class:"pgm-rc up"}, h("h5",{},"Our good spells"), ups.length? ups.map(runEl) : h("i",{},"none of two minutes or more"))));
@@ -27726,6 +27758,62 @@ function _dashOppPrint(card, title){
   };
   go(0);
 }
+/* THE LAST GAME FROM THE LEAGUE'S SHEET, under the score: the quarters and the final, the
+   rebounding of both sides, the game in one look of Game stats, the five of each side who
+   stood out most - up or down, by PIR against his team's middle - and the minute by minute
+   of the post game on one strip */
+function _dashPostGameInto(box, g){
+  box.appendChild(h("div",{class:"ld dash-ld"},"Reading the play by play…", h("span",{class:"ld-bar"})));
+  const sg={ date:g.date, opponent:g.opponent, home:g.venue!=="Away", competition:g.competition||"BBL" };
+  (async ()=>{
+    const L=leagueState();
+    let G=_postLeagueGame(sg, (L.games||[]).concat(L.cup||[]));
+    if(!G){ const all=await _lgAll(); G=_postLeagueGame(sg, ((all&&all.games)||[]).concat((all&&all.cup)||[])); }
+    if(!G) return null;
+    const j=await (_lgGameMemo[G.id]||(_lgGameMemo[G.id]=fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(G.id)).then(r=>r.json())));
+    return (j && j.feed && (j.feed.actions||[]).length)? { G:G, j:j } : null;
+  })().then(P=>{ box.innerHTML="";
+    if(!P){ box.appendChild(h("div",{class:"dash-miss"},"The league's play by play of this game is not in yet.")); return; }
+    const L=leagueState(), G=P.G, M=_lgGameModel(G, P.j, null);
+    const our=String(_lgOurTeamId(L)||""), home=String(G.homeId)===our;
+    const U=home? M.H : M.A, T=home? M.A : M.H, uTlc=home? (G.homeTlc||G.home) : (G.awayTlc||G.away), tTlc=home? (G.awayTlc||G.away) : (G.homeTlc||G.home);
+    const sub=(t, kid)=>h("div",{class:"dash-sub"}, h("h4",{}, t), kid);
+    /* the quarters and the final, ours first */
+    const qs=G.quarters||[], ui=home? 0 : 1;
+    const qt=h("table",{class:"dash-qt"}, h("tr",{}, h("th",{}), qs.map((q,i)=>h("th",{}, i<4? "Q"+(i+1) : "OT"+(i-3))), h("th",{},"FINAL")));
+    [[uTlc, ui, "us"], [tTlc, 1-ui, ""]].forEach(r=>qt.appendChild(h("tr",{class:r[2]}, h("td",{class:"n"}, r[0]),
+      qs.map(q=>h("td",{class:q[r[1]]>q[1-r[1]]? "up" : ""}, String(q[r[1]]))), h("td",{class:"f"}, String(r[1]===0? G.hs : G.as)))));
+    if(qs.length>1){ let a=0, b=0; qt.appendChild(h("tr",{class:"run"}, h("td",{class:"n"},"score"), qs.map(q=>{ a+=q[ui]; b+=q[1-ui]; return h("td",{}, a+"–"+b); }), h("td",{}))); }
+    /* the rebounding of both sides, from the play by play */
+    const uc=home? M.hc : (M.hc==="A"? "B" : "A"), R=_rebGame(P.j.feed, uc);
+    const F=(L.four||[]).filter(x=>String(x.teamId)===our)[0], lgO=_rebLeagueAvg(L);
+    const pc=v=>v==null? "—" : Math.round(v)+"%";
+    const oP=_rebPct(R.u.or, R.u.or+R.t.dr), dP=_rebPct(R.u.dr, R.u.dr+R.t.or), toO=_rebTone(oP, F&&F.off? 100*F.off.reb : null), toD=_rebTone(dP, F&&F.def? 100*F.def.reb : null);
+    const fig=(k,v,n,tone)=>h("div",{class:"dash-fig "+(tone==="up"? "good" : tone==="dn"? "bad" : "")}, h("i",{},k), h("b",{},v), h("span",{},n||""));
+    const reb=h("div",{class:"dash-figs four"},
+      fig("Our OREB%", pc(oP), R.u.or+" of our "+(R.u.or+R.t.dr)+" misses · league "+pc(lgO), toO),
+      fig("Our DREB%", pc(dP), R.u.dr+" of their "+(R.u.dr+R.t.or)+" misses", toD),
+      fig(tTlc+" OREB", String(R.t.or), pc(_rebPct(R.t.or, R.t.or+R.u.dr))+" of their misses", dP==null? "" : dP>=75? "up" : dP<65? "dn" : ""),
+      fig("2nd chance pts", R.sc.u+"–"+R.sc.t, "ours – theirs", R.sc.u>R.sc.t? "up" : R.sc.u<R.sc.t? "dn" : ""));
+    const wrap=h("div",{class:"dash-pg"});
+    wrap.appendChild(h("div",{class:"row2"}, sub("Score by quarter", qt), sub("Rebounding · ours and theirs", reb)));
+    const keys=_lgGameKeys(G, M);
+    if(keys) wrap.appendChild(sub("The game in one look", keys));
+    /* the five who stood out most each side: the farthest from the middle of his team, up or down */
+    const five=S=>{ const pl=S.pl.filter(p=>p.sec>=300); if(!pl.length) return h("div",{class:"dash-miss"},"—");
+      const v=pl.map(p=>p.pir).sort((a,b)=>a-b), md=v[Math.floor(v.length/2)];
+      const top=pl.slice().sort((a,b)=>Math.abs(b.pir-md)-Math.abs(a.pir-md)).slice(0,5).sort((a,b)=>b.pir-a.pir);
+      const last=n=>{ const w=String(n||"").trim().split(/\s+/); return w.length>1? w[w.length-1] : w[0]||""; };
+      return h("table",{class:"dash-pl"}, h("tr",{}, h("th",{class:"l"},""), h("th",{},"MIN"), h("th",{},"PTS"), h("th",{},"REB"), h("th",{},"AST"), h("th",{},"TO"), h("th",{},"+/−"), h("th",{},"PIR")),
+        top.map(p=>h("tr",{class:p.pir>md? "g" : p.pir<md? "b" : ""}, h("td",{class:"l"}, h("u",{}, "#"+p.num), last(p.name)),
+          h("td",{}, String(Math.round(p.sec/60))), h("td",{}, String(p.pts)), h("td",{}, String(p.reb)), h("td",{}, String(p.ast)), h("td",{}, String(p.tov)),
+          h("td",{}, (p.pm>0? "+" : "")+p.pm), h("td",{class:"pir"}, String(p.pir))))); };
+    wrap.appendChild(h("div",{class:"row2"}, sub("Who stood out · "+uTlc, five(U)), sub("Who stood out · "+tTlc, five(T))));
+    wrap.appendChild(sub("Minute by minute", _postMinutes(sg, { compact:true })));
+    box.appendChild(wrap);
+    box.appendChild(h("div",{class:"dash-src"},"League play by play · who stood out: the five farthest from the middle PIR of their team, 5 minutes or more · green above, red below"));
+  }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"The play by play could not be read.")); });
+}
 /* THE LAST GAME ON TWO SHEETS, as the next opponent: the numbers - score, quarters, our tagging
    of offense and defense - on the first, the key ideas of the post game on the second, in as
    many columns as leave the letters largest; each fitted to a landscape A4 */
@@ -27747,7 +27835,7 @@ function _dashPostPrint(card, title){
     const PW=1058, PH=715;
     const fit=(p, W)=>{ p.style.zoom="1"; p.style.width=W+"px"; return Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); };
     const refit=()=>{
-      let b1={ s:0, w:1400 }; [1100,1250,1400,1550].forEach(w=>{ const s=fit(p1, w); if(s>b1.s) b1={ s:s, w:w }; }); fit(p1, b1.w); p1.style.zoom=b1.s.toFixed(4);
+      let b1={ s:0, w:1400 }; [1100,1300,1500,1700,1900].forEach(w=>{ const s=fit(p1, w); if(s>b1.s) b1={ s:s, w:w }; }); fit(p1, b1.w); p1.style.zoom=b1.s.toFixed(4);
       let b2={ s:0, c:3, cw:380 };
       [300,340,380,420].forEach(cw=>[2,3,4].forEach(c=>{ p2.style.setProperty("--cols", String(c)); const s=fit(p2, cw*c); if(s>b2.s) b2={ s:s, c:c, cw:cw }; }));
       p2.style.setProperty("--cols", String(b2.c)); fit(p2, b2.cw*b2.c); p2.style.zoom=b2.s.toFixed(4); };
@@ -28385,6 +28473,9 @@ function renderDashboard(){
         const qs=host.querySelector(".ui-strip"); if(qs) top.appendChild(qs.cloneNode(true));
         body.appendChild(top);
       });
+      /* the league's sheet of the game: quarters, rebounding, the game in one look, who stood out, minute by minute */
+      const pg=h("div",{}); c.__b.appendChild(pg);
+      _dashPostGameInto(pg, g);
       /* under the league's figures, our own tagging of the game: offense and defense apart */
       const split=h("div",{}); c.__b.appendChild(split);
       _dashPostSplit(split, g);
@@ -38014,6 +38105,30 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .pgm-lane{position:relative;height:14px;border-radius:3px;overflow:hidden}
 .pgm-lane i.bg{position:absolute;top:0;bottom:0}.pgm-lane i.up{background:rgba(47,158,134,.14)}.pgm-lane i.dn{background:rgba(216,82,78,.14)}.pgm-lane i.av{background:var(--panel-2,#f4f5f7)}
 .pgm-lane b{position:absolute;top:3px;bottom:3px;background:var(--ink,#141821);border-radius:3px;opacity:.82}
+.pgmc-w{overflow-x:auto}
+.pgmc{display:grid;gap:2px 1px;min-width:640px;font:600 8.5px/1 "IBM Plex Mono",monospace}
+.pgmc-l{font:700 9px Oswald,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472);display:flex;align-items:center}
+.pgmc-qh{font-size:10px;padding:3px 4px;border-bottom:2px solid #d9dce2;color:var(--ink-soft,#5b6472)}.pgmc-qh b{font-family:Oswald,sans-serif;color:#141821}
+.pgmc-qh.up{border-bottom-color:#2f9e86}.pgmc-qh.dn{border-bottom-color:#d8524e}
+.pgmc-c{height:17px;display:flex;align-items:center;justify-content:center;border-radius:2px;background:var(--panel-2,#f1f3f6);color:var(--ink-soft,#5b6472);overflow:hidden;letter-spacing:-.04em}
+.pgmc-c.q0,.pgmc-qh.q0{margin-left:4px}
+.pgmc-c.g{background:rgba(47,158,134,.22);color:#17805a}.pgmc-c.b{background:rgba(216,82,78,.2);color:#c0403c}.pgmc-c.mu{background:transparent}
+.pgmc-c.st.up{background:#2f9e86;color:#fff}.pgmc-c.st.dn{background:#d8524e;color:#fff}.pgmc-c.st.av{background:var(--panel-2,#e9ecf0)}
+.dash-pg{display:grid;gap:12px}
+.dash-pg .row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+@media (max-width:760px){ .dash-pg .row2{grid-template-columns:1fr} }
+.dash-qt{width:100%;border-collapse:collapse;font:600 12px "IBM Plex Mono",monospace}
+.dash-qt th{font:700 9.5px Oswald,sans-serif;letter-spacing:.1em;color:var(--ink-faint,#8a93a2);text-align:center;padding:3px 4px}
+.dash-qt td{text-align:center;padding:4px;border-top:1px solid #eceef2}.dash-qt td.n{text-align:left;font-family:Oswald,sans-serif;font-weight:700}
+.dash-qt td.up{color:#17805a;font-weight:800}.dash-qt td.f{font-weight:800;font-size:13px}.dash-qt tr.us td.n{color:#8a6d1f}.dash-qt tr.run td{color:var(--ink-faint,#8a93a2);font-size:10.5px}
+.dash-pg .lgg-keys{--lgh:#c6a15b;--lga:#d8524e}
+.dash-pg .lgg-key b{font-size:20px}
+.dash-pl{width:100%;border-collapse:collapse;font-size:12px}
+.dash-pl th{font:700 9px Oswald,sans-serif;letter-spacing:.1em;color:var(--ink-faint,#8a93a2);text-align:right;padding:2px 4px}.dash-pl th.l{text-align:left}
+.dash-pl td{padding:3px 4px;border-top:1px solid #eceef2;text-align:right;font-family:"IBM Plex Mono",monospace}.dash-pl td.l{text-align:left;font-family:Inter,system-ui,sans-serif;font-weight:600}
+.dash-pl td.l u{text-decoration:none;color:var(--ink-faint,#8a93a2);font-family:"IBM Plex Mono",monospace;font-size:10.5px;margin-right:4px}
+.dash-pl tr.g td.pir{color:#17805a;font-weight:800}.dash-pl tr.b td.pir{color:#c0403c;font-weight:800}
+.dash-pl tr.g td.l{box-shadow:inset 3px 0 0 #2f9e86}.dash-pl tr.b td.l{box-shadow:inset 3px 0 0 #d8524e}
 .pgm-leg{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:11px;color:var(--ink-soft,#5b6472)}
 .pgm-leg i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:5px}
 .pgm-leg i.up{background:#2f9e86}.pgm-leg i.dn{background:#d8524e}.pgm-leg i.av{background:var(--panel-2,#eef0f3);border:1px solid var(--line,#e6e8ec)}
