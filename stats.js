@@ -873,11 +873,7 @@
         heads.forEach(function (h2) { h2.classList.remove("sx-sort-up", "sx-sort-down"); });
         if (state.dir === 0) { put(kept.slice()); return; }
         th.classList.add(state.dir > 0 ? "sx-sort-up" : "sx-sort-down");
-        var keyed = kept.map(function (r, i) {
-          var c = r.cells[ci];
-          return { r: r, i: i, k: sortKey(c ? c.textContent : "") };
-        });
-        keyed.sort(function (a, b) {
+        var cmp = function (a, b) {
           if (a.k === null && b.k === null) return a.i - b.i;
           if (a.k === null) return 1;
           if (b.k === null) return -1;
@@ -885,8 +881,19 @@
           if (na && nb) return (a.k - b.k) * state.dir || a.i - b.i;
           if (na !== nb) return na ? -1 : 1;
           return String(a.k).localeCompare(String(b.k)) * state.dir || a.i - b.i;
-        });
-        put(keyed.map(function (x) { return x.r; }));
+        };
+        /* A TABLE IN BLOCKS SORTS INSIDE EACH BLOCK: a phase's heading (and the gap above it)
+           stays where it is and only the sets under it are reordered among themselves, so a
+           sideline set never lands in the half court */
+        var isHead = function (r) { return r.classList.contains("tr-bandrow") || r.classList.contains("tr-gaprow") ||
+          (r.cells.length === 1 && (r.cells[0].colSpan || 1) > 1); };
+        var out = [], cur = [];
+        var flush = function () {
+          var keyed = cur.map(function (r, i) { var c = r.cells[ci]; return { r: r, i: i, k: sortKey(c ? c.textContent : "") }; });
+          keyed.sort(cmp); keyed.forEach(function (x) { out.push(x.r); }); cur = []; };
+        kept.forEach(function (r) { if (isHead(r)) { flush(); out.push(r); } else cur.push(r); });
+        flush();
+        put(out);
       });
     });
   }
