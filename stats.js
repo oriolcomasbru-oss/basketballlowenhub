@@ -424,23 +424,19 @@
      BACK is never written in a file and does not need to be: both are read off
      the rows. The literal TAG mark is a different thing and lives in its own
      block — it names the player who did NOT tag up, not the situation. */
-  /* TAG is after our long shot, made or missed (after a made one the staff tags the next
-     defensive clip BALANCE with C3 on the clip before), and it is read in two lines - after
-     our miss and after our make - as BACK is. BACK is after our miss at the rim or our
-     turnover; after our make at the rim it is their full-court press, not BACK. */
-  /* THREE WAYS OUR POSSESSION ENDS, THREE SITUATIONS FOR THEIR NEXT ONE:
-       TAG     after our MISSED long shot (M3, ML2)
-       BACK    after our miss at the rim (M2) or our turnover
-       BALANCE after our BASKET (C3, CL2 from far, C2 near), in two lines
-     Their possession is the one that opens within ten seconds of ours, whatever it is
-     tagged as - the staff's own BALANCE label only covers part of it. */
+  /* TRANSITION DEFENSE IS TAG AND BACK, AND ONLY AFTER A MISS OR A TURNOVER:
+       TAG   after our MISSED long shot (M3, ML2)
+       BACK  after our miss at the rim (M2) or our turnover
+     After our basket there is no transition to defend and nothing is counted - the staff's
+     BALANCE label lives inside these two and carries no weight of its own. Their
+     possession is the one that opens within ten seconds of ours, whatever it is tagged as. */
   var LONG_END = ["M3", "ML2"], CLOSE_END = ["M2", "Turnover"], MADE_END = ["C3", "CL2", "C2"];
   function madeEnd(tags) { return MADE_END.some(function (x) { return has(tags, x); }); }
   function balSub(pv) { return (has(pv.tags, "C3") || has(pv.tags, "CL2")) ? "long" : "rim"; }
   var BAL_SUB = [["long", " after our made long shot", "C3 \u00b7 CL2"], ["rim", " after our basket near the rim", "C2"]];
-  /* which of the three a possession of ours ending this way gives */
+  /* TAG, BACK or nothing: what a possession of ours ending this way gives */
   function transKind(pv) {
-    if (madeEnd(pv.tags)) return "bal";
+    if (madeEnd(pv.tags)) return null;
     if (LONG_END.some(function (x) { return has(pv.tags, x); })) return "tag";
     if (!has(pv.tags, "Offensive foul") && CLOSE_END.some(function (x) { return has(pv.tags, x); })) return "back";
     return null;
@@ -1327,8 +1323,6 @@
         tdRowP("TAG \u00b7 after our missed long shot", TD.tag, "M3 \u00b7 ML2"),
         tdRowP("BACK \u00b7 after a miss at the rim or a turnover", TD.back, "M2 \u00b7 Turnover")
       ].concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 12)).concat([
-        tdRowP("BALANCE \u00b7 after our basket", TD.bal, "C3 \u00b7 CL2 \u00b7 C2")
-      ]).concat(backSubRows(TD.bal, TD.tag.n + TD.back.n, 12, BAL_SUB)).concat([
         tdTot
       ])));
       sTD.appendChild(el("div", "sx-sub", sets.length + (sets.length === 1 ? " session" : " sessions") +
@@ -2062,10 +2056,8 @@
     var tdRows = [
       tdRow("TAG \u00b7 after our missed long shot", TD.tag, "M3 \u00b7 ML2"),
       tdRow("BACK \u00b7 after a miss at the rim or a turnover", TD.back, "M2 \u00b7 Turnover")
-    ].concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 9)).concat(TD.bal ? [
-      tdRow("BALANCE \u00b7 after our basket", TD.bal, "C3 \u00b7 CL2 \u00b7 C2")
-    ].concat(backSubRows(TD.bal, TD.tag.n + TD.back.n, 9, BAL_SUB)) : []);
-    var sTD = section("The three situations");
+    ].concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 9));
+    var sTD = section("The two situations");
     sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%",
       "Situations", "Pts conceded", "PPP", "We finished on"], tdRows));
     /* the OREB% above is ours against ourselves; this is what the league does */
@@ -2202,8 +2194,7 @@
       var tdT = function (v) { return v == null ? "neutral" : v <= 0.9 ? "good" : v >= 1.15 ? "bad" : "neutral"; };
       put(gTD, { figures: [
         { label: "TAG · after our missed long shot", value: f2(tdP(TD.tag)), note: (TD.tag.pts || 0) + " conceded in " + (TD.tag.n || 0) + " situations", tone: tdT(tdP(TD.tag)) },
-        { label: "BACK · after a miss at the rim or a turnover", value: f2(tdP(TD.back)), note: (TD.back.pts || 0) + " conceded in " + (TD.back.n || 0) + " situations", tone: tdT(tdP(TD.back)) }]
-        .concat(TD.bal && TD.bal.n ? [{ label: "BALANCE · after our basket", value: f2(tdP(TD.bal)), note: (TD.bal.pts || 0) + " conceded in " + TD.bal.n + " situations", tone: tdT(tdP(TD.bal)) }] : []) });
+        { label: "BACK · after a miss at the rim or a turnover", value: f2(tdP(TD.back)), note: (TD.back.pts || 0) + " conceded in " + (TD.back.n || 0) + " situations", tone: tdT(tdP(TD.back)) }] });
       if (DN) {
         var dAll = shotLine(DP), cats = Object.keys(byCat || {}).filter(function (k) { return !/^balance$/i.test(k); }).sort(function (a, b) { return byCat[b].length - byCat[a].length; });
         var head = cats.slice(0, 6), restN = 0; cats.slice(6).forEach(function (k) { restN += byCat[k].length; });

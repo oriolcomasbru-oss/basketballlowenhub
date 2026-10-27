@@ -21823,10 +21823,6 @@ function _postRebounds(sg){
    two baskets either side - so a possession can land a minute out, never a quarter. */
 /* BACK in its three parts, in one line: after our turnover, after our miss, after our make
    - points each and how many - for wherever BACK is shown as one number */
-/* BALANCE in its two parts: after our made long shot, after our basket near the rim */
-function _balSplitTxt(bal){ const s=bal && bal.sub; if(!s) return "";
-  const one=(k,l)=>{ const o=s[k]||{ n:0, pts:0 }; return o.n? l+" "+(o.pts/o.n).toFixed(2)+" ("+o.n+")" : ""; };
-  return [one("long","after a long make"), one("rim","after a make at the rim")].filter(Boolean).join(" · "); }
 function _backSplitTxt(back){ const s=back && back.sub; if(!s) return "";
   const one=(k,l)=>{ const o=s[k]||{ n:0, pts:0 }; return o.n? l+" "+(o.pts/o.n).toFixed(2)+" ("+o.n+")" : ""; };
   return [one("to","after TO"), one("miss","after a miss")].filter(Boolean).join(" · "); }
@@ -22103,12 +22099,12 @@ function _postOverviewDraw(sg, P, Tg, API, K){
   }
   /* TAG and BACK conceded beside the paint touches: what is key for us, at the front */
   if(model && model.trans){
-    const tg0=model.trans.tag, bk0=model.trans.back, bl0=model.trans.bal;
-    [["TAG conceded", tg0],["BACK conceded", bk0],["BALANCE conceded", bl0]].forEach(x=>{ const o=x[1]; if(!o || !o.n) return; const v=o.pts/o.n;
-      figs.push({ label:x[0], value:f2(v), note:o.n+" transitions · points each"+(x[1]===bk0 && _backSplitTxt(bk0)? " · "+_backSplitTxt(bk0) : "")+(x[1]===bl0 && _balSplitTxt(bl0)? " · "+_balSplitTxt(bl0) : ""), tone:v<=0.9? "good" : v>=1.2? "bad" : "neutral" }); });
+    const tg0=model.trans.tag, bk0=model.trans.back;
+    [["TAG conceded", tg0],["BACK conceded", bk0]].forEach(x=>{ const o=x[1]; if(!o || !o.n) return; const v=o.pts/o.n;
+      figs.push({ label:x[0], value:f2(v), note:o.n+" transitions · points each"+(x[1]===bk0 && _backSplitTxt(bk0)? " · "+_backSplitTxt(bk0) : "") tone:v<=0.9? "good" : v>=1.2? "bad" : "neutral" }); });
   }
   /* the order a coach reads them: the score, then TAG, BACK, paint touches, reversals, then the rest */
-  { const rank=f=>({ "Score":0, "TAG conceded":1, "BACK conceded":2, "BALANCE conceded":3, "Paint touches":4, "Ball reversals":5 }[f.label]);
+  { const rank=f=>({ "Score":0, "TAG conceded":1, "BACK conceded":2, "Paint touches":3, "Ball reversals":4 }[f.label]);
     const key=figs.filter(f=>rank(f)!=null).sort((a,b)=>rank(a)-rank(b)), rest=figs.filter(f=>rank(f)==null);
     figs.length=0; key.concat(rest).forEach(f=>figs.push(f)); }
   /* ---- by quarter: the table, and what changed between the best and the worst */
@@ -22193,7 +22189,8 @@ function _postOverviewDraw(sg, P, Tg, API, K){
     if(Math.abs(d)>=0.2) gPh.push({ text:p.k+": "+f2(p.ppp)+" per possession ("+Math.round(100*p.n/poss.length)+"% of ours)", tone:d>0? "good" : "bad",
       size:Math.min(1,Math.abs(d)/0.5), n:p.n, solidN:12, unit:"poss" }); });
   const dAll=ppp(dposs);
-  const concepts=group(dposs, q=>q.label||"");
+  /* BALANCE counts in the totals and is never a line of its own: transition defense is TAG and BACK */
+  const concepts=group(dposs, q=>q.label||"").filter(c=>!/^balance$/i.test(String(c.k||"").trim()));
   const gDef=[];
   concepts.filter(c=>c.n>=4).forEach(c=>{ const d=c.ppp-(dAll||0);
     if(Math.abs(d)>=0.2) gDef.push({ text:c.k+": "+f2(c.ppp)+" conceded per possession", tone:d<0? "good" : "bad",
@@ -28318,7 +28315,7 @@ function _dashPostSplit(box, g){
     const oer=m.poss.length? sumP(m.poss)/m.poss.length : null;
     const dp=m.dposs||[], der=dp.length? sumP(dp)/dp.length : null;
     const tr=m.trans||{}, tb=k=>{ const o=tr[k]; return (o && o.n)? { ppp:o.pts/o.n, n:o.n } : null; };
-    const TAG=tb("tag"), BACK=tb("back"), BAL=tb("bal");
+    const TAG=tb("tag"), BACK=tb("back");
     const f2=v=>v==null? "—" : Number(v).toFixed(2), fP=v=>(v==null||!isFinite(v))? "—" : Math.round(v)+"%";
     const fig=(k,v,n,tone)=>h("div",{class:"dash-fig "+(tone||"")}, h("i",{},k), h("b",{},v), h("span",{},n||""));
     const S={}; m.poss.forEach(q=>{ if(q.phase!=="Half court") return; const k=String(q.first||"").trim(); if(!k) return; (S[k]=S[k]||{ n:0, p:0 }); S[k].n++; S[k].p+=q.pts||0; });
@@ -28342,8 +28339,7 @@ function _dashPostSplit(box, g){
     const def=h("div",{class:"dash-sub"}, h("h4",{},"Defense"),
       h("div",{class:"dash-figs"}, fig("DER", f2(der), dp.length+" possessions", der==null? "" : der<=0.95? "good" : der>=1.1? "bad" : ""),
         fig("TAG", TAG? f2(TAG.ppp) : "—", TAG? TAG.n+" transitions · pts each"+"" : "none", tbTone(TAG)),
-        fig("BACK", BACK? f2(BACK.ppp) : "—", BACK? BACK.n+" transitions · pts each" : "none", tbTone(BACK)),
-        fig("BALANCE", BAL? f2(BAL.ppp) : "—", BAL? BAL.n+" after our basket · pts each" : "none", tbTone(BAL))),
+        fig("BACK", BACK? f2(BACK.ppp) : "—", BACK? BACK.n+" transitions · pts each" : "none", tbTone(BACK))),
       h("div",{class:"dash-h5"},"Our defensive concepts · points allowed a possession"),
       cs.length? two(cs.map(conRow)) : h("div",{class:"dash-miss"},"No defensive situation tagged twice."));
     box.appendChild(h("div",{class:"dash-2"}, off, def));
