@@ -603,7 +603,7 @@ function clockSplit(actions, poss, code) {
       const i = own[n], t = times[i], a = actions[i];
       if (S(a.teamcode) !== p.team) continue;
       if (a.action === "TO" || a.action === "TTO" || a.action === "FT") ended = true;
-      if (a.action === "REB" && S(a.info1) === "O") { len = 14; ref = t; afterO = true; orN++; continue; }
+      if ((a.action === "REB" || a.action === "TREB") && S(a.info1) === "O") { len = 14; ref = t; afterO = true; orN++; continue; }   /* a team rebound is an offensive rebound too, as the game's own count has it */
       if ((a.action === "P2" || a.action === "P3" || a.action === "FT") && S(a.result) === "+") {
         const v = a.action === "P3" ? 3 : a.action === "P2" ? 2 : 1;
         if (afterO) ptsSc += v; else ptsFirst += v; }

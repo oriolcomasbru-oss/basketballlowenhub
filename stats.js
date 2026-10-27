@@ -424,7 +424,12 @@
      BACK is never written in a file and does not need to be: both are read off
      the rows. The literal TAG mark is a different thing and lives in its own
      block — it names the player who did NOT tag up, not the situation. */
-  var LONG_END = ["M3", "ML2", "C3", "CL2"], CLOSE_END = ["M2", "Turnover"];   /* after our make at the rim it is their full-court press, not BACK */
+  /* TAG is after our MISSED long shot: after a made one (C3, CL2) the staff tags the next
+     defensive action BALANCE, so it is not a transition at all. BACK is after our miss at the
+     rim or our turnover; after our make at the rim it is their full-court press, not BACK. A
+     clip that ends in a basket of ours (a putback after the miss included) is neither. */
+  var LONG_END = ["M3", "ML2"], CLOSE_END = ["M2", "Turnover"], MADE_END = ["C2", "CL2", "C3"];
+  var madeEnd = function (tags) { return MADE_END.some(function (x) { return has(tags, x); }); };
   var FG_MARKS = ["C2", "CL2", "C3", "M2", "ML2", "M3"];
   var TRANS_GAP = 10;
 
@@ -468,7 +473,8 @@
        it the table looks like the whole game when it is a slice of it */
     rows.forEach(function (r) {
       if (r.def) return;
-      if (LONG_END.some(function (x) { return has(r.tags, x); })) o.tag.of++;
+      if (madeEnd(r.tags)) { }
+      else if (LONG_END.some(function (x) { return has(r.tags, x); })) o.tag.of++;
       else if (!has(r.tags, "Offensive foul") && CLOSE_END.some(function (x) { return has(r.tags, x); })) o.back.of++;
       /* the other half of the same situation: the misses we rebounded ourselves,
          split by the shot that produced them, so the second chances sit next to
@@ -488,7 +494,7 @@
       if (!d.def || pv.def) continue;
       if (d.a - pv.b > TRANS_GAP) continue;
       var dead = has(pv.tags, "Offensive foul");
-      var kind = LONG_END.some(function (x) { return has(pv.tags, x); }) ? "tag"
+      var kind = madeEnd(pv.tags) ? null : LONG_END.some(function (x) { return has(pv.tags, x); }) ? "tag"
         : (!dead && CLOSE_END.some(function (x) { return has(pv.tags, x); })) ? "back" : null;
       if (!kind) continue;
       if (fouledOnTheRebound(d, pv)) continue;
@@ -559,7 +565,8 @@
           o.mtuBy[who] = (o.mtuBy[who] || 0) + 1;
         });
       }
-      if (LONG_END.some(function (x) { return has(r.tags, x); })) o.tag.of++;
+      if (madeEnd(r.tags)) { }
+      else if (LONG_END.some(function (x) { return has(r.tags, x); })) o.tag.of++;
       else if (!has(r.tags, "Offensive foul") && CLOSE_END.some(function (x) { return has(r.tags, x); })) o.back.of++;
       var ml = count(r.tags, "M3") + count(r.tags, "ML2"), mp = count(r.tags, "M2");
       var ore = count(r.tags, "Offensive Rebound") + count(r.tags, "OREB");
@@ -578,7 +585,7 @@
       if (String(d.cat || "").trim().toUpperCase() === "SECOND CHANCE") continue;
       if (d.a - pv.b > TRANS_GAP) continue;
       var dead = has(pv.tags, "Offensive foul");
-      var kind = LONG_END.some(function (x) { return has(pv.tags, x); }) ? "tag"
+      var kind = madeEnd(pv.tags) ? null : LONG_END.some(function (x) { return has(pv.tags, x); }) ? "tag"
         : (!dead && CLOSE_END.some(function (x) { return has(pv.tags, x); })) ? "back" : null;
       if (!kind) continue;
       if (d.def && fouledOnTheRebound(d, pv)) continue;

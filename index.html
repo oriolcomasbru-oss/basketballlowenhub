@@ -18394,7 +18394,9 @@ function _rebGame(feed, uc){
       if(a.result==="+"){ if(second===sd) R.sc[sd]+=k==="P3"? 3 : k==="P2"? 2 : 1; }
       else miss[c]=k==="P3"? 3 : k==="P2"? 2 : 1;
       return; }
-    if(k==="TO" || k==="TTO"){ if(second===sd) second=null; return; }
+    /* a turnover by either side ends the second chance: after our putback their turnover
+       gives us a new possession, not a second chance */
+    if(k==="TO" || k==="TTO"){ second=null; return; }
     if(k!=="REB" && k!=="TREB") return;
     const off=a.info1==="O", shooter=off? c : other, shSd=shooter===uc? "u" : "t";
     const ty=miss[shooter]||2; R.miss[shSd][ty][1]++; if(off) R.miss[shSd][ty][0]++;
@@ -18624,7 +18626,7 @@ function _trgRead(onProg){
     const seen={}, inLeague={}, tlc={};
     ((all&&all.games)||[]).forEach(x=>{ inLeague[x.id]=1; });
     ((all&&all.teams)||[]).forEach(t=>{ tlc[t.id]=t.tlc||t.short||""; });
-    const games=((all&&all.games)||[]).concat((all&&all.cup)||[])
+    const games=((all&&all.games)||[])   /* the league's games only: a cup night was being added into every "season" figure set beside the league's */
       .filter(x=>{ if(seen[x.id]) return false; seen[x.id]=1;
         return _lgDone(x) && (String(x.homeId)===String(tid)||String(x.awayId)===String(tid)); })
       .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
@@ -19496,7 +19498,10 @@ function _lgFourTrend(TB){
        team's rebounding with him on and off over all the games. */
     { const RG=G.filter(g=>g.rb);
       if(RG.length){
-        const POSR=R.pos||{}, grpOf=id=>{ const p=POSR[String(id)]; return p? _rebGrp(p) : null; };
+        /* the group of each of ours by the roster's position AND height (a "F" of 2.05 is an
+           interior), as the post game reads it; the bare label only when the roster has no line */
+        let PMU={ byId:{} }; try{ const Lr=leagueState(); PMU=_rebPosMap(Lr, String(_lgOurTeamId(Lr)||"")); }catch(e){}
+        const POSR=R.pos||{}, grpOf=id=>{ const k=String(id); if(PMU.byId[k]) return PMU.byId[k]; const p=POSR[k]; return p? _rebGrp(p) : null; };
         const SUM=_rebSum(RG.map(g=>g.rb));
         const pc=v=>v==null? "—" : Math.round(v)+"%";
         const oS=_rebPct(SUM.u.or, SUM.u.or+SUM.t.dr), dS=_rebPct(SUM.u.dr, SUM.u.dr+SUM.t.or);
@@ -19904,7 +19909,7 @@ function pbVideoPanel(canEd){
 const LG_DATA_VER=15;
 /* what the server is asked for: moved on when the server adds to an answer (16: when the
    shot comes in the possession), without throwing away what this browser already has */
-const LG_FETCH_VER=26;
+const LG_FETCH_VER=27;
 function leagueState(){
   const L=state.league||(state.league={});
   if(L.dataVer!==LG_DATA_VER){
@@ -21830,7 +21835,9 @@ function _postMinutes(sg, opt){
   Promise.all([pbp, tag]).then(([P, GM])=>{ box.innerHTML="";
     if(!P){ box.appendChild(h("div",{class:"lg-empty"},"The league's play by play of this game is not in yet.")); return; }
     const L=leagueState(), our=String(((L.teams||[]).filter(t=>_lgOurs(t.name))[0]||{}).id||"");
-    const uc=String(P.G.homeId)===our? "A" : "B";
+    /* which letter is ours, by the club's own id in the feed - never by assuming A is home */
+    const hcF=((P.j.feed.teams||[]).filter(t=>String(t.id)===String(P.G.homeId))[0]||{}).teamcode||"A";
+    const uc=String(P.G.homeId)===our? hcF : (hcF==="A"? "B" : "A");
     const qLen=qi=>qi<4? 600 : 300, qBase=qi=>qi<4? qi*600 : 2400+(qi-4)*300;
     /* the play by play, a bucket a minute */
     const B={}, bk=(qi,m)=>B[qi+"|"+m]||(B[qi+"|"+m]={ u:{ pts:0, fga:0, or:0, dr:0, tov:0, fta:0 }, t:{ pts:0, fga:0, or:0, dr:0, tov:0, fta:0 }, pt:0, pn:0, tag:[0,0], back:[0,0], bs:{ to:{ n:0, pts:0 }, miss:{ n:0, pts:0 }, make:{ n:0, pts:0 } } });

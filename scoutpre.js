@@ -92,7 +92,11 @@
         .then(function (j) {
           if (j.error) throw new Error(j.error);
           (j.files || []).forEach(function (f) { if (f && f.id) fileStamp[f.id] = f.modifiedTime ? (f.modifiedTime + "|" + (f.size || "")) : ("name:" + (f.name || "")); });
-          return j.files || [];
+          /* IN GAME ORDER, NOT LETTER ORDER: the Drive sorts names as text, so "G10" came before
+             "G8" and the "last game tagged" could be an old one. Numbers inside a name now
+             sort as numbers. */
+          return (j.files || []).slice().sort(function (a, b) {
+            return String(a.name || "").localeCompare(String(b.name || ""), undefined, { numeric: true, sensitivity: "base" }); });
         })
         /* a failed list must not be cached: one dropped request would leave
            the block dead until the page is reloaded */
@@ -691,8 +695,16 @@
     for (var i = 0; i < c.length; i++) if (c[i].period) return c[i].period;
     return null;
   }
-  function firstAct(c) { var a = actOf(c).slice().sort(); return a.length ? a[0] : null; }
-  function firstCov(c) { var a = covOf(c).slice().sort(); return a.length ? a[0] : null; }
+  /* FIRST AND LAST IN THE ORDER OF PLAY. These took the alphabetically first action of the
+     possession - "Catch & Drive" always beat "Spot Up" - so every "first" and "how it ends"
+     table was an artefact of spelling. The chain is in video order: the first is the first
+     clip's, the end is the last clip's that carries an action. */
+  function firstAct(c) { var a = actOf(c); return a.length ? a[0] : null; }
+  function firstCov(c) { var a = covOf(c); return a.length ? a[0] : null; }
+  function lastAct(c) {
+    for (var i = c.length - 1; i >= 0; i--) { var a = c[i].acts || []; if (a.length) return a[a.length - 1]; }
+    return null;
+  }
 
   /* WHICH BIG IS IN THE BALL SCREEN.
      The only thing the tagging says about personnel on a ball screen is the category
@@ -865,7 +877,11 @@
   function buildReport(teamName, games, refGames) {
     var evs = [], refEvs = [];
     games.forEach(function (g) { evs = evs.concat(g.evs); });
-    refGames.forEach(function (g) { refEvs = refEvs.concat(g.evs); });
+    /* THE REFERENCE IS THE OTHER TEAMS WE SCOUTED: the opponent's own games were inside the
+       pool it is compared with, which pulled every "vs reference" towards themselves */
+    var mineG = []; games.forEach(function (g) { mineG.push(g); });
+    var others = refGames.filter(function (g) { return mineG.indexOf(g) < 0 && !mineG.some(function (m) { return m.game && m.game === g.game && m.file === g.file; }); });
+    (others.length ? others : refGames).forEach(function (g) { refEvs = refEvs.concat(g.evs); });
 
     var OFF = chains(evs, "O"), DEF = chains(evs, "D");
     var ALL_O = chains(refEvs, "O"), ALL_D = chains(refEvs, "D");
@@ -877,7 +893,7 @@
     var REF_D = refmap(ALL_D, gD);
     var REF_COV = refmap(ALL_D.filter(function (c) { return c[0].fam === "def_pnr"; }), covOf);
     var REF_BIG = refmap(ALL_D.filter(function (c) { return c[0].fam === "def_pnr"; }), bigLbl);
-    var REF_ACT_O = refmap(ALL_O, firstAct);
+    var REF_ACT_O = refmap(ALL_O, firstAct), REF_FIN_O = refmap(ALL_O, lastAct);
     var REF_ACT_D = refmap(ALL_D, firstAct);
     var REF_TOV = {};
     var gdb = bucket(ALL_D, gD);
@@ -948,7 +964,7 @@
     /* ------------------------------------------------- 5. how they attack */
     D.mix = group(OFF.filter(function (c) { return gO(c) !== "Second Chance"; }),
       gO, "O", REF_O, OFF.length);
-    D.finish = group(OFF, firstAct, "O", REF_ACT_O, OFF.length, 3);
+    D.finish = group(OFF, lastAct, "O", REF_FIN_O, OFF.length, 3);
 
     var sc = OFF.filter(function (c) { return c.length > 1; });
     var orb = 0;
@@ -1198,7 +1214,7 @@
 
     var pairs = {}, actTot = {}, actKeys = [];
     pn.forEach(function (c) {
-      var cv = firstCov(c), ac = firstAct(c);
+      var cv = firstCov(c), ac = lastAct(c);
       if (!cv || !ac) return;
       var k = cv + "\u0000" + ac;
       pairs[k] = (pairs[k] || 0) + 1;
@@ -1539,7 +1555,11 @@
      which is them performing badly. One scale, the sign tells it which way round. */
   function pppCell(ppp, ref, side, cf) {
     if (ref == null) return plain(f2(ppp), "muted");
-    var diff = side === "O" ? (ppp - ref) : (ref - ppp);
+    /* ONE COLOUR RULE FOR THE WHOLE REPORT, the overview's: green is good for us, red hurts us.
+       Their offense scoring above the reference is red; their defense letting us score
+       above it is green. (It used to be the other way round here, under notes that said
+       this way.) */
+    var diff = side === "O" ? (ref - ppp) : (ppp - ref);
     return perfChip(f2(ppp), diff, 0.25 * (cf < 2 ? 2.2 : 1));
   }
   function shareCell(v, mx, suf) {
@@ -1831,12 +1851,30 @@
     if (!K || !D) return null;
     var f2n = function (v) { return (v == null || !isFinite(v)) ? "—" : Number(v).toFixed(2); };
     var figs = [], PO = D.panelOff, PD = D.panelDef, RO = D.panelRefOff, RD = D.panelRefDef, S = D.say || {};
-    if (PO) figs.push({ label: "Their offense", value: f2n(PO.ppp), note: "per possession · league " + f2n(RO && RO.ppp),
-      tone: K.tone(PO.ppp, RO && RO.ppp, false, 0.04) });
-    if (PD) figs.push({ label: "Their defense", value: f2n(PD.ppp), note: "allowed · league " + f2n(RD && RD.ppp),
-      tone: K.tone(PD.ppp, RD && RD.ppp, true, 0.04) });
+    /* AGAINST THE LEAGUE, FROM THE LEAGUE: their offense and defense from the league's play by
+       play - every game of theirs, against every club's - with our tagging of a few games as
+       the second line. The tagging's own reference is the teams we scouted, not the league. */
+    var LF = null, LA = null, LR = null;
+    try {
+      var Lg = window.leagueState && window.leagueState(), tid = Lg && window._lgTeamIdByName && window._lgTeamIdByName(Lg, (D.meta && D.meta.team) || "");
+      var four = ((Lg && Lg.four) || []).filter(function (x) { return x && x.ortg != null && x.drtg != null; });
+      LF = four.filter(function (x) { return String(x.teamId) === String(tid); })[0] || null;
+      if (four.length) LA = { o: four.reduce(function (a, x) { return a + x.ortg; }, 0) / four.length / 100, d: four.reduce(function (a, x) { return a + x.drtg; }, 0) / four.length / 100 };
+      if (LF) LR = { o: 1 + four.filter(function (x) { return x.ortg > LF.ortg; }).length, d: 1 + four.filter(function (x) { return x.drtg < LF.drtg; }).length, n: four.length };
+    } catch (e) { LF = null; }
+    if (LF && LA) {
+      figs.push({ label: "Their offense", value: f2n(LF.ortg / 100), note: "per possession · #" + LR.o + " of " + LR.n + " · league " + f2n(LA.o) + (PO ? " · tagged " + f2n(PO.ppp) : ""),
+        tone: K.tone(LF.ortg / 100, LA.o, false, 0.03) });
+      figs.push({ label: "Their defense", value: f2n(LF.drtg / 100), note: "allowed · #" + LR.d + " of " + LR.n + " · league " + f2n(LA.d) + (PD ? " · tagged " + f2n(PD.ppp) : ""),
+        tone: K.tone(LF.drtg / 100, LA.d, true, 0.03) });
+    } else {
+      if (PO) figs.push({ label: "Their offense", value: f2n(PO.ppp), note: "per possession, tagged · scouted teams " + f2n(RO && RO.ppp),
+        tone: K.tone(PO.ppp, RO && RO.ppp, false, 0.04) });
+      if (PD) figs.push({ label: "Their defense", value: f2n(PD.ppp), note: "allowed, tagged · scouted teams " + f2n(RD && RD.ppp),
+        tone: K.tone(PD.ppp, RD && RD.ppp, true, 0.04) });
+    }
     if (S.bsFreq != null) figs.push({ label: "Ball screens", value: S.bsFreq + "%", note: "of what they defend · " + f2n(S.bsPpp) + " allowed", tone: "vol" });
-    if (D.second) figs.push({ label: "Second chances", value: D.second.orb, note: "offensive rebounds · " + D.second.pts + " points off them", tone: "vol" });
+    if (D.second) figs.push({ label: "Offensive rebounds", value: D.second.orb, note: D.second.pts + " points on the possessions that followed one", tone: "vol" });
     if (D.meta) figs.push({ label: "Games tagged", value: D.meta.ngames, note: (D.meta.games || []).join(" · "), tone: "vol" });
     /* a row of one of the report's own tables, as a sentence: `edge` is already "how good
        this is for us", whichever side of the ball it is */
@@ -1846,10 +1884,10 @@
           size: Math.min(1, Math.abs(r.edge) / 0.35) * (0.6 + 0.4 * Math.min(1, (r.freq || 10) / 25)),
           n: Math.round(r.poss), solidN: 30, unit: "poss", weight: weight || 1 }; });
     };
-    var gOff = line(D.mix, 10, function (r) { return r.label + ": " + f2n(r.ppp) + " per possession, " + (r.freq != null ? r.freq + "% of their offense" : "") + " (league " + f2n(r.ref) + ")"; })
-      .concat(line(D.court, 12, function (r) { return r.label + ": " + f2n(r.ppp) + " per possession (league " + f2n(r.ref) + ")"; }, 0.9));
+    var gOff = line(D.mix, 10, function (r) { return r.label + ": " + f2n(r.ppp) + " per possession, " + (r.freq != null ? r.freq + "% of their offense" : "") + " (scouted teams " + f2n(r.ref) + ")"; })
+      .concat(line(D.court, 12, function (r) { return r.label + ": " + f2n(r.ppp) + " per possession (scouted teams " + f2n(r.ref) + ")"; }, 0.9));
     var gFin = line(D.finish, 10, function (r) { return "Ends in " + r.label + ": " + f2n(r.ppp) + " per possession" + (r.freq != null ? ", " + r.freq + "% of the time" : ""); });
-    var gDef = line(D.defsit, 10, function (r) { return r.label + ": " + f2n(r.ppp) + " allowed per possession (league " + f2n(r.ref) + ")"; })
+    var gDef = line(D.defsit, 10, function (r) { return r.label + ": " + f2n(r.ppp) + " allowed per possession (scouted teams " + f2n(r.ref) + ")"; })
       .concat(line(D.generate, 10, function (r) { return "Against " + r.label + ": " + f2n(r.ppp) + " allowed"; }, 0.8));
     /* the ball screen: what each coverage costs, who is in it, and whether it moves */
     var gCov = line(D.coverage, 8, function (r) { return r.label + ": " + (r.freq != null ? r.freq + "% of their ball screens, " : "") + f2n(r.ppp) + " allowed"; }, 1.3);
@@ -1910,7 +1948,7 @@
     /* what the summary used to leave to the tables: their defense by court state, where
        their pressure forces turnovers, and who finishes their possessions */
     try {
-      gDef = gDef.concat(line(D.courtDef, 12, function (r) { return r.label + ": " + f2n(r.ppp) + " allowed per possession (league " + f2n(r.ref) + ")"; }, 0.9));
+      gDef = gDef.concat(line(D.courtDef, 12, function (r) { return r.label + ": " + f2n(r.ppp) + " allowed per possession (scouted teams " + f2n(r.ref) + ")"; }, 0.9));
       (D.forceto || []).forEach(function (r) {
         if (r.ref == null || r.poss < 15 || Math.abs(r.rate - r.ref) < 4) return;
         gDef.push({ text: r.label + ": forces a turnover on " + r.rate + "% (league " + r.ref + "%)", tone: r.rate < r.ref ? "good" : "bad",
@@ -2131,7 +2169,7 @@
       "What share of their offense each origin is, and whether they are better or worse than the reference there.");
     edgeTable(b4a, D.mix, "Origin", "PPP",
       [["efg", "eFG%"], ["p3r", "3PAr"], ["tov", "TOV%"]],
-      "Green is where they struggle; gold is where they hurt us.");
+      "Green is where they struggle; red is where they hurt us.");
     var b4b = sub(s4, "Finishing concept", "How the possession actually ends, whatever started it.");
     edgeTable(b4b, D.finish, "Concept", "PPP", [["efg", "eFG%"], ["p3r", "3PAr"]],
       "Green means we want them finishing there.");
@@ -2143,7 +2181,7 @@
     var b4c = sub(s4, "Playbook — everything they call",
       "One table. Half court (called sets, ball screens with no call, broken possessions), open court " +
       "and dead ball. The PPP cell is painted against their own " + f2(S.selfPpp) + " average, so green " +
-      "is a set that dies on them and gold is a set that hurts us. Anything called fewer than three " +
+      "is a set that dies on them and red is a set that hurts us. Anything called fewer than three " +
       "times is left uncoloured — there is nothing to read there.");
     var F = D.playbookFlags || { use: 5, ppp: 7, min: 3 };
     var TAG = { "Called set": "", "Ball screen, no call": "no call", "No structure": "broken",
@@ -2281,7 +2319,7 @@
     /* ------------------------------------------ 05 how they defend */
     var s5 = section(root, "06", "How they defend — where we attack",
       "The column here is what they allow, so a high number is a bad number for them — and the " +
-      "colour already says so: green where they concede, gold where they hold.");
+      "colour already says so: green where they concede, red where they hold.");
     tabOf(s5, "def bs");
     var b5a = tabOf(sub(s5, "By situation", "The table the game plan comes out of."), "def");
     edgeTable(b5a, D.defsit, "Situation", "PPP allowed", [["efg", "eFG%"], ["p3r", "3PAr"]],
@@ -2451,8 +2489,8 @@
         b5bb.appendChild(TX3.wrap);
         tnote(TX3.wrap, "Points per possession against each coverage, one row per opponent, "
           + "with the possessions after the dot. The colour is against the same league "
-          + "reference the table above uses, so a green cell is a night that coverage held "
-          + "and a red one is a night it did not. A dash means that opponent never saw it. "
+          + "reference the table above uses, so a green cell is a night we scored on that coverage "
+          + "and a red one is a night it held. A dash means that opponent never saw it. "
           + "Read a row for how one team attacked them and a column for the coverage "
           + "everybody scores on.");
       }
@@ -2527,15 +2565,15 @@
       else {
         /* they force FEWER turnovers than the reference = good for us = green */
         var edge = r.ref - r.rate;
-        tr.appendChild(perfChip(r.rate + "%", -edge, 10 * (r.conf < 2 ? 2.2 : 1)));
+        tr.appendChild(perfChip(r.rate + "%", edge, 10 * (r.conf < 2 ? 2.2 : 1)));
       }
       tr.appendChild(plain(r.ref == null ? "—" : r.ref + "%", "ref"));
       tr.appendChild(plain(r.ref == null ? "—" : ((r.rate - r.ref >= 0 ? "+" : "−") + Math.abs(r.rate - r.ref)), "cream"));
       TT.body.appendChild(tr);
     });
     b5f.appendChild(TT.wrap);
-    tnote(b5f, "Red is below the reference and green above it, as everywhere else: a green rate " +
-      "here means their pressure is real.");
+    tnote(b5f, "Green: they force fewer turnovers than the reference; red: their pressure is real " +
+      "- the same rule as everywhere else, green is good for us.");
 
     /* drawn here only when no PLAYERS STATS slot claimed it */
     if (!(opts && opts.skipPlayers)) { var sP = playersBlock(root, D, "07"); if (sP) tabOf(sP, "off"); }
