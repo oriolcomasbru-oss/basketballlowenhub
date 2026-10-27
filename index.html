@@ -27717,8 +27717,10 @@ function _dashOppPrint(card, title){
       /* a box that scrolls on the screen is cut by the printer to what fits: on paper it is not there at all */
       el.querySelectorAll(".dash-kpw").forEach(w=>{ while(w.firstChild) w.parentNode.insertBefore(w.firstChild, w); w.remove(); });
       return el; };
-    const p1=h("div",{class:"dop-fit"}, top(title));
-    [...body.children].forEach(ch=>{ if(ch!==notesBlk) p1.appendChild(clean(ch.cloneNode(true))); });
+    /* the numbers in two columns: ours from the tagging on the left, the league's sheet on the right */
+    const cL=h("div",{class:"dop-col"}), cR=h("div",{class:"dop-col"});
+    [...body.children].forEach(ch=>{ if(ch===notesBlk) return; (ch.querySelector(".dash-pg")? cR : cL).appendChild(clean(ch.cloneNode(true))); });
+    const p1=h("div",{class:"dop-fit"}, top(title), h("div",{class:"dop-two"}, cL, cR));
     const all=(notesBox && notesBox.__printAll)? notesBox.__printAll() : h("div",{class:"dash-miss"},"No key ideas marked in the pre game.");
     const p2=h("div",{class:"dop-fit dop-notes"}, top(title+" · scouting notes"), all);
     const pages=[p1, p2].map(p=>h("div",{class:"dop-page"}, p));
@@ -27835,7 +27837,7 @@ function _dashPostPrint(card, title){
     const PW=1058, PH=715;
     const fit=(p, W)=>{ p.style.zoom="1"; p.style.width=W+"px"; return Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); };
     const refit=()=>{
-      let b1={ s:0, w:1400 }; [1100,1300,1500,1700,1900].forEach(w=>{ const s=fit(p1, w); if(s>b1.s) b1={ s:s, w:w }; }); fit(p1, b1.w); p1.style.zoom=b1.s.toFixed(4);
+      let b1={ s:0, w:1400 }; [1500,1700,1900,2100,2300].forEach(w=>{ const s=fit(p1, w); if(s>b1.s) b1={ s:s, w:w }; }); fit(p1, b1.w); p1.style.zoom=b1.s.toFixed(4);
       let b2={ s:0, c:3, cw:380 };
       [300,340,380,420].forEach(cw=>[2,3,4].forEach(c=>{ p2.style.setProperty("--cols", String(c)); const s=fit(p2, cw*c); if(s>b2.s) b2={ s:s, c:c, cw:cw }; }));
       p2.style.setProperty("--cols", String(b2.c)); fit(p2, b2.cw*b2.c); p2.style.zoom=b2.s.toFixed(4); };
@@ -38170,6 +38172,9 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dop-top b{font:700 13px Oswald,sans-serif;letter-spacing:.18em;text-transform:uppercase}
 .dop-top span{font:600 12px 'IBM Plex Mono',monospace}
 .dop-fit .dash-blk,.dop-fit .dash-3c{margin-top:0}
+.dop-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px;align-items:start}
+.dop-col{display:grid;gap:10px;align-content:start;min-width:0}
+.dop-fit .pgmc{min-width:0}
 /* the key ideas on paper run on in columns, a column breaking only between two lists */
 .dop-pnotes .dash-pk{display:block;column-count:var(--cols,3);column-gap:14px;border:0;background:none}
 .dop-pnotes .dash-pk .col{display:block;border:0;border-radius:6px;padding:6px 10px;margin:0 0 8px;break-inside:auto}
