@@ -3520,7 +3520,17 @@
      say — and anything still unnamed is kept apart rather than guessed at. */
   /* named after the play and not the end, so only the staff can say which it is */
   var OOB_NAMED = { "PIO PIO": "Baseline" };
-  var EARLY_NAMED = { "77": 1, "54": 1 };
+  var EARLY_NAMED = { "77": 1, "54": 1, "5 SIDE": 1, "5 ZOOM": 1, "5 DRIBBLE": 1, "PUNCH": 1 };
+  /* ONE NAME A SET: the same inbound written two ways - "3 SLOB" and "SOB 3", "OTHER SLOB"
+     and "OTHER SOB" (and the same for the baseline) - is one line */
+  function setName(k) {
+    var c = String(k || "").trim().replace(/\s+/g, " "), u = c.toUpperCase(), m;
+    if ((m = /^(\d+) ?S?LOB$/.exec(u)) || (m = /^S?LOB ?(\d+)$/.exec(u)) || (m = /^SOB ?(\d+)$/.exec(u))) return "SOB " + m[1];
+    if ((m = /^(\d+) ?B?LOB$/.exec(u)) || (m = /^B?LOB ?(\d+)$/.exec(u)) || (m = /^BOB ?(\d+)$/.exec(u))) return "BOB " + m[1];
+    if (/^OTHER S(L)?OB$/.test(u)) return "OTHER SOB";
+    if (/^OTHER B(L)?OB$/.test(u)) return "OTHER BOB";
+    return c;
+  }
   /* not ours to list among the sets: a defensive call and two the staff does not want on the table */
   var SET_HIDE = /^(middle pnr|dagger|regular press)$/i;
   function phaseOf(cat) {
@@ -3626,7 +3636,7 @@
            still a line of their own under the phase; a defensive label is not one of ours */
         var ph0 = phaseOf(q.first);
         if (!SET_FAMS[fam] && !/^(early offense|transition)$/i.test(ph0)) return;
-        var k = String(q.first || "").trim();
+        var k = setName(q.first);
         if (!k || /defen[cs]e/i.test(k) || SET_HIDE.test(k)) return;
         var e = bySet[k] || (bySet[k] = { k: k, fam: fam, n: 0, pts: 0, per: {} });
         if (!bySet[k].seen) { order.push(k); bySet[k].seen = 1; }
