@@ -26033,7 +26033,7 @@ function _lgReb(L){
     const lst=r.last.slice(-3); while(lst.length<3) lst.unshift(null);
     lst.forEach((g,i)=>tr.appendChild(h("td",{class:"l reb-top reb-gm"+(i? "" : " grp")}, g? [h("em",{}, (g.home? "vs " : "@ ")+(_lgShort(g.opp)||g.opp||"")+" · "+String(g.d||"").slice(8,10)+"/"+String(g.d||"").slice(5,7)),
       g.us? h("p",{class:"rbt"}, h("span",{}, "Team"), rbBar(g.us.o+g.us.d, g.us.o, 55), h("b",{}, String(g.us.o+g.us.d)), h("small",{}, "D "+g.us.d+" · O "+g.us.o)) : null]
-      .concat(g.rb.slice(0,3).map(x=>man(x, x.r, x.o, 14, v=>String(Math.round(v)))))) : "—")));
+      .concat(g.rb.slice(0,3).map(x=>man(x, x.r, x.o, 14, v=>String(Math.round(v))))) : "—")));
     t.appendChild(tr); });
   t.appendChild(h("tr",{class:"pace-lg"}, h("td",{}), h("td",{class:"l"},"League · average"), ...Object.keys(K).map(k=>h("td",{class:"pnum"+(k==="og"? " grp" : "")}, A[k]==null? "—" : K[k].f(A[k]))), h("td",{class:"grp"}), h("td",{class:"grp"}), h("td",{}), h("td",{})));
   box.appendChild(h("div",{class:"pb-scroll"}, t));
