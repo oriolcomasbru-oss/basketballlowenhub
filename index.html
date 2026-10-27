@@ -27942,6 +27942,32 @@ function _dashNotesInto(box, g){
     box.appendChild(h("div",{class:"dash-src"},"The key ideas marked in the pre game, concept by concept · D = How to defend · A = How to attack"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"The pre game could not be read.")); });
 }
+/* THE KEY IDEAS OF THE POST GAME, as in the pre game: in the post game, in edit mode, a
+   passage is marked with ★ Key and it comes here - one column a box of the report (Our
+   offense, Our defense, Team objectives...), the text in the report's own shape */
+function _dashPostKeyIdeas(rep){
+  const secs=(rep && rep.data && rep.data.postSections)||[], out=[];
+  secs.forEach(s=>{ if(!s || s.kind==="stats" || s.kind==="plan") return;
+    (s.items||[]).forEach(it=>{ if(!it || it.kind==="table") return;
+      const gs=_dashMarkedGroups(it.them).concat(_dashMarkedGroups(it.us!==undefined? it.us : it.v));
+      if(!gs.length) return;
+      const n=String(it.t||s.title||"").replace(/\s*·\s*\d+\s*keys?$/i,"").trim()||String(s.title||"");
+      out.push({ n:n, gs:gs }); }); });
+  return out;
+}
+function _dashPostNotesInto(box, g){
+  box.innerHTML=""; box.appendChild(h("div",{class:"ld dash-ld"},"Reading the post game…", h("span",{class:"ld-bar"})));
+  _dashRep(g).then(rep=>{ box.innerHTML="";
+    const cols=rep? _dashPostKeyIdeas(rep) : [];
+    if(!cols.length){ box.appendChild(h("div",{class:"dash-miss"},"No key ideas marked yet — in the post game, Edit, select the text and press ★ Key (right click).")); return; }
+    const lab=t=>{ const m=/^([A-Z0-9#&\/+\-–—. ]{3,}?)\s*:\s*(.+)$/.exec(t); return m? [h("b",{}, m[1]+":"), " "+m[2]] : [t]; };
+    box.appendChild(h("div",{class:"dash-pk"}, cols.map(c=>h("div",{class:"col"+(/defen/i.test(c.n)? " d" : /offen/i.test(c.n)? " o" : "")},
+      h("div",{class:"sl"}, c.n),
+      c.gs.map(gp=>(gp.h && !gp.items.length)? h("div",{class:"solo"}, ...lab(gp.h))
+        : h("div",{class:"g"}, gp.h? h("div",{class:"gh"}, gp.h) : null, h("ul",{}, gp.items.map(t=>h("li",{}, ...lab(t))))))))));
+    box.appendChild(h("div",{class:"dash-src"},"The key ideas marked in the post game"));
+  }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"The post game could not be read.")); });
+}
 /* OUR GAME FROM OUR TAGGING, OFFENSE AND DEFENSE APART: OER, paint touches and the sets
    that worked and did not; DER, what TAG and BACK conceded and each defensive concept with
    what it gave up */
@@ -28296,6 +28322,10 @@ function renderDashboard(){
         h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent), h("span",{}, _dashFmt(g.date)+" · "+(g.competition||"")+(r && r.ot? " · OT" : ""))),
         r? h("span",{class:"dash-score "+(r.won? "good" : "bad")}, r.us+"–"+r.them) : h("span",{class:"dash-score"}, g.result||"")));
       c.__b.appendChild(h("div",{}, st));
+      /* what the staff marked ★ Key in the post game, first under the score */
+      const pk=h("div",{class:"dash-sub"}, h("h4",{}, "Post game notes · key ideas")), pkB=h("div",{}); pk.appendChild(pkB);
+      c.__b.appendChild(h("div",{class:"dash-blk"}, pk));
+      _dashPostNotesInto(pkB, g);
       _dashRep(g).then(rep=>{ const s=_dashStatus(rep, true); st.innerHTML=""; st.appendChild(pill(s));
         if(s[0]!=="ready"){ alerts.push({ tone:"bad", text:"Post game "+g.opponent+" not finished", go:()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:g.id } }) }); paintAtt(); } });
       /* the Game performance overview of the post game, its figures, its quarters and the
@@ -37862,6 +37892,15 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-mini .rs-rich{min-height:0;padding:4px 8px;font-size:11.5px;line-height:1.35}
 .dash-mini .rs-rich ul{margin:0;padding-left:15px}
 /* scouting notes: one tab a concept, How to defend and How to attack under it */
+.dash-pk{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));border:1px solid #d9dce2;border-radius:10px;overflow:hidden;background:var(--panel,#fff)}
+.dash-pk .col{padding:9px 14px;min-width:0;border-left:1px solid #e6ebf2}.dash-pk .col:first-child{border-left:0}
+.dash-pk .col.o{background:#f5f8fc}.dash-pk .col.d{background:#fdf6f4}
+.dash-pk .sl{font:700 10px Oswald,sans-serif;letter-spacing:.14em;text-transform:uppercase;margin-bottom:5px;color:#141821}
+.dash-pk .col.o .sl{color:#2f5c8f}.dash-pk .col.d .sl{color:#b6472e}
+.dash-pk .g{margin-bottom:7px}
+.dash-pk .gh{font:700 10.5px Oswald,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#141821;border-bottom:1px solid rgba(0,0,0,.08);padding-bottom:2px;margin-bottom:3px}
+.dash-pk ul{margin:0;padding-left:16px}.dash-pk li,.dash-pk .solo{font-size:12.5px;line-height:1.38;margin:1px 0;color:#1f2430}
+.dash-pk li b,.dash-pk .solo b{font-weight:800}
 .dash-nt{border:1px solid #d9dce2;border-radius:10px;overflow:hidden;background:var(--panel,#fff)}
 .dash-nt .top{padding:7px 9px;background:#1c1c1c}
 .dash-nt .tabs{display:flex;flex-wrap:wrap;gap:5px}
