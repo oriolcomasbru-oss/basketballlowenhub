@@ -2497,7 +2497,7 @@
       var lg = el("div", "tl-legend");
       series.forEach(function (s) {
         var it = el("span", "tl-lg");
-        var sw = el("span", "tl-lgk" + (s.dash ? " dash" : "")); sw.style.background = s.color;
+        var sw = el("span", "tl-lgk" + (s.dash ? " tl-dash" : "")); sw.style.background = s.color;
         /* a dashed swatch drawn as a dashed fill: a dashed border sat above the legend line */
         if (s.dash) sw.style.background = "repeating-linear-gradient(90deg," + s.color + " 0 5px,transparent 5px 8px)";
         it.appendChild(sw); it.appendChild(el("span", null, s.name));
