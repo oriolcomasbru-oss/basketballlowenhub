@@ -18153,11 +18153,13 @@ function renderTrends(){
   const panel=root.lastChild;
   /* THE LEAGUE'S NUMBERS UNDER OUR SETS, every part a box folded to its title: where we are,
      the game pace, then the league's tables game by game */
-  const tbox=(title, kid, open)=>{ const d=h("details",{class:"trg-box"}, h("summary",{}, h("b",{}, title)), kid); if(open) d.open=true; return d; };
-  const lgKids=[];
-  try{ lgKids.push(tbox("Where we are, and where it is heading", _trendsDashboard(), true)); }catch(e){}
-  try{ lgKids.push(tbox("Game pace", _trendsPace())); }catch(e){}
-  const lgBlock=secBlk("THE LEAGUE'S NUMBERS · GAME BY GAME", ...lgKids, _lgFourTrend());
+  /* ORGANISED AS THE PRE GAME'S TEAM STATS: a row of tabs, the overview first, one table a
+     tab and everything on the last one */
+  const TB=_trgTabs();
+  try{ TB.add("Overview", _trendsDashboard()); }catch(e){}
+  try{ TB.add("Pace", _trendsPace()); }catch(e){}
+  TB.fixed();
+  const lgBlock=secBlk("THE LEAGUE'S NUMBERS · GAME BY GAME", TB.el, _lgFourTrend(TB));
   lgBlock.style.display="none";
   root.appendChild(lgBlock);
   let shown=false, mo=null;
@@ -18895,7 +18897,26 @@ function _trendsDashDraw(R, TD){
 }
 /* where the staff plays one of ours somewhere else than the league's roster says, by surname: the staff wins */
 const TRG_POS_STAFF={ thiers:"C" };
-function _lgFourTrend(){
+/* a row of tabs over panes, as the pre game's team stats: the first open, "Everything" shows all */
+function _trgTabs(){
+  const el=h("div",{class:"pg-uni trg-tabs"}), bar=h("div",{class:"sxp-tabs pg-tabs"}), panes=h("div",{});
+  el.appendChild(bar); el.appendChild(panes);
+  const list=[]; let cur=0, nFixed=0;
+  const allB=h("button",{class:"sxp-tab", type:"button"},"Everything");
+  const show=i=>{ cur=i; el.dataset.tab=i<0? "all" : String(i); list.forEach((x,k)=>{ x.b.classList.toggle("on", k===i); x.p.classList.toggle("on", i<0 || k===i); }); allB.classList.toggle("on", i<0); };
+  allB.addEventListener("click",()=>show(-1));
+  const lab=t=>{ const s=String(t||"").split(" · ")[0].trim().toLowerCase(); return s.charAt(0).toUpperCase()+s.slice(1); };
+  const api={ el:el,
+    add:(title, node)=>{ const b=h("button",{class:"sxp-tab", type:"button"}, lab(title)), p=h("div",{class:"pg-pane"}, node);
+      const i=list.length; b.addEventListener("click",()=>show(i)); list.push({ b:b, p:p });
+      bar.insertBefore(b, allB.parentNode===bar? allB : null); if(allB.parentNode!==bar) bar.appendChild(allB); panes.appendChild(p);
+      show(cur>=0 && cur<list.length? cur : 0); return p; },
+    fixed:()=>{ nFixed=list.length; },
+    /* a fresh read of the league's games: its tabs go, the fixed ones stay */
+    reset:()=>{ list.splice(nFixed).forEach(x=>{ x.b.remove(); x.p.remove(); }); if(cur>=list.length) cur=0; show(cur); } };
+  return api;
+}
+function _lgFourTrend(TB){
   /* "sx" is where the chart palette is declared (--tl-1, --tl-2, --tl-grid, the marker
      ring). Without it the strokes resolve to nothing. */
   const wrap=h("div",{class:"scout-panel lg-fftr sx trg"});
@@ -18915,7 +18936,7 @@ function _lgFourTrend(){
         wrap.appendChild(h("div",{class:"lg-empty"},"The league's games could not be read: "+((e&&e.message)||e)+". Press “Read again”.")); });
   };
   const paint=(R)=>{
-    wrap.innerHTML=""; wrap.appendChild(banner());
+    wrap.innerHTML=""; wrap.appendChild(banner()); if(TB) TB.reset();
     const G=R.games, N=G.length, L=leagueState();
     if(!N){ wrap.appendChild(h("div",{class:"lg-empty"},"No finished game of ours with a play by play yet.")); return; }
     const rows=G;
@@ -19083,7 +19104,9 @@ function _lgFourTrend(){
     const body=h("div",{class:"lg-ffbody"});
     /* EACH TABLE A BOX, FOLDED TO ITS TITLE - the first one open - so the league's thirteen
        tables are a list to pick from, not a page to scroll through */
-    const sec=(title, sub)=>{ const s=h("details",{class:"trg-box"}, h("summary",{}, h("b",{}, title)),
+    const sec=(title, sub)=>{
+      if(TB){ const s=h("div",{class:"lg-ffgrp trg-sec"}, h("div",{class:"lg-ffgrp-h"}, title), sub? h("div",{class:"trg-sub"}, sub) : null); TB.add(title, s); return s; }
+      const s=h("details",{class:"trg-box"}, h("summary",{}, h("b",{}, title)),
       sub? h("div",{class:"trg-sub"}, sub) : null); if(!body.children.length) s.open=true; body.appendChild(s); return s; };
     const open=g=>{ try{ _lgGameOpen(g.g); }catch(e){} };
     const win=g=>g.us.pts>g.them.pts;
@@ -25908,7 +25931,7 @@ function _paceStats(hist, no, games, pts, noB, sc){
   const nb=Array.isArray(noB)? noB.reduce((x,y)=>x+(y||0),0) : 0, nAll=n+nb;
   const shA=(a,b)=>{ let c=0; for(let i=a;i<=b;i++) c+=(hist[i]||0)+((noB&&noB[i])||0); return c/nAll; };
   const poss=n+(no||0);
-  return { sc:(sc && sc.n)? { n:sc.n, pts:sc.pts, ppp:sc.pts/sc.n } : null, n:n, avg:s/n, med:med, early:shA(0,7), mid:shA(8,15), late:shA(16,24), eP:pp(0,7), mP:pp(8,15), lP:pp(16,24), no:no||0, poss:poss,
+  return { sc:(sc && sc.n)? { n:sc.n, pts:sc.pts, ppp:sc.pts/sc.n } : null, nAll:nAll, n:n, avg:s/n, med:med, early:shA(0,7), mid:shA(8,15), late:shA(16,24), eP:pp(0,7), mP:pp(8,15), lP:pp(16,24), no:no||0, poss:poss,
     ppg:games? poss/games : null, bins:PACE_BINS.map(b=>sh(b[0],b[1])) };
 }
 function _paceOf(first, side){ if(!first) return null;
@@ -26241,7 +26264,7 @@ function _postPace(P, home){
        the league's in that range (their row the other way round - their points are ours
        allowed), the share of the first shots as the bar under it */
     const tb=h("table",{class:"lg-tbl pace-tbl pace-v pace-post-t"});
-    tb.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{class:"l"},""), h("th",{},"Avg"), ...PACE_BANDS.map(b=>h("th",{title:"points a possession of the possessions whose first shot went up in "+b[3]+" · the bar: the share of first shots"}, b[3])), h("th",{title:"points a rebound after an offensive rebound - kept apart from the first shot's second"},"2nd chance"), h("th",{},"Shots")));
+    tb.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{class:"l"},""), h("th",{},"Avg"), ...PACE_BANDS.map(b=>h("th",{title:"points a possession of the possessions whose first shot went up in "+b[3]+" · the bar: the share of first shots"}, b[3])), h("th",{title:"points a rebound after an offensive rebound - kept apart from the first shot's second"},"2nd chance"), h("th",{title:"possessions: those with a first shot and those that ended without one (a turnover, a foul trip)"},"Poss"), h("th",{title:"possessions with a first shot"},"Shots")));
     const mx={}; PACE_BANDS.forEach(b=>{ mx[b[0]]=Math.max.apply(null, [0.01].concat(rows.map(r=>r[1][b[2]]||0))); });
     rows.forEach(r=>{ const S=r[1], ref=R.lg, isLg=r[2]==="lg";
       const tr=h("tr",{class:"pp-"+r[2]}, h("td",{class:"l lg-team"}, h("i",{class:"pp-dot "+r[2]}), r[0]),
@@ -26252,6 +26275,7 @@ function _postPace(P, home){
         const tone=d==null? "" : (them? -d : d)>=0.15? "up" : (them? -d : d)<=-0.15? "dn" : "";
         tr.appendChild(h("td",{class:"pnum pace-sc2 "+tone, title:c? c.pts+" points after "+c.n+" offensive rebounds"+(rf? " · league "+rf.ppp.toFixed(2) : "") : ""},
           c? [h("b",{}, v.toFixed(2)), (isLg? null : h("small",{}, " "+c.n+" OREB · "+c.pts+" pts"))] : "—")); }
+      tr.appendChild(h("td",{class:"pnum"}, h("b",{}, String(S.nAll||S.poss||S.n))));
       tr.appendChild(h("td",{class:"pnum"}, String(S.n)));
       tb.appendChild(tr); });
     box.appendChild(h("div",{class:"pb-scroll"}, tb));

@@ -3513,6 +3513,9 @@
      say — and anything still unnamed is kept apart rather than guessed at. */
   /* named after the play and not the end, so only the staff can say which it is */
   var OOB_NAMED = { "PIO PIO": "Baseline" };
+  var EARLY_NAMED = { "77": 1, "54": 1 };
+  /* not ours to list among the sets: a defensive call and two the staff does not want on the table */
+  var SET_HIDE = /^(middle pnr|dagger|regular press)$/i;
   function phaseOf(cat) {
     var fam = actionFamily(cat), c = String(cat || "").toUpperCase().trim();
     /* SOB and BOB are the same two ends written short - SLOB has no "SOB" in it and
@@ -3520,6 +3523,8 @@
     if (/\bSLOB\b/.test(c) || /\bSOB\b/.test(c)) return "Sideline";
     if (/\bBLOB\b/.test(c) || /\bBOB\b/.test(c)) return "Baseline";
     if (OOB_NAMED[c]) return OOB_NAMED[c];
+    /* the staff's early offense: these sets are run straight off the break */
+    if (EARLY_NAMED[c]) return "Early offense";
     if (fam === "Fastbreak") return "Transition";
     if (fam === "Secondary break") return "Early offense";
     if (fam === "ATO") return "After timeout";
@@ -3615,7 +3620,7 @@
         var ph0 = phaseOf(q.first);
         if (!SET_FAMS[fam] && !/^(early offense|transition)$/i.test(ph0)) return;
         var k = String(q.first || "").trim();
-        if (!k || /defen[cs]e/i.test(k)) return;
+        if (!k || /defen[cs]e/i.test(k) || SET_HIDE.test(k)) return;
         var e = bySet[k] || (bySet[k] = { k: k, fam: fam, n: 0, pts: 0, per: {} });
         if (!bySet[k].seen) { order.push(k); bySet[k].seen = 1; }
         e.n++; e.pts += q.pts || 0;
