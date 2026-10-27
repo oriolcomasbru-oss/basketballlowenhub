@@ -27726,8 +27726,9 @@ function _dashOppPrint(card, title){
   };
   go(0);
 }
-/* THE LAST GAME ON ONE SHEET: the key ideas of the post game on the left, the numbers - score,
-   quarters, our tagging of offense and defense - on the right, the whole fitted to a landscape A4 */
+/* THE LAST GAME ON TWO SHEETS, as the next opponent: the numbers - score, quarters, our tagging
+   of offense and defense - on the first, the key ideas of the post game on the second, in as
+   many columns as leave the letters largest; each fitted to a landscape A4 */
 function _dashPostPrint(card, title){
   const area=$("#print-area"); if(!area || !card) return;
   const body=card.__b;
@@ -27737,14 +27738,19 @@ function _dashPostPrint(card, title){
     const notesSub=[...body.querySelectorAll(".dash-sub")].filter(s=>/Post game notes/.test(((s.querySelector("h4")||{}).textContent)||""))[0];
     const notesBlk=notesSub? notesSub.closest(".dash-blk") : null;
     const clean=el=>{ el.querySelectorAll("button,input,.dash-go,.dash-src").forEach(x=>x.remove()); return el; };
-    const left=h("div",{class:"dop-pl"}, notesSub? clean(notesSub.cloneNode(true)) : h("div",{class:"dash-miss"},"No key ideas marked in the post game."));
-    const right=h("div",{class:"dop-pr"});
-    [...body.children].forEach(ch=>{ if(ch!==notesBlk) right.appendChild(clean(ch.cloneNode(true))); });
-    const p=h("div",{class:"dop-fit"}, h("div",{class:"dop-top"}, h("b",{}, "Post game"), h("span",{}, title)), h("div",{class:"dop-post"}, left, right));
-    area.appendChild(h("div",{class:"dop-page"}, p));
+    const top=t=>h("div",{class:"dop-top"}, h("b",{}, "Post game"), h("span",{}, t));
+    const p1=h("div",{class:"dop-fit"}, top(title));
+    [...body.children].forEach(ch=>{ if(ch!==notesBlk) p1.appendChild(clean(ch.cloneNode(true))); });
+    const pk=notesSub? notesSub.querySelector(".dash-pk") : null;
+    const p2=h("div",{class:"dop-fit dop-pnotes"}, top(title+" · key ideas"), pk? clean(pk.cloneNode(true)) : h("div",{class:"dash-miss"},"No key ideas marked in the post game."));
+    [p1, p2].forEach(p=>area.appendChild(h("div",{class:"dop-page"}, p)));
     const PW=1058, PH=715;
-    const fit=W=>{ p.style.zoom="1"; p.style.width=W+"px"; return Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); };
-    const refit=()=>{ let best={ s:0, w:1400 }; [1100,1250,1400,1550,1700].forEach(w=>{ const s=fit(w); if(s>best.s) best={ s:s, w:w }; }); fit(best.w); p.style.zoom=best.s.toFixed(4); };
+    const fit=(p, W)=>{ p.style.zoom="1"; p.style.width=W+"px"; return Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); };
+    const refit=()=>{
+      let b1={ s:0, w:1400 }; [1100,1250,1400,1550].forEach(w=>{ const s=fit(p1, w); if(s>b1.s) b1={ s:s, w:w }; }); fit(p1, b1.w); p1.style.zoom=b1.s.toFixed(4);
+      let b2={ s:0, c:3, cw:380 };
+      [300,340,380,420].forEach(cw=>[2,3,4].forEach(c=>{ p2.style.setProperty("--cols", String(c)); const s=fit(p2, cw*c); if(s>b2.s) b2={ s:s, c:c, cw:cw }; }));
+      p2.style.setProperty("--cols", String(b2.c)); fit(p2, b2.cw*b2.c); p2.style.zoom=b2.s.toFixed(4); };
     document.body.classList.add("dop-measure");
     refit();
     const mq=window.matchMedia? window.matchMedia("print") : null, onMq=e=>{ if(e.matches) refit(); };
@@ -38049,10 +38055,11 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dop-top b{font:700 13px Oswald,sans-serif;letter-spacing:.18em;text-transform:uppercase}
 .dop-top span{font:600 12px 'IBM Plex Mono',monospace}
 .dop-fit .dash-blk,.dop-fit .dash-3c{margin-top:0}
-.dop-post{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);gap:16px;align-items:start}
-.dop-post .dop-pl .dash-pk{grid-template-columns:1fr}
-.dop-post .dop-pl .dash-pk .col{border-left:0;border-top:1px solid #e6ebf2}.dop-post .dop-pl .dash-pk .col:first-child{border-top:0}
-.dop-post .dop-pr{display:grid;gap:10px;align-content:start;min-width:0}
+/* the key ideas on paper run on in columns, a column breaking only between two lists */
+.dop-pnotes .dash-pk{display:block;column-count:var(--cols,3);column-gap:14px;border:0;background:none}
+.dop-pnotes .dash-pk .col{display:block;border:0;border-radius:6px;padding:6px 10px;margin:0 0 8px;break-inside:auto}
+.dop-pnotes .dash-pk .sl{break-after:avoid;page-break-after:avoid}
+.dop-pnotes .dash-pk .g,.dop-pnotes .dash-pk .solo{break-inside:avoid;page-break-inside:avoid}
 .dop-fit .dash-ts{grid-template-columns:repeat(4,minmax(0,1fr))!important}
 .dop-fit .dash-ros5{grid-template-columns:repeat(5,minmax(0,1fr))!important}
 .dop-fit .dash-3c{grid-template-columns:minmax(0,1fr) minmax(0,1.45fr) minmax(0,1fr)!important}
