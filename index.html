@@ -15700,6 +15700,13 @@ function _gpTeamLine(tm, them){
 }
 /* FOULS, BY THE QUARTER BEING PLAYED: in the first half red from three, in the third from
    three, in the fourth and the overtimes from four; five is out, whatever the quarter */
+/* THE MEN WITH MOST FOULS, ALWAYS MARKED: the three of a team who carry most (two or more),
+   whatever the quarter - in trouble or not yet, the bench sees who is closest */
+function _gpMarkFouls(t){
+  const cells=[...t.querySelectorAll("td.pf")], v=cells.map(c=>parseInt(c.textContent,10)||0);
+  const top=v.filter(x=>x>=2).sort((a,b)=>b-a).slice(0,3), cut=top.length? top[top.length-1] : 99;
+  cells.forEach((c,i)=>{ if(v[i]>=2 && v[i]>=cut && !c.classList.contains("hot") && !c.classList.contains("out")) c.classList.add("most"); });
+}
 function _gpFoulLv(pf, qi){
   pf=Number(pf)||0;
   if(pf>=5) return "out";
@@ -16908,6 +16915,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
           t.appendChild(h("tr",{class:(on? "on " : "")+(fl==="out"? "fout" : "")}, h("td",{class:"ps"},""), h("td",{class:"n"}, String(p.num||"")),
             h("td",{class:"l nm"}, _lgLastName(p.name||"")), h("td",{class:"hist"},""), h("td",{class:"hist"},"new"),
             h("td",{class:"rl"}, c? _gpMmss(c.sec) : "0:00"), h("td",{class:"st"+(on && c.stint>=270? " blink" : "")}, on? _gpMmss(c.stint) : ""), h("td",{class:"pf "+fl}, String(p.pf||0)), ..._gpBoxTds(p, true))); });
+        _gpMarkFouls(t);
         slot.appendChild(t);
         slot.appendChild(h("div",{class:"gp5-note"}, "Grey: their last "+(R? R.n : "")+" games · colour: this game"+(live? ", live" : "")));
         return;
@@ -17250,6 +17258,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
           h("td",{class:"pf "+fl}, r.pf? String(r.pf) : (L && L.feed? "0" : "—")),
           ..._gpBoxTds(byId[r.id]||null, !!(L && L.feed))));
       });
+      _gpMarkFouls(t);
       wrap.appendChild(t);
       wrap.appendChild(h("div",{class:"gp5-note"}, L && L.feed? (live? "Live from the league's play by play · green = on the floor · amber stint = 8 minutes or more" : "From the league's play by play of this game")
         : "Plan only until the game starts · the real minutes, the five on the floor and the fouls fill in from the tip-off"));
@@ -17651,7 +17660,10 @@ function renderPlanSection(sec, canEd, save, allSecs){
               const t0=base+c*60, t1=base+(c+1)*60;
               const W=_gpLiveWin(L.feed, L.uc, o=>o.qi===Q.qi && o.t>=t0 && (o.t<t1 || c===GP_COLS-1), {});
               const P=S=>{ const pos=Math.max(0, S.fga-S.or+S.tov+0.44*S.fta); return { pos:pos, pts:S.pts, ppp:pos>=0.5? S.pts/pos : null }; };
-              M.push({ o:P(W.u), d:P(W.t), cur:el<(c+1)*60 && el<GP_COLS*60 });
+              /* the score at the end of the minute, for the margin; the rebounds of the minute */
+              const C=_gpLiveWin(L.feed, L.uc, o=>o.t<t1 || (c===GP_COLS-1 && o.qi===Q.qi), {});
+              M.push({ o:P(W.u), d:P(W.t), cur:el<(c+1)*60 && el<GP_COLS*60, mg:C.u.pts-C.t.pts, ch:W.u.pts-W.t.pts, su:C.u.pts, st:C.t.pts,
+                or:W.u.or, dr:W.u.dr, tor:W.t.or, tdr:W.t.dr });
             }
             Object.keys(rateMemo).forEach(k=>delete rateMemo[k]); rateMemo[key]=M; }
           const qn="Q"+(Q.qi+1);
@@ -17664,9 +17676,27 @@ function renderPlanSection(sec, canEd, save, allSecs){
                   title:when+" · "+(side==="o"? "we scored " : "they scored ")+x.pts+" in ≈"+x.pos.toFixed(1)+" possessions"+(m.cur? " (minute being played)" : "")},
                 h("b",{}, ppp==null? "—" : ppp.toFixed(2)), h("em",{}, x.pts+" pts"))); });
             return tr; };
+          /* the margin on top: who is in front at the end of the minute and by how much, in green
+             when the minute made it better and red when worse */
+          const mrow=()=>{ const tr=h("tr",{class:"gp5-rt mg"}, h("td",{class:"gp2-pos", title:"the score's difference at the end of each minute · green: the minute made it better, red: worse"}, "Margin"));
+            M.forEach((m,c)=>{ if(!m){ tr.appendChild(h("td",{class:"v"})); return; }
+              tr.appendChild(h("td",{class:"v mgc "+(m.ch>0? "good" : m.ch<0? "bad" : "")+(m.cur? " cur" : ""), title:qn+" "+(GP_COLS-c)+"′ · "+m.su+"–"+m.st+" · this minute "+(m.ch>0? "+" : "")+m.ch},
+                h("b",{}, m.mg>0? "+"+m.mg : m.mg<0? "−"+(-m.mg) : "0"))); });
+            return tr; };
+          /* the glass under the ratings: our DREB%, our OREB% and theirs */
+          const rrow=(lab, get, good, tip)=>{ const tr=h("tr",{class:"gp5-rt rb"}, h("td",{class:"gp2-pos", title:tip}, lab));
+            M.forEach(m=>{ if(!m){ tr.appendChild(h("td",{class:"v"})); return; }
+              const x=get(m); if(!x || !x[1]){ tr.appendChild(h("td",{class:"v thin"}, h("b",{},"·"))); return; }
+              const v=100*x[0]/x[1];
+              tr.appendChild(h("td",{class:"v "+good(v)+(m.cur? " cur" : ""), title:lab+" · "+x[0]+" of "+x[1]}, h("b",{}, Math.round(v)+"%"))); });
+            return tr; };
           return [ h("tr",{class:"gp5-rt gap"}, h("td",{colspan:String(GP_COLS+1)})),
+            mrow(),
             row("OER", "o", "our points a possession in each minute (possessions ≈ from the box score)"),
-            row("DER", "d", "their points a possession in each minute (possessions ≈ from the box score)") ];
+            row("DER", "d", "their points a possession in each minute (possessions ≈ from the box score)"),
+            rrow("DREB%", m=>[m.dr, m.dr+m.tor], v=>v>=80? "good" : v<65? "bad" : "", "our defensive rebounds of their misses"),
+            rrow("OREB%", m=>[m.or, m.or+m.tdr], v=>v>=35? "good" : v<=20? "bad" : "", "our offensive rebounds of our misses"),
+            rrow("Opp OREB%", m=>[m.tor, m.tor+m.dr], v=>v<=20? "good" : v>=35? "bad" : "", "their offensive rebounds of their misses") ];
         };
         const marker=()=>{ rotHost.querySelectorAll(".gp5-now,.gp5-real,.gp5-rt").forEach(n=>n.remove());
           rotHost.querySelectorAll(".gp2-st.soon,.gp2-st.diff").forEach(n=>n.classList.remove("soon","diff"));
@@ -17798,14 +17828,14 @@ function renderPlanSection(sec, canEd, save, allSecs){
         { const ab=safe(()=>_gpAlertBar()); wrap5.appendChild(ab); if(ab.__rules) wrap5.appendChild(ab.__rules); }
         wrap5.appendChild(sect("us rot", "Our rotation", "the quarter being played · its plan on the right", [planBtn, _wipTag()], rotHost));
 
-        /* IN THE GAME, ON TOP: what the bench reads all the time - the game right under the rotation,
-           then both teams, then their sets */
+        /* IN THE GAME, ON TOP: what the bench reads all the time - both teams right under the
+           rotation, then the game, then their sets */
         const lv=safe(()=>_gpLiveBlock());
-        wrap5.appendChild(sect("live", "The game", "", lv.__stat||null, lv));
         const row2=h("div",{class:"gp5-row2 gp5-teams"},
           sect("us", "Our team", "timeouts · fouls · players", null, safe(()=>playerStatusBlock())),
           sect("them", "Their team", "timeouts · fouls · players, last games and live", null, safe(()=>oppFiveBlock(true))));
         wrap5.appendChild(row2);
+        wrap5.appendChild(sect("live", "The game", "", lv.__stat||null, lv));
         { const setsSec=sect("them sets", "Their key sets", "see the call, find the play", null, safe(()=>keySetsBlock()));
           /* in game mode their sets fold to their heading: one tap opens them, another closes them */
           const hd=setsSec.querySelector(".gp4-h"); if(hd) hd.addEventListener("click", ()=>{ if(wrap5.classList.contains("gm")) setsSec.classList.toggle("open"); });
@@ -39564,6 +39594,9 @@ body.dark .gp9-five .pl.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp5-t tr.on td{background:rgba(31,138,76,.13)}
 .gp5-t tr.on td.nm{box-shadow:inset 3px 0 0 #1f8a4c}
 .gp5-t td.pf.hot{background:#d8524e;color:#fff;font-weight:800}
+.gp5-t td.pf.most{background:#f6c3bf;color:#7a1511;font-weight:800}
+.gp5 tr.gp5-rt td.v.mgc.good{background:#2f9e86;color:#fff}.gp5 tr.gp5-rt td.v.mgc.bad{background:#d8524e;color:#fff}
+.gp5 tr.gp5-rt.rb td.v b{font-size:10px}
 .gp5-t td.pf.out{background:#141821;color:#fff;font-weight:800}
 .gp5-t tr.fout td{opacity:.6}
 .gp5-t tr.fout td.pf{opacity:1}
@@ -43253,6 +43286,32 @@ body.edit-mode .phx.phx .roster-columns .card .rm-x:hover{opacity:1}
   .ps-item-in,.ps-endzone,.ps-total{font-size:11.5px}
   .adm-pv-hint{font-size:11px}
 }
+/* PRE GAME CARDS, THE NUMBERS WITH A HIERARCHY. Red blocks, orange percentages and red
+   tints on the same row of six all shouted at once. Now the numbers are ink, the
+   percentages a quiet grey beside them, and what stands out says so with a line, not a
+   block: a solid red bar over the best (top 10 of the BBL or first in his team) with the
+   number heavier, a thin one over the next ones, and the rank small under it. The card
+   beside the video follows the same rule. */
+.phx .card .stat-value .pct,.phx.phx .stat-value .sv-pc,.phx.phx .stat-value .pct{color:#8a93a2!important;font-weight:600!important}
+.phx .card .stat-cell.hl-hot,.phx .card .stat-cell.hl-warm{background:none!important;border-radius:0!important;position:relative}
+.phx .card .stat-cell.hl-hot{box-shadow:inset 0 3px 0 #d8524e!important}
+.phx .card .stat-cell.hl-warm{box-shadow:inset 0 2px 0 rgba(216,82,78,.45)!important}
+.phx .card .stat-cell.hl-hot .stat-value,.phx .card .stat-cell.hl-hot .stat-label,.phx .card .stat-cell.hl-hot .sv-sep{color:#141821!important}
+.phx .card .stat-cell.hl-hot .stat-value{font-weight:800!important}
+.phx .card .stat-cell.hl-hot .sv-pc,.phx .card .stat-cell.hl-hot .pct{color:#8a93a2!important}
+.phx .card .stat-cell.hl-warm .stat-value{color:#141821!important}
+.phx .card .stat-cell.hl-hot .hl-why{color:#c0403c!important}
+.phx .card .stat-cell.hl-warm .hl-why{color:#8a93a2!important}
+.phx .card .stat-cell .hl-why{font-weight:600!important}
+.phx .card .stat-cell.hl-hot .hl-cell{color:#c0403c}
+.modal-stats .modal-stat-cell.hl-hot,.modal-stats .modal-stat-cell.hl-warm{background:none!important;border-radius:0!important}
+.modal-stats .modal-stat-cell.hl-hot{box-shadow:inset 0 3px 0 #d8524e}
+.modal-stats .modal-stat-cell.hl-warm{box-shadow:inset 0 2px 0 rgba(216,82,78,.45)}
+.modal-stats .modal-stat-cell.hl-hot *{color:inherit!important}
+.modal-stats .modal-stat-cell.hl-hot .modal-stat-value{font-weight:800}
+.modal-stats .modal-stat-cell.hl-hot .modal-stat-why,.modal-stats .modal-stat-cell.hl-hot .modal-stat-basis{color:#c0403c!important}
+.modal-stats .modal-stat-cell.hl-warm .modal-stat-value{color:inherit!important}
+.modal-stats .modal-stat-cell.hl-warm .modal-stat-why,.modal-stats .modal-stat-cell.hl-warm .modal-stat-basis{color:#8a93a2!important}
 </style>
 
 <script defer src="/stats.js"></script>
