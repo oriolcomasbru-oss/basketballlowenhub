@@ -27726,6 +27726,39 @@ function _dashOppPrint(card, title){
   };
   go(0);
 }
+/* THE LAST GAME ON ONE SHEET: the key ideas of the post game on the left, the numbers - score,
+   quarters, our tagging of offense and defense - on the right, the whole fitted to a landscape A4 */
+function _dashPostPrint(card, title){
+  const area=$("#print-area"); if(!area || !card) return;
+  const body=card.__b;
+  const go=(tries)=>{
+    if(tries<14 && /Reading /.test(body.textContent||"")){ setTimeout(()=>go(tries+1), 300); return; }
+    area.innerHTML="";
+    const notesSub=[...body.querySelectorAll(".dash-sub")].filter(s=>/Post game notes/.test(((s.querySelector("h4")||{}).textContent)||""))[0];
+    const notesBlk=notesSub? notesSub.closest(".dash-blk") : null;
+    const clean=el=>{ el.querySelectorAll("button,input,.dash-go,.dash-src").forEach(x=>x.remove()); return el; };
+    const left=h("div",{class:"dop-pl"}, notesSub? clean(notesSub.cloneNode(true)) : h("div",{class:"dash-miss"},"No key ideas marked in the post game."));
+    const right=h("div",{class:"dop-pr"});
+    [...body.children].forEach(ch=>{ if(ch!==notesBlk) right.appendChild(clean(ch.cloneNode(true))); });
+    const p=h("div",{class:"dop-fit"}, h("div",{class:"dop-top"}, h("b",{}, "Post game"), h("span",{}, title)), h("div",{class:"dop-post"}, left, right));
+    area.appendChild(h("div",{class:"dop-page"}, p));
+    const PW=1058, PH=715;
+    const fit=W=>{ p.style.zoom="1"; p.style.width=W+"px"; return Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); };
+    const refit=()=>{ let best={ s:0, w:1400 }; [1100,1250,1400,1550,1700].forEach(w=>{ const s=fit(w); if(s>best.s) best={ s:s, w:w }; }); fit(best.w); p.style.zoom=best.s.toFixed(4); };
+    document.body.classList.add("dop-measure");
+    refit();
+    const mq=window.matchMedia? window.matchMedia("print") : null, onMq=e=>{ if(e.matches) refit(); };
+    if(mq){ if(mq.addEventListener) mq.addEventListener("change", onMq); else if(mq.addListener) mq.addListener(onMq); }
+    const st=document.createElement("style"); st.textContent="@page{size:A4 landscape;margin:7mm} html,body{margin:0!important;padding:0!important}"; document.body.appendChild(st);
+    const done=()=>{ document.body.classList.remove("printing","printing-dop","dop-measure"); area.innerHTML=""; st.remove(); window.removeEventListener("afterprint", done);
+      if(mq){ if(mq.removeEventListener) mq.removeEventListener("change", onMq); else if(mq.removeListener) mq.removeListener(onMq); } };
+    window.addEventListener("afterprint", done);
+    document.body.classList.remove("dop-measure");
+    document.body.classList.add("printing","printing-dop");
+    setTimeout(()=>{ try{ window.print(); }catch(e){ done(); } }, 120);
+  };
+  go(0);
+}
 /* THEIR KEY SETS: the ten the staff starred in the pre game playbook that they run most - with
    the staff's names, calls and splits, how often and what they return, and game by game, as the
    pre game playbook shows it: one box a tagged game, oldest first, the runs in each */
@@ -27997,7 +28030,8 @@ function _dashPostSplit(box, g){
       h("div",{class:"dash-h5"},"Sets that worked · half court"), good.length? h("div",{class:"dash-sets"}, good.map(setRow)) : h("div",{class:"dash-src"},"No half court set scored a point a possession on two runs or more."),
       h("div",{class:"dash-h5 bad"},"Sets that did not"), bad.length? h("div",{class:"dash-sets"}, bad.map(setRow)) : h("div",{class:"dash-src"},"No set ran twice under 0.80."));
     const C={}; dp.forEach(q=>{ const k=q.label||"—"; (C[k]=C[k]||{ n:0, p:0 }); C[k].n++; C[k].p+=q.pts||0; });
-    const cs=Object.keys(C).map(k=>({ k:k, n:C[k].n, v:C[k].p/C[k].n })).filter(x=>x.n>=2).sort((a,b)=>b.n-a.n).slice(0,8);
+    /* BALANCE counts in the DER above, it is only not a row of its own */
+    const cs=Object.keys(C).map(k=>({ k:k, n:C[k].n, v:C[k].p/C[k].n })).filter(x=>x.n>=2 && !/^balance$/i.test(String(x.k).trim())).sort((a,b)=>b.n-a.n).slice(0,8);
     const conRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" poss"), h("em",{class:x.v<=0.85? "lo" : x.v>=1.15? "hi" : ""}, x.v.toFixed(2)));
     const tbTone=o=>!o? "" : o.ppp<=0.9? "good" : o.ppp>=1.2? "bad" : "";
     const def=h("div",{class:"dash-sub"}, h("h4",{},"Defense"),
@@ -28317,6 +28351,10 @@ function renderDashboard(){
       const x=G.last;
       const c=card("wide", "Last game · Post game", x? ()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:x.g.id } }) : ()=>_dashOpen("teamscout"), "Open the post game");
       if(!x){ c.__b.appendChild(h("div",{class:"dash-miss"},"No game played yet this season.")); return; }
+      /* the card on one sheet: the key ideas on one side, the numbers on the other */
+      { const ch=c.querySelector(".dash-ch"), pb=h("button",{type:"button", class:"dash-go dash-print", title:"Print the card on one A4 page: the key ideas on the left, the numbers on the right"},"🖨 Print");
+        pb.addEventListener("click",()=>_dashPostPrint(c, (x.g.venue==="Away"? "@ " : "vs ")+x.g.opponent+" · "+_dashFmt(x.g.date)+(x.res? " · "+x.res.us+"–"+x.res.them : "")));
+        ch.insertBefore(pb, ch.querySelector(".dash-go")); }
       const g=x.g, r=x.res, st=h("span",{}, pill(["wait","…"]));
       c.__b.appendChild(h("div",{class:"dash-hero"}, crest(g),
         h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent), h("span",{}, _dashFmt(g.date)+" · "+(g.competition||"")+(r && r.ot? " · OT" : ""))),
@@ -38011,6 +38049,10 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dop-top b{font:700 13px Oswald,sans-serif;letter-spacing:.18em;text-transform:uppercase}
 .dop-top span{font:600 12px 'IBM Plex Mono',monospace}
 .dop-fit .dash-blk,.dop-fit .dash-3c{margin-top:0}
+.dop-post{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);gap:16px;align-items:start}
+.dop-post .dop-pl .dash-pk{grid-template-columns:1fr}
+.dop-post .dop-pl .dash-pk .col{border-left:0;border-top:1px solid #e6ebf2}.dop-post .dop-pl .dash-pk .col:first-child{border-top:0}
+.dop-post .dop-pr{display:grid;gap:10px;align-content:start;min-width:0}
 .dop-fit .dash-ts{grid-template-columns:repeat(4,minmax(0,1fr))!important}
 .dop-fit .dash-ros5{grid-template-columns:repeat(5,minmax(0,1fr))!important}
 .dop-fit .dash-3c{grid-template-columns:minmax(0,1fr) minmax(0,1.45fr) minmax(0,1fr)!important}
