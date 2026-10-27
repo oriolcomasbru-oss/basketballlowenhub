@@ -3610,9 +3610,12 @@
     games.forEach(function (g, gi) {
       (g.m && g.m.poss ? g.m.poss : []).forEach(function (q) {
         var fam = actionFamily(q.first);
-        if (!SET_FAMS[fam]) return;
+        /* early offense and transition have no called sets, but what they were tagged as is
+           still a line of their own under the phase; a defensive label is not one of ours */
+        var ph0 = phaseOf(q.first);
+        if (!SET_FAMS[fam] && !/^(early offense|transition)$/i.test(ph0)) return;
         var k = String(q.first || "").trim();
-        if (!k) return;
+        if (!k || /defen[cs]e/i.test(k)) return;
         var e = bySet[k] || (bySet[k] = { k: k, fam: fam, n: 0, pts: 0, per: {} });
         if (!bySet[k].seen) { order.push(k); bySet[k].seen = 1; }
         e.n++; e.pts += q.pts || 0;
@@ -3661,7 +3664,7 @@
        the name, green for the best and red for the worst, and nothing else on the row. Ranked on points per
        possession over the season, among the sets called often enough to be ranked at
        all - the same cut as the colour: under it a season figure is an anecdote. */
-    var rankable = rows.filter(function (r) { return r.n >= MIN; })
+    var rankable = rows.filter(function (r) { return r.n >= MIN && SET_FAMS[r.fam]; })
       .sort(function (a, b) { return (b.pts / b.n) - (a.pts / a.n) || (b.n - a.n); });
     var nMark = Math.min(8, Math.floor(rankable.length / 2));
     var bestAt = {}, worstAt = {};
@@ -3716,7 +3719,7 @@
     /* the band rows stay where they are when a column is sorted, which is what the
        page's sorter does with a single-cell row that spans the table */
     sec.appendChild(trTable(head, body));
-    return rows.filter(function (r) { return r.n >= MIN; });
+    return rows.filter(function (r) { return r.n >= MIN && SET_FAMS[r.fam]; });
   }
 
 
