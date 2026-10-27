@@ -2038,8 +2038,10 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
 .gp-pairsblock{border:1px solid var(--line,#e6e8ec);border-radius:12px;padding:10px 12px;background:var(--panel,#fff)}
 .gp-pairswrap{margin-top:16px}
 /* permissions / admin dialog now fits its content and stays centered */
-#dialogCard:has(.admin){width:min(860px,95vw)!important;max-width:95vw!important;padding:18px 20px}
-.admin{width:100%!important;max-width:100%!important;max-height:80vh}
+#dialogCard:has(.admin){width:min(1700px,97vw)!important;max-width:97vw!important;padding:18px 22px}
+.admin{width:100%!important;max-width:100%!important;max-height:90vh}
+.use-tw{overflow-x:auto;max-width:100%}
+.use-t td.use-last.on{color:#17805a;font-weight:700}
 /* ===== v5: A4-proportion report, compact game plan, dual views, summary layout, table editor ===== */
 /* A report is a dashboard, not a page of prose: a 1100px column down the middle of a
    1900px screen is eight hundred pixels of margin and three tables fewer per line. */
@@ -5911,6 +5913,8 @@ function _useMerge(a, b){
   out.days = days;
   /* what was brought over from the old hub travels with the document, whoever writes it */
   const lg = (a && a.legacy) || (b && b.legacy); if(lg) out.legacy = lg;
+  /* the last moment the person was using the hub, from any of their devices */
+  const sn = Math.max((a && a.seen) || 0, (b && b.seen) || 0); if(sn) out.seen = sn;
   return _useTrim(out);
 }
 /* THE OLD HUB'S RECORD. Before this app the players studied the opponent in another one,
@@ -6034,6 +6038,8 @@ async function useFlush(){
   if(typeof _viewAs!=="undefined" && _viewAs) return;
   _useBusy = true;
   const mine = JSON.parse(JSON.stringify(_use));
+  /* THE LAST CONNECTION: when they last touched the hub, not when they last signed in */
+  mine.seen = Math.max(mine.seen || 0, _useAct || 0);
   _useDirty = false;
   try{
     /* another device may have written since this one loaded, so the two are merged
@@ -6423,6 +6429,16 @@ function _useFmtMin(sec){
   if(m<60) return m+"m";
   return Math.floor(m/60)+"h "+String(m%60).padStart(2,"0")+"m";
 }
+/* "now", "12 min ago", "today 09:41", "yesterday 18:02", "Mon 26/10 18:02" */
+function _useAgo(t){
+  if(!t) return "never";
+  const d=new Date(t), m=Math.round((Date.now()-t)/60000), hm=d.toLocaleTimeString("en-GB",{ hour:"2-digit", minute:"2-digit" });
+  if(m<2) return "now"; if(m<60) return m+" min ago";
+  const day=x=>new Date(x).toDateString(), y=new Date(Date.now()-86400000);
+  if(day(t)===day(Date.now())) return "today "+hm;
+  if(day(t)===y.toDateString()) return "yesterday "+hm;
+  return d.toLocaleDateString("en-GB",{ weekday:"short", day:"2-digit", month:"2-digit" })+" "+hm;
+}
 async function renderUsage(body, accounts, log){
   body.appendChild(h("div",{class:"adm-secttitle"},"Usage  ",
     h("span",{class:"adm-only"},"only you see this")));
@@ -6461,14 +6477,15 @@ async function renderUsage(body, accounts, log){
           const q=vids[id]=vids[id]||{n:0,where:p.where,title:p.title}; q.n+=p.n||0; }); });
       const top=Object.keys(views).sort((a,b)=>views[b]-views[a]).slice(0,3);
       const plays=Object.keys(vids).reduce((a,k)=>a+vids[k].n,0);
-      return { user:r.user, scope:r.scope, last:r.last, days:days.length, sec, opens, top, views,
+      return { user:r.user, scope:r.scope, last:r.last, seen:r.seen, days:days.length, sec, opens, top, views,
                plays, vidn:Object.keys(vids).length, vids, err:r.err };
     }).sort((a,b)=>b.sec-a.sec);
+    /* the table scrolls inside its own box when the screen is narrow, never the dialog */
     const mxSec=Math.max(1, ...sum.map(r=>r.sec));
     const t=h("table",{class:"use-t"});
     t.appendChild(h("tr",{class:"use-h"}, h("th",{class:"l"},"User"), h("th",{},"Days"),
       h("th",{},"Opens"), h("th",{},"Time"), h("th",{},"Per day"),
-      h("th",{class:"l"},"Where the time went"), h("th",{},"Videos"), h("th",{class:"l"},"Last seen")));
+      h("th",{class:"l"},"Where the time went"), h("th",{},"Videos"), h("th",{class:"l"},"Last connection")));
     sum.forEach(r=>{
       /* where the time went, as chips: the screen and its minutes */
       const where=r.top.length? r.top.map(v=>h("span",{class:"use-chip"}, (SECT_LABELS[v]||v)+" ", h("b",{}, _useFmtMin(r.views[v])))) : "—";
@@ -6482,10 +6499,10 @@ async function renderUsage(body, accounts, log){
         h("td",{title:Object.keys(r.vids).map(k=>(r.vids[k].title||k)+" \u00d7"+r.vids[k].n
           +(r.vids[k].where?(" ("+r.vids[k].where+")"):"")).join("\n")},
           r.plays? (r.plays+(r.vidn>1? (" / "+r.vidn) : "")) : "\u2014"),
-        h("td",{class:"l use-last"}, r.last? new Date(r.last).toLocaleString("en-GB") : "never"));
+        h("td",{class:"l use-last"+(r.seen && Date.now()-r.seen<15*60e3? " on" : ""), title:r.last? "last sign-in "+new Date(r.last).toLocaleString("en-GB") : ""}, _useAgo(r.seen)));
       t.appendChild(row);
     });
-    box.appendChild(t);
+    box.appendChild(h("div",{class:"use-tw"}, t));
     box.appendChild(h("div",{class:"use-foot"},
       "Time is counted only while the tab is open and something has been touched in the "
       +"last two minutes, so a page left open all night counts as nothing. Videos are "
@@ -6502,6 +6519,9 @@ async function renderUsage(body, accounts, log){
       try{ const x=await sbrpc("get_report",{p_token:SB_TOKEN,p_key:useKey(r.user)});
         const d=x&&x.ok&&x.report&&x.report.data;
         if(d&&d.days) r.doc=d;
+        /* written before the hub kept the moment: the last time their own hub saved it */
+        const at=x&&x.ok&&x.report? Date.parse(x.report.updated_at||"") : NaN;
+        r.seen=(d&&d.seen) || ((x&&x.report&&x.report.updated_by===r.user && isFinite(at))? at : null);
       }catch(e){ r.err=(e&&e.message)||"error"; }
     }));
     draw(rows);
