@@ -461,6 +461,20 @@
       return { cells: cells, cls: "sx-subrow" };
     });
   }
+  /* the line under TAG or BACK: their possessions that went on after their offensive
+     rebound, and the points that came after the first clip */
+  function scRows(o, cols) {
+    if (!o || !o.scn) return [];
+    var cells = [" + after their offensive rebound"];
+    var at = cols === 9 ? 5 : 6;
+    for (var i = 1; i < at; i++) cells.push("");
+    cells.push({ v: o.scn, cls: "sx-vol" });
+    cells.push("+" + o.scp);
+    cells.push({ v: "", cls: "" });
+    while (cells.length < cols - 1) cells.push("");
+    cells.push("their OREB");
+    return [{ cells: cells, cls: "sx-subrow" }];
+  }
   function fouledOnTheRebound(d, pv) {
     if (d.a >= pv.b) return false;
     if (!(has(d.tags, "Foul Drawn") || has(d.tags, "C1") || has(d.tags, "M1"))) return false;
@@ -468,8 +482,8 @@
   }
 
   function buildTransDef(rows) {
-    var o = { tag: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, sub: { miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } } },
-              back: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, sub: { to: { n: 0, pts: 0 }, miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } } }, events: [] };
+    var o = { tag: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, scn: 0, scp: 0, sub: { miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } } },
+              back: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, scn: 0, scp: 0, sub: { to: { n: 0, pts: 0 }, miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } } }, events: [] };
     /* how many of our possessions ended that way at all, paired or not: without
        it the table looks like the whole game when it is a slice of it */
     rows.forEach(function (r) {
@@ -489,6 +503,10 @@
         else if (mp && !ml) o.back.oreb += Math.min(ore, mp);
       }
     });
+    /* THE REST OF THEIR POSSESSION, APART: TAG and BACK count what their first clip scored -
+       whether we stopped the transition - and what came after their offensive rebound in the
+       same possession is kept beside it, so it is seen without being mixed in */
+    var chainAt = {}; chainDef(rows).forEach(function (q) { if (q.clips && q.clips[0]) chainAt[q.clips[0].a] = q; });
     for (var i = 1; i < rows.length; i++) {
       var d = rows[i], pv = rows[i - 1];
       if (!d.def || pv.def) continue;
@@ -499,10 +517,13 @@
       if (!kind) continue;
       if (fouledOnTheRebound(d, pv)) continue;
       o[kind].n++; o[kind].pts += points(d.tags);
+      var chq = chainAt[d.a];
+      if (chq && chq.clips.length > 1) { o[kind].scn++; o[kind].scp += Math.max(0, chq.pts - points(d.tags)); }
       /* BACK is two situations: after our turnover and after our miss at the rim (their rebound)
          the total, and each apart under it (after our make it is their full-court press, not BACK) */
       var sub = kind === "back" ? backSub(pv) : tagSub(pv);
-      if (sub) { o[kind].sub[sub].n++; o[kind].sub[sub].pts += points(d.tags); }
+      if (sub) { o[kind].sub[sub].n++; o[kind].sub[sub].pts += points(d.tags);
+        if (chq && chq.clips.length > 1) { var ss = o[kind].sub[sub]; ss.scn = (ss.scn || 0) + 1; ss.scp = (ss.scp || 0) + Math.max(0, chq.pts - points(d.tags)); } }
       /* each one with where it is in the video and its quarter, for the minute-by-minute table */
       o.events.push({ a: d.a, q: periodOf(d.tags), kind: kind, sub: sub, pts: points(d.tags) });
     }
@@ -543,7 +564,7 @@
     return w.charAt(0).toUpperCase() + w.slice(1);
   }
   function buildTransPractice(rows) {
-    var mk = function () { return { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, tn: 0, tpts: 0, mtu: 0 }; };
+    var mk = function () { return { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, tn: 0, tpts: 0, mtu: 0, scn: 0, scp: 0 }; };
     var o = { tag: mk(), back: mk(), mtuOdd: 0, orebLoose: 0, mtuBy: {} };
     o.back.sub = { to: { n: 0, pts: 0 }, miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } };
     o.tag.sub = { miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } };
@@ -591,6 +612,10 @@
       if (d.def && fouledOnTheRebound(d, pv)) continue;
       var p = points(d.tags);
       o[kind].n++; o[kind].pts += p;
+      /* the same rule as a game: their second chance after the action, apart */
+      var xp = 0, xn = 0;
+      for (var j = i + 1; j < rows.length && String(rows[j].cat || "").trim().toUpperCase() === "SECOND CHANCE" && rows[j].a - rows[j - 1].b <= 20; j++) { xp += points(rows[j].tags); xn++; }
+      if (xn) { o[kind].scn++; o[kind].scp += xp; }
       if (kind === "back") { var sb = backSub(pv); o.back.sub[sb].n++; o.back.sub[sb].pts += p; }
       else { var st = tagSub(pv); o.tag.sub[st].n++; o.tag.sub[st].pts += p; }
       if (has(d.tags, "Transition Attack Poss")) { o[kind].tn++; o[kind].tpts += p; }
@@ -1266,7 +1291,7 @@
        marks; when they are not, the block says so rather than drawing an empty
        table, and what is left of the question — the rebounding on our own
        misses — is the smaller table under it. */
-    var TDF = ["n", "pts", "of", "miss", "oreb", "tn", "tpts", "mtu"];
+    var TDF = ["n", "pts", "of", "miss", "oreb", "tn", "tpts", "mtu", "scn", "scp"];
     var tdZero = function () { var z = {}; TDF.forEach(function (f) { z[f] = 0; }); return z; };
     var TD = { tag: tdZero(), back: tdZero() }, defClips = 0, mtuOdd = 0, orebLoose = 0, mtuBy = {};
     sets.forEach(function (s) {
@@ -1314,9 +1339,9 @@
       sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%", "Missed tag up",
         "Possessions", "Pts conceded", "DER", "In transition", "Trans. pts", "We finished on"], [
         tdRowP("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2")
-      ].concat(backSubRows(TD.tag, TD.tag.n + TD.back.n, 12, TAG_SUB)).concat([
+      ].concat(backSubRows(TD.tag, TD.tag.n + TD.back.n, 12, TAG_SUB)).concat(scRows(TD.tag, 12)).concat([
         tdRowP("BACK \u00b7 after a miss at the rim or a turnover", TD.back, "M2 \u00b7 Turnover")
-      ]).concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 12)).concat([
+      ]).concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 12)).concat(scRows(TD.back, 12)).concat([
         tdTot
       ])));
       sTD.appendChild(el("div", "sx-sub", sets.length + (sets.length === 1 ? " session" : " sessions") +
@@ -2049,9 +2074,9 @@
     }
     var tdRows = [
       tdRow("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2")
-    ].concat(backSubRows(TD.tag, TD.tag.n + TD.back.n, 9, TAG_SUB)).concat([
+    ].concat(backSubRows(TD.tag, TD.tag.n + TD.back.n, 9, TAG_SUB)).concat(scRows(TD.tag, 9)).concat([
       tdRow("BACK \u00b7 after a miss at the rim or a turnover", TD.back, "M2 \u00b7 Turnover")
-    ]).concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 9));
+    ]).concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 9)).concat(scRows(TD.back, 9));
     var sTD = section("The two situations");
     sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%",
       "Situations", "Pts conceded", "PPP", "We finished on"], tdRows));

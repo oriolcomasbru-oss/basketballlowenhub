@@ -21827,6 +21827,8 @@ function _postRebounds(sg){
 function _tagSplitTxt(tag){ const s=tag && tag.sub; if(!s) return "";
   const one=(k,l)=>{ const o=s[k]||{ n:0, pts:0 }; return o.n? l+" "+(o.pts/o.n).toFixed(2)+" ("+o.n+")" : ""; };
   return [one("miss","after a miss"), one("make","after our make")].filter(Boolean).join(" · "); }
+/* what came after their offensive rebound in the same possessions, kept apart */
+function _scTxt(o){ return o && o.scn? "+"+(o.scp||0)+" after their OREB ("+o.scn+")" : ""; }
 function _backSplitTxt(back){ const s=back && back.sub; if(!s) return "";
   const one=(k,l)=>{ const o=s[k]||{ n:0, pts:0 }; return o.n? l+" "+(o.pts/o.n).toFixed(2)+" ("+o.n+")" : ""; };
   return [one("to","after TO"), one("miss","after a miss")].filter(Boolean).join(" · "); }
@@ -22105,7 +22107,7 @@ function _postOverviewDraw(sg, P, Tg, API, K){
   if(model && model.trans){
     const tg0=model.trans.tag, bk0=model.trans.back;
     [["TAG conceded", tg0],["BACK conceded", bk0]].forEach(x=>{ const o=x[1]; if(!o || !o.n) return; const v=o.pts/o.n;
-      figs.push({ label:x[0], value:f2(v), note:o.n+" transitions · points each"+(x[1]===bk0 && _backSplitTxt(bk0)? " · "+_backSplitTxt(bk0) : "")+(x[1]===tg0 && _tagSplitTxt(tg0)? " · "+_tagSplitTxt(tg0) : ""), tone:v<=0.9? "good" : v>=1.2? "bad" : "neutral" }); });
+      figs.push({ label:x[0], value:f2(v), note:o.n+" transitions · points each"+(x[1]===bk0 && _backSplitTxt(bk0)? " · "+_backSplitTxt(bk0) : "")+(x[1]===tg0 && _tagSplitTxt(tg0)? " · "+_tagSplitTxt(tg0) : "")+(_scTxt(o)? " · "+_scTxt(o) : ""), tone:v<=0.9? "good" : v>=1.2? "bad" : "neutral" }); });
   }
   /* the order a coach reads them: the score, then TAG, BACK, paint touches, reversals, then the rest */
   { const rank=f=>({ "Score":0, "TAG conceded":1, "BACK conceded":2, "Paint touches":3, "Ball reversals":4 }[f.label]);
@@ -22198,7 +22200,8 @@ function _postOverviewDraw(sg, P, Tg, API, K){
      shot plus BACK - not what the clips labelled BALANCE in the video conceded */
   try{ const T=model && model.trans, bc=concepts.filter(c=>/^balance$/i.test(String(c.k||"").trim()))[0];
     if(T && bc){ const tm=(T.tag && T.tag.sub && T.tag.sub.miss) || { n:0, pts:0 }, bk=T.back || { n:0, pts:0 }, n=tm.n+bk.n;
-      bc.ppp=n? (tm.pts+bk.pts)/n : null; bc.tbN=n; } }catch(e){}
+      bc.ppp=n? (tm.pts+bk.pts)/n : null; bc.tbN=n;
+      const xp=(tm.scp||0)+(bk.scp||0); if(xp) bc.k="BALANCE · +"+xp+" after their OREB"; } }catch(e){}
   const gDef=[];
   concepts.filter(c=>c.n>=4).forEach(c=>{ const d=c.ppp-(dAll||0);
     if(Math.abs(d)>=0.2) gDef.push({ text:c.k+": "+f2(c.ppp)+" conceded per possession", tone:d<0? "good" : "bad",
@@ -28346,8 +28349,8 @@ function _dashPostSplit(box, g){
     const tbTone=o=>!o? "" : o.ppp<=0.9? "good" : o.ppp>=1.2? "bad" : "";
     const def=h("div",{class:"dash-sub"}, h("h4",{},"Defense"),
       h("div",{class:"dash-figs"}, fig("DER", f2(der), dp.length+" possessions", der==null? "" : der<=0.95? "good" : der>=1.1? "bad" : ""),
-        fig("TAG", TAG? f2(TAG.ppp) : "—", TAG? TAG.n+" transitions · pts each"+(_tagSplitTxt(tr.tag)? " · "+_tagSplitTxt(tr.tag) : "") : "none", tbTone(TAG)),
-        fig("BACK", BACK? f2(BACK.ppp) : "—", BACK? BACK.n+" transitions · pts each" : "none", tbTone(BACK))),
+        fig("TAG", TAG? f2(TAG.ppp) : "—", TAG? TAG.n+" transitions · pts each"+(_tagSplitTxt(tr.tag)? " · "+_tagSplitTxt(tr.tag) : "")+(_scTxt(tr.tag)? " · "+_scTxt(tr.tag) : "") : "none", tbTone(TAG)),
+        fig("BACK", BACK? f2(BACK.ppp) : "—", BACK? BACK.n+" transitions · pts each"+(_scTxt(tr.back)? " · "+_scTxt(tr.back) : "") : "none", tbTone(BACK))),
       h("div",{class:"dash-h5"},"Our defensive concepts · points allowed a possession"),
       cs.length? two(cs.map(conRow)) : h("div",{class:"dash-miss"},"No defensive situation tagged twice."));
     box.appendChild(h("div",{class:"dash-2"}, off, def));
