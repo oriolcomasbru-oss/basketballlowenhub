@@ -15821,7 +15821,11 @@ function _gpLiveWin(feed, uc, inWin, names){
     }
     if(k==="TO"||k==="TTO"||(k==="FOUL" && a.info1==="O")){
       if(on){ S.tov++; if(k==="FOUL") S.pf++;
-        if(cur && cur.team===c && cur.t0!=null && cur.b<0 && !cur.oreb){ S.clk[bucket(o.t-cur.t0)].n++; S.firstNo[Math.max(0,Math.min(24,Math.floor(o.t-cur.t0)))]++; } }
+        if(cur && cur.team===c && !cur.done && cur.t0!=null && cur.b<0 && !cur.oreb){ S.clk[bucket(o.t-cur.t0)].n++; S.firstNo[Math.max(0,Math.min(24,Math.floor(o.t-cur.t0)))]++; }
+        /* A TURNOVER STRAIGHT AFTER THE OTHER SIDE SCORED is a possession too: it was lost
+           before it had an event of its own, and leaving it out took the noughts out of the
+           points a possession - Hagen's 74 possessions read as 63, at 1.32 instead of 1.19 */
+        else if((!cur || cur.team!==c || cur.done) && pend && (pend.team===c || pend.team===null) && pend.t0!=null){ S.clk[bucket(o.t-pend.t0)].n++; S.firstNo[Math.max(0,Math.min(24,Math.floor(o.t-pend.t0)))]++; } }
       cur=fresh(other(c),{ to:true, trans:true, t0:o.t }); pend=null; return;
     }
     if(k==="FOUL"){ if(on) S.pf++; return; }
@@ -15849,6 +15853,9 @@ function _gpLiveWin(feed, uc, inWin, names){
     }
     if(made){
       if(shot){ cur.done=true; pend={ team:other(c), t0:o.t }; }
+      /* a made free throw hands the ball over too: the next possession starts here (a
+         second free throw of the same trip carries on the same possession) */
+      else { cur.done=true; pend={ team:other(c), t0:o.t }; }
       const me=(c===uc)? "u" : "t";
       if(run && run.me===me) run.pts+=v; else run={ me:me, pts:v, t0:o.t };
     }
