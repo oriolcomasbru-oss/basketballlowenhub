@@ -21822,6 +21822,15 @@ function _postMinutes(sg, opt){
             put(h("span",{class:"pgmc-c st "+state(rv), title:when+" · "+u+"–"+t+" this minute · "+(rv>0? "+" : "")+rv+" with the minute either side"}, rv>0? "+"+rv : rv<0? "−"+(-rv) : "0"), mm===0); continue; }
           const v=b? r[1](b) : null;
           put(v==null? h("span",{class:"pgmc-c mu", title:when},"") : h("span",{class:"pgmc-c "+r[2](v), title:when+" · "+r[0]+" "+r[3](v)}, r[3](v)), mm===0); } }); });
+      /* OUR FIVE ON THE FLOOR, under each minute: the men who played most of it, a face each */
+      { const Lf=leagueState(), roster=((Lf.players||{})[our]||{}).players||[], faceKeep={};
+        const face=p=>{ const r=roster.filter(x=>x && x.num!=null && String(parseInt(x.num,10))===String(parseInt(p.num,10)))[0];
+          const el=_lgFace(Lf, r? { n:r.num, name:r.name, first:r.first, last:r.last, photo:r.photo, pid:r.pid, id:r.id } : { n:p.num, name:p.name, id:p.id }, "pgmc-f");
+          el.querySelectorAll("img").forEach(i=>i.setAttribute("loading","eager")); return el; };
+        grid.appendChild(h("span",{class:"pgmc-l"}, "On court"));
+        qs.forEach(qi=>{ for(let mm=0; mm<minsOf(qi); mm++){ const t0=qBase(qi)+mm*60, t1=t0+60;
+          const five=ours.map(p=>({ p:p, s:onIn(p.id, t0, t1) })).filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,5);
+          put(h("span",{class:"pgmc-c on", title:ql(qi)+" "+(minsOf(qi)-mm)+"′ · "+five.map(x=>"#"+x.p.num+" "+short(x.p.name)).join(", ")}, five.map(x=>face(x.p))), mm===0); } }); }
       box.appendChild(h("div",{class:"pgmc-w"}, grid));
       box.appendChild(h("div",{class:"pgm-leg"}, h("span",{}, h("i",{class:"up"}), "good spell: +4 or better over three minutes"), h("span",{}, h("i",{class:"dn"}), "slump: −4 or worse"),
         h("span",{}, "· a column a minute, the clock running down · OER/DER/OREB/DREB: play by play"+(m? " · Paint/TAG/BACK: our tagging" : ""))));
@@ -27848,10 +27857,9 @@ function _dashPostPrint(card, title){
     const clean=el=>{ el.querySelectorAll("button,input,.dash-go,.dash-src").forEach(x=>x.remove()); return el; };
     const top=t=>h("div",{class:"dop-top"}, h("b",{}, "Post game"), h("span",{}, t));
     /* THE NUMBERS IN BANDS ACROSS THE SHEET, so no column runs longer than the other: the game
-       and our tagging's figures beside the quarters and the rebounding; the game in one look in
-       two rows; then
-       who stood out on each side; then our offense beside our defense; the minute by minute
-       across the bottom */
+       and our tagging's figures with the quarters and the rebounding; the game in one look and
+       who stood out on each side; our offense and our defense - three columns - and the minute
+       by minute across the bottom, large */
     const parts=[...body.children].filter(ch=>ch!==notesBlk).map(ch=>clean(ch.cloneNode(true)));
     const pgW=parts.filter(x=>x.querySelector(".dash-pg"))[0], spW=parts.filter(x=>!x.querySelector(".dash-pg") && x.querySelector(".dash-2 > .dash-sub"))[0];
     const head=parts.filter(x=>x!==pgW && x!==spW);
@@ -27862,10 +27870,9 @@ function _dashPostPrint(card, title){
     const sp=spW? spW.querySelector(".dash-2") : null;
     const band=(cls, ...k)=>{ const b=h("div",{class:"dop-band "+cls}); k.filter(Boolean).forEach(x=>b.appendChild(x)); return b; };
     const p1=h("div",{class:"dop-fit dop-pg"}, top(title),
-      band("b1", h("div",{class:"dop-col"}, ...head), qr? h("div",{class:"dop-col"}, ...[...qr.children]) : null),
-      keys,
-      pl? band("b2", ...[...pl.children]) : null,
-      sp? band("b3", ...[...sp.children]) : null,
+      band("b1", h("div",{class:"dop-col"}, ...head, ...(qr? [...qr.children] : [])),
+        h("div",{class:"dop-col"}, keys, ...(pl? [...pl.children] : [])),
+        sp? h("div",{class:"dop-col"}, ...[...sp.children]) : null),
       mm? h("div",{class:"dop-mm"}, mm) : null);
     const pk=notesSub? notesSub.querySelector(".dash-pk") : null;
     const p2=h("div",{class:"dop-fit dop-pnotes"}, top(title+" · key ideas"), pk? clean(pk.cloneNode(true)) : h("div",{class:"dash-miss"},"No key ideas marked in the post game."));
@@ -28509,8 +28516,8 @@ function renderDashboard(){
         if(!host || !host.querySelector(".ui-fig")){ body.appendChild(h("div",{class:"dash-miss"},"Neither the play by play nor the tagging of this game is in yet.")); return; }
         const figs=[...host.querySelectorAll(".ui-fig")].filter(f=>!/score/i.test(((f.querySelector("i")||{}).textContent||""))).slice(0,4)
           .map(f=>({ k:((f.querySelector("i")||{}).textContent||""), v:((f.querySelector("b")||{}).textContent||""), n:((f.querySelector("span")||{}).textContent||""), tone:f.classList.contains("good")? "good" : f.classList.contains("bad")? "bad" : "" }));
-        const top=h("div",{class:"dash-2 post"}, h("div",{class:"dash-figs four"}, figs.map(f=>h("div",{class:"dash-fig "+f.tone}, h("i",{}, f.k), h("b",{}, f.v), h("span",{}, f.n)))));
-        const qs=host.querySelector(".ui-strip"); if(qs) top.appendChild(qs.cloneNode(true));
+        const top=h("div",{class:"dash-pf"}, h("div",{class:"dash-figs four"}, figs.map(f=>h("div",{class:"dash-fig "+f.tone}, h("i",{}, f.k), h("b",{}, f.v), h("span",{}, f.n)))));
+        /* the paint touches by quarter are off the card: the minute by minute has them */
         body.appendChild(top);
       });
       /* the league's sheet of the game: quarters, rebounding, the game in one look, who stood out, minute by minute */
@@ -38155,6 +38162,11 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .pgmc-c{height:17px;display:flex;align-items:center;justify-content:center;border-radius:2px;background:var(--panel-2,#f1f3f6);color:var(--ink-soft,#5b6472);overflow:hidden;letter-spacing:-.04em}
 .pgmc-c.q0,.pgmc-qh.q0{margin-left:4px}
 .pgmc-c.g{background:rgba(47,158,134,.22);color:#17805a}.pgmc-c.b{background:rgba(216,82,78,.2);color:#c0403c}.pgmc-c.mu{background:transparent}
+.pgmc-c.on{height:auto;flex-direction:column;gap:1px;padding:1px 0;background:none}
+.pgmc-c.on .lg-bdg.pgmc-f{width:100%;max-width:26px;aspect-ratio:1;height:auto;border-radius:50%;overflow:hidden;background:var(--panel-2,#eef0f3)}
+.pgmc-c.on .lg-bdg.pgmc-f img{object-fit:cover;object-position:50% 15%}
+.pgmc-c.on .lg-bdg-m{font-size:8px}
+.dop-mm .pgmc-c.on .lg-bdg.pgmc-f{max-width:34px}
 .pgmc-c.st.up{background:#2f9e86;color:#fff}.pgmc-c.st.dn{background:#d8524e;color:#fff}.pgmc-c.st.av{background:var(--panel-2,#e9ecf0)}
 .dash-pg{display:grid;gap:12px}
 .dash-pg .row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
@@ -38214,9 +38226,10 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dop-fit .dash-blk,.dop-fit .dash-3c{margin-top:0}
 .dop-two{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:18px;align-items:start}
 .dop-band{display:grid;gap:16px;align-items:start}
-.dop-band.b1{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
+.dop-band.b1{grid-template-columns:minmax(0,1fr) minmax(0,1.05fr) minmax(0,1fr)}
 .dop-band.b2,.dop-band.b3{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
-.dop-pg .lgg-keys{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+.dop-pg .lgg-keys{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+.dop-pg .dash-figs.four{grid-template-columns:repeat(2,minmax(0,1fr))!important}
 .dop-fit .lgg-keys{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px}
 .dop-fit .lgg-key{padding:5px 10px 6px;border-radius:8px}.dop-fit .lgg-key b{font-size:17px}.dop-fit .lgg-key i{font-size:11px;margin-top:0}
 .dop-mm .pgmc{gap:3px 2px;font-size:11px}.dop-mm .pgmc-c{height:22px}.dop-mm .pgmc-l{font-size:11px}.dop-mm .pgmc-qh{font-size:12.5px}
