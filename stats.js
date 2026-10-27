@@ -424,23 +424,7 @@
      BACK is never written in a file and does not need to be: both are read off
      the rows. The literal TAG mark is a different thing and lives in its own
      block — it names the player who did NOT tag up, not the situation. */
-  /* TRANSITION DEFENSE IS TAG AND BACK, AND ONLY AFTER A MISS OR A TURNOVER:
-       TAG   after our MISSED long shot (M3, ML2)
-       BACK  after our miss at the rim (M2) or our turnover
-     After our basket there is no transition to defend and nothing is counted - the staff's
-     BALANCE label lives inside these two and carries no weight of its own. Their
-     possession is the one that opens within ten seconds of ours, whatever it is tagged as. */
-  var LONG_END = ["M3", "ML2"], CLOSE_END = ["M2", "Turnover"], MADE_END = ["C3", "CL2", "C2"];
-  function madeEnd(tags) { return MADE_END.some(function (x) { return has(tags, x); }); }
-  function balSub(pv) { return (has(pv.tags, "C3") || has(pv.tags, "CL2")) ? "long" : "rim"; }
-  var BAL_SUB = [["long", " after our made long shot", "C3 \u00b7 CL2"], ["rim", " after our basket near the rim", "C2"]];
-  /* TAG, BACK or nothing: what a possession of ours ending this way gives */
-  function transKind(pv) {
-    if (madeEnd(pv.tags)) return null;
-    if (LONG_END.some(function (x) { return has(pv.tags, x); })) return "tag";
-    if (!has(pv.tags, "Offensive foul") && CLOSE_END.some(function (x) { return has(pv.tags, x); })) return "back";
-    return null;
-  }
+  var LONG_END = ["M3", "ML2", "C3", "CL2"], CLOSE_END = ["M2", "Turnover"];   /* after our make at the rim it is their full-court press, not BACK */
   var FG_MARKS = ["C2", "CL2", "C3", "M2", "ML2", "M3"];
   var TRANS_GAP = 10;
 
@@ -456,9 +440,9 @@
   var BACK_SUB = [["to", " after our turnover", "Turnover"], ["miss", " after our miss (their rebound)", "M2"]];
   /* the BACK row's three parts, for a table of `cols` columns: situations, points and PPP
      in the places the main rows have them, the rest left empty */
-  function backSubRows(back, all, cols, list) {
+  function backSubRows(back, all, cols) {
     var sub = back && back.sub; if (!sub) return [];
-    return (list || BACK_SUB).map(function (s) {
+    return BACK_SUB.map(function (s) {
       var o = sub[s[0]] || { n: 0, pts: 0 }, ppp = o.n ? o.pts / o.n : null;
       var cells = [s[1]];
       var at = cols === 9 ? 5 : 6;   /* where "situations" sits in each table */
@@ -479,13 +463,13 @@
 
   function buildTransDef(rows) {
     var o = { tag: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0 },
-              bal: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, sub: { long: { n: 0, pts: 0 }, rim: { n: 0, pts: 0 } } },
               back: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, sub: { to: { n: 0, pts: 0 }, miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } } }, events: [] };
     /* how many of our possessions ended that way at all, paired or not: without
        it the table looks like the whole game when it is a slice of it */
     rows.forEach(function (r) {
       if (r.def) return;
-      var k0 = transKind(r); if (k0) o[k0].of++;
+      if (LONG_END.some(function (x) { return has(r.tags, x); })) o.tag.of++;
+      else if (!has(r.tags, "Offensive foul") && CLOSE_END.some(function (x) { return has(r.tags, x); })) o.back.of++;
       /* the other half of the same situation: the misses we rebounded ourselves,
          split by the shot that produced them, so the second chances sit next to
          the transition defense they replaced. On a clip of ours an "Offensive
@@ -504,14 +488,15 @@
       if (!d.def || pv.def) continue;
       if (d.a - pv.b > TRANS_GAP) continue;
       var dead = has(pv.tags, "Offensive foul");
-      var kind = transKind(pv);
+      var kind = LONG_END.some(function (x) { return has(pv.tags, x); }) ? "tag"
+        : (!dead && CLOSE_END.some(function (x) { return has(pv.tags, x); })) ? "back" : null;
       if (!kind) continue;
       if (fouledOnTheRebound(d, pv)) continue;
       o[kind].n++; o[kind].pts += points(d.tags);
       /* BACK is two situations: after our turnover and after our miss at the rim (their rebound)
          the total, and each apart under it (after our make it is their full-court press, not BACK) */
-      var sub = kind === "back" ? backSub(pv) : kind === "bal" ? balSub(pv) : null;
-      if (sub) { o[kind].sub[sub].n++; o[kind].sub[sub].pts += points(d.tags); }
+      var sub = kind === "back" ? backSub(pv) : null;
+      if (sub) { o.back.sub[sub].n++; o.back.sub[sub].pts += points(d.tags); }
       /* each one with where it is in the video and its quarter, for the minute-by-minute table */
       o.events.push({ a: d.a, q: periodOf(d.tags), kind: kind, sub: sub, pts: points(d.tags) });
     }
@@ -555,7 +540,6 @@
     var mk = function () { return { n: 0, pts: 0, of: 0, miss: 0, oreb: 0, tn: 0, tpts: 0, mtu: 0 }; };
     var o = { tag: mk(), back: mk(), mtuOdd: 0, orebLoose: 0, mtuBy: {} };
     o.back.sub = { to: { n: 0, pts: 0 }, miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } };
-    o.bal = mk(); o.bal.sub = { long: { n: 0, pts: 0 }, rim: { n: 0, pts: 0 } };
     rows.forEach(function (r) {
       if (r.def) return;
       /* MISSED TAG UP is the one thing about TAG the staff writes down by hand: the long
@@ -575,7 +559,8 @@
           o.mtuBy[who] = (o.mtuBy[who] || 0) + 1;
         });
       }
-      var k0 = transKind(r); if (k0) o[k0].of++;
+      if (LONG_END.some(function (x) { return has(r.tags, x); })) o.tag.of++;
+      else if (!has(r.tags, "Offensive foul") && CLOSE_END.some(function (x) { return has(r.tags, x); })) o.back.of++;
       var ml = count(r.tags, "M3") + count(r.tags, "ML2"), mp = count(r.tags, "M2");
       var ore = count(r.tags, "Offensive Rebound") + count(r.tags, "OREB");
       o.tag.miss += ml; o.back.miss += mp;
@@ -593,13 +578,13 @@
       if (String(d.cat || "").trim().toUpperCase() === "SECOND CHANCE") continue;
       if (d.a - pv.b > TRANS_GAP) continue;
       var dead = has(pv.tags, "Offensive foul");
-      var kind = transKind(pv);
+      var kind = LONG_END.some(function (x) { return has(pv.tags, x); }) ? "tag"
+        : (!dead && CLOSE_END.some(function (x) { return has(pv.tags, x); })) ? "back" : null;
       if (!kind) continue;
       if (d.def && fouledOnTheRebound(d, pv)) continue;
       var p = points(d.tags);
       o[kind].n++; o[kind].pts += p;
       if (kind === "back") { var sb = backSub(pv); o.back.sub[sb].n++; o.back.sub[sb].pts += p; }
-      else if (kind === "bal") { var st = balSub(pv); o.bal.sub[st].n++; o.bal.sub[st].pts += p; }
       if (has(d.tags, "Transition Attack Poss")) { o[kind].tn++; o[kind].tpts += p; }
     }
     return o;
@@ -1275,19 +1260,17 @@
        misses — is the smaller table under it. */
     var TDF = ["n", "pts", "of", "miss", "oreb", "tn", "tpts", "mtu"];
     var tdZero = function () { var z = {}; TDF.forEach(function (f) { z[f] = 0; }); return z; };
-    var TD = { tag: tdZero(), back: tdZero(), bal: tdZero() }, defClips = 0, mtuOdd = 0, orebLoose = 0, mtuBy = {};
+    var TD = { tag: tdZero(), back: tdZero() }, defClips = 0, mtuOdd = 0, orebLoose = 0, mtuBy = {};
     sets.forEach(function (s) {
       defClips += s.defN || 0;
       var t = s.trans; if (!t) return;
       mtuOdd += t.mtuOdd || 0; orebLoose += t.orebLoose || 0;
       Object.keys(t.mtuBy || {}).forEach(function (k) { mtuBy[k] = (mtuBy[k] || 0) + t.mtuBy[k]; });
-      ["tag", "back", "bal"].forEach(function (k) {
-        TDF.forEach(function (f) { TD[k][f] += (t[k] && t[k][f]) || 0; });
+      ["tag", "back"].forEach(function (k) {
+        TDF.forEach(function (f) { TD[k][f] += t[k][f] || 0; });
       });
       var sb = t.back && t.back.sub; TD.back.sub = TD.back.sub || { to: { n: 0, pts: 0 }, miss: { n: 0, pts: 0 }, make: { n: 0, pts: 0 } };
       if (sb) ["to", "miss"].forEach(function (k) { TD.back.sub[k].n += (sb[k] && sb[k].n) || 0; TD.back.sub[k].pts += (sb[k] && sb[k].pts) || 0; });
-      var sbl = t.bal && t.bal.sub; TD.bal.sub = TD.bal.sub || { long: { n: 0, pts: 0 }, rim: { n: 0, pts: 0 } };
-      if (sbl) ["long", "rim"].forEach(function (k) { TD.bal.sub[k].n += (sbl[k] && sbl[k].n) || 0; TD.bal.sub[k].pts += (sbl[k] && sbl[k].pts) || 0; });
     });
     var tdAny = (TD.tag.n + TD.back.n) > 0;
     /* A training has no defensive clips - it is two of our own fives - so the possession
@@ -1320,7 +1303,7 @@
       tdTot.cls = "sx-totrow";
       sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%", "Missed tag up",
         "Possessions", "Pts conceded", "DER", "In transition", "Trans. pts", "We finished on"], [
-        tdRowP("TAG \u00b7 after our missed long shot", TD.tag, "M3 \u00b7 ML2"),
+        tdRowP("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2"),
         tdRowP("BACK \u00b7 after a miss at the rim or a turnover", TD.back, "M2 \u00b7 Turnover")
       ].concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 12)).concat([
         tdTot
@@ -2054,7 +2037,7 @@
         marks] };
     }
     var tdRows = [
-      tdRow("TAG \u00b7 after our missed long shot", TD.tag, "M3 \u00b7 ML2"),
+      tdRow("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2"),
       tdRow("BACK \u00b7 after a miss at the rim or a turnover", TD.back, "M2 \u00b7 Turnover")
     ].concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 9));
     var sTD = section("The two situations");
@@ -2193,7 +2176,7 @@
       var tdP = function (o) { return o && o.n ? o.pts / o.n : null; };
       var tdT = function (v) { return v == null ? "neutral" : v <= 0.9 ? "good" : v >= 1.15 ? "bad" : "neutral"; };
       put(gTD, { figures: [
-        { label: "TAG · after our missed long shot", value: f2(tdP(TD.tag)), note: (TD.tag.pts || 0) + " conceded in " + (TD.tag.n || 0) + " situations", tone: tdT(tdP(TD.tag)) },
+        { label: "TAG · after a long shot", value: f2(tdP(TD.tag)), note: (TD.tag.pts || 0) + " conceded in " + (TD.tag.n || 0) + " situations", tone: tdT(tdP(TD.tag)) },
         { label: "BACK · after a miss at the rim or a turnover", value: f2(tdP(TD.back)), note: (TD.back.pts || 0) + " conceded in " + (TD.back.n || 0) + " situations", tone: tdT(tdP(TD.back)) }] });
       if (DN) {
         var dAll = shotLine(DP), cats = Object.keys(byCat || {}).filter(function (k) { return !/^balance$/i.test(k); }).sort(function (a, b) { return byCat[b].length - byCat[a].length; });
