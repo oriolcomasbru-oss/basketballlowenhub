@@ -15550,8 +15550,10 @@ function _gpAlerts(L){
   if(U.fouls>=4) out.push({ k:"bonusThem|"+per, tone:"bad", big:"Their bonus", txt:"We have "+U.fouls+" team fouls in "+(qi>=3? "the 4th quarter"+(qi>3? " + overtime" : "") : qn(qi))+" — every defensive foul now is 2 free throws for them" });
   if(T.fouls>=4) out.push({ k:"bonusUs|"+per, tone:"good", big:"We are in the bonus", txt:"They have "+T.fouls+" team fouls — attack the rim: every foul of theirs in defense is 2 free throws for us" });
   if(qi>=3 && left>0 && left<=60 && U.fouls<4) out.push({ k:"give|"+qi, tone:"info", big:"Fouls to give: "+(4-U.fouls), txt:"Before their bonus, in the last minute of "+qn(qi) });
-  if(qi===1 && left>0 && left<=120 && U.left>0) out.push({ k:"to1|"+U.left, tone:"warn", big:"Use them or lose them", txt:"We have "+U.left+" timeout"+(U.left>1? "s" : "")+" left in the first half — unused ones are lost at half time" });
-  if(qi===3 && left>120 && left<=180 && U.left===3) out.push({ k:"to2", tone:"warn", big:"One timeout is lost at 2:00", txt:"We have 3, and only 2 can be used in the last 2 minutes of the 4th — use one before 2:00" });
+  /* HALFWAY THROUGH ANY QUARTER WITH THREE TEAM FOULS OR FEWER: there are fouls to give */
+  if(qi<4 && left<=300 && left>240 && U.fouls<=3) out.push({ k:"give5|"+qi, tone:"info", big:"Fouls to give: "+(4-U.fouls), txt:"5:00 left in "+qn(qi)+" and we have "+U.fouls+" team foul"+(U.fouls===1? "" : "s")+" — "+(4-U.fouls)+" before their bonus" });
+  if(qi===1 && left>0 && left<=240 && U.left>0) out.push({ k:"to1|"+U.left, tone:"warn", big:"Use them or lose them", txt:"We have "+U.left+" timeout"+(U.left>1? "s" : "")+" left in the first half — unused ones are lost at half time" });
+  if(qi===3 && left>120 && left<=240 && U.left===3) out.push({ k:"to2", tone:"warn", big:"One timeout is lost at 2:00", txt:"We have 3, and only 2 can be used in the last 2 minutes of the 4th — use one before 2:00" });
   if(qi>=3 && left<=120 && (qi>3 || left>0)) out.push({ k:"l2m|"+qi, tone:"warn", big:"Last 2:00"+(qi>3? " · "+qn(qi) : ""), txt:"Timeouts: we "+U.left+", they "+T.left+(T.left===0? " (none left)" : "")+" · team fouls: we "+U.fouls+", they "+T.fouls+" · see the rules below", rules:true });
   if(qi>=4 && t-base<60) out.push({ k:"ot|"+qi, tone:"info", big:qn(qi), txt:"1 timeout each, not carried over · team fouls go on from the 4th: we "+U.fouls+", they "+T.fouls });
   /* a tie at the end of the 4th (or of an overtime): the overtime starts with the arrow's team */
@@ -17703,7 +17705,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
             row("DER", "d", "their points a possession in each minute (possessions ≈ from the box score)"),
             rrow("DREB%", m=>[m.dr, m.dr+m.tor], v=>v>=80? "good" : v<65? "bad" : "", "our defensive rebounds of their misses"),
             rrow("OREB%", m=>[m.or, m.or+m.tdr], v=>v>=35? "good" : v<=20? "bad" : "", "our offensive rebounds of our misses"),
-            rrow("Opp OREB%", m=>[m.tor, m.tor+m.dr], v=>v<=20? "good" : v>=35? "bad" : "", "their offensive rebounds of their misses") ];
+            rrow("Opp OR%", m=>[m.tor, m.tor+m.dr], v=>v<=20? "good" : v>=35? "bad" : "", "their offensive rebounds of their misses") ];
         };
         const marker=()=>{ rotHost.querySelectorAll(".gp5-now,.gp5-real,.gp5-rt").forEach(n=>n.remove());
           rotHost.querySelectorAll(".gp2-st.soon,.gp2-st.diff").forEach(n=>n.classList.remove("soon","diff"));
@@ -26054,10 +26056,12 @@ function _lgReb(L){
       K[k].lab+(k===sk? (_lgRebSort.d>0? " ▼" : " ▲") : ""))), h("th",{class:"l grp", title:"rebounds a game, the offensive ones in brackets · two games at least"},"Best rebounders")));
   list.forEach((r,i)=>{
     /* each club on one line with its best man only; ours open with all three, any other opens with a press */
-    const open=_lgOurs(r.name) || !!_lgRebOpen[r.id];
-    const tr=h("tr",{class:(_lgOurs(r.name)? "ours " : "")+(open? "reb-open" : "reb-shut"), title:open? "" : "press to see the three best of each column",
-      onclick:()=>{ if(_lgOurs(r.name)) return; _lgRebOpen[r.id]=!_lgRebOpen[r.id]; _lgRerender(); }},
-      h("td",{class:"lg-pos"}, String(i+1)), h("td",{class:"l lg-team"}, _lgCrest(L, r.id), h("span",{}, r.name), _lgOurs(r.name)? null : h("i",{class:"reb-tog"}, open? "−" : "+")));
+    /* EVERY CLUB FOLDED TO ITS TEAM LINE, ours open to start with: a folded club is drawn
+       quieter, so the open ones are the ones read */
+    const open=(r.id in _lgRebOpen)? !!_lgRebOpen[r.id] : _lgOurs(r.name);
+    const tr=h("tr",{class:(_lgOurs(r.name)? "ours " : "")+(open? "reb-open" : "reb-shut"), title:open? "" : "press to see its rebounders",
+      onclick:()=>{ _lgRebOpen[r.id]=!open; _lgRerender(); }},
+      h("td",{class:"lg-pos"}, String(i+1)), h("td",{class:"l lg-team"}, _lgCrest(L, r.id), h("span",{}, r.name), h("i",{class:"reb-tog"}, open? "−" : "+")));
     Object.keys(K).forEach(k=>{ const v=r[k], rk=rank[k](v), lim=k==="og"||k==="dg"? 1.5 : 3;
       tr.appendChild(h("td",{class:"pnum"+(k==="og"? " grp" : "")+(v!=null && A[k]!=null? (v-A[k]>=lim? " up" : v-A[k]<=-lim? " dn" : "") : "")}, v==null? "—" : K[k].f(v), rk && rk<=3? h("em",{class:"top"}, String(rk)) : null)); });
     /* A REBOUNDER IS A BAR: defensive in blue, offensive in gold, the number at its end */
@@ -38889,7 +38893,9 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .use-t td.use-time{white-space:nowrap;text-align:left}.use-bar{display:inline-block;width:90px;height:8px;border-radius:4px;background:var(--panel-2,#eef0f3);vertical-align:middle;margin-right:6px;overflow:hidden}.use-bar i{display:block;height:100%;background:#4a86d8;border-radius:4px}
 .use-chip{display:inline-block;margin:1px 4px 1px 0;padding:1px 8px;border-radius:10px;background:var(--panel-2,#f1f2f5);font-size:11.5px}.use-chip b{font-weight:700}
 .dash-m3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}@media (max-width:900px){.dash-m3{grid-template-columns:minmax(0,1fr)}}.dash-m3-c{min-width:0}
-.reb-lg tr.reb-shut{cursor:pointer}.reb-lg tr.reb-shut td.reb-top > div:not(:first-of-type){display:none}.reb-lg tr.reb-shut:hover td{background:rgba(20,24,33,.03)}
+.reb-lg tr{cursor:pointer}.reb-lg tr.reb-shut td.reb-top > div{display:none}
+.reb-lg tr.reb-shut td{opacity:.45}.reb-lg tr.reb-shut:hover td{opacity:.8}
+.reb-lg tr.reb-shut td.reb-top .rbt{border-bottom:0;padding-bottom:0;margin-bottom:0}.reb-lg tr.reb-shut:hover td{background:rgba(20,24,33,.03)}
 .reb-lg .reb-tog{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:6px;border-radius:50%;border:1px solid var(--line-strong,#cfd4dc);font:700 11px/1 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}
 .shr{width:min(1100px,94vw);max-height:86vh;overflow-y:auto}.shr-two{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px}.shr-two h5{margin:0 0 6px;font:700 11px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}.shr-raw{font:12px/1.5 'IBM Plex Mono',monospace;max-height:420px;overflow:auto;padding:8px;border:1px solid var(--line,#e6e8ec);border-radius:8px;white-space:pre-wrap;color:var(--ink-soft,#5b6472)}
 .rb-kf .rb-two{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:4px 0 2px}.rb-h{display:flex;flex-direction:column;gap:2px;min-width:0}.rb-h > i{font-style:normal;font:700 9.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;opacity:.75}.rb-h > b{font:700 26px 'Oswald',sans-serif;line-height:1.05}.rb-h > b.good{color:#13804f}.rb-h > b.bad{color:#c0392b}.rb-h .row{display:flex;gap:8px;flex-wrap:wrap}.rb-h small{font-size:10px;opacity:.7}
@@ -39604,6 +39610,10 @@ body.dark .gp9-five .pl.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp5-t td.pf.most{background:#f6c3bf;color:#7a1511;font-weight:800}
 .gp5 tr.gp5-rt td.v.mgc.good{background:#2f9e86;color:#fff}.gp5 tr.gp5-rt td.v.mgc.bad{background:#d8524e;color:#fff}
 .gp5 tr.gp5-rt.rb td.v b{font-size:10px}
+/* the labels of the minute rows on one line, never over the cells */
+.gp5 tr.gp5-rt td.gp2-pos{white-space:nowrap;font-size:9.5px!important;letter-spacing:.02em;overflow:hidden;text-overflow:ellipsis}
+.gp5 tr.gp5-rt td.v{overflow:hidden}
+.gp5 tr.gp5-rt td.v b,.gp5 tr.gp5-rt td.v em{white-space:nowrap;overflow:hidden;text-overflow:clip}
 .gp5-t td.pf.out{background:#141821;color:#fff;font-weight:800}
 .gp5-t tr.fout td{opacity:.6}
 .gp5-t tr.fout td.pf{opacity:1}
@@ -43293,32 +43303,23 @@ body.edit-mode .phx.phx .roster-columns .card .rm-x:hover{opacity:1}
   .ps-item-in,.ps-endzone,.ps-total{font-size:11.5px}
   .adm-pv-hint{font-size:11px}
 }
-/* PRE GAME CARDS, THE NUMBERS WITH A HIERARCHY. Red blocks, orange percentages and red
-   tints on the same row of six all shouted at once. Now the numbers are ink, the
-   percentages a quiet grey beside them, and what stands out says so with a line, not a
-   block: a solid red bar over the best (top 10 of the BBL or first in his team) with the
-   number heavier, a thin one over the next ones, and the rank small under it. The card
-   beside the video follows the same rule. */
+/* PRE GAME CARDS, THE NUMBERS WITH A HIERARCHY. The red block stays - it is what the eye
+   finds - in two softer reds: the deeper for the best (top 10 of the BBL or first in his
+   team), the lighter for the next ones, the text white on both; the rank under the number
+   is small and light so it does not weigh like the number. Plain numbers in ink, their
+   percentages a quiet grey. The card beside the video follows the same rule. */
 .phx .card .stat-value .pct,.phx.phx .stat-value .sv-pc,.phx.phx .stat-value .pct{color:#8a93a2!important;font-weight:600!important}
-.phx .card .stat-cell.hl-hot,.phx .card .stat-cell.hl-warm{background:#fff!important;border-radius:0!important;position:relative}
-.phx .card .stat-cell.hl-hot{box-shadow:inset 0 3px 0 #d8524e!important}
-.phx .card .stat-cell.hl-warm{box-shadow:inset 0 2px 0 rgba(216,82,78,.45)!important}
-.phx .card .stat-cell.hl-hot .stat-value,.phx .card .stat-cell.hl-hot .stat-label,.phx .card .stat-cell.hl-hot .sv-sep{color:#141821!important}
+.phx .card .stat-cell.hl-hot{background:#e07570!important;border-radius:7px!important}
+.phx .card .stat-cell.hl-warm{background:#eda29e!important;border-radius:7px!important}
+.phx .card .stat-cell.hl-hot *,.phx .card .stat-cell.hl-warm *{color:#fff!important}
 .phx .card .stat-cell.hl-hot .stat-value{font-weight:800!important}
-.phx .card .stat-cell.hl-hot .sv-pc,.phx .card .stat-cell.hl-hot .pct{color:#8a93a2!important}
-.phx .card .stat-cell.hl-warm .stat-value{color:#141821!important}
-.phx .card .stat-cell.hl-hot .hl-why{color:#c0403c!important}
-.phx .card .stat-cell.hl-warm .hl-why{color:#8a93a2!important}
-.phx .card .stat-cell .hl-why{font-weight:600!important}
-.phx .card .stat-cell.hl-hot .hl-cell{color:#c0403c}
-.modal-stats .modal-stat-cell.hl-hot,.modal-stats .modal-stat-cell.hl-warm{background:none!important;border-radius:0!important}
-.modal-stats .modal-stat-cell.hl-hot{box-shadow:inset 0 3px 0 #d8524e}
-.modal-stats .modal-stat-cell.hl-warm{box-shadow:inset 0 2px 0 rgba(216,82,78,.45)}
-.modal-stats .modal-stat-cell.hl-hot *{color:inherit!important}
+.phx .card .stat-cell.hl-warm .stat-value{font-weight:700!important}
+.phx .card .stat-cell .hl-why{font-weight:500!important;opacity:.85;font-size:clamp(7px,3.2cqw,9px)!important;letter-spacing:.02em}
+.modal-stats .modal-stat-cell.hl-hot{background:#e07570!important;border-radius:6px}
+.modal-stats .modal-stat-cell.hl-warm{background:#eda29e!important;border-radius:6px}
+.modal-stats .modal-stat-cell.hl-hot *,.modal-stats .modal-stat-cell.hl-warm *{color:#fff!important}
 .modal-stats .modal-stat-cell.hl-hot .modal-stat-value{font-weight:800}
-.modal-stats .modal-stat-cell.hl-hot .modal-stat-why,.modal-stats .modal-stat-cell.hl-hot .modal-stat-basis{color:#c0403c!important}
-.modal-stats .modal-stat-cell.hl-warm .modal-stat-value{color:inherit!important}
-.modal-stats .modal-stat-cell.hl-warm .modal-stat-why,.modal-stats .modal-stat-cell.hl-warm .modal-stat-basis{color:#8a93a2!important}
+.modal-stats .modal-stat-cell .modal-stat-why,.modal-stats .modal-stat-cell .modal-stat-basis{font-weight:500;opacity:.85}
 </style>
 
 <script defer src="/stats.js"></script>

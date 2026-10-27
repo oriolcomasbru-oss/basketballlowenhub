@@ -3681,6 +3681,7 @@
         bc.push({ v: T.n + " · " + (allPoss ? Math.round(100 * T.n / allPoss) : 0) + "%", cls: "sx-band" });
         bc.push({ v: f2(tp), cls: "sx-band sx-cell " + (T.n >= 4 ? pppStep(tp) : "") });
         bc.push({ v: "", cls: "sx-band" });
+        if (body.length) body.push({ cls: "tr-gaprow", cells: [{ span: head.length, v: "" }] });
         body.push({ cls: "tr-bandrow", cells: bc });
         return;
       }
@@ -4313,6 +4314,22 @@
 
     /* ---------------------------------------------------------------- the detail */
     var secs = [].slice.call(stage.children);
+    /* THE DETAIL UNDER ITS OWN CHART, FOLDED: each panel's table and reading go under the
+       chart they explain, closed; the one with no chart of its own keeps the picker below */
+    var UNDER = { "01": /^Paint touches/, "02": /^Ball reversals/, "03": /^Transition defense/ };
+    var DNAME = { "01": "Paint touches", "02": "Ball reversals", "03": "TAG / BACK" };
+    secs = secs.filter(function (sec) {
+      var no = (sec.querySelector(".tr-no") || {}).textContent || "", re = UNDER[no];
+      if (!re) return true;
+      var card = [].slice.call(dash.querySelectorAll(".td-card")).filter(function (c) {
+        var b = c.querySelector(".td-t b"); return b && re.test(b.textContent); })[0];
+      if (!card) return true;
+      var det = el("details", "td-more");
+      det.appendChild(el("summary", null, "Full detail · " + DNAME[no]));
+      det.appendChild(sec);
+      card.appendChild(det);
+      return false;
+    });
     if (secs.length) {
       var pick = el("div", "td-pick");
       pick.appendChild(el("span", "td-pick-l", "Full detail"));
@@ -4883,6 +4900,12 @@
       ".td-pr-say{grid-column:1/-1;font-size:11px;color:var(--ink-soft,#5b6472)}",
       "@media(max-width:720px){.td-pr{grid-template-columns:1fr 1fr}.td-pr-n,.td-pr-bar{grid-column:1/-1}}",
       /* the detail picker */
+      ".td-more{margin-top:10px;border-top:1px solid var(--line,#e4e7ec);padding-top:8px}",
+      ".td-more > summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;font:700 10.5px/1 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft,#5b6472);border:1px solid var(--line-strong,#cfd4dc);border-radius:999px;padding:6px 12px}",
+      ".td-more > summary::-webkit-details-marker{display:none}",
+      ".td-more > summary::before{content:\"▸\";transition:transform .15s}",
+      ".td-more[open] > summary::before{transform:rotate(90deg)}",
+      ".td-more[open] > summary{color:var(--ink,#141821);border-color:var(--ink,#141821)}",
       ".td-pick{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0 10px;padding-top:12px;border-top:1px solid var(--line-strong,#d7dbe0)}",
       ".td-pick-l{font:800 11px/1 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--ink);margin-right:6px}",
       ".td-pick-b{border:1px solid var(--line-strong,#d7dbe0);background:var(--panel,#fff);color:var(--ink);border-radius:8px;",
@@ -4916,6 +4939,14 @@
       ".tr-sets .sx-table tr.tr-bandrow:hover td{box-shadow:none;background:transparent}",
       ".tr-sets .sx-table tr.tr-bandrow td + td{font:700 11px/1.2 'IBM Plex Mono',monospace;letter-spacing:0;text-align:center;padding-top:12px}",
       ".tr-sets .sx-table tr.tr-bandrow td.sx-cell{border-radius:4px}",
+      /* A PHASE IS A HEADING: air above it, a dark rule, its own band of colour, the name
+         larger - the sets under it read as its contents */
+      ".tr-sets .sx-table tr.tr-bandrow td{box-shadow:inset 0 2px 0 #141821!important;padding:9px 6px 8px!important}",
+      ".tr-sets .sx-table tr.tr-bandrow td:not(.s0):not(.s1):not(.s2):not(.s3):not(.s4):not(.s5){background:#eef1f5!important}",
+      ".tr-sets .sx-table tr.tr-gaprow td{height:14px;padding:0!important;border:0!important;background:none!important}",
+      ".tr-sets .sx-table tr.tr-bandrow td:first-child{font:800 13px/1.1 'Oswald',sans-serif!important;letter-spacing:.12em;text-transform:uppercase;padding-left:10px!important}",
+      ".tr-sets .sx-table tr.tr-bandrow td.sx-cell{box-shadow:inset 0 2px 0 #141821!important}",
+
       ".tr-h{display:flex;align-items:baseline;gap:10px}",
       ".tr-no{font:800 10px/1 'Oswald',sans-serif;letter-spacing:.16em;color:var(--ink-faint);",
       "  border:1px solid var(--line-strong);border-radius:5px;padding:4px 6px}",
