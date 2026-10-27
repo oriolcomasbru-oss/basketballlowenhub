@@ -19048,9 +19048,12 @@ function _lgFourTrend(){
     /* ---------------------------------------------------------------- 1 · the games */
     const rt=T=>({ o:T.us.poss? 100*T.us.pts/T.us.poss : NaN, d:T.them.poss? 100*T.them.pts/T.them.poss : NaN });
     const pace=T=>{ const m=T.us.sec/300; return m? ((T.us.poss+T.them.poss)/2)*40/m : NaN; };
+    /* HOW GOOD AT BOTH ENDS AND WHAT EACH GAME WAS MADE OF ARE ONE TABLE: the season's
+       figures on top, then every game in a column - the game itself, its offense, its
+       defense and our tagging of it */
+    let tilesEl=null;
     {
-      const s=sec("EVERY GAME · HOW GOOD AT BOTH ENDS",
-        "Points per 100 possessions scored (top) and conceded (bottom); the bar is the difference. Click a game to open it.");
+      const s=h("div",{});
       const A=rt(ALL), wins=G.filter(win).length;
       const t=(n,v,d,cls)=>h("div",{class:"lg-tile"}, h("div",{class:"lg-tile-n"}, n), h("div",{class:"lg-tile-v"}, v),
         h("div",{class:"lg-tile-d"+(cls? " "+cls : "")}, d||""));
@@ -19061,6 +19064,7 @@ function _lgFourTrend(){
         t("Defensive rating", isFinite(A.d)? f1(A.d) : "—", "conceded per 100"),
         t("Net rating", isFinite(net)? sg1(net) : "—", net>=0? "outscoring them" : "being outscored", net>=0? "up" : "down"),
         t("Pace", isFinite(pace(ALL))? f1(pace(ALL)) : "—", "possessions per 40 minutes")));
+      tilesEl=s.firstChild;
       const nets=G.map(g=>{ const r=rt(one(g)); return r.o-r.d; });
       const mx=Math.max.apply(null, nets.filter(isFinite).map(v=>Math.abs(v)).concat([5]));
       const strip=h("div",{class:"trg-net"});
@@ -19078,16 +19082,19 @@ function _lgFourTrend(){
           h("span",{class:"trg-col-s"}, score(g)),
           h("span",{class:"trg-col-day"}, (g.home? "H · " : "A · ")+day(g))));
       });
-      s.appendChild(h("div",{class:"trg-scroll"}, strip));
     }
 
     /* ---------------------------------------------------- 2 · what each game was made of */
     {
-      const s=sec("WHAT EACH GAME WAS MADE OF",
+      const s=sec("EVERY GAME · HOW GOOD AT BOTH ENDS, AND WHAT IT WAS MADE OF",
         "One column per game. Green is better than our season figure on that line, red is worse, and the deeper the colour the further from it."+
         (K? " The last column is the last "+K+" games against the ones before." : ""));
+      if(tilesEl) s.appendChild(tilesEl);
       const U=T=>T.us, O=T=>T.them;
       const groups=[
+        ["THE GAME", [
+          { n:"Net rating", t:"Offensive minus defensive rating", of:T=>rt(T).o-rt(T).d, fmt:sg, sf:sg1, hi:true },
+          { n:"Pace", t:"Possessions per 40 minutes", of:pace, fmt:f0, sf:f1, hi:null } ]],
         ["OFFENSE", [
           { n:"Offensive rating", t:"Points per 100 possessions", of:T=>rt(T).o, fmt:f0, sf:f1, hi:true },
           { n:"Paint points", t:"Points from made shots at the rim and in the paint", of:T=>U(T).paint/T.n, fmt:f0, sf:f1, hi:true },
@@ -19103,10 +19110,7 @@ function _lgFourTrend(){
           { n:"Their second chance points", of:T=>O(T).sc/T.n, fmt:f0, sf:f1, hi:false },
           { n:"Steals", of:T=>U(T).stl/T.n, fmt:f0, sf:f1, hi:true },
           { n:"Defensive rebound %", t:"Of their misses, the share we rebounded", of:T=>(U(T).dreb+O(T).oreb)? 100*U(T).dreb/(U(T).dreb+O(T).oreb) : NaN, fmt:fP, hi:true },
-          { n:"Fouls committed", of:T=>U(T).pf/T.n, fmt:f0, sf:f1, hi:false } ]],
-        ["THE GAME", [
-          { n:"Net rating", t:"Offensive minus defensive rating", of:T=>rt(T).o-rt(T).d, fmt:sg, sf:sg1, hi:true },
-          { n:"Pace", t:"Possessions per 40 minutes", of:pace, fmt:f0, sf:f1, hi:null } ]]
+          { n:"Fouls committed", of:T=>U(T).pf/T.n, fmt:f0, sf:f1, hi:false } ]]
       ];
       /* OUR OWN TAGGING OF THE SAME NIGHT, UNDER THE LEAGUE'S NUMBERS. The two were on
          different halves of the page; a night the offensive rating fell can now be read
@@ -22680,7 +22684,7 @@ function _lgLeadSlim(tid, j, done){
   const tot=(j.team_tot&&j.team_tot.all)||null;
   return { games:j.games||0, done:done||0, at:Date.now(), fv:LG_FETCH_VER,
     /* the last three games, each with its best rebounders */
-    last:(j.by_game||[]).slice(-3).map(g=>({ d:g.date, opp:g.opp, home:g.home, rb:(g.rb||[]).slice(0,3) })),
+    last:(j.by_game||[]).slice(-3).map(g=>({ d:g.date, opp:g.opp, home:g.home, rb:(g.rb||[]).slice(0,3), us:g.us? { o:g.us.oreb||0, d:g.us.dreb||0 } : null })),
     first:(j.clock && j.clock.first) || null,
     tot: tot? { sec:tot.sec||0, fga:tot.fga||0, fta:tot.fta||0, tov:tot.tov||0 } : null,
     players:(j.players||[]).filter(p=>p && p.all && p.all.gp).map(p=>{ const t=p.all;
@@ -25989,7 +25993,10 @@ function _rebClubRows(L){
     return { id:tid, name:t.name||f.team, o:100*f.off.reb, d:100*f.def.reb, m:100*(f.off.reb-(1-f.def.reb)),
       og:pls.length && gp? or/gp : null, dg:pls.length && gp? dr/gp : null, top:top, gp:gp,
       /* its last three games, oldest first, each with its best rebounders by name */
-      last:((ld && ld.last)||[]).map(g=>({ d:g.d, opp:g.opp, home:g.home, rb:(g.rb||[]).map(x=>({ p:pls.filter(p=>String(p.id)===String(x.i)||String(p.pid)===String(x.i))[0]||{ num:"", name:"" }, r:x.r, o:x.o })) })) }; });
+      last:((ld && ld.last)||[]).map(g=>({ d:g.d, opp:g.opp, home:g.home,
+        /* the club's own rebounds that night, defensive and offensive */
+        us:g.us || (()=>{ const fb=((((L.players||{})[tid]||{}).by_game)||[]).filter(x=>x.date===g.d)[0]; return fb && fb.us? { o:fb.us.oreb||0, d:fb.us.dreb||0 } : null; })(),
+        rb:(g.rb||[]).map(x=>({ p:pls.filter(p=>String(p.id)===String(x.i)||String(p.pid)===String(x.i))[0]||{ num:"", name:"" }, r:x.r, o:x.o })) })) }; });
 }
 function _lgReb(L){
   const box=_lgPanel("Rebounding", null,
@@ -26016,10 +26023,17 @@ function _lgReb(L){
       h("td",{class:"lg-pos"}, String(i+1)), h("td",{class:"l lg-team"}, _lgCrest(L, r.id), h("span",{}, r.name), _lgOurs(r.name)? null : h("i",{class:"reb-tog"}, open? "−" : "+")));
     Object.keys(K).forEach(k=>{ const v=r[k], rk=rank[k](v), lim=k==="og"||k==="dg"? 1.5 : 3;
       tr.appendChild(h("td",{class:"pnum"+(k==="og"? " grp" : "")+(v!=null && A[k]!=null? (v-A[k]>=lim? " up" : v-A[k]<=-lim? " dn" : "") : "")}, v==null? "—" : K[k].f(v), rk && rk<=3? h("em",{class:"top"}, String(rk)) : null)); });
-    tr.appendChild(h("td",{class:"l grp reb-top"}, r.top.length? r.top.map(x=>h("div",{}, h("u",{}, "#"+(x.p.num||"")), " "+_lgLastName(x.p.name||"")+" ", h("b",{}, x.r.toFixed(1)), h("small",{}, " ("+x.o.toFixed(1)+")"))) : "—"));
+    /* A REBOUNDER IS A BAR: defensive in blue, offensive in gold, the number at its end */
+    const rbBar=(tot, o, scale, f)=>h("span",{class:"rbb"}, h("i",{class:"d", style:"width:"+Math.min(100, 100*Math.max(0, tot-o)/scale)+"%"}), h("i",{class:"o", style:"width:"+Math.min(100, 100*o/scale)+"%"}));
+    const man=(x, tot, o, scale, f)=>h("div",{class:"rbm"}, h("u",{}, "#"+(x.p.num||"")), h("span",{class:"nm"}, _lgLastName(x.p.name||"")), rbBar(tot, o, scale), h("b",{}, f(tot)), h("small",{}, "D "+f(tot-o)+" · O "+f(o)));
+    tr.appendChild(h("td",{class:"l grp reb-top"},
+      r.og!=null && r.dg!=null? h("p",{class:"rbt"}, h("span",{}, "Team"), rbBar(r.og+r.dg, r.og, 50), h("b",{}, (r.og+r.dg).toFixed(1)), h("small",{}, "D "+r.dg.toFixed(1)+" · O "+r.og.toFixed(1))) : null,
+      ...(r.top.length? r.top.map(x=>man(x, x.r, x.o, 12, v=>v.toFixed(1))) : ["—"])));
     /* the last three games, each in its own column, the most recent on the right */
     const lst=r.last.slice(-3); while(lst.length<3) lst.unshift(null);
-    lst.forEach((g,i)=>tr.appendChild(h("td",{class:"l reb-top reb-gm"+(i? "" : " grp")}, g? [h("em",{}, (g.home? "vs " : "@ ")+(_lgShort(g.opp)||g.opp||"")+" · "+String(g.d||"").slice(8,10)+"/"+String(g.d||"").slice(5,7))].concat(g.rb.slice(0,3).map(x=>h("div",{}, h("u",{}, "#"+(x.p.num||"")), " "+_lgLastName(x.p.name||"")+" ", h("b",{}, String(x.r)), h("small",{}, " ("+x.o+")")))) : "—")));
+    lst.forEach((g,i)=>tr.appendChild(h("td",{class:"l reb-top reb-gm"+(i? "" : " grp")}, g? [h("em",{}, (g.home? "vs " : "@ ")+(_lgShort(g.opp)||g.opp||"")+" · "+String(g.d||"").slice(8,10)+"/"+String(g.d||"").slice(5,7)),
+      g.us? h("p",{class:"rbt"}, h("span",{}, "Team"), rbBar(g.us.o+g.us.d, g.us.o, 55), h("b",{}, String(g.us.o+g.us.d)), h("small",{}, "D "+g.us.d+" · O "+g.us.o)) : null]
+      .concat(g.rb.slice(0,3).map(x=>man(x, x.r, x.o, 14, v=>String(Math.round(v)))))) : "—")));
     t.appendChild(tr); });
   t.appendChild(h("tr",{class:"pace-lg"}, h("td",{}), h("td",{class:"l"},"League · average"), ...Object.keys(K).map(k=>h("td",{class:"pnum"+(k==="og"? " grp" : "")}, A[k]==null? "—" : K[k].f(A[k]))), h("td",{class:"grp"}), h("td",{class:"grp"}), h("td",{}), h("td",{})));
   box.appendChild(h("div",{class:"pb-scroll"}, t));
@@ -26904,7 +26918,7 @@ function _sortTable(tbl, ci, headRow){
      sorting across one would carry a BLOB set up into the half-court block, which is a
      table that lies. Before this, those rows were swept to the bottom as unsortable and
      the groups they named were left behind. */
-  const isBand=r=>r.cells.length===1 && (r.cells[0].colSpan||1)>1;
+  const isBand=r=>(r.cells.length===1 && (r.cells[0].colSpan||1)>1) || r.classList.contains("tr-bandrow");
   const sortable=all.filter(r=>!isBand(r) && r.cells.length>ci
     && !SORT_PIN.test(r.cells[0]? r.cells[0].textContent : ""));
   if(sortable.length<3) return;
@@ -35382,6 +35396,9 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 
 /* Trends: the sets at a glance */
 .tr-glance{margin-top:16px}
+.tr-gl-cols{display:grid;grid-auto-flow:column;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:22px}
+@media screen and (max-width:900px){ .tr-gl-cols{grid-auto-flow:row;grid-template-rows:none!important;grid-template-columns:1fr} }
+.tr-gl-cols .tr-gl-r{grid-template-columns:minmax(90px,170px) minmax(60px,140px) 46px minmax(0,1fr)}
 .tr-gl-r{display:grid;grid-template-columns:minmax(120px,220px) minmax(90px,200px) 52px minmax(0,1fr);gap:10px;align-items:center;padding:3px 4px;border-bottom:1px solid var(--line,#eef0f3);font-size:12.5px}
 .tr-gl-k{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tr-gl-v{display:flex;align-items:center;gap:6px}
@@ -38703,6 +38720,14 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .reb-pre th.them{color:#b34a2e}.reb-pre th.us{color:#1e5aa8}
 .reb-lg td.pnum{text-align:center;font:600 13px 'IBM Plex Mono',monospace;white-space:nowrap}
 .reb-lg td.reb-top{white-space:nowrap;font-size:12px;vertical-align:top}.reb-lg td.reb-top > div{line-height:1.35}.reb-lg td.reb-top b{font:700 12px 'IBM Plex Mono',monospace}.reb-lg td.reb-top u{text-decoration:none;font:600 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}.reb-lg td.reb-top small{color:var(--ink-faint,#8a93a2);font-size:10px}
+.reb-lg td.reb-top .rbm,.reb-lg td.reb-top .rbt{display:grid;grid-template-columns:auto minmax(52px,1fr) 64px 26px auto;align-items:center;gap:5px;margin:0;line-height:1.3}
+.reb-lg td.reb-top .rbm u{grid-column:1}.reb-lg td.reb-top .rbm .nm{grid-column:2;overflow:hidden;text-overflow:ellipsis}
+.reb-lg td.reb-top .rbt{grid-template-columns:minmax(52px,1fr) 64px 26px auto;padding-bottom:3px;margin-bottom:3px;border-bottom:1px solid var(--line,#e4e7ec)}
+.reb-lg td.reb-top .rbt > span:first-child{font:700 10px Oswald,sans-serif;letter-spacing:.1em;text-transform:uppercase}
+.reb-lg .rbm .nm{min-width:0}
+.rbb{display:flex;height:8px;border-radius:4px;background:var(--panel-2,#eef0f3);overflow:hidden;width:64px}
+.rbb i.d{background:#2f5c8f}.rbb i.o{background:#c6a15b}
+.reb-lg td.reb-top small{font:600 9.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
 .reb-lg td.reb-gm em{display:block;font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);margin-bottom:1px}
 .reb-lg td.l small{color:var(--ink-faint,#8a93a2);font-size:10.5px}.reb-lg td.l u{text-decoration:none;font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
 .reb-edge{margin-top:8px;padding:7px 10px;border-radius:8px;font-size:12px;background:var(--panel-2,#f3f4f6);color:var(--ink,#141821)}

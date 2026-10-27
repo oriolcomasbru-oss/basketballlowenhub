@@ -2498,7 +2498,8 @@
       series.forEach(function (s) {
         var it = el("span", "tl-lg");
         var sw = el("span", "tl-lgk" + (s.dash ? " dash" : "")); sw.style.background = s.color;
-        if (s.dash) { sw.style.background = "none"; sw.style.borderTop = "3px dashed " + s.color; }
+        /* a dashed swatch drawn as a dashed fill: a dashed border sat above the legend line */
+        if (s.dash) sw.style.background = "repeating-linear-gradient(90deg," + s.color + " 0 5px,transparent 5px 8px)";
         it.appendChild(sw); it.appendChild(el("span", null, s.name));
         lg.appendChild(it);
       });
@@ -2617,9 +2618,9 @@
         var rl = rollOf(s);
         var linePts = rl ? rl.map(function (v, i) { return isFinite(v) ? [X(i), Y(v), v, i] : null; })
                          : pts.map(function (q) { return (q && !q[4]) ? q : null; });
-        var run = [], runs = [];
-        linePts.forEach(function (q) { if (q) run.push(q); else { if (run.length) runs.push(run); run = []; } });
-        if (run.length) runs.push(run);
+        /* ONE LINE A SERIES, across the days it has no value: a game between two trainings
+           cut the trainings' line in two, and the games' line was a row of loose diamonds */
+        var runs = [linePts.filter(Boolean)];
         runs.forEach(function (r) {
           if (r.length < 2) return;
           var d = r.map(function (q, j) { return (j ? "L" : "M") + q[0].toFixed(1) + " " + q[1].toFixed(1); }).join(" ");
@@ -3636,14 +3637,23 @@
        A phase with no named set in it is not drawn - transition and early offense are
        tagged by phase and not by play name, so they have no sets to list. They stay in
        the order anyway, for the day one of them is named. */
+    /* WHERE OUR POSSESSIONS CAME FROM, IN THE SAME TABLE. Each phase's line carries, game
+       by game, its share of the game and what it scored a possession - every possession of
+       that phase, named set or not - and the sets called in it are listed under it. A phase
+       with no named set (transition, early offense) is its line alone. */
+    var phG = games.map(function (g) { var m = {}, tot = 0;
+      (g.m && g.m.poss ? g.m.poss : []).forEach(function (q) { var k = phaseOf(q.first); var e = m[k] || (m[k] = { n: 0, pts: 0 }); e.n++; e.pts += q.pts || 0; tot++; });
+      return { m: m, tot: tot }; });
     var PHASE_SETS = PHASE_ROW.map(function (x) { return x.k; }).concat(["Inbound — unnamed"]);
+    phG.forEach(function (p) { Object.keys(p.m).forEach(function (k) { if (PHASE_SETS.indexOf(k) < 0) PHASE_SETS.push(k); }); });
+    var phTot = {}; phG.forEach(function (p) { Object.keys(p.m).forEach(function (k) { var t = phTot[k] || (phTot[k] = { n: 0, pts: 0 }); t.n += p.m[k].n; t.pts += p.m[k].pts; }); });
+    var allPoss = phG.reduce(function (a, p) { return a + p.tot; }, 0);
+    PHASE_SETS.sort(function (a, b) { return ((phTot[b] || {}).n || 0) - ((phTot[a] || {}).n || 0); });
     var grouped = [];
     PHASE_SETS.forEach(function (ph) {
       var mine = rows.filter(function (r) { return phaseOf(r.k) === ph; });
-      if (!mine.length) return;
-      var n = 0, pts = 0;
-      mine.forEach(function (r) { n += r.n; pts += r.pts; });
-      grouped.push({ band: ph, n: n, sets: mine.length, ppp: n ? pts / n : NaN });
+      if (!mine.length && !(phTot[ph] || {}).n) return;
+      grouped.push({ band: ph, sets: mine.length });
       mine.forEach(function (r) { grouped.push({ set: r }); });
     });
 
@@ -3661,10 +3671,17 @@
     var body = [];
     grouped.forEach(function (g) {
       if (g.band) {
-        body.push({ cls: "tr-bandrow", cells: [{ span: head.length, cls: "sx-band",
-          v: g.band + "  ·  " + g.sets + " set" + (g.sets === 1 ? "" : "s") +
-             "  ·  " + g.n + " run" + (g.n === 1 ? "" : "s") +
-             "  ·  " + f2(g.ppp) + " per possession" }] });
+        /* the phase's own line: share of the game and points a possession, each game */
+        var T = phTot[g.band] || { n: 0, pts: 0 }, tp = T.n ? T.pts / T.n : NaN;
+        var bc = [{ v: g.band + (g.sets ? "  ·  " + g.sets + " set" + (g.sets === 1 ? "" : "s") : ""), cls: "sx-band" }];
+        phG.forEach(function (p) { var e = p.m[g.band];
+          if (!e || !e.n) { bc.push({ v: "—", cls: "sx-band tr-none" }); return; }
+          var pp = e.pts / e.n;
+          bc.push({ v: Math.round(100 * e.n / Math.max(1, p.tot)) + "% · " + f2(pp), cls: "sx-band sx-cell " + (e.n >= 4 ? pppStep(pp) : "") }); });
+        bc.push({ v: T.n + " · " + (allPoss ? Math.round(100 * T.n / allPoss) : 0) + "%", cls: "sx-band" });
+        bc.push({ v: f2(tp), cls: "sx-band sx-cell " + (T.n >= 4 ? pppStep(tp) : "") });
+        bc.push({ v: "", cls: "sx-band" });
+        body.push({ cls: "tr-bandrow", cells: bc });
         return;
       }
       var r = g.set;
@@ -4194,11 +4211,15 @@
            the colour of the rate; the squares are its games in order - bigger the more it
            was run that night, coloured by what it returned - so a set that is fading or
            coming on is seen without reading a table. */
-        var glance = sets4.slice().sort(function (a, b) { return b.n - a.n; }).slice(0, 14);
+        var glance = sets4.slice().sort(function (a, b) { return b.n - a.n; }).slice(0, 28);
         if (glance.length) {
           var gbox = el("div", "tr-glance");
           gbox.appendChild(el("div", "tr-rank-h", "Sets at a glance — volume, return, and game by game"));
           var gMax = glance[0].n || 1;
+          /* two columns, the most run first down the left one */
+          var gcols = el("div", "tr-gl-cols");
+          gcols.style.gridTemplateRows = "repeat(" + Math.ceil(glance.length / 2) + ",auto)";
+          gbox.appendChild(gcols);
           glance.forEach(function (x) {
             var row = el("div", "tr-gl-r");
             row.appendChild(el("span", "tr-gl-k", x.k));
@@ -4215,7 +4236,7 @@
               sq.appendChild(d);
             });
             row.appendChild(sq);
-            gbox.appendChild(row);
+            gcols.appendChild(row);
           });
           rsec.appendChild(gbox);
         }
@@ -4283,9 +4304,7 @@
           { name: "BACK: after our shot at the rim or a turnover", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2,
             n: function (s) { return s.backN; }, roll: function (s) { return [s.backP, s.backN]; } } ], tOpt)));
     }
-    var heat = tdPhaseHeat(games);
-    if (heat) dash.appendChild(tdCard("Where our possessions came from",
-      "share of each game · points per possession underneath", null, heat, "wide"));
+    /* where our possessions came from is in the sets table now: each phase's line */
     /* The projection is not on the dashboard. With a season of real sessions every row of
        it read "no clear trend", which is the honest answer and an empty panel: it stays
        under Full detail for whoever wants the working, and a measure that IS heading
@@ -4324,7 +4343,7 @@
       var ss = setsHost.firstChild;
       ss.classList.add("tr-sets");
       var no5 = ss.querySelector(".tr-no"); if (no5) no5.textContent = "SETS";
-      var h5 = ss.querySelector(".sx-h"); if (h5) h5.textContent = "Systems efficiency — every set we called, game by game";
+      var h5 = ss.querySelector(".sx-h"); if (h5) h5.textContent = "Where our possessions came from, and every set we called · game by game";
       root.appendChild(ss);
     }
   }
@@ -4895,6 +4914,8 @@
       ".tr-sets .sx-table tr.tr-bandrow td{position:static;text-align:left;border:0;border-bottom:1px solid var(--line-strong,#d7dbe0);max-width:none;min-width:0;white-space:normal;padding-top:12px;",
       "  font:800 11px/1 'Oswald',sans-serif;letter-spacing:.14em;color:var(--ink)}",
       ".tr-sets .sx-table tr.tr-bandrow:hover td{box-shadow:none;background:transparent}",
+      ".tr-sets .sx-table tr.tr-bandrow td + td{font:700 11px/1.2 'IBM Plex Mono',monospace;letter-spacing:0;text-align:center;padding-top:12px}",
+      ".tr-sets .sx-table tr.tr-bandrow td.sx-cell{border-radius:4px}",
       ".tr-h{display:flex;align-items:baseline;gap:10px}",
       ".tr-no{font:800 10px/1 'Oswald',sans-serif;letter-spacing:.16em;color:var(--ink-faint);",
       "  border:1px solid var(--line-strong);border-radius:5px;padding:4px 6px}",
