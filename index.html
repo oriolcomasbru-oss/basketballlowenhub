@@ -1854,7 +1854,7 @@ body.prt.prt-textonly .rs-block-stats{display:none!important}
 .rep-toolbar{position:absolute;z-index:9000;display:none;align-items:center;gap:4px;background:var(--ink,#111827);border-radius:10px;padding:5px 7px;box-shadow:0 8px 24px rgba(16,24,40,.28)}
 /* key ideas: an underline only while editing, and the button that puts it on and off */
 .rs-rich span[data-key]{font-weight:700}
-body.edit-mode .rs-rich span[data-key]{text-decoration:underline;text-decoration-color:#c6a15b;text-decoration-thickness:3px;text-underline-offset:3px;background:rgba(198,161,91,.16);border-radius:2px}
+body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[data-key]{text-decoration:underline;text-decoration-color:#c6a15b;text-decoration-thickness:3px;text-underline-offset:3px;background:rgba(198,161,91,.16);border-radius:2px}
 .key-idea-btn{position:fixed;z-index:9100;font:700 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:999px;border:0;background:#141821;color:#f3d98e;box-shadow:0 6px 18px rgba(16,24,40,.3);cursor:pointer;white-space:nowrap}
 .rep-toolbar .rep-tb-btn.tb-key{color:#f3d98e;font-weight:800;letter-spacing:.04em}
 .rep-tb-btn{border:0;background:rgba(255,255,255,.12);color:#fff;border-radius:6px;min-width:26px;height:26px;cursor:pointer;font-weight:800;font-size:12px;padding:0 7px}
@@ -32462,6 +32462,7 @@ init();
     .sheet::before{display:none;}
     .roster-columns{grid-template-columns:repeat(5, 1fr) !important;}
     body.edit-mode [contenteditable="true"]{outline:none !important; background:none !important;}
+    .rs-rich span[data-key]{text-decoration:none !important; background:none !important;}
   }
   @media print and (orientation:portrait){
     :root{ --print-avail-w:700; --print-avail-h:1010; }
