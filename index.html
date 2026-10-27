@@ -27717,10 +27717,8 @@ function _dashOppPrint(card, title){
       /* a box that scrolls on the screen is cut by the printer to what fits: on paper it is not there at all */
       el.querySelectorAll(".dash-kpw").forEach(w=>{ while(w.firstChild) w.parentNode.insertBefore(w.firstChild, w); w.remove(); });
       return el; };
-    /* the numbers in two columns: ours from the tagging on the left, the league's sheet on the right */
-    const cL=h("div",{class:"dop-col"}), cR=h("div",{class:"dop-col"});
-    [...body.children].forEach(ch=>{ if(ch===notesBlk) return; (ch.querySelector(".dash-pg")? cR : cL).appendChild(clean(ch.cloneNode(true))); });
-    const p1=h("div",{class:"dop-fit"}, top(title), h("div",{class:"dop-two"}, cL, cR));
+    const p1=h("div",{class:"dop-fit"}, top(title));
+    [...body.children].forEach(ch=>{ if(ch!==notesBlk) p1.appendChild(clean(ch.cloneNode(true))); });
     const all=(notesBox && notesBox.__printAll)? notesBox.__printAll() : h("div",{class:"dash-miss"},"No key ideas marked in the pre game.");
     const p2=h("div",{class:"dop-fit dop-notes"}, top(title+" · scouting notes"), all);
     const pages=[p1, p2].map(p=>h("div",{class:"dop-page"}, p));
@@ -27829,8 +27827,10 @@ function _dashPostPrint(card, title){
     const notesBlk=notesSub? notesSub.closest(".dash-blk") : null;
     const clean=el=>{ el.querySelectorAll("button,input,.dash-go,.dash-src").forEach(x=>x.remove()); return el; };
     const top=t=>h("div",{class:"dop-top"}, h("b",{}, "Post game"), h("span",{}, t));
-    const p1=h("div",{class:"dop-fit"}, top(title));
-    [...body.children].forEach(ch=>{ if(ch!==notesBlk) p1.appendChild(clean(ch.cloneNode(true))); });
+    /* the numbers in two columns: ours from the tagging on the left, the league's sheet on the right */
+    const cL=h("div",{class:"dop-col"}), cR=h("div",{class:"dop-col"});
+    [...body.children].forEach(ch=>{ if(ch===notesBlk) return; (ch.querySelector(".dash-pg")? cR : cL).appendChild(clean(ch.cloneNode(true))); });
+    const p1=h("div",{class:"dop-fit"}, top(title), h("div",{class:"dop-two"}, cL, cR));
     const pk=notesSub? notesSub.querySelector(".dash-pk") : null;
     const p2=h("div",{class:"dop-fit dop-pnotes"}, top(title+" · key ideas"), pk? clean(pk.cloneNode(true)) : h("div",{class:"dash-miss"},"No key ideas marked in the post game."));
     [p1, p2].forEach(p=>area.appendChild(h("div",{class:"dop-page"}, p)));
