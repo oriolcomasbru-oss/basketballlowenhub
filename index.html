@@ -22194,6 +22194,11 @@ function _postOverviewDraw(sg, P, Tg, API, K){
       size:Math.min(1,Math.abs(d)/0.5), n:p.n, solidN:12, unit:"poss" }); });
   const dAll=ppp(dposs);
   const concepts=group(dposs, q=>q.label||"");
+  /* BALANCE IS TAG AND BACK AFTER A MISS: its number is theirs - TAG after our missed long
+     shot plus BACK - not what the clips labelled BALANCE in the video conceded */
+  try{ const T=model && model.trans, bc=concepts.filter(c=>/^balance$/i.test(String(c.k||"").trim()))[0];
+    if(T && bc){ const tm=(T.tag && T.tag.sub && T.tag.sub.miss) || { n:0, pts:0 }, bk=T.back || { n:0, pts:0 }, n=tm.n+bk.n;
+      bc.ppp=n? (tm.pts+bk.pts)/n : null; bc.tbN=n; } }catch(e){}
   const gDef=[];
   concepts.filter(c=>c.n>=4).forEach(c=>{ const d=c.ppp-(dAll||0);
     if(Math.abs(d)>=0.2) gDef.push({ text:c.k+": "+f2(c.ppp)+" conceded per possession", tone:d<0? "good" : "bad",
