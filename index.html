@@ -21821,7 +21821,9 @@ function _postMinutes(sg, opt){
       R.forEach(r=>{ grid.appendChild(h("span",{class:"pgmc-l"}, r[0]));
         qs.forEach(qi=>{ for(let mm=0; mm<minsOf(qi); mm++){ const b=B[qi+"|"+mm], when=ql(qi)+" "+(minsOf(qi)-mm)+"′";
           if(!r[1]){ const L2=lead[qi+"|"+mm], d=L2.u-L2.t, u=b? b.u.pts : 0, t=b? b.t.pts : 0;
-            put(h("span",{class:"pgmc-c st "+(d>0? "up" : d<0? "dn" : "av"), title:when+" · score "+L2.u+"–"+L2.t+" · this minute "+u+"–"+t}, d>0? "+"+d : d<0? "−"+(-d) : "0"), mm===0); continue; }
+            /* the number is the margin; the colour, whether this minute made it better or worse */
+            const ch=u-t;
+            put(h("span",{class:"pgmc-c st "+(ch>0? "up" : ch<0? "dn" : "av"), title:when+" · score "+L2.u+"–"+L2.t+" · this minute "+u+"–"+t}, d>0? "+"+d : d<0? "−"+(-d) : "0"), mm===0); continue; }
           const v=b? r[1](b) : null;
           put(v==null? h("span",{class:"pgmc-c mu", title:when},"") : h("span",{class:"pgmc-c "+r[2](v), title:when+" · "+r[0]+" "+r[3](v)}, r[3](v)), mm===0); } }); });
       /* OUR FIVE ON THE FLOOR, under each minute: the men who played most of it, a face each */
@@ -21841,7 +21843,7 @@ function _postMinutes(sg, opt){
           put(h("span",{class:"pgmc-c on", title:ql(qi)+" "+(minsOf(qi)-mm)+"′ · "+five.map(x=>"#"+x.num+" "+short(x.name)).join(", ")},
             slots.map((p,k)=>!p? h("i",{class:"pgmc-e"}) : (mm>0 && prev[k] && String(prev[k].id)===String(p.id))? h("i",{class:"pgmc-k", title:"#"+p.num+" "+short(p.name)}) : face(p))), mm===0); } }); }
       box.appendChild(h("div",{class:"pgmc-w"}, grid));
-      box.appendChild(h("div",{class:"pgm-leg"}, h("span",{}, h("i",{class:"up"}), "margin: we are in front"), h("span",{}, h("i",{class:"dn"}), "we are behind"),
+      box.appendChild(h("div",{class:"pgm-leg"}, h("span",{}, "margin: + we are in front, − behind ·"), h("span",{}, h("i",{class:"up"}), "the minute made it better"), h("span",{}, h("i",{class:"dn"}), "worse"),
         h("span",{}, "· on court: a face where a man comes in, the bar while he stays"),
         h("span",{}, "· a column a minute, the clock running down · OER/DER/OREB/DREB: play by play"+(m? " · Paint/TAG/BACK: our tagging" : ""))));
       return;
