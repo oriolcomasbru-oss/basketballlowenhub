@@ -21801,7 +21801,9 @@ function _postMinutes(sg, opt){
     if(opt.compact){
       const f2c=v=>v.toFixed(2).replace(/^0\./,"."), pcs=v=>Math.round(v)+"";
       const oerC=S=>{ const p=poss(S); return p<1.5? null : S.pts/p; };
-      const R=[["Spell", null],
+      /* THE MARGIN at the end of each minute: who is in front and by how much */
+      const lead={}; { let u=0, t=0; for(let qi=0; qi<=maxQ; qi++) for(let mm=0; mm<minsOf(qi); mm++){ const b=B[qi+"|"+mm]; if(b){ u+=b.u.pts; t+=b.t.pts; } lead[qi+"|"+mm]={ u:u, t:t }; } }
+      const R=[["Margin", null],
         ["OER", b=>oerC(b.u), v=>v>=1.1? "g" : v<=0.85? "b" : "", f2c],
         ["DER", b=>oerC(b.t), v=>v<=0.85? "g" : v>=1.1? "b" : "", f2c],
         ["OREB%", b=>{ const d=b.u.or+b.t.dr; return d? 100*b.u.or/d : null; }, v=>v>=35? "g" : v<=20? "b" : "", pcs],
@@ -21818,8 +21820,8 @@ function _postMinutes(sg, opt){
         grid.appendChild(h("span",{class:"pgmc-qh q0 "+(qu>qt? "up" : qu<qt? "dn" : ""), style:"grid-column:span "+minsOf(qi)}, h("b",{}, ql(qi)), " "+qu+"–"+qt)); });
       R.forEach(r=>{ grid.appendChild(h("span",{class:"pgmc-l"}, r[0]));
         qs.forEach(qi=>{ for(let mm=0; mm<minsOf(qi); mm++){ const b=B[qi+"|"+mm], when=ql(qi)+" "+(minsOf(qi)-mm)+"′";
-          if(!r[1]){ const rv=roll(qi,mm), u=b? b.u.pts : 0, t=b? b.t.pts : 0;
-            put(h("span",{class:"pgmc-c st "+state(rv), title:when+" · "+u+"–"+t+" this minute · "+(rv>0? "+" : "")+rv+" with the minute either side"}, rv>0? "+"+rv : rv<0? "−"+(-rv) : "0"), mm===0); continue; }
+          if(!r[1]){ const L2=lead[qi+"|"+mm], d=L2.u-L2.t, u=b? b.u.pts : 0, t=b? b.t.pts : 0;
+            put(h("span",{class:"pgmc-c st "+(d>0? "up" : d<0? "dn" : "av"), title:when+" · score "+L2.u+"–"+L2.t+" · this minute "+u+"–"+t}, d>0? "+"+d : d<0? "−"+(-d) : "0"), mm===0); continue; }
           const v=b? r[1](b) : null;
           put(v==null? h("span",{class:"pgmc-c mu", title:when},"") : h("span",{class:"pgmc-c "+r[2](v), title:when+" · "+r[0]+" "+r[3](v)}, r[3](v)), mm===0); } }); });
       /* OUR FIVE ON THE FLOOR, under each minute: the men who played most of it, a face each */
@@ -21828,11 +21830,19 @@ function _postMinutes(sg, opt){
           const el=_lgFace(Lf, r? { n:r.num, name:r.name, first:r.first, last:r.last, photo:r.photo, pid:r.pid, id:r.id } : { n:p.num, name:p.name, id:p.id }, "pgmc-f");
           el.querySelectorAll("img").forEach(i=>i.setAttribute("loading","eager")); return el; };
         grid.appendChild(h("span",{class:"pgmc-l"}, "On court"));
-        qs.forEach(qi=>{ for(let mm=0; mm<minsOf(qi); mm++){ const t0=qBase(qi)+mm*60, t1=t0+60;
-          const five=ours.map(p=>({ p:p, s:onIn(p.id, t0, t1) })).filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,5);
-          put(h("span",{class:"pgmc-c on", title:ql(qi)+" "+(minsOf(qi)-mm)+"′ · "+five.map(x=>"#"+x.p.num+" "+short(x.p.name)).join(", ")}, five.map(x=>face(x.p))), mm===0); } }); }
+        /* each man keeps his line while he stays on: his face the minute he comes in, a bar
+           after it, so a change is a new face and everything else reads as the same five */
+        qs.forEach(qi=>{ let slots=[null,null,null,null,null];
+          for(let mm=0; mm<minsOf(qi); mm++){ const t0=qBase(qi)+mm*60, t1=t0+60;
+          const five=ours.map(p=>({ p:p, s:onIn(p.id, t0, t1) })).filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,5).map(x=>x.p);
+          const ids=five.map(p=>String(p.id)), prev=slots.slice();
+          slots=slots.map(p=>p && ids.indexOf(String(p.id))>=0? p : null);
+          five.forEach(p=>{ if(slots.some(q=>q && String(q.id)===String(p.id))) return; const k=slots.indexOf(null); if(k>=0) slots[k]=p; });
+          put(h("span",{class:"pgmc-c on", title:ql(qi)+" "+(minsOf(qi)-mm)+"′ · "+five.map(x=>"#"+x.num+" "+short(x.name)).join(", ")},
+            slots.map((p,k)=>!p? h("i",{class:"pgmc-e"}) : (mm>0 && prev[k] && String(prev[k].id)===String(p.id))? h("i",{class:"pgmc-k", title:"#"+p.num+" "+short(p.name)}) : face(p))), mm===0); } }); }
       box.appendChild(h("div",{class:"pgmc-w"}, grid));
-      box.appendChild(h("div",{class:"pgm-leg"}, h("span",{}, h("i",{class:"up"}), "good spell: +4 or better over three minutes"), h("span",{}, h("i",{class:"dn"}), "slump: −4 or worse"),
+      box.appendChild(h("div",{class:"pgm-leg"}, h("span",{}, h("i",{class:"up"}), "margin: we are in front"), h("span",{}, h("i",{class:"dn"}), "we are behind"),
+        h("span",{}, "· on court: a face where a man comes in, the bar while he stays"),
         h("span",{}, "· a column a minute, the clock running down · OER/DER/OREB/DREB: play by play"+(m? " · Paint/TAG/BACK: our tagging" : ""))));
       return;
     }
@@ -38171,6 +38181,10 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .pgmc-c.on .lg-bdg.pgmc-f{width:100%;max-width:26px;aspect-ratio:1;height:auto;border-radius:50%;overflow:hidden;background:var(--panel-2,#eef0f3)}
 .pgmc-c.on .lg-bdg.pgmc-f img{object-fit:cover;object-position:50% 15%}
 .pgmc-c.on .lg-bdg-m{font-size:8px}
+.pgmc-c.on .pgmc-k{display:block;width:100%;max-width:26px;aspect-ratio:1;position:relative}
+.pgmc-c.on .pgmc-k::before{content:"";position:absolute;left:-1px;right:-1px;top:42%;height:16%;background:#c6a15b;opacity:.55}
+.pgmc-c.on .pgmc-e{display:block;width:100%;max-width:26px;aspect-ratio:1}
+.dop-mm .pgmc-c.on .pgmc-k,.dop-mm .pgmc-c.on .pgmc-e{max-width:34px}
 .dop-mm .pgmc-c.on{height:auto}.dop-mm .pgmc-c.on .lg-bdg.pgmc-f{max-width:34px}
 .pgmc-c.st.up{background:#2f9e86;color:#fff}.pgmc-c.st.dn{background:#d8524e;color:#fff}.pgmc-c.st.av{background:var(--panel-2,#e9ecf0)}
 .dash-pg{display:grid;gap:12px}
