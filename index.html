@@ -27850,7 +27850,10 @@ function _dashPostPrint(card, title){
     /* the numbers in two columns: ours from the tagging on the left, the league's sheet on the right */
     const cL=h("div",{class:"dop-col"}), cR=h("div",{class:"dop-col"});
     [...body.children].forEach(ch=>{ if(ch===notesBlk) return; (ch.querySelector(".dash-pg")? cR : cL).appendChild(clean(ch.cloneNode(true))); });
-    const p1=h("div",{class:"dop-fit"}, top(title), h("div",{class:"dop-two"}, cL, cR));
+    /* the minute by minute under both columns, the whole width of the sheet */
+    const mm=[...cR.querySelectorAll(".dash-sub")].filter(x=>x.querySelector(".pgm-c"))[0];
+    if(mm) mm.remove();
+    const p1=h("div",{class:"dop-fit"}, top(title), h("div",{class:"dop-two"}, cL, cR), mm? h("div",{class:"dop-mm"}, mm) : null);
     const pk=notesSub? notesSub.querySelector(".dash-pk") : null;
     const p2=h("div",{class:"dop-fit dop-pnotes"}, top(title+" · key ideas"), pk? clean(pk.cloneNode(true)) : h("div",{class:"dash-miss"},"No key ideas marked in the post game."));
     [p1, p2].forEach(p=>area.appendChild(h("div",{class:"dop-page"}, p)));
@@ -28136,18 +28139,20 @@ function _dashPostSplit(box, g){
     const fig=(k,v,n,tone)=>h("div",{class:"dash-fig "+(tone||"")}, h("i",{},k), h("b",{},v), h("span",{},n||""));
     const S={}; m.poss.forEach(q=>{ if(q.phase!=="Half court") return; const k=String(q.first||"").trim(); if(!k) return; (S[k]=S[k]||{ n:0, p:0 }); S[k].n++; S[k].p+=q.pts||0; });
     const ss=Object.keys(S).map(k=>({ k:k, n:S[k].n, v:S[k].p/S[k].n })).filter(x=>x.n>=2);
-    const good=ss.filter(x=>x.v>=1).sort((a,b)=>b.v-a.v||b.n-a.n).slice(0,5), bad=ss.filter(x=>x.v<0.8).sort((a,b)=>a.v-b.v||b.n-a.n).slice(0,5);
+    const good=ss.filter(x=>x.v>=1).sort((a,b)=>b.v-a.v||b.n-a.n).slice(0,8), bad=ss.filter(x=>x.v<0.8).sort((a,b)=>a.v-b.v||b.n-a.n).slice(0,8);
+    /* a list in two columns, read down the first and then the second */
+    const two=list=>h("div",{class:"dash-sets two", style:"grid-template-rows:repeat("+Math.max(1, Math.ceil(list.length/2))+",auto)"}, list);
     const setRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" runs"), h("em",{class:x.v>=1.1? "lo" : x.v<0.8? "hi" : ""}, x.v.toFixed(2)));
     const pt=API.measured(s,"pt"), br=API.measured(s,"br");
     const off=h("div",{class:"dash-sub"}, h("h4",{},"Offense"),
       h("div",{class:"dash-figs"}, fig("OER", f2(oer), m.poss.length+" possessions", oer==null? "" : oer>=1.1? "good" : oer<0.95? "bad" : ""),
         fig("Paint touches", fP(pt), "target 70%", isFinite(pt)? (pt>=70? "good" : pt<60? "bad" : "") : ""),
         fig("Ball reversals", fP(br), "of possessions", "")),
-      h("div",{class:"dash-h5"},"Sets that worked · half court"), good.length? h("div",{class:"dash-sets"}, good.map(setRow)) : h("div",{class:"dash-src"},"No half court set scored a point a possession on two runs or more."),
-      h("div",{class:"dash-h5 bad"},"Sets that did not"), bad.length? h("div",{class:"dash-sets"}, bad.map(setRow)) : h("div",{class:"dash-src"},"No set ran twice under 0.80."));
+      h("div",{class:"dash-h5"},"Sets that worked · half court"), good.length? two(good.map(setRow)) : h("div",{class:"dash-src"},"No half court set scored a point a possession on two runs or more."),
+      h("div",{class:"dash-h5 bad"},"Sets that did not"), bad.length? two(bad.map(setRow)) : h("div",{class:"dash-src"},"No set ran twice under 0.80."));
     const C={}; dp.forEach(q=>{ const k=q.label||"—"; (C[k]=C[k]||{ n:0, p:0 }); C[k].n++; C[k].p+=q.pts||0; });
     /* BALANCE counts in the DER above, it is only not a row of its own */
-    const cs=Object.keys(C).map(k=>({ k:k, n:C[k].n, v:C[k].p/C[k].n })).filter(x=>x.n>=2 && !/^balance$/i.test(String(x.k).trim())).sort((a,b)=>b.n-a.n).slice(0,8);
+    const cs=Object.keys(C).map(k=>({ k:k, n:C[k].n, v:C[k].p/C[k].n })).filter(x=>x.n>=2 && !/^balance$/i.test(String(x.k).trim())).sort((a,b)=>b.n-a.n).slice(0,10);
     const conRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" poss"), h("em",{class:x.v<=0.85? "lo" : x.v>=1.15? "hi" : ""}, x.v.toFixed(2)));
     const tbTone=o=>!o? "" : o.ppp<=0.9? "good" : o.ppp>=1.2? "bad" : "";
     const def=h("div",{class:"dash-sub"}, h("h4",{},"Defense"),
@@ -28155,7 +28160,7 @@ function _dashPostSplit(box, g){
         fig("TAG", TAG? f2(TAG.ppp) : "—", TAG? TAG.n+" transitions · pts each" : "none", tbTone(TAG)),
         fig("BACK", BACK? f2(BACK.ppp) : "—", BACK? BACK.n+" transitions · pts each" : "none", tbTone(BACK))),
       h("div",{class:"dash-h5"},"Our defensive concepts · points allowed a possession"),
-      cs.length? h("div",{class:"dash-sets"}, cs.map(conRow)) : h("div",{class:"dash-src"},"No defensive situation tagged twice."));
+      cs.length? two(cs.map(conRow)) : h("div",{class:"dash-src"},"No defensive situation tagged twice."));
     box.appendChild(h("div",{class:"dash-2"}, off, def));
     box.appendChild(h("div",{class:"dash-src"},"From our tagging of the game ("+(GM.name||"")+") · green is good for us, red is bad"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Our tagging could not be read from the Drive.")); });
@@ -37875,6 +37880,8 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-figs.four{grid-template-columns:repeat(2,minmax(0,1fr))}
 .dash-figs.two{grid-template-columns:repeat(2,minmax(0,1fr))}
 .dash-sets{display:grid;gap:4px}
+.dash-sets.two{grid-auto-flow:column;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:8px}
+@media screen and (max-width:760px){ .dash-sets.two{grid-auto-flow:row;grid-template-rows:none!important;grid-template-columns:1fr} }
 .dash-set{display:flex;align-items:center;gap:7px;border:1px solid var(--line,#e4e7ec);border-radius:8px;padding:3px 4px 3px 9px;font-size:12px;min-width:0}
 .dash-set > b{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
 .dash-set q{quotes:"“" "”";font-style:italic;font-weight:600;color:#8a6829;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
@@ -38138,7 +38145,7 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .pgmc-c.st.up{background:#2f9e86;color:#fff}.pgmc-c.st.dn{background:#d8524e;color:#fff}.pgmc-c.st.av{background:var(--panel-2,#e9ecf0)}
 .dash-pg{display:grid;gap:12px}
 .dash-pg .row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
-@media (max-width:760px){ .dash-pg .row2{grid-template-columns:1fr} }
+@media screen and (max-width:760px){ .dash-pg .row2{grid-template-columns:1fr} }
 .dash-qt{width:100%;border-collapse:collapse;font:600 12px "IBM Plex Mono",monospace}
 .dash-qt th{font:700 9.5px Oswald,sans-serif;letter-spacing:.1em;color:var(--ink-faint,#8a93a2);text-align:center;padding:3px 4px}
 .dash-qt td{text-align:center;padding:4px;border-top:1px solid #eceef2}.dash-qt td.n{text-align:left;font-family:Oswald,sans-serif;font-weight:700}
@@ -38192,7 +38199,11 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dop-top b{font:700 13px Oswald,sans-serif;letter-spacing:.18em;text-transform:uppercase}
 .dop-top span{font:600 12px 'IBM Plex Mono',monospace}
 .dop-fit .dash-blk,.dop-fit .dash-3c{margin-top:0}
-.dop-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px;align-items:start}
+.dop-two{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:18px;align-items:start}
+.dop-fit .lgg-keys{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px}
+.dop-fit .lgg-key{padding:5px 10px 6px;border-radius:8px}.dop-fit .lgg-key b{font-size:17px}.dop-fit .lgg-key i{font-size:11px;margin-top:0}
+.dop-mm .pgmc{gap:3px 2px;font-size:11px}.dop-mm .pgmc-c{height:22px}.dop-mm .pgmc-l{font-size:11px}.dop-mm .pgmc-qh{font-size:12.5px}
+.dop-mm .pgm-leg{font-size:11.5px}
 .dop-col{display:grid;gap:10px;align-content:start;min-width:0}
 .dop-fit .pgmc{min-width:0}
 /* the key ideas on paper run on in columns, a column breaking only between two lists */
