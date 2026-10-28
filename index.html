@@ -15102,7 +15102,6 @@ function _gpToCard(L, onClose){
     h("div",{class:"gp7-two"}, h("div",{}, h("div",{class:"gp7-fh"},"Where the points came from"), srcT), fives),
     h("div",{class:"gp7-ls"},
       line("Scored for us", top(true)), line("Scored for them", top(false)),
-      line("Attack · their tired", tiredOf("t", L.them), "warn"), line("Our long stints", tiredOf("u", L.us)),
       line("Our foul trouble", trouble, trouble.length? "bad" : ""),
       line("Now", ["timeouts: we "+(U.left!=null? U.left : "—")+", they "+(T.left!=null? T.left : "—"), "team fouls: we "+(U.fouls||0)+", they "+(T.fouls||0)+(U.fouls>=4? " (their bonus)" : "")+(T.fouls>=4? " (our bonus)" : ""), arrow? "arrow → "+(arrow===L.uc? "us" : "them") : ""].filter(Boolean))));
 }
@@ -15397,10 +15396,13 @@ function _gpScoreBoard(){
     _gpActs(L.feed, L.lastT).forEach(o=>{ const p=_gpPts(o.a); if(!p) return; const qi=Math.min(nq-1, _gpQx(o.a.quarter));
       if(o.a.teamcode===uc) U[qi]+=p; else T[qi]+=p; });
     const su=U.reduce((a,b)=>a+b,0), st=T.reduce((a,b)=>a+b,0);
-    const G=L.G||{}, nmU=_lgShort(L.home? G.home : G.away)||"Us", nmT=_lgShort(L.home? G.away : G.home)||"Them";
+    /* the clubs by their three letters: the column is narrow */
+    const G=L.G||{}, tms=(leagueState().teams||[]), code=(id, nm)=>{ const x=tms.filter(t=>String(t.id)===String(id))[0]; return (x && (x.tlc||x.short)) || String(nm||"").slice(0,3).toUpperCase(); };
+    const nmU=code(L.home? G.homeId : G.awayId, L.home? G.home : G.away)||"US", nmT=code(L.home? G.awayId : G.homeId, L.home? G.away : G.home)||"THEM";
     const tu=(L.tm && L.tm.u)||null, tt=(L.tm && L.tm.t)||null;
     const run=_gpRun(L.feed, uc, L.lastT), ar=_gpArrow(L.feed);
-    let al=[]; try{ const PRI={ bad:0, warn:1, good:2, info:3 }; al=_gpAlerts(L).sort((a,b)=>PRI[a.tone]-PRI[b.tone]).slice(0,3); }catch(e){ _quiet(e); }
+    /* the reminders of the moment, less the ones the board already says (bonus, arrow, run) */
+    let al=[]; try{ const PRI={ bad:0, warn:1, good:2, info:3 }; al=_gpAlerts(L).filter(a=>!/^(bonusThem|bonusUs|poss|possOT|runT|runU)\b/.test(a.k)).sort((a,b)=>PRI[a.tone]-PRI[b.tone]).slice(0,3); }catch(e){ _quiet(e); }
     const clock=L.live? _lgGameClock(L.lastT) : "Final";
     const sig=JSON.stringify([U,T,clock,tu,tt,run,ar,al.map(a=>[a.big,a.tone]),nmU,nmT]);
     if(sig===wrap.__sig) return; wrap.__sig=sig; wrap.innerHTML="";
@@ -38879,7 +38881,9 @@ body.dark .gp5 tr.gp5-rt td.v.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp5-row2{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:8px;align-items:start}
 @media (max-width:1000px){ .gp5-row3{grid-template-columns:minmax(0,1fr) minmax(0,1fr)} .gp5-row3 > :last-child{grid-column:1/-1} }
 /* our team and theirs side by side, each its own width; on an iPad held upright, one under the other */
-.gp5-row2.gp5-teams{grid-template-columns:minmax(0,1fr) 172px minmax(0,1fr)}
+/* their table carries more columns than ours: it gets the wider share (measured on an iPad, 1080 px:
+   ours needs 377 px, theirs 456, the score 150) */
+.gp5-row2.gp5-teams{grid-template-columns:minmax(0,1fr) 150px minmax(0,1.2fr)}
 .gp5-sb{position:-webkit-sticky;position:sticky;top:60px;align-self:start;z-index:5;display:grid;gap:8px;padding:10px 9px;border:1px solid var(--line-strong,#d2d7df);border-radius:12px;background:var(--panel,#fff);box-shadow:0 6px 18px rgba(16,24,40,.10)}
 .gp5-sb-none{font-size:12px;color:var(--ink-soft,#5b6472);text-align:center;line-height:1.4}
 .gp5-sb-ck{font:700 12px 'IBM Plex Mono',monospace;text-align:center;color:var(--ink-soft,#5b6472);letter-spacing:.04em}
@@ -39330,7 +39334,7 @@ body.dark .gp9-five .pl.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp4.dash .gp-bf-r{grid-template-columns:44px minmax(0,1fr) 104px minmax(0,1fr) 44px}
 /* the game being played: us against them, drawn */
 .gp-lv-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-.gp-lv-top .sc{font:700 28px/1 'Oswald',sans-serif}
+.gp-lv-top .sc{font:700 28px/1.2 'Oswald',sans-serif;padding-bottom:2px}
 .gp-lv-top .sc.up,.gp-lv-k.up b{color:#1f8068}.gp-lv-top .sc.dn,.gp-lv-k.dn b{color:#c0403c}
 .gp-lv-top .ck{font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);margin-right:6px}
 .gp-lv-k{display:inline-flex;flex-direction:column;background:var(--panel-2,#f4f5f7);border-radius:7px;padding:3px 9px;min-width:54px}
