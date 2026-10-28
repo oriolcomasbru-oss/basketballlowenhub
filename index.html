@@ -15054,15 +15054,52 @@ function _gpToCard(L, onClose){
   const kp=(k,a,b,good)=>h("div",{class:"gp7-k"}, h("i",{},k), h("b",{class:good==null? "" : good? "good" : "bad"}, a), h("em",{},"–"), h("b",{}, b));
   const line=(k,v,cls)=>h("div",{class:"gp7-l "+(cls||"")}, h("b",{},k), h("span",{}, v && v.length? v.join(" · ") : "—"));
   const pu=pos(W.u)>=1? W.u.pts/pos(W.u) : null, pt=pos(W.t)>=1? W.t.pts/pos(W.t) : null;
+  /* THE TIMEOUT IN ONE LOOK (Oriol, 28/10/2026): the score first; then where the points of
+     the stretch came from, side by side, with the one thing hurting us and the one working
+     said in a line; then both fives on the floor with what each man has done since. */
+  let su=0, st=0; A.forEach(o=>{ const v=_gpPts(o.a); if(o.a.teamcode===L.uc) su+=v; else st+=v; });
+  const lead=su-st, secs=Math.max(0, tEnd-tStart);
+  const SRC=[
+    { k:"Threes", u:3*W.u.p3m, t:3*W.t.p3m, nu:W.u.p3m+"/"+W.u.p3a, nt:W.t.p3m+"/"+W.t.p3a, hurt:"Close out on their shooters", works:"Our threes are falling" },
+    { k:"Free throws", u:W.u.ftm, t:W.t.ftm, nu:W.u.ftm+"/"+W.u.fta, nt:W.t.ftm+"/"+W.t.fta, hurt:"Stop fouling: defend without hands", works:"We are getting to the line" },
+    { k:"2nd chance", u:W.u.sc, t:W.t.sc, nu:W.u.or+" OR", nt:W.t.or+" OR", hurt:"Box out: all five to the glass", works:"Our offensive rebounding pays" },
+    { k:"Off turnovers", u:W.u.pto, t:W.t.pto, nu:W.t.tov+" TO", nt:W.u.tov+" TO", hurt:"Take care of the ball", works:"Our defense is forcing turnovers" },
+    { k:"Transition ≤ 8 s", u:W.u.fast, t:W.t.fast, nu:"", nt:"", hurt:"Get back and stop the ball", works:"Keep running" } ];
+  const worst=SRC.filter(x=>x.t-x.u>=3).sort((a,b)=>(b.t-b.u)-(a.t-a.u))[0]||null;
+  const best=SRC.filter(x=>x.u-x.t>=3).sort((a,b)=>(b.u-b.t)-(a.u-a.t))[0]||null;
+  const srcT=h("div",{class:"gp7-src"}, h("span",{class:"hd"},""), h("span",{class:"hd"},"Us"), h("span",{class:"hd"},"Them"));
+  SRC.forEach(x=>{ const cls=x===worst? " bad" : x===best? " good" : "";
+    srcT.appendChild(h("span",{class:"k"+cls}, x.k));
+    srcT.appendChild(h("span",{class:"v"+cls}, h("b",{}, String(x.u)), x.nu? h("i",{}, x.nu) : null));
+    srcT.appendChild(h("span",{class:"v"+cls}, h("b",{}, String(x.t)), x.nt? h("i",{}, x.nt) : null)); });
+  const msg=h("div",{class:"gp7-msg"},
+    worst? h("span",{class:"bad"}, h("b",{}, worst.hurt), " · "+worst.k.toLowerCase()+" "+worst.u+"–"+worst.t) : null,
+    best? h("span",{class:"good"}, h("b",{}, best.works), " · "+best.k.toLowerCase()+" "+best.u+"–"+best.t) : null);
+  /* both fives on the floor: stint, fouls and what each has scored since the timeout */
+  const fiveOf=(side, list)=>(list||[]).map(p=>({ p:p, c:((L.court||{})[side]||{})[String(p.id)] })).filter(x=>x.c && x.c.on)
+    .sort((a,b)=>(b.c.stint||0)-(a.c.stint||0)).map(x=>{ const id=String(x.p.id), tired=(x.c.stint||0)>=270, lv=_gpFoulLv(x.p.pf, qi);
+      return h("div",{class:"gp7-p"+(tired? " tired" : "")},
+        _gpFace(id, x.p.num, x.p.name, side==="u", "to"),
+        h("b",{}, (x.p.num!=null && x.p.num!==""? "#"+x.p.num+" " : "")+_lgLastName(x.p.name||"")),
+        h("span",{class:"st", title:"on the floor in a row"}, _gpMmss(x.c.stint)),
+        h("span",{class:"pf "+lv}, (x.p.pf||0)+" PF"),
+        h("span",{class:"pt"}, (sc[id]||0)+" pts")); });
+  const fives=h("div",{class:"gp7-fives"},
+    h("div",{}, h("div",{class:"gp7-fh"},"Ours on the floor"), ...fiveOf("u", L.us)),
+    h("div",{}, h("div",{class:"gp7-fh"},"Theirs on the floor"), ...fiveOf("t", L.them)));
   return h("div",{class:"gp7-card"},
     h("div",{class:"gp7-h"}, h("b",{}, who+" · "+_lgGameClock(L.lastT)), h("span",{}, "since "+(tStart? "the timeout at "+_lgGameClock(tStart) : "the tip-off")),
       h("button",{type:"button", class:"gp7-x", onclick:onClose}, "Close ✕")),
+    h("div",{class:"gp7-sc"}, h("b",{class:lead>0? "up" : lead<0? "dn" : ""}, su+"–"+st),
+      h("span",{}, lead===0? "tied" : (lead>0? "+"+lead : String(lead))), h("em",{}, "this stretch "+W.u.pts+"–"+W.t.pts+" in "+_gpMmss(secs))),
+    (worst || best)? msg : null,
     h("div",{class:"gp7-kpis"},
       kp("Partial", String(W.u.pts), String(W.t.pts), W.u.pts===W.t.pts? null : W.u.pts>W.t.pts),
       kp("Points / poss", ppp(W.u), ppp(W.t), pu==null || pt==null || pu===pt? null : pu>pt),
       kp("Turnovers", String(W.u.tov), String(W.t.tov), W.u.tov===W.t.tov? null : W.u.tov<W.t.tov),
       kp("Off. rebounds", String(W.u.or), String(W.t.or), W.u.or===W.t.or? null : W.u.or>W.t.or),
       kp("Free throws", W.u.ftm+"/"+W.u.fta, W.t.ftm+"/"+W.t.fta, W.u.fta===W.t.fta? null : W.u.fta>W.t.fta)),
+    h("div",{class:"gp7-two"}, h("div",{}, h("div",{class:"gp7-fh"},"Where the points came from"), srcT), fives),
     h("div",{class:"gp7-ls"},
       line("Scored for us", top(true)), line("Scored for them", top(false)),
       line("Attack · their tired", tiredOf("t", L.them), "warn"), line("Our long stints", tiredOf("u", L.us)),
@@ -15253,6 +15290,13 @@ function _gpRulesCard(){
 function _gpAlertBar(){
   const wrap=h("div",{class:"gp5-alerts"});
   const rulesHost=h("div",{class:"gp5-ruleshost"}); wrap.__rules=rulesHost;
+  /* the score and the clock in the bar, which never leaves the screen: kept as one element and
+     only its text changed, so it does not flicker with each reading */
+  const scEl=h("span",{class:"gp5-al-score"});
+  const scPaint=()=>{ try{ const L=_gpLiveNow; if(!L || !L.feed || !L.live){ scEl.style.display="none"; return; }
+    let u=0, t=0; _gpActs(L.feed, L.lastT).forEach(o=>{ const p=_gpPts(o.a); if(o.a.teamcode===L.uc) u+=p; else t+=p; });
+    const txt=u+"–"+t+" · "+_lgGameClock(L.lastT);
+    scEl.style.display=""; if(scEl.textContent!==txt) scEl.textContent=txt; scEl.className="gp5-al-score "+(u>t? "up" : u<t? "dn" : ""); }catch(e){ _quiet(e); } };
   const paint=()=>{
     const L=_gpLiveNow, list=_gpAlerts(L), now=Date.now();
     const key0=L? (L.rp? "rp|" : "lv|")+(L.G? L.G.id : "")+"|" : "";
@@ -15275,6 +15319,7 @@ function _gpAlertBar(){
     big.forEach(a=>bigHost.appendChild(h("button",{type:"button", class:"gp5-al big "+a.tone, title:"tap: seen", onclick:()=>{ a.s.ack=true; wrap.__sig=""; paint(); }},
       h("b",{}, a.big), h("span",{}, a.txt), h("em",{},"OK ✓"))));
     const row=h("div",{class:"gp5-al-row"});
+    row.appendChild(scEl);
     const ar=_gpArrow(L.feed);
     if(ar) row.appendChild(h("span",{class:"gp5-al-arrow "+(ar===L.uc? "us" : "them"), title:"alternating possession: the next held ball or quarter start"}, "Arrow → "+(ar===L.uc? "US" : "THEM")));
     small.forEach(a=>row.appendChild(h("span",{class:"gp5-al chip "+a.tone, title:a.txt}, a.big)));
@@ -15305,14 +15350,15 @@ function _gpAlertBar(){
     const k=(L.rp? "rp|" : "lv|")+(L.G? L.G.id : "")+"|to|"+(x.a.id||x.t);
     if(!_gpAlertSeen[k]){ _gpAlertSeen[k]={ first:Date.now() }; openCard(); } };
   const paint0=paint;
-  const paintAll=()=>{ paint0(); applyMode(); watchTo(); refreshCard(); };
+  const paintAll=()=>{ paint0(); scPaint(); applyMode(); watchTo(); refreshCard(); };
   paintAll();
   /* the bar is made before it is on the page and a reading can come in that instant: it lets go
      only once it has been on the page and has left it */
   const gone=()=>{ if(wrap.isConnected){ wrap.__was=1; return false; } return !!wrap.__was; };
   /* the hub's menu is fixed on top of the page (two rows on an iPad, more on a narrow screen):
      the bar rides just under its bottom edge, wherever that is */
-  const fixTop=()=>{ try{ const tb=document.getElementById("topbar"); const b=tb? Math.max(0, Math.round(tb.getBoundingClientRect().bottom)) : 0; const v=b+"px"; if(wrap.style.top!==v) wrap.style.top=v; }catch(e){_quiet(e)} };
+  const fixTop=()=>{ try{ const tb=document.getElementById("topbar"); const z=parseFloat(getComputedStyle(wrap.closest(".gp5")||wrap).zoom)||1;
+      const b=tb? Math.max(0, Math.round(tb.getBoundingClientRect().bottom/z)) : 0; const v=b+"px"; if(wrap.style.top!==v) wrap.style.top=v; }catch(e){_quiet(e)} };
   fixTop();
   const onScroll=()=>{ if(gone()){ removeEventListener("scroll", onScroll, true); removeEventListener("resize", onScroll); return; } fixTop(); };
   addEventListener("scroll", onScroll, { passive:true, capture:true }); addEventListener("resize", onScroll);
@@ -15334,6 +15380,63 @@ function _gpBoxTds(p, live){
   const v={ pts:p.pts||0, val:p.pir||0, ast:p.ast||0, or:p.or||0 };
   const hot={ pts:v.pts>=12, val:v.val>=12, ast:v.ast>=5, or:v.or>=3 }, cold={ val:v.val<=-3 };
   return GP_BX.map(b=>h("td",{class:"bx"+(hot[b[0]]? " hot" : cold[b[0]]? " cold" : "")}, String(v[b[0]])));
+}
+/* THE SCORE, ALWAYS IN SIGHT. Between our team and theirs: the score and the clock, the score
+   of every quarter, the fouls and timeouts of both, the arrow, the run being played and the
+   reminders of the moment. It rides down the screen with the two teams (sticky, under the bar
+   of reminders) and is drawn again only when something on it changes. */
+function _gpQx(q){ q=String(q||""); const m=/^q(\d)/i.exec(q); if(m) return (+m[1])-1; const o=/^ot(\d*)/i.exec(q); return o? 3+(+(o[1]||1)) : 0; }
+function _gpScoreBoard(){
+  const wrap=h("div",{class:"gp5-sb"});
+  const qn=q=>q<4? "Q"+(q+1) : "OT"+(q-3);
+  const paint=()=>{
+    const L=_gpLiveNow;
+    if(!L || !L.feed){ if(wrap.__sig==="none") return; wrap.__sig="none"; wrap.innerHTML="";
+      wrap.appendChild(h("div",{class:"gp5-sb-none"},"The score, the quarters and the fouls show here from the tip-off")); return; }
+    const uc=L.uc, nq=Math.max(3, L.maxQ||0)+1, U=new Array(nq).fill(0), T=new Array(nq).fill(0);
+    _gpActs(L.feed, L.lastT).forEach(o=>{ const p=_gpPts(o.a); if(!p) return; const qi=Math.min(nq-1, _gpQx(o.a.quarter));
+      if(o.a.teamcode===uc) U[qi]+=p; else T[qi]+=p; });
+    const su=U.reduce((a,b)=>a+b,0), st=T.reduce((a,b)=>a+b,0);
+    const G=L.G||{}, nmU=_lgShort(L.home? G.home : G.away)||"Us", nmT=_lgShort(L.home? G.away : G.home)||"Them";
+    const tu=(L.tm && L.tm.u)||null, tt=(L.tm && L.tm.t)||null;
+    const run=_gpRun(L.feed, uc, L.lastT), ar=_gpArrow(L.feed);
+    let al=[]; try{ const PRI={ bad:0, warn:1, good:2, info:3 }; al=_gpAlerts(L).sort((a,b)=>PRI[a.tone]-PRI[b.tone]).slice(0,3); }catch(e){ _quiet(e); }
+    const clock=L.live? _lgGameClock(L.lastT) : "Final";
+    const sig=JSON.stringify([U,T,clock,tu,tt,run,ar,al.map(a=>[a.big,a.tone]),nmU,nmT]);
+    if(sig===wrap.__sig) return; wrap.__sig=sig; wrap.innerHTML="";
+    const lead=su-st;
+    wrap.appendChild(h("div",{class:"gp5-sb-ck"}, (L.rp? "Replay · " : "")+clock));
+    wrap.appendChild(h("div",{class:"gp5-sb-sc"},
+      h("span",{class:"t"}, nmU), h("b",{class:lead>0? "up" : lead<0? "dn" : ""}, su), h("i",{},"–"), h("b",{}, st), h("span",{class:"t"}, nmT)));
+    /* the quarters, the one being played marked */
+    const qt=h("div",{class:"gp5-sb-q", style:"grid-template-columns:auto repeat("+nq+",minmax(0,1fr))"});
+    qt.appendChild(h("span",{class:"h"},""));
+    for(let q=0;q<nq;q++) qt.appendChild(h("span",{class:"h"+(q===L.maxQ && L.live? " cur" : "")}, qn(q)));
+    [[nmU,U,T],[nmT,T,U]].forEach(r=>{ qt.appendChild(h("span",{class:"n"}, r[0]));
+      for(let q=0;q<nq;q++){ const played=q<=(L.maxQ||0); qt.appendChild(h("span",{class:"v"+(played && r[1][q]>r[2][q]? " w" : "")+(q===L.maxQ && L.live? " cur" : "")}, played? String(r[1][q]) : "–")); } });
+    wrap.appendChild(qt);
+    /* fouls and timeouts of both, the bonus said as what it means */
+    const dots=tm=>{ const d=[]; for(let i=0;i<(tm? tm.of : 0);i++) d.push(h("i",{class:i<tm.left? "on" : ""})); return h("span",{class:"dots"}, d); };
+    wrap.appendChild(h("div",{class:"gp5-sb-tm"},
+      h("span",{class:"h"},""), h("span",{class:"h"},"Fouls"), h("span",{class:"h"},"Timeouts"),
+      h("span",{class:"n"}, nmU), h("b",{class:tu && tu.bonus? "bon" : ""}, tu? String(tu.fouls) : "–"), tu? dots(tu) : h("span",{},"–"),
+      h("span",{class:"n"}, nmT), h("b",{class:tt && tt.bonus? "bon" : ""}, tt? String(tt.fouls) : "–"), tt? dots(tt) : h("span",{},"–")));
+    const notes=[];
+    if(tt && tt.bonus) notes.push(h("span",{class:"good"},"We are in the bonus"));
+    if(tu && tu.bonus) notes.push(h("span",{class:"bad"},"Their bonus: every foul is 2 FT"));
+    if(ar) notes.push(h("span",{class:ar===uc? "good" : ""}, "Arrow → "+(ar===uc? "us" : "them")));
+    if(run && run.pts>=5) notes.push(h("span",{class:run.us? "good" : "bad"}, (run.us? "Our" : "Their")+" run "+run.pts+"–0"));
+    if(notes.length) wrap.appendChild(h("div",{class:"gp5-sb-nt"}, notes));
+    if(al.length) wrap.appendChild(h("div",{class:"gp5-sb-al"}, al.map(a=>h("span",{class:a.tone, title:a.txt}, a.big))));
+  };
+  paint();
+  /* under the bar of reminders, which rides under the hub's menu */
+  const place=()=>{ try{ const g=wrap.closest(".gp5"), bar=g && g.querySelector(".gp5-alerts"); if(!bar) return;
+    const v=Math.round((parseFloat(bar.style.top)||0)+bar.offsetHeight+8)+"px"; if(wrap.style.top!==v) wrap.style.top=v; }catch(e){ _quiet(e); } };
+  const tPl=setInterval(()=>{ if(!wrap.isConnected && wrap.__was){ clearInterval(tPl); return; } if(wrap.isConnected) wrap.__was=1; place(); }, 500);
+  const on=()=>{ if(!wrap.isConnected && wrap.__was){ window.removeEventListener("gp-live", on); return; } paint(); };
+  window.addEventListener("gp-live", on);
+  return wrap;
 }
 function _gpTeamLine(tm, them){
   if(!tm) return h("div",{class:"gp5-tm none"}, "Timeouts and team fouls fill in from the tip-off");
@@ -15358,6 +15461,23 @@ function _gpFoulLv(pf, qi){
   if(qi<=1) return pf>2? "hot" : "";
   if(qi===2) return pf>=3? "hot" : "";
   return pf>=4? "hot" : "";
+}
+/* A FACE BEFORE EACH NAME in the game plan's two tables: the league's photo of the man, by his
+   id in the play by play (and by his roster line when there is one). The tables are drawn again
+   every second during a game, so each face is made once and moved into the new line. */
+const _gpFaceKeep={};
+function _gpFace(id, num, name, ours, ns){
+  try{
+    const k=(ns||"")+(ours? "u" : "t")+"|"+(id||("#"+num)); if(_gpFaceKeep[k]) return _gpFaceKeep[k];
+    const L=leagueState(); let rec=null;
+    if(ours){ const tid=_lgOurTeamId(L), ro=(((L.players||{})[tid]||{}).players)||[];
+      const r=ro.filter(x=>x && ((id && String(x.id)===String(id)) || (num!=null && num!=="" && String(parseInt(x.num,10))===String(parseInt(num,10)))))[0];
+      if(r) rec={ n:r.num, name:r.name, first:r.first, last:r.last, photo:r.photo, pid:r.pid, id:r.id }; }
+    if(!rec && !id) return null;
+    const el=_lgFace(L, rec||{ n:num, name:name, id:id }, "gp5-f");
+    el.querySelectorAll("img").forEach(i=>i.setAttribute("loading","eager"));
+    _gpFaceKeep[k]=el; return el;
+  }catch(e){ _quiet(e); return null; }
 }
 function _gpMmss(s){ s=Math.max(0, Math.round(s||0)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
 /* the quarter the league's game centre says is being played (its break counts as that quarter):
@@ -16461,7 +16581,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
             t.appendChild(h("tr",{class:(on? "on " : "")+(fl==="out"? "fout " : "")+(j===0? "pos0" : ""), title:[p.co? "closeout: "+p.co[0] : "", p.tag, p.ideas.slice(0,3).join(" · ")].filter(Boolean).join("\n")},
               h("td",{class:"ps"}, j===0? GP_POS[i] : ""),
               h("td",{class:"n"}, p.num? String(p.num) : ""),
-              h("td",{class:"l nm"+(p.co? " co" : ""), style:p.co? "border-left-color:"+p.co[1] : ""}, _lgLastName(p.name), ((p.e && !p.e.last) || p.doubt)? h("em",{class:"q"},"?") : null, fl==="out"? h("em",{class:"out"},"OUT") : null, tiredM? h("em",{class:"tired", title:"more than 4:30 on the floor in a row - attack him"},"TIRED") : null),
+              h("td",{class:"l nm"+(p.co? " co" : ""), style:p.co? "border-left-color:"+p.co[1] : ""}, _gpFace(id, p.num, p.name, false), _lgLastName(p.name), ((p.e && !p.e.last) || p.doubt)? h("em",{class:"q"},"?") : null, fl==="out"? h("em",{class:"out"},"OUT") : null, tiredM? h("em",{class:"tired", title:"more than 4:30 on the floor in a row - attack him"},"TIRED") : null),
               h("td",{class:"hist"}, p.st? h("b",{class:"s"}, "S"+(R&&p.e? " "+p.e.st+"/"+R.n : "")) : ""),
               h("td",{class:"hist av"}, p.min? Math.round(p.min)+"′" : "—"),
               h("td",{class:"rl"}, c && c.sec? _gpMmss(c.sec) : (Lv && Lv.feed? "0:00" : "—")),
@@ -16811,7 +16931,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
         const over=r.plan && r.sec/60>r.plan+2;
         t.appendChild(h("tr",{class:(r.on? "on " : "")+(fl==="out"? "fout" : "")},
           h("td",{class:"n"}, r.num? String(r.num) : ""),
-          h("td",{class:"l nm"}, r.name, fl==="out"? h("em",{class:"out"},"OUT") : null),
+          h("td",{class:"l nm"}, _gpFace(r.id, r.num, r.name, true), r.name, fl==="out"? h("em",{class:"out"},"OUT") : null),
           h("td",{class:"pl"}, r.plan? r.plan+"′" : "—"),
           h("td",{class:"rl"+(over? " over" : ""), title:over? "past his planned minutes" : ""}, r.sec? _gpMmss(r.sec) : (L && L.feed? "0:00" : "—")),
           h("td",{class:"st"+(r.on && r.stint>=480? " long" : "")+(r.on && r.stint>=270? " blink" : ""), title:(r.on && r.stint>=270)? "more than 4:30 on the floor in a row" : ""}, r.on? _gpMmss(r.stint) : ""),
@@ -17393,6 +17513,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
         const lv=safe(()=>_gpLiveBlock());
         const row2=h("div",{class:"gp5-row2 gp5-teams"},
           sect("us", "Our team", "timeouts · fouls · players", null, safe(()=>playerStatusBlock())),
+          safe(()=>_gpScoreBoard()),
           sect("them", "Their team", "timeouts · fouls · players, last games and live", null, safe(()=>oppFiveBlock(true))));
         wrap5.appendChild(row2);
         wrap5.appendChild(sect("live", "The game", "", lv.__stat||null, lv));
@@ -23607,7 +23728,7 @@ function _lgRsKey(){
       row(ex("14.3","g"), "Green: one of the best of the team in that column"),
       row(ex("0.3","r"), "Red: one of the weakest of the team in that column")),
     h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"The bar · against the whole league"),
-      row(ex("16.8","",88,45), "A bar under a number: he is at one end of the league - among its best 10% or its weakest 10%"),
+      row(ex("16.8","",88,45), "A bar under a number: he is at one end of the league - green among its best 10%, red among its weakest 10%; the three best of the league also carry their place (1º BBL)"),
       row(h("span",{class:"rx-ex"}, h("span",{class:"rx-b big"}, h("i",{style:"width:62%"}), h("u",{style:"left:45%"}))), "The bar runs from the league's weakest (left) to its best (right); the black line is the league's middle player"),
       h("div",{class:"rx-kn"}, "No bar: he is close to the rest of the league. League: every player with 3 games and 10 minutes a game; a percentage needs one attempt a game."))));
 }
@@ -23733,7 +23854,7 @@ function _lgRoster(L){
       const vs=pool.filter(t=>_lgRsElig(c,t,true)).map(t=>_lgRsVal(c,t,per,{tm:{},op:{}})).filter(v=>v!=null && isFinite(v)).sort((a,b)=>a-b);
       if(vs.length<30) return;
       const q=f=>vs[Math.min(vs.length-1, Math.max(0, Math.round(f*(vs.length-1))))];
-      LX[c.k]={ lo:q(0.10), hi:q(0.90), min:q(0.02), max:q(0.98), med:q(0.5) }; }); }
+      LX[c.k]={ lo:q(0.10), hi:q(0.90), min:q(0.02), max:q(0.98), med:q(0.5), vs:vs }; }); }
 
   /* ONE TABLE A PLAYER. Inside a pre game report the same line carries what our own
      tagging says about him: how much he finishes, what it returns, and where his
@@ -23809,8 +23930,13 @@ function _lgRoster(L){
       if(lx && v!=null && !thin[p.id] && _lgRsElig(c,t,true)){
         const good=dir>0? v>=lx.hi : v<=lx.lo, bad=dir>0? v<=lx.lo : v>=lx.hi;
         if(good || bad){ const sp=(lx.max-lx.min)||1, cl=x=>Math.max(0, Math.min(100, Math.round(100*x)));
-          tip=(tip? tip+" · " : "")+(good? "and among the league's best 10%" : "and among the league's weakest 10%");
-          bar=h("span",{class:"rx-b"}, h("i",{style:"width:"+cl((v-lx.min)/sp)+"%"}), h("u",{style:"left:"+cl((lx.med-lx.min)/sp)+"%"})); } }
+          /* WHICH END, SAID: the bar is green at the league's good end and red at its bad one -
+             it was blue at both, so the best PIR of the league looked like any other bar - and
+             the three best of the whole league carry their place */
+          const rk=good && lx.vs? 1+lx.vs.filter(x=>dir>0? x>v+1e-9 : x<v-1e-9).length : 0;
+          tip=(tip? tip+" · " : "")+(good? "and among the league's best 10%"+(rk && rk<=3? " · "+rk+"º of the league" : "") : "and among the league's weakest 10%");
+          bar=h("span",{class:"rx-b "+(good? "g" : "r")}, h("i",{style:"width:"+cl((v-lx.min)/sp)+"%"}), h("u",{style:"left:"+cl((lx.med-lx.min)/sp)+"%"}));
+          if(rk && rk<=3) bar=h("span",{class:"rx-bw"}, bar, h("em",{class:"rx-rk"}, rk+"º BBL")); } }
       const td=h("td",{class:cls, title:tip}, h("span",{class:"rx-v"}, _lgRsTxt(c,t,per,ctx)), bar);
       if(c.k==="min"){
         /* a bar behind the minutes, the way the pre-game sheets read */
@@ -38255,6 +38381,9 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .lg-rost .rx-b{display:block;position:relative;height:4px;margin:2px 4px 0;border-radius:2px;background:var(--line,#e6e8ec)}
 .lg-rost .rx-b i{position:absolute;left:0;top:0;bottom:0;border-radius:2px}
 .lg-rost .rx-b i{background:#4a86d8}
+.lg-rost .rx-b.g i{background:#2f9e86}.lg-rost .rx-b.r i{background:#d8524e}
+.lg-rost .rx-bw{display:block}
+.lg-rost .rx-rk{display:block;font:800 9.5px 'Oswald',sans-serif;font-style:normal;letter-spacing:.06em;color:#1f8068;margin-top:1px}
 .lg-rost .rx-b u{position:absolute;top:-2px;bottom:-2px;width:1.5px;margin-left:-1px;background:var(--ink,#141821)}
 .rx-key{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin:12px 0 14px}
 .rx-kc{border:1px solid var(--line,#e6e8ec);border-radius:10px;background:var(--panel,#fff);padding:10px 12px;display:flex;flex-direction:column;gap:7px}
@@ -38267,7 +38396,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .rx-ex .rx-b{display:block;position:relative;width:46px;height:4px;margin-top:3px;border-radius:2px;background:var(--line,#e2e5ea)}
 .rx-ex .rx-b.big{width:52px;height:6px;margin:0}
 .rx-ex .rx-b i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:#9fb4d1}
-.rx-ex .rx-b i{background:#4a86d8}
+.rx-ex .rx-b i{background:#2f9e86}
 .rx-ex .rx-b u{position:absolute;top:-2px;bottom:-2px;width:1.5px;margin-left:-1px;background:var(--ink,#141821)}
 .rx-ex .rx-v{display:inline-block;padding:0 3px}.rx-ex .rx-v.rx-tb{box-shadow:inset 0 -2px 0 #d9a521}.rx-ex .rx-v.rx-tw{box-shadow:inset 0 -2px 0 #9aa1ac;color:var(--ink-soft,#5b6472)}
 .rx-sw{display:inline-block;position:relative;width:28px;height:4px;border-radius:2px;background:var(--line,#e6e8ec)}
@@ -38750,8 +38879,38 @@ body.dark .gp5 tr.gp5-rt td.v.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp5-row2{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:8px;align-items:start}
 @media (max-width:1000px){ .gp5-row3{grid-template-columns:minmax(0,1fr) minmax(0,1fr)} .gp5-row3 > :last-child{grid-column:1/-1} }
 /* our team and theirs side by side, each its own width; on an iPad held upright, one under the other */
-.gp5-row2.gp5-teams{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
-@media (max-width:900px){ .gp5-row2.gp5-teams{grid-template-columns:minmax(0,1fr)} }
+.gp5-row2.gp5-teams{grid-template-columns:minmax(0,1fr) 172px minmax(0,1fr)}
+.gp5-sb{position:-webkit-sticky;position:sticky;top:60px;align-self:start;z-index:5;display:grid;gap:8px;padding:10px 9px;border:1px solid var(--line-strong,#d2d7df);border-radius:12px;background:var(--panel,#fff);box-shadow:0 6px 18px rgba(16,24,40,.10)}
+.gp5-sb-none{font-size:12px;color:var(--ink-soft,#5b6472);text-align:center;line-height:1.4}
+.gp5-sb-ck{font:700 12px 'IBM Plex Mono',monospace;text-align:center;color:var(--ink-soft,#5b6472);letter-spacing:.04em}
+.gp5-sb-sc{display:grid;grid-template-columns:1fr auto auto auto 1fr;align-items:center;gap:4px;text-align:center}
+.gp5-sb-sc b{font:700 30px/1.15 'Oswald',sans-serif;font-variant-numeric:tabular-nums}
+.gp5-sb-sc b.up{color:#1f8068}.gp5-sb-sc b.dn{color:#c0403c}
+.gp5-sb-sc i{font-style:normal;color:var(--ink-faint,#687180)}
+.gp5-sb-sc .t{font:700 11px 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft,#5b6472);overflow-wrap:anywhere}
+.gp5-sb-q,.gp5-sb-tm{display:grid;gap:2px 4px;align-items:center;font-variant-numeric:tabular-nums}
+.gp5-sb-tm{grid-template-columns:auto auto 1fr}
+.gp5-sb-q .h,.gp5-sb-tm .h{font:700 10px 'Oswald',sans-serif;letter-spacing:.06em;color:var(--ink-faint,#687180);text-align:center}
+.gp5-sb-q .h.cur{color:var(--ink,#141821)}
+.gp5-sb-q .n,.gp5-sb-tm .n{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-soft,#5b6472);max-width:56px;overflow-wrap:anywhere}
+.gp5-sb-q .v{font:700 13px 'IBM Plex Mono',monospace;text-align:center;border-radius:4px;padding:1px 0}
+.gp5-sb-q .v.w{color:#1f8068}.gp5-sb-q .v.cur{background:color-mix(in srgb, var(--ink,#141821) 8%, transparent)}
+.gp5-sb-tm b{font:700 14px 'IBM Plex Mono',monospace;text-align:center}
+.gp5-sb-tm b.bon{color:#c0403c}
+.gp5-sb-tm .dots{display:flex;gap:3px;justify-content:center}
+.gp5-sb-tm .dots i{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--ink,#141821)}
+.gp5-sb-tm .dots i.on{background:var(--ink,#141821)}
+.gp5-sb-nt,.gp5-sb-al{display:flex;flex-direction:column;gap:4px}
+.gp5-sb-nt span,.gp5-sb-al span{font:700 11.5px Inter,system-ui,sans-serif;line-height:1.3;padding:4px 7px;border-radius:7px;background:color-mix(in srgb, var(--ink,#141821) 6%, transparent)}
+.gp5-sb-nt .good,.gp5-sb-al .good{background:#d9f2e3;color:#0f5132}
+.gp5-sb-nt .bad,.gp5-sb-al .bad{background:#fbe1df;color:#8a1c17}
+.gp5-sb-al .warn{background:#fdf0cf;color:#7a5c12}
+.gp5-sb-al .info{background:#e3edfb;color:#1d4f91}
+.gp5-f{width:22px;height:22px;border-radius:50%;overflow:hidden;display:inline-block;vertical-align:middle;margin-right:6px;flex:none}
+.gp5-f img{width:100%;height:100%;object-fit:cover;object-position:top}
+/* one column on a narrow screen and in game mode: the score between the two teams, across */
+@media (max-width:1060px){ .gp5-row2.gp5-teams{grid-template-columns:minmax(0,1fr)} .gp5-sb{position:static;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:start} }
+
 .gp5 .gp5-ps,.gp5 .gp-opp-b{overflow-x:auto;-webkit-overflow-scrolling:touch}
 /* the reminders: on top of the screen whatever is scrolled */
 .gp5-alerts{position:-webkit-sticky;position:sticky;top:env(safe-area-inset-top,0px);z-index:30;display:flex;flex-direction:column;gap:6px;margin:0 0 8px}
@@ -38787,6 +38946,8 @@ body.dark .gp5 tr.gp5-rt td.v.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp6-cct tr.now td{box-shadow:inset 0 2px 0 #1f8a5b,inset 0 -2px 0 #1f8a5b}
 /* the bar's two buttons: the timeout card and game mode */
 .gp5-al-sp{flex:1}
+.gp5-al-score{font:700 20px/1.1 'Oswald',sans-serif;font-variant-numeric:tabular-nums;padding:3px 10px;border-radius:8px;background:var(--panel,#fff);border:1px solid var(--line-strong,#cfd4dc);white-space:nowrap}
+.gp5-al-score.up{color:#1f8068}.gp5-al-score.dn{color:#c0403c}
 .gp5-al-btn{min-height:38px;padding:6px 14px;border:1px solid var(--line-strong,#cfd4dc);background:var(--panel,#fff);color:var(--ink,#141821);border-radius:8px;font:700 11.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;touch-action:manipulation}
 .gp5-al-btn.on{background:var(--ink,#141821);color:var(--panel,#fff);border-color:var(--ink,#141821)}
 /* GAME MODE: the reminders, our rotation, both teams and the line of score; the rest folds */
@@ -38805,7 +38966,8 @@ body.dark .gp5 tr.gp5-rt td.v.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
    - a section's subtitle wraps instead of ending in "…". */
 .gp5.gm{zoom:1.3}
 .gp5.gm .gp2-lbl,.gp5.gm .gp2-pos,.gp5.gm tr.gp5-rt td.gp2-pos{width:58px!important;overflow:visible!important;text-overflow:clip!important;white-space:nowrap!important}
-.gp5.gm .gp5-teams{grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr))!important}
+.gp5.gm .gp5-teams{grid-template-columns:minmax(0,1fr)!important}
+.gp5.gm .gp5-sb{position:static;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:start}
 .gp5.gm .gp-bf-r{grid-template-columns:44px minmax(0,1fr) 136px minmax(0,1fr) 44px!important}
 .gp5.gm .gp4-h{flex-wrap:wrap!important;row-gap:4px}
 .gp5.gm .gp4-h .sub{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;min-width:0}
@@ -38823,6 +38985,33 @@ body.dark .gp5 tr.gp5-rt td.v.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp7-k b.good{color:#1f8a5b}.gp7-k b.bad{color:#c0392b}
 .gp7-k em{font-style:normal;color:var(--ink-soft,#8a919c)}
 .gp7-ls{padding:6px 16px 16px;display:grid;gap:6px}
+.gp7-sc{display:flex;align-items:baseline;gap:14px;padding:12px 16px 0;flex-wrap:wrap}
+.gp7-sc b{font:700 38px/1.1 'Oswald',sans-serif;font-variant-numeric:tabular-nums}
+.gp7-sc b.up{color:#1f8a5b}.gp7-sc b.dn{color:#c0392b}
+.gp7-sc span{font:800 18px Inter,system-ui,sans-serif}
+.gp7-sc em{font:600 14px Inter,system-ui,sans-serif;font-style:normal;color:var(--ink-soft,#5b6472)}
+.gp7-msg{display:flex;flex-wrap:wrap;gap:8px;padding:10px 16px 0}
+.gp7-msg span{padding:8px 12px;border-radius:9px;font:600 14.5px Inter,system-ui,sans-serif;line-height:1.3}
+.gp7-msg span b{font-weight:800}
+.gp7-msg .bad{background:#fbe1df;color:#8a1c17}.gp7-msg .good{background:#d9f2e3;color:#0f5132}
+.gp7-two{display:grid;grid-template-columns:minmax(0,0.9fr) minmax(0,1.6fr);gap:14px;padding:10px 16px 4px}
+@media (max-width:760px){ .gp7-two{grid-template-columns:minmax(0,1fr)} }
+.gp7-fh{font:800 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft,#5b6472);margin-bottom:6px}
+.gp7-src{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:3px 8px;align-items:baseline}
+.gp7-src .hd{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint,#687180);text-align:center}
+.gp7-src .k{font:600 13.5px Inter,system-ui,sans-serif;padding:4px 6px;border-radius:6px}
+.gp7-src .v{text-align:center;padding:4px 2px;border-radius:6px}
+.gp7-src .v b{font:800 16px Inter,system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.gp7-src .v i{display:block;font:600 11px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}
+.gp7-src .bad{background:#fbe1df}.gp7-src .good{background:#d9f2e3}
+.gp7-fives{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.gp7-p{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;align-items:center;gap:6px;padding:4px 6px;border-radius:7px;background:#f5f6f8;margin-bottom:3px;font:600 13px Inter,system-ui,sans-serif}
+.gp7-p b{font-weight:800;overflow-wrap:anywhere}
+.gp7-p .st,.gp7-p .pt{font:700 12px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.gp7-p .pf{font:700 12px 'IBM Plex Mono',monospace}
+.gp7-p .pf.hot{color:#b26a00}.gp7-p .pf.out{color:#c0392b}
+.gp7-p.tired{background:#fff4e0}.gp7-p.tired .st{color:#b26a00}
+.gp7-p .gp5-f{width:26px;height:26px;margin:0}
 .gp7-l{display:grid;grid-template-columns:180px 1fr;gap:10px;align-items:baseline;padding:8px 10px;border-radius:8px;background:#f5f6f8;font:600 14.5px Inter,system-ui,sans-serif}
 .gp7-l b{font:800 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}
 .gp7-l.warn{background:#fff4e0}.gp7-l.bad{background:#fbe1df}
@@ -38968,7 +39157,9 @@ body.dark .gp9-five .pl.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp5 tr.gp5-rt td.v.mgc.good{background:#2f9e86;color:#fff}.gp5 tr.gp5-rt td.v.mgc.bad{background:#d8524e;color:#fff}
 .gp5 tr.gp5-rt.rb td.v b{font-size:11px}
 /* the labels of the minute rows on one line, never over the cells */
-.gp5 tr.gp5-rt td.gp2-pos{white-space:nowrap;font-size:10.5px!important;letter-spacing:.02em;overflow:hidden;text-overflow:ellipsis}
+.gp5 tr.gp5-rt td.gp2-pos{white-space:nowrap;font-size:10.5px!important;letter-spacing:.02em;overflow:visible;text-overflow:clip}
+/* the labels of the rows had 30 px and lost their words (Ma…, DR…, Op…): 58 px holds "Opp OR%" */
+.gp5 .gp2-lbl,.gp5 .gp2-pos{width:58px!important}
 .gp5 tr.gp5-rt td.v{overflow:hidden}
 .gp5 tr.gp5-rt td.v b,.gp5 tr.gp5-rt td.v em{white-space:nowrap;overflow:hidden;text-overflow:clip}
 .gp5-t td.pf.out{background:#141821;color:#fff;font-weight:800}
