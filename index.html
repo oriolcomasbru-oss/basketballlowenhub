@@ -5760,8 +5760,13 @@ function isAdmin(){ return !isPlayerUser() && currentUser==="Oriol"; }
    The counting is honest about itself: seconds are only added while the tab is visible
    AND something has been touched in the last two minutes, so a page left open overnight
    does not read as a night of work. Two devices at once resolve by taking the larger of
-   the two counts rather than the sum, which can undercount and will never invent time. */
-const USE_V = 1, USE_BEAT = 15, USE_IDLE = 120000, USE_FLUSH = 45000, USE_DAYS = 120;
+   the two counts rather than the sum, which can undercount and will never invent time.
+
+   THE LAST SESSION (Oriol, 28/10/2026). Besides the days, the document keeps the one session
+   going on or ended last: when it began, when it was last used, and its minutes per screen,
+   per report and the videos played in it. A session ends after half an hour without use and
+   only the last one is kept, so it is still a summary and never a trail. */
+const USE_V = 1, USE_BEAT = 15, USE_IDLE = 120000, USE_FLUSH = 45000, USE_DAYS = 120, USE_SESS_GAP = 30 * 60000;
 let _use = null, _useDirty = false, _useAct = Date.now(), _useTimer = null, _useOn = false, _useVidOn = null;
 const USE_VID_IDLE = 20 * 60000;
 function useKey(u){ return "usage:" + String(u || "").trim(); }
@@ -5771,6 +5776,24 @@ function _useDay(){
   const d = todayISO();
   const x = _use.days[d] = _use.days[d] || { sec:0, opens:0, views:{}, vsec:{}, vids:{} };
   return x;
+}
+/* the session in use: the one kept goes on if it was used in the last half hour, else a new one */
+function _useSess(){
+  if(!_use) return null;
+  const now = Date.now(); let s = _use.sess;
+  if(!s || !s.at || now - (s.end || 0) > USE_SESS_GAP) s = _use.sess = { at: now, end: now, sec: 0, vsec: {}, rsec: {}, vn: 0 };
+  return s;
+}
+/* two copies of the last session: the same one field by field the larger, two different ones the later */
+function _useSessMerge(a, b){
+  if(!a || !a.at) return (b && b.at) ? b : null;
+  if(!b || !b.at) return a;
+  if(a.at !== b.at) return (a.end || 0) >= (b.end || 0) ? a : b;
+  const m = { at: a.at, end: Math.max(a.end || 0, b.end || 0), sec: Math.max(a.sec || 0, b.sec || 0),
+              vn: Math.max(a.vn || 0, b.vn || 0), vsec: {}, rsec: {} };
+  ["vsec","rsec"].forEach(k => Object.keys(a[k] || {}).concat(Object.keys(b[k] || {})).forEach(n => {
+    m[k][n] = Math.max((a[k] || {})[n] || 0, (b[k] || {})[n] || 0); }));
+  return m;
 }
 function _useTrim(doc){
   const keys = Object.keys(doc.days || {}).sort();
@@ -5803,6 +5826,7 @@ function _useMerge(a, b){
   const lg = (a && a.legacy) || (b && b.legacy); if(lg) out.legacy = lg;
   /* the last moment the person was using the hub, from any of their devices */
   const sn = Math.max((a && a.seen) || 0, (b && b.seen) || 0); if(sn) out.seen = sn;
+  const ss = _useSessMerge(a && a.sess, b && b.sess); if(ss) out.sess = ss;
   return _useTrim(out);
 }
 /* THE OLD HUB'S RECORD. Before this app the players studied the opponent in another one,
@@ -5877,11 +5901,14 @@ async function useStart(){
     d.sec += USE_BEAT;
     const v = (state && state.ui && state.ui.view) || "?";
     d.vsec[v] = (d.vsec[v] || 0) + USE_BEAT;
+    const s = _useSess();
+    if(s){ s.end = Date.now(); s.sec = (s.sec || 0) + USE_BEAT; s.vsec[v] = (s.vsec[v] || 0) + USE_BEAT; }
     /* and which report: the time in one pre game is the time spent studying that opponent */
     try{ const os = state.ui.os, ts = state.ui.ts;
       const rk = (v === "oppscout" && os && os.mode === "game" && os.gameId) ? "pre:" + os.gameId
         : (v === "teamscout" && ts && ts.mode === "game" && ts.gameId) ? "post:" + ts.gameId : "";
-      if(rk){ d.rsec = d.rsec || {}; d.rsec[rk] = (d.rsec[rk] || 0) + USE_BEAT; } }catch(e){_quiet(e)}
+      if(rk){ d.rsec = d.rsec || {}; d.rsec[rk] = (d.rsec[rk] || 0) + USE_BEAT;
+        if(s){ s.rsec = s.rsec || {}; s.rsec[rk] = (s.rsec[rk] || 0) + USE_BEAT; } } }catch(e){_quiet(e)}
     _useDirty = true;
     since += USE_BEAT * 1000;
     if(since >= USE_FLUSH){ since = 0; useFlush(); }
@@ -5901,6 +5928,7 @@ function useVideo(id, where, title){
   const d = _useDay(); if(!d || !id) return;
   const p = d.vids[id] = d.vids[id] || { n: 0, where: where || "", title: title || "" };
   p.n++; if(where) p.where = where; if(title) p.title = title;
+  const s = _useSess(); if(s){ s.vn = (s.vn || 0) + 1; s.end = Date.now(); }
   _useDirty = true;
   /* the player is open from now: the heartbeat adds its seconds while it stays open */
   _useVidOn = { id: id, where: where || "", title: title || "" };
@@ -6313,6 +6341,44 @@ function _useAgo(t){
   if(day(t)===y.toDateString()) return "yesterday "+hm;
   return d.toLocaleDateString("en-GB",{ weekday:"short", day:"2-digit", month:"2-digit" })+" "+hm;
 }
+/* "today 15:20", "yesterday 09:02", "Mon 26/10 18:02" - always the clock, never "min ago" */
+function _useAt(t, clockOnly){
+  const d = new Date(t), hm = d.toLocaleTimeString("en-GB",{ hour:"2-digit", minute:"2-digit" });
+  if(clockOnly) return hm;
+  const day = x => new Date(x).toDateString();
+  if(day(t) === day(Date.now())) return "today " + hm;
+  if(day(t) === day(Date.now() - 86400000)) return "yesterday " + hm;
+  return d.toLocaleDateString("en-GB",{ weekday:"short", day:"2-digit", month:"2-digit" }) + " " + hm;
+}
+/* THE LAST SESSION, read: when, how long, and the screens with their minutes - a pre game or a
+   post game with the opponents of the reports that were open. A record written before the hub
+   kept sessions gives its last day of use instead, and says so. */
+function _useLastOf(doc){
+  const s = doc && doc.sess;
+  if(s && s.at && s.sec) return { at: s.at, end: s.end || s.at, sec: s.sec, vsec: s.vsec || {}, rsec: s.rsec || {}, vn: s.vn || 0, day: false };
+  const days = (doc && doc.days) || {}, ds = Object.keys(days).filter(d => (days[d].sec || 0) > 0).sort(), d = ds[ds.length - 1];
+  if(!d) return null;
+  const x = days[d];
+  return { date: d, sec: x.sec, vsec: x.vsec || {}, rsec: x.rsec || {}, day: true,
+           vn: Object.keys(x.vids || {}).reduce((a, k) => a + ((x.vids[k] || {}).n || 0), 0) };
+}
+function _useLastLine(L){
+  if(!L) return null;
+  const opp = id => { const g = ((state && state.games) || []).filter(x => String(x.id) === String(id))[0];
+    return g ? (typeof _gTidy === "function" ? _gTidy(g.opponent) : g.opponent) : ""; };
+  const reps = pre => Object.keys(L.rsec || {}).filter(k => k.indexOf(pre + ":") === 0 && L.rsec[k] >= 30)
+    .sort((a, b) => L.rsec[b] - L.rsec[a]).map(k => opp(k.slice(pre.length + 1))).filter(Boolean);
+  const views = Object.keys(L.vsec || {}).filter(v => v !== "?" && L.vsec[v] >= 30).sort((a, b) => L.vsec[b] - L.vsec[a]);
+  const chips = views.map(v => { const who = v === "oppscout" ? reps("pre") : v === "teamscout" ? reps("post") : [];
+    return h("span",{ class:"use-chip ls" }, (SECT_LABELS[v] || v) + " ", h("b",{}, _useFmtMin(L.vsec[v])),
+      who.length ? h("i",{}, " · " + who.join(", ")) : null); });
+  if(L.vn) chips.push(h("span",{ class:"use-chip ls v" }, L.vn + " video" + (L.vn === 1 ? "" : "s")));
+  const head = L.day
+    ? h("span",{ class:"use-ls-h", title:"Sessions are kept from 28/10/2026; before that, the last day used, whole" },
+        "Last day used · " + _useAt(Date.parse(L.date + "T12:00:00")).replace(/\s\d\d:\d\d$/, "") + " · ", h("b",{}, _useFmtMin(L.sec)))
+    : h("span",{ class:"use-ls-h" }, "Last session · " + _useAt(L.at) + "–" + _useAt(L.end, true) + " · ", h("b",{}, _useFmtMin(L.sec)));
+  return h("div",{ class:"use-ls" + (L.day ? " day" : "") }, head, chips.length ? chips : h("span",{ class:"use-ls-none" }, "under a minute on any screen"));
+}
 async function renderUsage(body, accounts, log){
   body.appendChild(h("div",{class:"adm-secttitle"},"Usage  ",
     h("span",{class:"adm-only"},"only you see this")));
@@ -6352,7 +6418,7 @@ async function renderUsage(body, accounts, log){
       const top=Object.keys(views).sort((a,b)=>views[b]-views[a]).slice(0,3);
       const plays=Object.keys(vids).reduce((a,k)=>a+vids[k].n,0);
       return { user:r.user, scope:r.scope, last:r.last, seen:r.seen, days:days.length, sec, opens, top, views,
-               plays, vidn:Object.keys(vids).length, vids, err:r.err };
+               plays, vidn:Object.keys(vids).length, vids, err:r.err, ls:_useLastOf(r.doc) };
     }).sort((a,b)=>b.sec-a.sec);
     /* the table scrolls inside its own box when the screen is narrow, never the dialog */
     const mxSec=Math.max(1, ...sum.map(r=>r.sec));
@@ -6369,7 +6435,7 @@ async function renderUsage(body, accounts, log){
         h("td",{}, r.opens? String(r.opens) : "\u2014"),
         h("td",{class:"use-time"}, r.sec? [h("span",{class:"use-bar"}, h("i",{style:"width:"+Math.round(100*r.sec/mxSec)+"%"})), h("b",{}, _useFmtMin(r.sec))] : "—"),
         h("td",{}, r.days? _useFmtMin(r.sec/r.days) : "\u2014"),
-        h("td",{class:"l use-where"}, where),
+        h("td",{class:"l use-where"}, h("div",{}, where), _useLastLine(r.ls)),
         h("td",{title:Object.keys(r.vids).map(k=>(r.vids[k].title||k)+" \u00d7"+r.vids[k].n
           +(r.vids[k].where?(" ("+r.vids[k].where+")"):"")).join("\n")},
           r.plays? (r.plays+(r.vidn>1? (" / "+r.vidn) : "")) : "\u2014"),
@@ -6381,7 +6447,9 @@ async function renderUsage(body, accounts, log){
       "Time is counted only while the tab is open and something has been touched in the "
       +"last two minutes, so a page left open all night counts as nothing. Videos are "
       +"counted when somebody presses play, not when a page that holds one is opened. "
-      +"What is kept is a daily summary for 120 days \u2014 no clicks, no path through the app."));
+      +"What is kept is a daily summary for 120 days and, of the last session only, its "
+      +"minutes per screen \u2014 no clicks, no path through the app. A session ends after half "
+      +"an hour without use."));
   };
   const rows=accounts.map(a=>({ user:a.username, scope:a.scope,
     last:(log.filter(e=>e.username===a.username)[0]||{}).ts || a.last_login || null,
@@ -38395,6 +38463,15 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .dash-kind.pre{background:rgba(74,134,216,.15);color:#1e5aa8}.dash-kind.post{background:rgba(232,199,102,.3);color:#7a5c12}.dash-kind.rev{background:rgba(138,111,209,.16);color:#5a3fa8}.dash-kind.tr{background:rgba(47,158,134,.15);color:#13804f}.dash-kind.wip{background:rgba(20,24,33,.08);color:var(--ink-soft,#5b6472)}
 .use-t td.use-time{white-space:nowrap;text-align:left}.use-bar{display:inline-block;width:90px;height:8px;border-radius:4px;background:var(--panel-2,#eef0f3);vertical-align:middle;margin-right:6px;overflow:hidden}.use-bar i{display:block;height:100%;background:#4a86d8;border-radius:4px}
 .use-chip{display:inline-block;margin:1px 4px 1px 0;padding:1px 8px;border-radius:10px;background:var(--panel-2,#f1f2f5);font-size:11.5px}.use-chip b{font-weight:700}
+/* the last session, under the window's screens: outlined chips behind a small label */
+.use-ls{display:flex;flex-wrap:wrap;align-items:center;gap:2px 0;margin-top:4px;padding-top:4px;border-top:1px dashed var(--line,#e2e5ea)}
+.use-ls-h{font:600 10.5px 'Inter',sans-serif;color:var(--ink-faint,#8a93a2);margin-right:6px;white-space:nowrap}
+.use-ls-h b{color:var(--ink-soft,#5b6472)}
+.use-chip.ls{background:transparent;box-shadow:inset 0 0 0 1px var(--line-strong,#d7dbe0);font-size:11px}
+.use-chip.ls i{font-style:normal;color:var(--ink-faint,#8a93a2)}
+.use-chip.ls.v{color:var(--ink-faint,#8a93a2)}
+.use-ls.day .use-ls-h{font-style:italic}
+.use-ls-none{font-size:11px;color:var(--ink-faint,#8a93a2)}
 .dash-m3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}@media (max-width:900px){.dash-m3{grid-template-columns:minmax(0,1fr)}}.dash-m3-c{min-width:0}
 .reb-lg tr{cursor:pointer}.reb-lg tr.reb-shut td.reb-top > div{display:none}
 .reb-lg tr.reb-shut td{opacity:.45}.reb-lg tr.reb-shut:hover td{opacity:.8}
