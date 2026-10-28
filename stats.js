@@ -3371,25 +3371,28 @@
     if (!vals.length) { sec.appendChild(el("div", "sx-empty", "Nothing tagged for this yet.")); return null; }
     var avg = vals.reduce(function (a, v) { return a + v; }, 0) / vals.length;
     var anyPhased = points.some(function (p) { return p.s.phased; });
+    /* A GAME IS A GAME BY WHAT THE SESSION IS. The split was "carries phase tags", and a
+       training tagged with phases went on the games' line and into the games' figures */
+    points.forEach(function (p) { if (p.s) p.s.__game = (p.kind === "game"); });
     /* games and trainings each against their own average: the line across is the games' */
-    var kindAvg = function (ph) { var v = points.filter(function (p) { return !!p.s.phased === ph; })
+    var kindAvg = function (ph) { var v = points.filter(function (p) { return (p.kind === "game") === ph; })
       .map(function (p) { return measured(p.s, key); }).filter(isFinite);
       return v.length ? v.reduce(function (a, x) { return a + x; }, 0) / v.length : NaN; };
     var avgG = kindAvg(true), avgT = kindAvg(false);
     /* the rating rides under the measure, on the same dates, in a band of its own - the games' */
     var oerUnder = function (st) { return st.poss ? st.pts / st.poss : NaN; };
     var copt = { max: 100, axisFmt: pct0f, height: 215,
-      under: { name: "OER in games — points per possession", get: function (st) { return st.phased ? oerUnder(st) : NaN; }, fmt: f2,
+      under: { name: "OER in games — points per possession", get: function (st) { return st.__game ? oerUnder(st) : NaN; }, fmt: f2,
                color: "var(--tl-1)", height: 58, join: true } };
     if (opts.target) { copt.ref = { v: 70, label: "70% — target" };
       copt.bands = [{ v: 65, label: "65" }, { v: 60, label: "60" }]; }
     else copt.ref = isFinite(avgG) ? { v: avgG, label: "games average · " + pct0f(avgG) } : { v: avgT, label: "trainings average · " + pct0f(avgT) };
     sec.appendChild(timelineChart("", "", points, [
       { name: "Games — measured", color: "var(--tl-3)",
-        get: function (s) { return s.phased ? measured(s, key) : NaN; }, fmt: pct0f },
+        get: function (s) { return s.__game ? measured(s, key) : NaN; }, fmt: pct0f },
       { name: "Trainings — floor, no fastbreak is credited", color: "var(--tl-3)",
         dash: true, hollow: true,
-        get: function (s) { return s.phased ? NaN : measured(s, key); }, fmt: pct0f }
+        get: function (s) { return s.__game ? NaN : measured(s, key); }, fmt: pct0f }
     ], copt));
     if (!anyPhased) sec.appendChild(el("div", "sx-sub",
       "No game here carries phase tags, so every figure above is the training floor."));
@@ -3406,17 +3409,17 @@
        scales invent whatever correlation they happen to line up as. The column and
        the sentence say it without that. */
     var oerOf = oerUnder;
-    var oers = points.filter(function (p) { return p.s.phased; }).map(function (p) { return oerOf(p.s); }).filter(isFinite);
+    var oers = points.filter(function (p) { return p.kind === "game"; }).map(function (p) { return oerOf(p.s); }).filter(isFinite);
     var oAvg = oers.length ? oers.reduce(function (a, v) { return a + v; }, 0) / oers.length : NaN;
 
     sec.appendChild(trTable(["Date", "Type", "Poss", "Fastbreak", what + " elsewhere",
         title.replace(/ —.*$/, ""), "OER", opts.target ? "Reading" : "vs average"],
       points.map(function (p) {
-        var st = p.s, m = st.phased, v = measured(st, key);
+        var st = p.s, m = st.phased, g = p.kind === "game", v = measured(st, key);
         var sh = Math.round(v);
         var rest = m ? (key === "br" ? st.brRest : st.ptRest) : (key === "br" ? st.brP : st.ptP);
         var oer = oerOf(st);
-        return [p.d, m ? "Game" : "Training", st.poss,
+        return [p.d, g ? "Game" : "Training", st.poss,
           m ? st.fb + " (" + pct0f(100 * st.fb / st.poss) + ")" : "not tagged",
           rest + " (" + pct0f(100 * rest / st.poss) + ")",
           { v: sh + "%", cls: "sx-vol " + volStep(sh) },
@@ -3424,8 +3427,8 @@
             cls: "sx-cell " + pppStep(oer) } : { v: "—", cls: "tr-none" },
           opts.target
             ? (m ? (sh >= 70 ? "Perfect" : sh >= 65 ? "Ok" : sh >= 60 ? "Regular" : "Below") : "floor only")
-            : (function () { var ka = m ? avgG : avgT; return { v: (v >= ka ? "+" : "−") + Math.round(Math.abs(v - ka)) + "%",
-                cls: v >= ka ? "tr-good" : "tr-warn", title: "against the " + (m ? "games'" : "trainings'") + " average" }; })()];
+            : (function () { var ka = g ? avgG : avgT; return { v: (v >= ka ? "+" : "−") + Math.round(Math.abs(v - ka)) + "%",
+                cls: v >= ka ? "tr-good" : "tr-warn", title: "against the " + (g ? "games'" : "trainings'") + " average" }; })()];
       })));
 
     /* the relationship, in one line, and never a number with a confident face on top
@@ -4303,9 +4306,9 @@
     var dash = el("div", "td-grid");
     var gamesMeasured = function (key) { return [
       { name: "Games", color: "var(--tl-3)",
-        get: function (s) { return s.phased ? measured(s, key) : NaN; }, fmt: pct0f },
+        get: function (s) { return s.__game ? measured(s, key) : NaN; }, fmt: pct0f },
       { name: "Trainings (floor)", color: "var(--tl-3)", dash: true, hollow: true,
-        get: function (s) { return s.phased ? NaN : measured(s, key); }, fmt: pct0f } ]; };
+        get: function (s) { return s.__game ? NaN : measured(s, key); }, fmt: pct0f } ]; };
     var lastOf = function (list, get) {
       for (var i = list.length - 1; i >= 0; i--) { var v = get(list[i].s); if (isFinite(v)) return v; }
       return NaN; };
@@ -4325,9 +4328,10 @@
        put together. Each figure is now one kind of session: the games' last and season, the
        trainings' last and season; the line across is the games' average and the OER band
        under the chart is the games' (in a training both fives are ours). */
-    var gSess = pts.filter(function (p) { return p.s.phased; }), tSess = pts.filter(function (p) { return !p.s.phased; });
+    pts.forEach(function (p) { if (p.s) p.s.__game = (p.kind === "game"); });
+    var gSess = pts.filter(function (p) { return p.kind === "game"; }), tSess = pts.filter(function (p) { return p.kind !== "game"; });
     var oerAvg = meanOf(gSess, oerGet), oerLast = lastOf(gSess, oerGet), oerTr = meanOf(tSess, oerGet);
-    var oerBand = function () { return { name: "OER in games — points per possession", get: function (s) { return s.phased ? oerGet(s) : NaN; }, fmt: f2,
+    var oerBand = function () { return { name: "OER in games — points per possession", get: function (s) { return s.__game ? oerGet(s) : NaN; }, fmt: f2,
       color: "var(--tl-1)", height: 64, join: true }; };
     var oerKpi = isFinite(oerAvg) ? [
       { l: "OER last game", v: f2(oerLast), cls: oerLast >= oerAvg ? "good" : "bad" },
