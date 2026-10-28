@@ -3295,8 +3295,14 @@ async function _planSync(){
     const mJ=_pJ(merged);
     let agreed=srv;
     if(mJ!==_pJ(srv) && (canEdit("planification") || canEdit("playbook"))){
-      const w=JSON.parse(await _sbRaw("save_staff_doc",{ p_token:SB_TOKEN, p_key:PLAN_DOC_KEY,
-        p_data:Object.assign({ v:1, at:new Date().toISOString(), by:currentUser||"" }, merged) }));
+      const doc=Object.assign({ v:1, at:new Date().toISOString(), by:currentUser||"" }, merged);
+      let w=null;
+      try{ w=JSON.parse(await _sbRaw("save_staff_doc",{ p_token:SB_TOKEN, p_key:PLAN_DOC_KEY, p_data:doc })); }catch(e){ w={ ok:false, error:(e && e.message) || "" }; }
+      /* the server has no save_staff_doc yet (supabase/006 not run): the admin writes it the
+         way the other staff documents are written until then */
+      if((!w || !w.ok) && isAdmin()){
+        w=JSON.parse(await _sbRaw("save_report",{ p_token:SB_TOKEN, p_key:PLAN_DOC_KEY, p_kind:CLUB_DOC_KIND,
+          p_opponent:"", p_date:null, p_data:doc, p_html:null })); }
       if(!w || !w.ok) throw new Error((w && w.error) || "the server did not keep it");
       agreed=merged;
     }
@@ -14718,8 +14724,8 @@ function planEnsure(sec){
   return p;
 }
 function _gpById(plan,id){ return plan.pool.find(x=>x.id===id)||null; }
-function gpTotals(plan){ const t={}; GP_HALF.forEach(q=>{ (plan.grid[q]||[]).forEach(row=>row.forEach(id=>{ if(id) t[id]=(t[id]||0)+1; })); }); return t; }
-function gpHalfFill(plan){ let n=0; GP_HALF.forEach(q=>{ (plan.grid[q]||[]).forEach(row=>row.forEach(id=>{ if(id) n++; })); }); return n; }
+function gpTotals(plan){ const t={}; GP_HALF.forEach(q=>{ ((plan.grid||{})[q]||[]).forEach(row=>row.forEach(id=>{ if(id) t[id]=(t[id]||0)+1; })); }); return t; }
+function gpHalfFill(plan){ let n=0; GP_HALF.forEach(q=>{ ((plan.grid||{})[q]||[]).forEach(row=>row.forEach(id=>{ if(id) n++; })); }); return n; }
 
 function _gpSegs(arr){
   const out=[]; let i=0;
@@ -15681,6 +15687,7 @@ function _gpLiveBlock(){
     const L0=leagueState();
     let tidUs=""; try{ tidUs=_lgOurTeamId(L0); }catch(e){_quiet(e)}
     const past=((L0.games||[]).concat(L0.cup||[])).filter(x=>_lgDone(x) && tidUs && (String(x.homeId)===String(tidUs)||String(x.awayId)===String(tidUs)))
+      .filter((x,i,A)=>A.findIndex(y=>String(y.id)===String(x.id))===i)   /* a cup game is in both lists: once */
       .sort((a,b)=>String(b.date).localeCompare(String(a.date)));
     const sel=h("select",{class:"gp-rp-sel"}, past.map(x=>h("option",{value:x.id}, String(x.date).slice(5).split("-").reverse().join("/")+" · "+(String(x.homeId)===String(tidUs)? "vs "+_lgShort(x.away) : "@ "+_lgShort(x.home))+" "+x.hs+"–"+x.as)));
     const spd=h("select",{class:"gp-rp-sel", title:"game seconds per second"}, [["1","×1"],["5","×5"],["10","×10"],["30","×30"],["60","×60"]].map(o=>h("option",{value:o[0]}, o[1])));
@@ -38785,6 +38792,20 @@ body.dark .gp5 tr.gp5-rt td.v.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp5.gm .gp4-sec.sets:not(.open) .gp4-b{display:none}
 .gp5.gm .gp4-sec.sets .gp4-h{cursor:pointer}
 .gp5.gm .gp4-sec.sets:not(.open) .gp4-h .sub::after{content:" · tap to open"}
+/* AND EVERYTHING 30% BIGGER, read from the bench. The whole panel is zoomed, so the layout
+   reflows at the size it is drawn and nothing runs off the side; the few places that were
+   measured for the smaller size get their room back, checked on an iPad in both
+   orientations (1080 x 810 and 810 x 1080):
+   - the labels of the minute rows (Margin, DREB%, Opp OR%) had 30 px and an ellipsis;
+   - the two teams side by side need 420 px each, so they stack when there is not that much;
+   - the middle column of the team comparison bars needs its words on one line;
+   - a section's subtitle wraps instead of ending in "…". */
+.gp5.gm{zoom:1.3}
+.gp5.gm .gp2-lbl,.gp5.gm .gp2-pos,.gp5.gm tr.gp5-rt td.gp2-pos{width:58px!important;overflow:visible!important;text-overflow:clip!important;white-space:nowrap!important}
+.gp5.gm .gp5-teams{grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr))!important}
+.gp5.gm .gp-bf-r{grid-template-columns:44px minmax(0,1fr) 136px minmax(0,1fr) 44px!important}
+.gp5.gm .gp4-h{flex-wrap:wrap!important;row-gap:4px}
+.gp5.gm .gp4-h .sub{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;min-width:0}
 /* the timeout card, over the page */
 .gp7-ov{position:fixed;top:0;right:0;bottom:0;left:0;z-index:200;background:rgba(10,12,16,.45);display:flex;align-items:flex-start;justify-content:center;padding:max(70px,env(safe-area-inset-top,0px)) 14px 20px;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .gp7-card{width:100%;max-width:920px;background:var(--panel,#fff);color:var(--ink,#141821);border-radius:14px;box-shadow:0 18px 48px rgba(0,0,0,.35);overflow:hidden}
