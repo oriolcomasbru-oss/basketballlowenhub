@@ -392,11 +392,11 @@
        against the first */
     if (period === "all") {
       var S0 = sum(lines), v0 = value(m, S0, mode), sm0 = small(m, S0);
-      if (lines.length < 4) return { v: v0, base: null, d: null, tone: "", small: sm0 };
+      if (lines.length < 5) return { v: v0, base: null, d: null, tone: "", small: sm0 };
       var hf = Math.floor(lines.length / 2), A = sum(lines.slice(0, hf)), B = sum(lines.slice(hf));
       var a = value(m, A, mode), b = value(m, B, mode), smH = small(m, A) || small(m, B);
       var dH = (a == null || b == null) ? null : b - a;
-      var thH = m.pct ? 3 : (m.k === "ortg" || m.k === "drtg" || m.k === "net") ? 4 : Math.max(0.3, Math.abs(a || 0) * 0.12);
+      var thH = m.pct ? 5 : (m.k === "ortg" || m.k === "drtg" || m.k === "net") ? 3 : Math.max(0.3, Math.abs(a || 0) * 0.12);
       var toneH = (dH == null || Math.abs(dH) < thH || m.hi == null || smH) ? "" : ((dH > 0) === m.hi ? "up" : "dn");
       return { v: v0, base: a, d: dH, tone: toneH, small: sm0, halves: true };
     }
@@ -406,8 +406,9 @@
     if (period !== "all" && !prev.length) base = null;
     var sm = small(m, period === "all" ? all : win);
     var d = (period === "all" || v == null || base == null) ? null : v - base;
-    var th = m.pct ? 3 : (m.k === "ortg" || m.k === "drtg" || m.k === "net") ? 4 : Math.max(0.3, Math.abs(base || 0) * 0.12);
-    var tone = (d == null || Math.abs(d) < th || m.hi == null || sm) ? "" : ((d > 0) === m.hi ? "up" : "dn");
+    var th = m.pct ? 5 : (m.k === "ortg" || m.k === "drtg" || m.k === "net") ? 3 : Math.max(0.3, Math.abs(base || 0) * 0.12);
+    /* the hub's rule: a trend from five games (the window and the games before it together) */
+    var tone = (d == null || Math.abs(d) < th || m.hi == null || sm || lines.length < 5) ? "" : ((d > 0) === m.hi ? "up" : "dn");
     return { v: v, base: base, d: d, tone: tone, small: sm };
   }
 

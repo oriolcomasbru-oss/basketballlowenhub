@@ -13788,7 +13788,8 @@ function pbxBand(title){
    than the average is red, one that produces less is green */
 function pbxPppChip(ppp, avg, n){
   const sp=h("span",{class:"pbx-ppp"}, (ppp==null?"—":Number(ppp).toFixed(2)));
-  if(ppp==null || n<3 || avg==null){ sp.classList.add("muted"); return sp; }
+  if(ppp==null || n<5 || avg==null){ sp.classList.add("muted"); if(ppp!=null && n) sp.title=n+" possessions"; return sp; }
+  if(Math.abs(ppp-avg)<0.10) return sp;
   const st=_perfStep(ppp-avg, 0.25);
   if(Math.abs(st-4)){ sp.style.background=PERF9[st]; sp.classList.add("on"); }
   return sp;
@@ -17690,6 +17691,16 @@ function _trgForget(){ _trgMemo=null; try{ localStorage.removeItem(TRG_KEY); }ca
 /* TRENDS · PACE. Our pace through the season, two ways: the whole game (possessions a game)
    and inside the possession (the second our first shot goes up in), us and our opponents,
    game by game against the league's average; then inside the games, quarter by quarter. */
+/* ONE RULE FOR HOW MUCH IS ENOUGH (Oriol, 28/10/2026). A trend - the last three games
+   against the ones before - from five games; a change gets its arrow or its colour only
+   when it counts: 3 points per 100 possessions in a rating, 5 points in a percentage, 0.10
+   in points per possession. A set or a situation is coloured from five possessions, a
+   minute from two plays, a player from three games and ten minutes a game. */
+const MS_GAMES=5, MS_POSS=5;
+function _msKind(name, isPct){ name=String(name||"");
+  return /rating|\bnet\b|\boer\b|\bder\b|per 100/i.test(name)? "rating" : isPct? "pct" : /per possession|\bppp\b/i.test(name)? "ppp" : ""; }
+function _msMatters(kind, a, b){ if(!isFinite(a) || !isFinite(b)) return false; const x=Math.abs(a-b);
+  return kind==="rating"? x>=3 : kind==="pct"? x>=5 : kind==="ppp"? x>=0.10 : x>0; }
 function _trendsPace(){
   const box=h("div",{class:"scout-panel trp"},
     h("div",{class:"trp-h"}, h("span",{class:"tr-no"},"PACE"), h("b",{},"Pace — how fast we play, game by game and inside the games"), _wipTag()));
@@ -17711,7 +17722,7 @@ function _trendsPace(){
     const f1=v=>v==null? "—" : v.toFixed(1);
     const kpi=(l,v,n,cls)=>h("div",{class:"trp-k "+(cls||"")}, h("i",{},l), h("b",{},v), n? h("em",{},n) : null);
     body.appendChild(h("div",{class:"trp-kpis"},
-      kpi("Our first shot", f1(sUs)+" s", "league "+f1(lgSec)+" s · last "+k+": "+f1(rUs)+" s", rUs!=null && sUs!=null? (rUs<sUs-0.5? "fast" : rUs>sUs+0.5? "slow" : "") : ""),
+      kpi("Our first shot", f1(sUs)+" s", "league "+f1(lgSec)+" s · last "+k+": "+f1(rUs)+" s", rows.length>=MS_GAMES && rUs!=null && sUs!=null? (rUs<sUs-0.5? "fast" : rUs>sUs+0.5? "slow" : "") : ""),
       kpi("Their first shot", f1(sTh)+" s", "how fast they shoot against us"),
       kpi("Possessions a game", f1(sP), "league "+f1(lgP)+" · last "+k+": "+f1(rP))));
     /* PACE IN ONE LOOK. Where we sit between the slowest club and the fastest, where we put
@@ -17778,7 +17789,7 @@ function _trendsPace(){
       ct.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{class:"l"},""), h("th",{},"Faster games"), h("th",{},"Slower games"), h("th",{},"Difference")));
       ct.appendChild(h("tr",{}, h("td",{class:"l"},"Won"), h("td",{}, fast.filter(won).length+" of "+fast.length), h("td",{}, slow.filter(won).length+" of "+slow.length), h("td",{},"")));
       M.forEach(m=>{ const a=A(fast,m[1]), b=A(slow,m[1]); const d=(a!=null && b!=null)? a-b : null;
-        const good=d==null? "" : (Math.abs(d)<(m[3]? 3 : 2)? "" : ((d>0)===m[2]? "fast" : "slow"));
+        const good=d==null? "" : (Math.abs(d)<(m[3]? 3 : 5)? "" : ((d>0)===m[2]? "fast" : "slow"));
         ct.appendChild(h("tr",{}, h("td",{class:"l"}, m[0]), h("td",{}, a==null? "—" : a.toFixed(1)), h("td",{}, b==null? "—" : b.toFixed(1)),
           h("td",{class:"trp-c "+good}, d==null? "—" : (d>0? "+" : "")+d.toFixed(1)))); });
       ctx.appendChild(h("div",{class:"pb-scroll"}, ct));
@@ -17906,7 +17917,7 @@ function _rebPosMap(L, tid, cards){
 }
 const _rebPct=(a,b)=>b? 100*a/b : null;
 /* the colour of a rebounding rate against a reference: green better, red worse by 4 points */
-const _rebTone=(v, ref, low)=>{ if(v==null || ref==null) return ""; const d=low? ref-v : v-ref; return d>=4? "up" : d<=-4? "dn" : ""; };
+const _rebTone=(v, ref, low)=>{ if(v==null || ref==null) return ""; const d=low? ref-v : v-ref; return d>=5? "up" : d<=-5? "dn" : ""; };
 /* EACH OF OURS AND THE TEAM'S REBOUNDING AROUND HIM: his own rebounds, a rate per 10 minutes,
    and the team's DREB% / OREB% with him on and with him off. Interiors first. */
 function _rebPlayersTable(pl, names, grpOf, tot){
@@ -18167,7 +18178,7 @@ function _trendsDashDraw(R, TD){
   const K0=window.UIKit, API=window.LowenPostStats||{};
   const G=R.games, N=G.length, out=h("div",{});
   if(N<2){ out.appendChild(K0.summary({ title:"The season so far", empty:"Two finished games are needed before anything can be said about a trend." })); return out; }
-  const K=(N>=6)? 3 : (N>=4? 2 : 0);
+  const K=(N>=MS_GAMES)? 3 : 0;
   const KEYS=Object.keys(G[0].us);
   const tot=list=>{ const T={ us:{}, them:{}, n:list.length };
     KEYS.forEach(k=>{ T.us[k]=list.reduce((a,g)=>a+(g.us[k]||0),0); T.them[k]=list.reduce((a,g)=>a+(g.them[k]||0),0); }); return T; };
@@ -18176,14 +18187,16 @@ function _trendsDashDraw(R, TD){
   const f0=v=>String(Math.round(v)), f1=v=>v.toFixed(1), f2=v=>v.toFixed(2), fP=v=>Math.round(v)+"%";
   const u=T=>T.us, t=T=>T.them;
   const MET=[
-    { n:"Offensive rating", of:T=>u(T).poss? 100*u(T).pts/u(T).poss : NaN, hi:true, f:f1, sc:10, w:1.3, main:1 },
-    { n:"Defensive rating", of:T=>t(T).poss? 100*t(T).pts/t(T).poss : NaN, hi:false, f:f1, sc:10, w:1.3, main:1 },
-    { n:"Our eFG", of:T=>u(T).fga? 100*(u(T).fgm+0.5*u(T).p3m)/u(T).fga : NaN, hi:true, f:fP, sc:5, main:1 },
-    { n:"Their eFG", of:T=>t(T).fga? 100*(t(T).fgm+0.5*t(T).p3m)/t(T).fga : NaN, hi:false, f:fP, sc:5 },
-    { n:"Our turnover rate", of:T=>{ const p=u(T).fga+0.44*u(T).fta+u(T).tov; return p? 100*u(T).tov/p : NaN; }, hi:false, f:fP, sc:3.5 },
-    { n:"Offensive rebound share", of:T=>(u(T).oreb+t(T).dreb)? 100*u(T).oreb/(u(T).oreb+t(T).dreb) : NaN, hi:true, f:fP, sc:6 },
-    { n:"Defensive rebound share", of:T=>(u(T).dreb+t(T).oreb)? 100*u(T).dreb/(u(T).dreb+t(T).oreb) : NaN, hi:true, f:fP, sc:6 },
-    { n:"Free throw rate", of:T=>u(T).fga? 100*u(T).fta/u(T).fga : NaN, hi:true, f:fP, sc:8 },
+    { n:"Offensive rating", of:T=>u(T).poss? 100*u(T).pts/u(T).poss : NaN, hi:true, f:f1, sc:6, w:1.3, main:1 },
+    { n:"Defensive rating", of:T=>t(T).poss? 100*t(T).pts/t(T).poss : NaN, hi:false, f:f1, sc:6, w:1.3, main:1 },
+    /* sc is the size of a change that counts, doubled: a move is named from half of it -
+       3 per 100 in a rating, 5 points in a percentage */
+    { n:"Our eFG", of:T=>u(T).fga? 100*(u(T).fgm+0.5*u(T).p3m)/u(T).fga : NaN, hi:true, f:fP, sc:10, main:1 },
+    { n:"Their eFG", of:T=>t(T).fga? 100*(t(T).fgm+0.5*t(T).p3m)/t(T).fga : NaN, hi:false, f:fP, sc:10 },
+    { n:"Our turnover rate", of:T=>{ const p=u(T).fga+0.44*u(T).fta+u(T).tov; return p? 100*u(T).tov/p : NaN; }, hi:false, f:fP, sc:10 },
+    { n:"Offensive rebound share", of:T=>(u(T).oreb+t(T).dreb)? 100*u(T).oreb/(u(T).oreb+t(T).dreb) : NaN, hi:true, f:fP, sc:10 },
+    { n:"Defensive rebound share", of:T=>(u(T).dreb+t(T).oreb)? 100*u(T).dreb/(u(T).dreb+t(T).oreb) : NaN, hi:true, f:fP, sc:10 },
+    { n:"Free throw rate", of:T=>u(T).fga? 100*u(T).fta/u(T).fga : NaN, hi:true, f:fP, sc:10 },
     { n:"Points in the paint", of:T=>u(T).paint/T.n, hi:true, f:f1, sc:8 },
     { n:"Their points in the paint", of:T=>t(T).paint/T.n, hi:false, f:f1, sc:8 },
     { n:"Points off turnovers", of:T=>u(T).pot/T.n, hi:true, f:f1, sc:5 },
@@ -18191,8 +18204,8 @@ function _trendsDashDraw(R, TD){
     { n:"Second chance points", of:T=>u(T).sc/T.n, hi:true, f:f1, sc:4 },
     { n:"Their second chance points", of:T=>t(T).sc/T.n, hi:false, f:f1, sc:4 },
     { n:"Bench points", of:T=>u(T).bench/T.n, hi:true, f:f1, sc:8 },
-    { n:"Assisted baskets", of:T=>u(T).fgm? 100*u(T).ast/u(T).fgm : NaN, hi:true, f:fP, sc:8 },
-    { n:"Threes as a share of our shots", of:T=>u(T).fga? 100*u(T).p3a/u(T).fga : NaN, hi:null, f:fP, sc:6 },
+    { n:"Assisted baskets", of:T=>u(T).fgm? 100*u(T).ast/u(T).fgm : NaN, hi:true, f:fP, sc:10 },
+    { n:"Threes as a share of our shots", of:T=>u(T).fga? 100*u(T).p3a/u(T).fga : NaN, hi:null, f:fP, sc:8.4 },
     { n:"Fouls committed", of:T=>u(T).pf/T.n, hi:false, f:f1, sc:4 }
   ];
   const up=[], down=[], hold=[], rep=[];
@@ -18230,11 +18243,11 @@ function _trendsDashDraw(R, TD){
     if(K){
       const a=pool(tagged.slice(-K)), b=pool(tagged.slice(0,N-K));
       if(a && b){
-        [["Paint touches","pt",8,true,fP],["Ball reversals","br",8,true,fP]].forEach(d=>{
+        [["Paint touches","pt",10,true,fP],["Ball reversals","br",10,true,fP]].forEach(d=>{
           const va=API.measured(a,d[1]), vb=API.measured(b,d[1]); if(!isFinite(va)||!isFinite(vb)) return;
           const z=Math.abs(va-vb)/d[2]; if(z<0.5) return;
           (va>vb? up : down).push({ text:d[0]+": "+d[4](vb)+" → "+d[4](va), tone:va>vb? "good" : "bad", size:Math.min(1,z/2), n:a.poss, solidN:120, unit:"poss" }); });
-        if(a.ppp!=null && b.ppp!=null && Math.abs(a.ppp-b.ppp)>=0.06)
+        if(a.ppp!=null && b.ppp!=null && Math.abs(a.ppp-b.ppp)>=0.10)
           (a.ppp>b.ppp? up : down).push({ text:"Tagged points per possession: "+f2(b.ppp)+" → "+f2(a.ppp), tone:a.ppp>b.ppp? "good" : "bad",
             size:Math.min(1,Math.abs(a.ppp-b.ppp)/0.25), n:a.poss, solidN:120, unit:"poss" });
       }
@@ -18244,7 +18257,7 @@ function _trendsDashDraw(R, TD){
       const gs=Object.keys(x.per||{}).map(Number).sort((p,q)=>p-q); if(gs.length<3) return;
       const k=Math.min(3, Math.floor(gs.length/2));
       const sm=l=>{ let n=0,p=0; l.forEach(i=>{ n+=x.per[i].n; p+=x.per[i].pts; }); return { n:n, p:p }; };
-      const a=sm(gs.slice(-k)), b=sm(gs.slice(0,gs.length-k)); if(a.n<3 || b.n<3) return;
+      const a=sm(gs.slice(-k)), b=sm(gs.slice(0,gs.length-k)); if(a.n<MS_POSS || b.n<MS_POSS) return;
       const d=a.p/a.n-b.p/b.n; if(Math.abs(d)<0.3) return;
       (d>0? up : down).push({ text:"Set "+x.k+": "+f2(b.p/b.n)+" → "+f2(a.p/a.n)+" per possession", tone:d>0? "good" : "bad",
         size:Math.min(1,Math.abs(d)/0.8), n:a.n+b.n, solidN:16, unit:"runs", weight:0.9 }); });
@@ -18253,7 +18266,7 @@ function _trendsDashDraw(R, TD){
   if(K){ const men={}; G.forEach((g,gi)=>(g.pl||[]).forEach(p=>{ (men[p.i]=men[p.i]||{ nm:p.nm, per:[] }).per[gi]=p; }));
     Object.keys(men).forEach(id=>{ const e=men[id];
       const a=e.per.slice(N-K).filter(Boolean), b=e.per.slice(0,N-K).filter(Boolean);
-      if(!a.length || b.length<2) return;
+      if(!a.length || b.length<2 || a.length+b.length<MS_GAMES) return;
       const mins=a.concat(b).reduce((s,p)=>s+p.s,0)/60/(a.length+b.length); if(mins<12) return;
       const av=l=>l.reduce((s,p)=>s+p.pir,0)/l.length, d=av(a)-av(b); if(Math.abs(d)<4) return;
       (d>0? up : down).push({ text:_lgLastName(e.nm)+": index "+f1(av(b))+" → "+f1(av(a)), tone:d>0? "good" : "bad",
@@ -18367,7 +18380,7 @@ function _trendsDashDraw(R, TD){
       { title:"Getting better", ideas:K0.pick(up,6) }, { title:"Getting worse", ideas:K0.pick(down,6) },
       { title:"Game after game", ideas:K0.pick(rep,6) }, { title:"Holding, or just different", ideas:K0.pick(hold,4) },
       { title:"What moves with a bad night · an association, not a cause", ideas:[aOff, aDef].filter(Boolean) } ] }));
-  if(!K) out.appendChild(h("div",{class:"gpo-note"},"With "+N+" games there is no “last games against the ones before” yet; the trends start at four."));
+  if(!K) out.appendChild(h("div",{class:"gpo-note"},"With "+N+" games there is no “last games against the ones before” yet; the trends start at five."));
   return out;
 }
 /* where the staff plays one of ours somewhere else than the league's roster says, by surname: the staff wins */
@@ -18597,7 +18610,7 @@ function _lgFourTrend(TB){
       KEYS.forEach(k=>{ T.us[k]=list.reduce((a,g)=>a+(g.us[k]||0),0); T.them[k]=list.reduce((a,g)=>a+(g.them[k]||0),0); });
       return T; };
     const one=g=>({ us:g.us, them:g.them, n:1 });
-    const ALL=tot(G), K=(N>=6)? 3 : (N>=4? 2 : 0);
+    const ALL=tot(G), K=(N>=MS_GAMES)? 3 : 0;
     const REC=K? tot(G.slice(-K)) : null, BEF=K? tot(G.slice(0,N-K)) : null;
     const f0=v=>String(Math.round(v)), f1=v=>v.toFixed(1), f2=v=>v.toFixed(2), fP=v=>Math.round(v)+"%";
     const sg=v=>(v>0? "+" : v<0? "−" : "")+Math.abs(Math.round(v));
@@ -18721,7 +18734,7 @@ function _lgFourTrend(TB){
           tr.appendChild(h("td",{class:"trg-x"}, isFinite(sea)? sf(sea) : "—"));
           if(K){
             const a=d.per? d.pool(G.slice(-K)) : d.of(REC), b=d.per? d.pool(G.slice(0,N-K)) : d.of(BEF);
-            const flat=!isFinite(a) || !isFinite(b) || sf(a)===sf(b);
+            const flat=!isFinite(a) || !isFinite(b) || sf(a)===sf(b) || !_msMatters(_msKind(d.n, d.fmt===fP), a, b);
             const good=(d.hi==null || flat)? null : ((a>b)===d.hi);
             tr.appendChild(h("td",{class:"trg-x trg-t"+(good===true? " up" : good===false? " dn" : ""),
               title:"Last "+K+" games "+(isFinite(a)? sf(a) : "—")+" · the "+(N-K)+" before "+(isFinite(b)? sf(b) : "—")},
@@ -19097,7 +19110,7 @@ function _lgFourTrend(TB){
         const moves=[];
         if(K) list.forEach(e=>{
           const a=e.per.slice(N-K).filter(Boolean), b=e.per.slice(0,N-K).filter(Boolean);
-          if(!a.length || b.length<2 || e.sec/60/(a.length+b.length)<10) return;
+          if(!a.length || b.length<2 || a.length+b.length<MS_GAMES || e.sec/60/(a.length+b.length)<10) return;
           const va=avgOf(d,a), vb=avgOf(d,b);
           if(isFinite(va) && isFinite(vb)) moves.push({ e:e, a:va, b:vb, dv:va-vb });
         });
@@ -21398,19 +21411,19 @@ function _postMinutes(sg, opt){
        measure - the spell, OER, DER, OREB%, DREB%, Paint, TAG, BACK - each cell in its colour */
     if(opt.compact){
       const f2c=v=>v.toFixed(2).replace(/^0\./,"."), pcs=v=>Math.round(v)+"";
-      const oerC=S=>{ const p=poss(S); return p<1.5? null : S.pts/p; };
+      const oerC=S=>{ const p=poss(S); return p<2? null : S.pts/p; };
       /* THE MARGIN at the end of each minute: who is in front and by how much */
       const lead={}; { let u=0, t=0; for(let qi=0; qi<=maxQ; qi++) for(let mm=0; mm<minsOf(qi); mm++){ const b=B[qi+"|"+mm]; if(b){ u+=b.u.pts; t+=b.t.pts; } lead[qi+"|"+mm]={ u:u, t:t }; } }
       const R=[["Margin", null],
         ["OER", b=>oerC(b.u), v=>v>=1.1? "g" : v<=0.85? "b" : "", f2c],
         ["DER", b=>oerC(b.t), v=>v<=0.85? "g" : v>=1.1? "b" : "", f2c],
-        ["OREB%", b=>{ const d=b.u.or+b.t.dr; return d? 100*b.u.or/d : null; }, v=>v>=35? "g" : v<=20? "b" : "", pcs],
-        ["DREB%", b=>{ const d=b.u.dr+b.t.or; return d? 100*b.u.dr/d : null; }, v=>v>=80? "g" : v<65? "b" : "", pcs],
+        ["OREB%", b=>{ const d=b.u.or+b.t.dr; return d>=2? 100*b.u.or/d : null; }, v=>v>=35? "g" : v<=20? "b" : "", pcs],
+        ["DREB%", b=>{ const d=b.u.dr+b.t.or; return d>=2? 100*b.u.dr/d : null; }, v=>v>=80? "g" : v<65? "b" : "", pcs],
         /* theirs: the share of their misses they got back - low is good for us */
-        ["Opp OREB%", b=>{ const d=b.t.or+b.u.dr; return d? 100*b.t.or/d : null; }, v=>v<=20? "g" : v>=35? "b" : "", pcs]];
-      if(m) R.push(["Paint", b=>b.pn? 100*b.pt/b.pn : null, v=>v>=70? "g" : v<60? "b" : "", pcs],
-        ["TAG", b=>b.tag[0]? b.tag[1]/b.tag[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", f2c],
-        ["BACK", b=>b.back[0]? b.back[1]/b.back[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", f2c]);
+        ["Opp OREB%", b=>{ const d=b.t.or+b.u.dr; return d>=2? 100*b.t.or/d : null; }, v=>v<=20? "g" : v>=35? "b" : "", pcs]];
+      if(m) R.push(["Paint", b=>b.pn>=2? 100*b.pt/b.pn : null, v=>v>=70? "g" : v<60? "b" : "", pcs],
+        ["TAG", b=>b.tag[0]>=2? b.tag[1]/b.tag[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", f2c],
+        ["BACK", b=>b.back[0]>=2? b.back[1]/b.back[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", f2c]);
       const qs=[]; for(let qi=0; qi<=maxQ; qi++) qs.push(qi);
       const tot=qs.reduce((a,qi)=>a+minsOf(qi),0);
       const grid=h("div",{class:"pgmc", style:"grid-template-columns:62px repeat("+tot+",minmax(0,1fr))"});
@@ -21465,15 +21478,15 @@ function _postMinutes(sg, opt){
         const rv=roll(qi,mm); return h("span",{class:"pgm-st "+s, title:(n-mm)+"′ · "+u+"–"+t+" this minute · "+(rv>0? "+" : "")+rv+" with the minute either side"}, h("b",{}, rv>0? "+"+rv : rv<0? "−"+(-rv) : "0"), h("small",{}, u+"–"+t)); }), "st"));
       const val=(get, good, lab, fm)=>row(lab, st.map((s,mm)=>{ const b=B[qi+"|"+mm]; const v=b? get(b) : null; if(v==null) return h("span",{class:"pgm-v mu"},"·");
         const c=good(v); return h("span",{class:"pgm-v "+c}, (fm||f2n)(v)); }), "vr");
-      const oer=S=>{ const p=poss(S); return p<1.5? null : S.pts/p; };
+      const oer=S=>{ const p=poss(S); return p<2? null : S.pts/p; };
       card.appendChild(val(b=>oer(b.u), v=>v>=1.1? "g" : v<=0.85? "b" : "", "OER"));
       card.appendChild(val(b=>oer(b.t), v=>v<=0.85? "g" : v>=1.1? "b" : "", "DER"));
       /* the rebounds of the minute: ours of our misses, ours of theirs */
-      card.appendChild(val(b=>{ const d=b.u.or+b.t.dr; return d? 100*b.u.or/d : null; }, v=>v>=35? "g" : v<=20? "b" : "", "OREB%", v=>Math.round(v)+"%"));
-      card.appendChild(val(b=>{ const d=b.u.dr+b.t.or; return d? 100*b.u.dr/d : null; }, v=>v>=80? "g" : v<65? "b" : "", "DREB%", v=>Math.round(v)+"%"));
-      if(m){ card.appendChild(val(b=>b.pn? 100*b.pt/b.pn : null, v=>v>=70? "g" : v<60? "b" : "", "Paint", v=>Math.round(v)+"%"));
-        card.appendChild(val(b=>b.tag[0]? b.tag[1]/b.tag[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", "TAG"));
-        card.appendChild(val(b=>b.back[0]? b.back[1]/b.back[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", "BACK")); }
+      card.appendChild(val(b=>{ const d=b.u.or+b.t.dr; return d>=2? 100*b.u.or/d : null; }, v=>v>=35? "g" : v<=20? "b" : "", "OREB%", v=>Math.round(v)+"%"));
+      card.appendChild(val(b=>{ const d=b.u.dr+b.t.or; return d>=2? 100*b.u.dr/d : null; }, v=>v>=80? "g" : v<65? "b" : "", "DREB%", v=>Math.round(v)+"%"));
+      if(m){ card.appendChild(val(b=>b.pn>=2? 100*b.pt/b.pn : null, v=>v>=70? "g" : v<60? "b" : "", "Paint", v=>Math.round(v)+"%"));
+        card.appendChild(val(b=>b.tag[0]>=2? b.tag[1]/b.tag[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", "TAG"));
+        card.appendChild(val(b=>b.back[0]>=2? b.back[1]/b.back[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", "BACK")); }
       /* our men on the floor: a bar where he was on, the minute's colour behind */
       const q0=qBase(qi), q1=q0+qLen(qi);
       const men=ours.map(p=>({ p:p, s:onIn(p.id, q0, q1) })).filter(x=>x.s>0).sort((x,y)=>(String(y.p.st)==="true")-(String(x.p.st)==="true") || y.s-x.s);
@@ -21546,7 +21559,7 @@ function _postOverviewDraw(sg, P, Tg, API, K){
     const o=U.poss? 100*U.pts/U.poss : null, d=T.poss? 100*T.pts/T.poss : null;
     figs.push({ label:"Score", value:U.pts+"–"+T.pts, note:U.pts>T.pts? "win" : "loss", tone:U.pts>T.pts? "good" : "bad" });
     figs.push({ label:"Off. rating", value:o==null? null : o.toFixed(1), note:"per 100 · theirs "+(d==null? "—" : d.toFixed(1)), tone:K.tone(o, d, true, 3) });
-    figs.push({ label:"eFG%", value:pc(U.efg), note:"theirs "+pc(T.efg), tone:K.tone(U.efg, T.efg, true, 3) });
+    figs.push({ label:"eFG%", value:pc(U.efg), note:"theirs "+pc(T.efg), tone:K.tone(U.efg, T.efg, true, 5) });
     figs.push({ label:"Turnovers", value:U.tov, note:"theirs "+T.tov, tone:K.tone(U.tov, T.tov, false, 2) });
     figs.push({ label:"Off. rebounds", value:U.or, note:"theirs "+T.or, tone:K.tone(U.or, T.or, true, 2) });
   }
@@ -21630,7 +21643,7 @@ function _postOverviewDraw(sg, P, Tg, API, K){
   /* ---- sets, phases, defense: ranked with their volume, small samples left out of the ranking */
   const group=(list, keyOf)=>{ const m={}, ks=[]; list.forEach(q=>{ const k=keyOf(q); if(!k) return; if(!m[k]){ m[k]=[]; ks.push(k); } m[k].push(q); });
     return ks.map(k=>{ const l=m[k], s=API.shotLine(l); return { k:k, n:l.length, ppp:ppp(l), fgm:s.fgm, fga:s.fga, list:l }; }); };
-  const allPpp=ppp(poss), MINSET=3;
+  const allPpp=ppp(poss), MINSET=MS_POSS;
   const sets=group(poss.filter(q=>q.phase==="Half court" || q.phase==="OOB (SLOB/BLOB)"), q=>String(q.first||"").trim());
   const ranked=sets.filter(s=>s.n>=MINSET).sort((a,b)=>b.ppp-a.ppp || b.n-a.n);
   const gSets=[];
@@ -21752,7 +21765,7 @@ function _postOverviewDraw(sg, P, Tg, API, K){
   }
   if(concepts.length){
     const rows=concepts.slice().sort((a,b)=>b.n-a.n).map(c=>{ const per=[0,1,2,3].map(q=>{ const l=c.list.filter(x=>tagQ[x.q]===q); return l.length? l.length+" · "+f2(ppp(l)) : "—"; });
-      return [ c.k, c.n, c.n>=4? { v:f2(c.ppp), cls:"sx-cell "+(c.ppp<0.5?"s5":c.ppp<0.8?"s4":c.ppp<1.0?"s3":c.ppp<1.25?"s2":c.ppp<1.6?"s1":"s0") } : { v:f2(c.ppp), cls:"tr-thin" } ].concat(per); });
+      return [ c.k, c.n, c.n>=MS_POSS? { v:f2(c.ppp), cls:"sx-cell "+(c.ppp<0.5?"s5":c.ppp<0.8?"s4":c.ppp<1.0?"s3":c.ppp<1.25?"s2":c.ppp<1.6?"s1":"s0") } : { v:f2(c.ppp), cls:"tr-thin" } ].concat(per); });
     out.appendChild(fold("Every defensive concept — "+concepts.length,
       API.table2(["Concept","Poss","PPP allowed","Q1","Q2","Q3","Q4"], rows)));
   }
@@ -22158,21 +22171,21 @@ function _lgTeamOpen(tid){
     body.appendChild(sec(N>5? "The season · "+rows.length+" games" : "The last "+rows.length+" games",
       h("div",{}, P.strip, h("div",{class:"lgg-keys"}, P.cards)), "each result opens its game"));
     /* the trend: the newest two against the ones before them */
-    if(rows.length>=4){
-      const a=rows.slice(0,2), b=rows.slice(2);
+    if(rows.length>=MS_GAMES){
+      const a=rows.slice(0,3), b=rows.slice(3);
       const m=(l,f)=>l.reduce((x,r)=>x+(f(r)||0),0)/l.length;
       const items=[
         ["Offense, pts per 100", r=>r.S.ortg, true], ["Defense, pts per 100 allowed", r=>r.O.ortg, false],
         ["eFG%", r=>r.S.efg, true], ["Opponents’ eFG%", r=>r.O.efg, false],
         ["Turnover %", r=>r.S.tovp, false], ["Off. rebound %", r=>r.S.orbp, true],
         ["Three point rate", r=>r.S.p3r, null], ["Pace", r=>r.S.pace, null]
-      ].map(x=>{ const va=m(a,x[1]), vb=m(b,x[1]); return { k:x[0], a:va, b:vb, d:va-vb, hi:x[2] }; })
+      ].map(x=>{ const va=m(a,x[1]), vb=m(b,x[1]); return { k:x[0], a:va, b:vb, d:va-vb, hi:_msMatters(/per 100/.test(x[0])? "rating" : /Pace/.test(x[0])? "" : "pct", va, vb)? x[2] : null }; })
        .filter(x=>isFinite(x.d)).sort((x,y)=>Math.abs(y.d/(y.b||1))-Math.abs(x.d/(x.b||1))).slice(0,4);
       body.appendChild(sec("The trend", h("div",{class:"lgg-kps"}, items.map(x=>{
         const good=(x.hi==null)? null : ((x.d>0)===x.hi);
         return h("div",{class:"lgg-kp"+(good===true?" up":good===false?" dn":"")}, h("span",{}, x.k),
           h("b",{}, f1(x.a)), h("i",{}, (x.d>0?"▲ +":"▼ ")+f1(x.d)+" on the games before ("+f1(x.b)+")")); })),
-        "the last two games against the ones before"));
+        "the last three games against the ones before"));
     }
     /* who is and is not there */
     const chip=(e,cls,t2)=>h("span",{class:"avl-chip "+cls}, h("b",{}, "#"+e.num+" "+_lgLastName(e.name)), " "+t2);
@@ -22380,7 +22393,7 @@ function _lgLeadPool(L){
       m.usg=null;
       if(tot && tot.sec && t.sec){ const tu=(tot.fga||0)+0.44*(tot.fta||0)+(tot.tov||0);
         if(tu) m.usg=100*(m.tsa+t.tov)*(tot.sec/5)/(t.sec*tu); }
-      if(t.gp<Math.max(2, Math.ceil(0.4*tg)) || m.min<10) return;      /* the noise */
+      if(t.gp<Math.max(3, Math.ceil(0.4*tg)) || m.min<10) return;      /* the noise */
       pool.push({ id:p.id, tid:tm.id, tlc:tm.tlc||tm.short||"", name:p.name||("#"+p.num), num:p.num, t:t, m:m, rec:p });
     });
   });
@@ -23566,7 +23579,7 @@ const LG_RS_COLS=[
    and for a percentage one attempt a game or more */
 function _lgRsElig(c, t, strict){
   if(!t || !t.gp) return false;
-  if(strict && (t.gp<2 || ((t.sec||0)/60)/t.gp<10)) return false;
+  if(strict && (t.gp<3 || ((t.sec||0)/60)/t.gp<10)) return false;
   const att={ twp:t.p2a, tpp:t.p3a, fgp:(t.p2a||0)+(t.p3a||0), ftp:t.fta, ts:(t.p2a||0)+(t.p3a||0)+(t.fta||0), efg:(t.p2a||0)+(t.p3a||0) }[c.k];
   if(att!=null && (att/t.gp<1 || att<5)) return false;
   return true;
@@ -23586,7 +23599,7 @@ function _lgRsKey(){
     h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"The bar · against the whole league"),
       row(ex("16.8","",88,45), "A bar under a number: he is at one end of the league - among its best 10% or its weakest 10%"),
       row(h("span",{class:"rx-ex"}, h("span",{class:"rx-b big"}, h("i",{style:"width:62%"}), h("u",{style:"left:45%"}))), "The bar runs from the league's weakest (left) to its best (right); the black line is the league's middle player"),
-      h("div",{class:"rx-kn"}, "No bar: he is close to the rest of the league. League: every player with 2 games and 10 minutes a game; a percentage needs one attempt a game."))));
+      h("div",{class:"rx-kn"}, "No bar: he is close to the rest of the league. League: every player with 3 games and 10 minutes a game; a percentage needs one attempt a game."))));
 }
 function _lgRsVal(c, t, per, ctx){
   if(c.pair) return null;
@@ -25580,7 +25593,7 @@ function _lgReb(L){
     /* one line a club, its numbers only */
     const tr=h("tr",{class:_lgOurs(r.name)? "ours" : ""},
       h("td",{class:"lg-pos"}, String(i+1)), h("td",{class:"l lg-team"}, _lgCrest(L, r.id), h("span",{}, r.name)));
-    Object.keys(K).forEach(k=>{ const v=r[k], rk=rank[k](v), lim=k==="og"||k==="dg"? 1.5 : 3;
+    Object.keys(K).forEach(k=>{ const v=r[k], rk=rank[k](v), lim=k==="og"||k==="dg"? 1.5 : 5;
       tr.appendChild(h("td",{class:"pnum"+(k==="og"? " grp" : "")+(v!=null && A[k]!=null? (v-A[k]>=lim? " up" : v-A[k]<=-lim? " dn" : "") : "")}, v==null? "—" : K[k].f(v), rk && rk<=3? h("em",{class:"top"}, String(rk)) : null)); });
     t.appendChild(tr); });
   t.appendChild(h("tr",{class:"pace-lg"}, h("td",{}), h("td",{class:"l"},"League · average"), ...Object.keys(K).map(k=>h("td",{class:"pnum"+(k==="og"? " grp" : "")}, A[k]==null? "—" : K[k].f(A[k])))));
@@ -27122,8 +27135,8 @@ function _dashCoverInto(box, opp){
     const t=h("div",{class:"dash-cov"}, h("span",{class:"hd"},"Coverage"),
       h("span",{class:"hd"},"On their 4 · "+Math.round((tot[0]&&tot[0].poss)||0)+" poss"), h("span",{class:"hd"},"On their 5 · "+Math.round((tot[1]&&tot[1].poss)||0)+" poss"));
     const cell=c=>{ if(!c || !c.n) return h("span",{class:"c none"},"—");
-      const cls=c.ppp==null? "" : c.ppp>=1.1? "good" : c.ppp<=0.85? "bad" : "";
-      return h("span",{class:"c "+cls+((c.poss||0)<5? " sm" : ""), title:c.n+" clips · "+c.poss+" possessions"},
+      const cls=(c.ppp==null || (c.poss||0)<MS_POSS)? "" : c.ppp>=1.1? "good" : c.ppp<=0.85? "bad" : "";
+      return h("span",{class:"c "+cls+((c.poss||0)<MS_POSS? " sm" : ""), title:c.n+" clips · "+c.poss+" possessions"},
         h("b",{}, c.share!=null? c.share+"%" : "—"), h("i",{}, c.ppp==null? "—" : Number(c.ppp).toFixed(2)+" PPP")); };
     const vol=r=>(r.cells[0].poss||0)+(r.cells[1].poss||0);
     cb.rows.slice().sort((a,b)=>vol(b)-vol(a)).slice(0,7).forEach(r=>{ t.appendChild(h("span",{class:"k"}, r.label)); t.appendChild(cell(r.cells[0])); t.appendChild(cell(r.cells[1])); });
@@ -27449,7 +27462,7 @@ function _dashTopSetsInto(box, g){
       t.appendChild(h("span",{class:"nm"}, h("b",{}, edits[r.label]||r.label), kind? h("i",{class:"kd"}, kind) : null));
       t.appendChild(r.call? h("q",{}, r.call) : h("span",{class:"nc"},"—"));
       t.appendChild(h("span",{class:"use", title:r.n+" runs · "+Math.round(100*r.n/tot)+"% of their possessions"}, h("span",{class:"vol"}, h("i",{style:"width:"+Math.max(8,Math.round(100*(r.n||0)/mx))+"%"})), h("u",{}, String(r.n||0)), h("small",{}, Math.round(100*r.n/tot)+"%")));
-      t.appendChild(r.ppp!=null? h("em",{class:r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : h("em",{},"—"));
+      t.appendChild(r.ppp!=null? h("em",{class:(r.n||0)<MS_POSS? "" : r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : h("em",{},"—"));
       t.appendChild(h("span",{class:"gm"}, games.map(x=>{ const k=P[i][x]||0, a=k? 0.18+0.72*Math.min(1, k/gmx) : 0;
         return h("i",{class:k? "" : "z", title:x+": "+k, style:k? "background:rgba(74,134,216,"+a.toFixed(2)+");color:"+(a>0.55? "#fff" : "#1d3a66") : ""}, k? String(k) : "·"); })));
     });
@@ -27675,7 +27688,7 @@ function _dashPostSplit(box, g){
     const good=ss.filter(x=>x.v>=1).sort((a,b)=>b.v-a.v||b.n-a.n).slice(0,8), bad=ss.filter(x=>x.v<0.8).sort((a,b)=>a.v-b.v||b.n-a.n).slice(0,8);
     /* a list in two columns, read down the first and then the second */
     const two=list=>h("div",{class:"dash-sets two", style:"grid-template-rows:repeat("+Math.max(1, Math.ceil(list.length/2))+",auto)"}, list);
-    const setRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" runs"), h("em",{class:x.v>=1.1? "lo" : x.v<0.8? "hi" : ""}, x.v.toFixed(2)));
+    const setRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" runs"), h("em",{class:x.n<MS_POSS? "" : x.v>=1.1? "lo" : x.v<0.8? "hi" : ""}, x.v.toFixed(2)));
     const pt=API.measured(s,"pt"), br=API.measured(s,"br");
     const off=h("div",{class:"dash-sub"}, h("h4",{},"Offense"),
       h("div",{class:"dash-figs"}, fig("OER", f2(oer), m.poss.length+" possessions", oer==null? "" : oer>=1.1? "good" : oer<0.95? "bad" : ""),
@@ -27686,7 +27699,7 @@ function _dashPostSplit(box, g){
     const C={}; dp.forEach(q=>{ const k=q.label||"—"; (C[k]=C[k]||{ n:0, p:0 }); C[k].n++; C[k].p+=q.pts||0; });
     /* BALANCE counts in the DER above, it is only not a row of its own */
     const cs=Object.keys(C).map(k=>({ k:k, n:C[k].n, v:C[k].p/C[k].n })).filter(x=>x.n>=2 && !/^balance$/i.test(String(x.k).trim())).sort((a,b)=>b.n-a.n).slice(0,10);
-    const conRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" poss"), h("em",{class:x.v<=0.85? "lo" : x.v>=1.15? "hi" : ""}, x.v.toFixed(2)));
+    const conRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" poss"), h("em",{class:x.n<MS_POSS? "" : x.v<=0.85? "lo" : x.v>=1.15? "hi" : ""}, x.v.toFixed(2)));
     const tbTone=o=>!o? "" : o.ppp<=0.9? "good" : o.ppp>=1.2? "bad" : "";
     const def=h("div",{class:"dash-sub"}, h("h4",{},"Defense"),
       h("div",{class:"dash-figs"}, fig("DER", f2(der), dp.length+" possessions", der==null? "" : der<=0.95? "good" : der>=1.1? "bad" : ""),
@@ -27995,7 +28008,7 @@ function renderDashboard(){
         cK.__b.appendChild(h("div",{class:"dash-sets"}, rows.slice(0,8).map(r=>h("div",{class:"dash-set"},
           h("b",{}, edits[r.label]||r.label), r.call? h("q",{}, r.call) : h("span",{class:"nc"},"no call"),
           h("span",{class:"vol"}, h("i",{style:"width:"+Math.max(8,Math.round(100*(r.n||0)/mx))+"%"})), h("u",{}, String(r.n||0)),
-          r.ppp!=null? h("em",{class:r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : null))));
+          r.ppp!=null? h("em",{class:(r.n||0)<MS_POSS? "" : r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : null))));
         if(rows.length>8) cK.__b.appendChild(h("div",{class:"dash-src"}, "+"+(rows.length-8)+" more in the pre game"));
       });
       });
@@ -28059,7 +28072,7 @@ function renderDashboard(){
       _trgRead().then(R=>{
         [cC,cD].forEach(x=>{ const ld=x.querySelector(".dash-ld"); if(ld) ld.remove(); });
         const G=((R && R.games)||[]).filter(x=>x && x.us && x.them);
-        if(G.length<4){ cC.appendChild(h("div",{class:"dash-miss"},"Four games are needed to compare the last three with the season.")); return; }
+        if(G.length<MS_GAMES){ cC.appendChild(h("div",{class:"dash-miss"},"Five games are needed to compare the last three with the season.")); return; }
         const sum=(list, side)=>{ const o={}; list.forEach(x=>Object.keys(x[side]).forEach(k=>{ o[k]=(o[k]||0)+(+x[side][k]||0); })); return o; };
         const S={ u:sum(G,"us"), t:sum(G,"them"), n:G.length }, R3={ u:sum(G.slice(-3),"us"), t:sum(G.slice(-3),"them"), n:3 };
         const ortg=o=>o.poss? 100*o.pts/o.poss : null, efg=o=>o.fga? 100*(o.fgm+0.5*o.p3m)/o.fga : null;
@@ -28070,12 +28083,12 @@ function renderDashboard(){
         const f1=v=>v==null? "—" : v.toFixed(1), fP=v=>v==null? "—" : Math.round(v)+"%";
         /* every measure, season against the last three, scaled so a change in points per 100
            and a change in a percentage can be ranked against each other */
-        const MM=[ ["Offensive rating", T=>ortg(T.u), true, f1, 4], ["Defensive rating", T=>ortg(T.t), false, f1, 4],
-          ["eFG%", T=>efg(T.u), true, fP, 3], ["Opponents' eFG%", T=>efg(T.t), false, fP, 3],
-          ["Turnover rate", T=>tov(T.u), false, fP, 2], ["Turnovers forced", T=>tov(T.t), true, fP, 2],
-          ["Offensive rebounding", T=>orb(T.u,T.t), true, fP, 3], ["Defensive rebounding", T=>orb(T.t,T.u)==null? null : 100-orb(T.t,T.u), true, fP, 3],
-          ["3P%", T=>p3(T.u), true, fP, 4], ["Opponents' 3P%", T=>p3(T.t), false, fP, 4],
-          ["Free throw rate", T=>ftr(T.u), true, fP, 4], ["Points in the paint", T=>(T.u.paint||0)/T.n, true, f1, 3],
+        const MM=[ ["Offensive rating", T=>ortg(T.u), true, f1, 6], ["Defensive rating", T=>ortg(T.t), false, f1, 6],
+          ["eFG%", T=>efg(T.u), true, fP, 10], ["Opponents' eFG%", T=>efg(T.t), false, fP, 10],
+          ["Turnover rate", T=>tov(T.u), false, fP, 10], ["Turnovers forced", T=>tov(T.t), true, fP, 10],
+          ["Offensive rebounding", T=>orb(T.u,T.t), true, fP, 10], ["Defensive rebounding", T=>orb(T.t,T.u)==null? null : 100-orb(T.t,T.u), true, fP, 10],
+          ["3P%", T=>p3(T.u), true, fP, 10], ["Opponents' 3P%", T=>p3(T.t), false, fP, 10],
+          ["Free throw rate", T=>ftr(T.u), true, fP, 10], ["Points in the paint", T=>(T.u.paint||0)/T.n, true, f1, 3],
           ["Points off turnovers", T=>(T.u.pot||0)/T.n, true, f1, 2], ["Their points off our turnovers", T=>(T.t.pot||0)/T.n, false, f1, 2],
           ["Second chance points", T=>(T.u.sc||0)/T.n, true, f1, 2], ["Bench points", T=>(T.u.bench||0)/T.n, true, f1, 3] ];
         const mv=MM.map(m=>{ const a=m[1](S), b=m[1](R3); if(a==null||b==null||!isFinite(a)||!isFinite(b)) return null;
@@ -28086,11 +28099,11 @@ function renderDashboard(){
         cC.appendChild(up.length? h("div",{}, up.map(x=>mrow(x,"good"))) : h("div",{class:"dash-miss"},"Nothing has improved clearly."));
         cC.appendChild(h("div",{class:"dash-h5 bad"},"Getting worse"));
         cC.appendChild(dn.length? h("div",{}, dn.map(x=>mrow(x,"bad"))) : h("div",{class:"dash-miss"},"Nothing has dropped clearly."));
-        const M=[ ["Offensive rating", ortg(S.u), ortg(R3.u), avg(x=>x.ortg), f1, true, 2],
-          ["Defensive rating", ortg(S.t), ortg(R3.t), avg(x=>x.drtg), f1, false, 2],
-          ["eFG%", efg(S.u), efg(R3.u), avg(x=>x.off && 100*x.off.efg), fP, true, 1.5],
-          ["Turnover rate", tov(S.u), tov(R3.u), avg(x=>x.off && 100*x.off.tov), fP, false, 1.5],
-          ["Off. rebounding", orb(S.u,S.t), orb(R3.u,R3.t), avg(x=>x.off && 100*x.off.reb), fP, true, 2] ];
+        const M=[ ["Offensive rating", ortg(S.u), ortg(R3.u), avg(x=>x.ortg), f1, true, 3],
+          ["Defensive rating", ortg(S.t), ortg(R3.t), avg(x=>x.drtg), f1, false, 3],
+          ["eFG%", efg(S.u), efg(R3.u), avg(x=>x.off && 100*x.off.efg), fP, true, 5],
+          ["Turnover rate", tov(S.u), tov(R3.u), avg(x=>x.off && 100*x.off.tov), fP, false, 5],
+          ["Off. rebounding", orb(S.u,S.t), orb(R3.u,R3.t), avg(x=>x.off && 100*x.off.reb), fP, true, 5] ];
         const tn=(a,b,hi,th)=>(a==null||b==null||Math.abs(a-b)<th)? "" : ((a>b)===hi? "good" : "bad");
         const t=h("div",{class:"dash-tgt"}, h("span",{class:"hd"},""), h("span",{class:"hd"},"Season"), h("span",{class:"hd"},"Last 3"), h("span",{class:"hd"},"League"));
         M.forEach(m=>{ t.appendChild(h("span",{class:"k"}, m[0]));
@@ -28121,20 +28134,21 @@ function renderDashboard(){
         const last=list.slice(-1), l3=list.slice(-3), all=list;
         const pt=(L,k)=>{ const s=API.addUp(L.map(x=>x.s)); return s? API.measured(s,k) : null; };
         const tb=(L,k)=>{ let n=0,p=0; L.forEach(x=>{ const t=x.m && x.m.trans && x.m.trans[k]; if(t){ n+=t.n||0; p+=t.pts||0; } }); return n? { v:p/n, n:n } : null; };
+        const few=(L,k)=>{ const t=tb(L,k); return !t || t.n<MS_POSS; };
         const hc=L=>{ let n=0,p=0; L.forEach(x=>(x.m.poss||[]).forEach(q=>{ if(q.phase==="Half court"){ n++; p+=q.pts||0; } })); return n? p/n : null; };
         const f0=v=>v==null? "—" : Math.round(v)+"%", f2=v=>v==null? "—" : Number(v).toFixed(2);
         const tone=(a,b,hi,th)=>(a==null||b==null)? "" : (Math.abs(a-b)<th? "" : ((a>b)===hi? "good" : "bad"));
         const rows=[
-          ["Paint touches", pt(last,"pt"), pt(l3,"pt"), pt(all,"pt"), f0, true, 3, "target 70%"],
-          ["Ball reversals", pt(last,"br"), pt(l3,"br"), pt(all,"br"), f0, true, 3, ""],
-          ["TAG conceded", (tb(last,"tag")||{}).v, (tb(l3,"tag")||{}).v, (tb(all,"tag")||{}).v, f2, false, 0.08, "per possession"],
-          ["BACK conceded", (tb(last,"back")||{}).v, (tb(l3,"back")||{}).v, (tb(all,"back")||{}).v, f2, false, 0.08, "per possession"],
-          ["Half court sets", hc(last), hc(l3), hc(all), f2, true, 0.05, "points per possession"]
+          ["Paint touches", pt(last,"pt"), pt(l3,"pt"), pt(all,"pt"), f0, true, 5, "target 70%"],
+          ["Ball reversals", pt(last,"br"), pt(l3,"br"), pt(all,"br"), f0, true, 5, ""],
+          ["TAG conceded", (tb(last,"tag")||{}).v, (tb(l3,"tag")||{}).v, (tb(all,"tag")||{}).v, f2, false, 0.10, "per possession", few(last,"tag"), few(l3,"tag")],
+          ["BACK conceded", (tb(last,"back")||{}).v, (tb(l3,"back")||{}).v, (tb(all,"back")||{}).v, f2, false, 0.10, "per possession", few(last,"back"), few(l3,"back")],
+          ["Half court sets", hc(last), hc(l3), hc(all), f2, true, 0.10, "points per possession"]
         ];
         const t=h("div",{class:"dash-tgt"}, h("span",{class:"hd"},""), h("span",{class:"hd"}, last[0].label.slice(0,10)), h("span",{class:"hd"},"Last 3"), h("span",{class:"hd"},"Season"));
         rows.forEach(r=>{ t.appendChild(h("span",{class:"k", title:r[7]}, r[0]));
-          t.appendChild(h("b",{class:tone(r[1],r[3],r[5],r[6])}, r[4](r[1])));
-          t.appendChild(h("b",{class:tone(r[2],r[3],r[5],r[6])}, r[4](r[2])));
+          t.appendChild(h("b",{class:r[8]? "" : tone(r[1],r[3],r[5],r[6])}, r[4](r[1])));
+          t.appendChild(h("b",{class:r[9]? "" : tone(r[2],r[3],r[5],r[6])}, r[4](r[2])));
           t.appendChild(h("b",{}, r[4](r[3]))); });
         cB.appendChild(t); cB.appendChild(h("div",{class:"dash-src"}, list.length+" tagged games"));
         /* every half court set of the season on at least five runs, best and worst eight */
@@ -28190,7 +28204,7 @@ function renderDashboard(){
           /* how he is moving: his last three games against the games before them */
           const ls=linesOf(p), l3=ls.slice(-3), pre=ls.slice(0, Math.max(0, ls.length-3));
           const av=l=>l.length? l.reduce((s,e)=>s+e.pir,0)/l.length : null;
-          const a3=av(l3), ab=av(pre), dd=(a3!=null && ab!=null)? a3-ab : null;
+          const a3=av(l3), ab=av(pre), dd=(a3!=null && ab!=null && ls.length>=MS_GAMES)? a3-ab : null;
           const tone=dd==null? "" : dd>=2? "up" : dd<=-2? "dn" : "";
           t.appendChild(h("span",{class:"c mv "+tone, title:ab!=null? "before: "+ab.toFixed(1)+" a game" : ""}, h("b",{}, a3==null? "—" : a3.toFixed(1)), dd!=null? h("i",{}, (dd>=0? "▲ +" : "▼ ")+dd.toFixed(1)) : null));
           t.appendChild(h("span",{class:"c spk", title:ls.slice(-10).map(e=>e.code+" "+e.pir).join(" · ")}, spark(ls.slice(-10).map(e=>e.pir), tone))); });
@@ -28305,7 +28319,7 @@ function renderDashboard(){
           const F=Object.values(leagueState().four||{}).filter(t=>t && t.off), me=F.filter(t=>String(t.teamId)===String(R.tid))[0];
           const lgAvg=F.length? 100*F.reduce((a,t)=>a+t.off.reb,0)/F.length : null, rank=me? 1+F.filter(t=>t.off.reb>me.off.reb).length : null;
           const f0=v=>v==null? "—" : Math.round(v)+"%";
-          const tone=(a,b)=>(a==null||b==null||Math.abs(a-b)<3)? "" : a>b? "good" : "bad";
+          const tone=(a,b)=>(a==null||b==null||Math.abs(a-b)<5)? "" : a>b? "good" : "bad";
           /* REBOUNDING: the share of our misses we got back and of theirs we kept, the last game big,
              the last three and the season under each */
           const drb=l=>{ const o=l.reduce((a,x)=>a+(+x.us.dreb||0),0), d=l.reduce((a,x)=>a+(+x.them.oreb||0),0); return (o+d)? 100*o/(o+d) : null; };
@@ -28360,14 +28374,14 @@ function renderDashboard(){
           const oS=100*S("pts","us")/S("poss","us"), dS=100*S("pts","them")/S("poss","them");
           const oL=100*x.us.pts/x.us.poss, dL=100*x.them.pts/x.them.poss;
           lastBits.unshift(h("div",{class:"dash-lastg"}, h("b",{}, (us>th? "W " : "L ")+us+"–"+th+" · "+x.opp), h("span",{}, _dashFmt(x.g.date))),
-            h("div",{class:"dash-figs"}, fig("Net", (n>0? "+" : "")+n.toFixed(1), "season "+((oS-dS)>0? "+" : "")+(oS-dS).toFixed(1), n-(oS-dS)>=5? "good" : n-(oS-dS)<=-5? "bad" : ""),
-              fig("Off. rating", oL.toFixed(1), "season "+oS.toFixed(1), oL-oS>=4? "good" : oL-oS<=-4? "bad" : ""),
-              fig("Def. rating", dL.toFixed(1), "season "+dS.toFixed(1), dL-dS<=-4? "good" : dL-dS>=4? "bad" : ""),
+            h("div",{class:"dash-figs"}, fig("Net", (n>0? "+" : "")+n.toFixed(1), "season "+((oS-dS)>0? "+" : "")+(oS-dS).toFixed(1), n-(oS-dS)>=3? "good" : n-(oS-dS)<=-3? "bad" : ""),
+              fig("Off. rating", oL.toFixed(1), "season "+oS.toFixed(1), oL-oS>=3? "good" : oL-oS<=-3? "bad" : ""),
+              fig("Def. rating", dL.toFixed(1), "season "+dS.toFixed(1), dL-dS<=-3? "good" : dL-dS>=3? "bad" : ""),
               /* the game's rebounding, ours and what the rival got */
               (()=>{ const o=100*(+x.us.oreb||0)/Math.max(1,(+x.us.oreb||0)+(+x.them.dreb||0)), oS2=100*S("oreb","us")/Math.max(1,S("oreb","us")+S("dreb","them"));
-                return fig("OREB%", Math.round(o)+"%", x.us.oreb+" of "+((+x.us.oreb||0)+(+x.them.dreb||0))+" · season "+Math.round(oS2)+"%", o-oS2>=4? "good" : o-oS2<=-4? "bad" : ""); })(),
+                return fig("OREB%", Math.round(o)+"%", x.us.oreb+" of "+((+x.us.oreb||0)+(+x.them.dreb||0))+" · season "+Math.round(oS2)+"%", o-oS2>=5? "good" : o-oS2<=-5? "bad" : ""); })(),
               (()=>{ const d=100*(+x.us.dreb||0)/Math.max(1,(+x.us.dreb||0)+(+x.them.oreb||0)), dS2=100*S("dreb","us")/Math.max(1,S("dreb","us")+S("oreb","them"));
-                return fig("DREB%", Math.round(d)+"%", "rival OREB "+Math.round(100-d)+"% · season "+Math.round(dS2)+"%", d-dS2>=4? "good" : d-dS2<=-4? "bad" : ""); })()));
+                return fig("DREB%", Math.round(d)+"%", "rival OREB "+Math.round(100-d)+"% · season "+Math.round(dS2)+"%", d-dS2>=5? "good" : d-dS2<=-5? "bad" : ""); })()));
           paintLast();
         } else [cN,cOD,cPS].forEach(x=>x.__b.appendChild(h("div",{class:"dash-miss"},"Two games are needed for a line.")));
         /* every player of ours with three games before his last three */
@@ -28398,8 +28412,8 @@ function renderDashboard(){
         /* the four key measures, big */
         const K=[["TAG conceded", tb(lx,"tag"), tbL(l3,"tag"), tbL(list,"tag"), f2, false, 0.1, "pts a transition after our long shot"],
           ["BACK conceded", tb(lx,"back"), tbL(l3,"back"), tbL(list,"back"), f2, false, 0.1, "pts a transition after our miss at the rim or our turnover"],
-          ["Paint touches", ms(lx,"pt"), msL(l3,"pt"), msL(list,"pt"), f0, true, 3, "of possessions · target 70%"],
-          ["Ball reversals", ms(lx,"br"), msL(l3,"br"), msL(list,"br"), f0, true, 3, "of possessions"]];
+          ["Paint touches", ms(lx,"pt"), msL(l3,"pt"), msL(list,"pt"), f0, true, 5, "of possessions · target 70%"],
+          ["Ball reversals", ms(lx,"br"), msL(l3,"br"), msL(list,"br"), f0, true, 5, "of possessions"]];
         const tone=(a,b,hi,th)=>(a==null||b==null||Math.abs(a-b)<th)? "" : ((a>b)===hi? "good" : "bad");
         K.forEach(k=>{ const tgt=k[0]==="Paint touches"? (k[1]==null? "" : k[1]>=70? "good" : k[1]<60? "bad" : "") : tone(k[1],k[3],k[5],k[6]);
           key.appendChild(h("div",{class:"dash-kf "+tgt},
@@ -28448,13 +28462,13 @@ function renderDashboard(){
         const top=ss.slice(0,10), bot=ss.slice().reverse().filter(x=>top.indexOf(x)<0).slice(0,10);
         cB.__b.appendChild(top.length? h("div",{class:"dash-sets"}, top.map(setRow)) : h("div",{class:"dash-miss"},"No set run five times yet."));
         cW.__b.appendChild(bot.length? h("div",{class:"dash-sets"}, bot.map(setRow)) : h("div",{class:"dash-miss"},"Not enough sets yet."));
-        if(list.length<4){ [cU,cD].forEach(x=>x.__b.appendChild(h("div",{class:"dash-miss"},"Four tagged games are needed to compare the last three with the games before."))); return; }
+        if(list.length<MS_GAMES){ [cU,cD].forEach(x=>x.__b.appendChild(h("div",{class:"dash-miss"},"Five tagged games are needed to compare the last three with the games before."))); return; }
         const S3=runs(list.slice(-3)), SB=runs(list.slice(0,-3));
-        const mv=Object.keys(S3).filter(k=>S3[k].n>=3 && SB[k] && SB[k].n>=3).map(k=>({ k:k, a:SB[k].p/SB[k].n, b:S3[k].p/S3[k].n, n:S3[k].n })).map(x=>Object.assign(x,{ d:x.b-x.a }));
+        const mv=Object.keys(S3).filter(k=>S3[k].n>=MS_POSS && SB[k] && SB[k].n>=MS_POSS).map(k=>({ k:k, a:SB[k].p/SB[k].n, b:S3[k].p/S3[k].n, n:S3[k].n })).map(x=>Object.assign(x,{ d:x.b-x.a }));
         const mvRow=(x,t)=>h("div",{class:"dash-mv "+t}, h("span",{}, x.k+" · "+x.n+" runs"), h("b",{}, x.a.toFixed(2)+" → "+x.b.toFixed(2)));
         /* ten each way: the sets that moved most, up and down */
-        const up=mv.filter(x=>x.d>0).sort((a,b)=>b.d-a.d).slice(0,10), dn=mv.filter(x=>x.d<0).sort((a,b)=>a.d-b.d).slice(0,10);
-        cU.__b.appendChild(up.length? h("div",{}, up.map(x=>mvRow(x,"good"))) : h("div",{class:"dash-miss"},"No set has improved clearly (three runs or more in both)."));
+        const up=mv.filter(x=>x.d>=0.10).sort((a,b)=>b.d-a.d).slice(0,10), dn=mv.filter(x=>x.d<=-0.10).sort((a,b)=>a.d-b.d).slice(0,10);
+        cU.__b.appendChild(up.length? h("div",{}, up.map(x=>mvRow(x,"good"))) : h("div",{class:"dash-miss"},"No set has improved clearly (five runs or more in both, 0.10 or more)."));
         cD.__b.appendChild(dn.length? h("div",{}, dn.map(x=>mvRow(x,"bad"))) : h("div",{class:"dash-miss"},"No set has dropped clearly."));
         cU.__b.appendChild(h("div",{class:"dash-src"},"Points per possession, the games before → the last three"));
       }).catch(()=>{ [cP,cT,cR,cB,cW,cU,cD,cX].forEach(x=>{ x.__b.innerHTML=""; }); key.innerHTML=""; key.appendChild(h("div",{class:"dash-miss"},"Our tagging could not be read from the Drive.")); putOr(); });

@@ -1025,7 +1025,7 @@
        read among sets called at least three times: one made three on a single
        call is a 3.00 that would otherwise own the top of the list and tell the
        staff nothing. */
-    var PB_MIN_FLAG = 3, TOP_USE = 5, TOP_PPP = 7;
+    var PB_MIN_FLAG = 5, TOP_USE = 5, TOP_PPP = 7;
     /* Four rows in this table are not plays but buckets — a fastbreak, a
        broken possession, whatever they run against zone, a press break. Left in
        the ranking they take the flags and say nothing: "they fastbreak a lot"
@@ -1553,8 +1553,12 @@
   /* THE ORIENTATION RULE lives here and nowhere else.
      On their offense a high PPP is them performing; on their defense it is us scoring,
      which is them performing badly. One scale, the sign tells it which way round. */
-  function pppCell(ppp, ref, side, cf) {
+  function pppCell(ppp, ref, side, cf, n) {
     if (ref == null) return plain(f2(ppp), "muted");
+    /* the hub's rule: a rate is coloured from five possessions, and only when it is 0.10
+       or more away from its reference; below that the number stays, in grey or plain */
+    if (n != null && n < 5) return plain(f2(ppp), "muted");
+    if (Math.abs((side === "O" ? (ref - ppp) : (ppp - ref))) < 0.10) return plain(f2(ppp));
     /* ONE COLOUR RULE FOR THE WHOLE REPORT, the overview's: green is good for us, red hurts us.
        Their offense scoring above the reference is red; their defense letting us score
        above it is green. (It used to be the other way round here, under notes that said
@@ -1668,7 +1672,7 @@
       tr.appendChild(lbl(r.label));
       tr.appendChild(plain(Math.round(r.poss)));
       tr.appendChild(shareCell(Math.round(r.poss / tot * 100), mxsh));
-      tr.appendChild(pppCell(r.ppp, r.ref, r.side, r.conf));
+      tr.appendChild(pppCell(r.ppp, r.ref, r.side, r.conf, r.poss));
       tr.appendChild(plain(r.ref == null ? "—" : f2(r.ref), "ref"));
       extra.forEach(function (c) {
         var v = r[c[0]];
@@ -1721,7 +1725,7 @@
       tr.appendChild(lblFace(p.label, M.team));
       tr.appendChild(plain(p.n));
       tr.appendChild(plain(p.use + "%"));
-      tr.appendChild(pppCell(p.ppp, M.refOff, "O", p.conf));
+      tr.appendChild(pppCell(p.ppp, M.refOff, "O", p.conf, p.n));
       tr.appendChild(plain(f2(p.xppp), "ref"));
       var tdl = el("td", "sxp-c");
       tdl.appendChild(el("span", "sxp-v sxp-ev " + (p.luck > 0 ? "pos" : p.luck < 0 ? "neg" : ""), sgn(p.luck)));
@@ -1987,11 +1991,11 @@
       var tr = el("tr", r.total ? "tot" : "");
       tr.appendChild(lbl(r.label));
       tr.appendChild(plain(Math.round(r.oPoss)));
-      tr.appendChild(pppCell(r.oPpp, M.refOff, "O", 3));
+      tr.appendChild(pppCell(r.oPpp, M.refOff, "O", 3, r.oPoss));
       tr.appendChild(plain(f2(r.oXppp), "ref"));
       tr.appendChild(plain(r.oEfg + "%")); tr.appendChild(plain(r.o3r + "%")); tr.appendChild(plain(r.oTov + "%"));
       tr.appendChild(plain(Math.round(r.dPoss), "sep"));
-      tr.appendChild(pppCell(r.dPpp, M.refDef, "D", 3));
+      tr.appendChild(pppCell(r.dPpp, M.refDef, "D", 3, r.dPoss));
       tr.appendChild(plain(f2(r.dXppp), "ref"));
       tr.appendChild(plain(r.dEfg + "%")); tr.appendChild(plain(r.d3r + "%")); tr.appendChild(plain(r.dTov + "%"));
       var td = el("td", "sxp-c cream");
@@ -2254,7 +2258,7 @@
         tr.appendChild(lbl(r.label));
         tr.appendChild(plain(Math.round(r.poss)));
         tr.appendChild(shareCell(Math.round(r.poss / btot * 100), bmx));
-        tr.appendChild(pppCell(r.ppp, r.ref, r.side, r.conf));
+        tr.appendChild(pppCell(r.ppp, r.ref, r.side, r.conf, r.poss));
         tr.appendChild(shareCell(r.efg, emx));
         TB.body.appendChild(tr);
       });
@@ -2287,7 +2291,7 @@
             tr.appendChild((c.share == null || !c.n) ? plain("\u2014", "muted")
               : shareCell(c.share, 100));
             tr.appendChild(c.ppp == null ? plain("\u2014", "muted")
-              : pppCell(c.ppp, ref, "D", c.conf));
+              : pppCell(c.ppp, ref, "D", c.conf, c.poss));
           });
           return tr;
         };
@@ -2323,7 +2327,7 @@
             var tr = el("tr");
             tr.appendChild(lbl("")); tr.appendChild(plain(p.label));
             tr.appendChild(plain(p.n)); tr.appendChild(plain(Math.round(p.poss)));
-            tr.appendChild(p.ppp == null ? plain("—", "muted") : pppCell(p.ppp, D.covbybig.totalRef, "D", p.conf));
+            tr.appendChild(p.ppp == null ? plain("—", "muted") : pppCell(p.ppp, D.covbybig.totalRef, "D", p.conf, p.poss));
             TW.body.appendChild(tr);
           });
           if (!w.players.length) {
@@ -2373,7 +2377,7 @@
           .concat(CG.keys.map(function (k) { return { t: k, cls: "n" }; })));
         var cgCell = function (c, ref) {
           if (!c || !c.n) return plain("\u2014", "muted");
-          var td = pppCell(c.ppp, ref, "D", c.conf);
+          var td = pppCell(c.ppp, ref, "D", c.conf, c.poss);
           /* The count rides beside the rate: 1.42 off three possessions and off thirty
              are not the same number, and this row has no other column to say which. It
              goes OUTSIDE the coloured chip, so the colour stays on the rate alone. */

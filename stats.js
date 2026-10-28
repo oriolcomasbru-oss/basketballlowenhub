@@ -1221,7 +1221,7 @@
           var it = [0, 1, 2].map(function (k) {
             var g = P.filter(function (q) { return k < 2 ? (q[key] || 0) === k : (q[key] || 0) >= 2; }), s = shotLine(g);
             return g.length ? { label: (k === 2 ? "2+" : String(k)) + " · " + g.length + " poss", value: s.ppp || 0, text: f2(s.ppp),
-              tone: s.ppp >= all.ppp + 0.05 ? "good" : s.ppp <= all.ppp - 0.05 ? "bad" : "neutral" } : null; }).filter(Boolean);
+              tone: s.ppp >= all.ppp + 0.10 ? "good" : s.ppp <= all.ppp - 0.10 ? "bad" : "neutral" } : null; }).filter(Boolean);
           return it.length >= 2 ? KP.strip({ title: title, sub: "points per possession by how many", items: it }) : null;
         };
         var types = PT_TYPES.map(function (t) { var n = 0; P.forEach(function (q) { n += count(q.tags, t); }); return { label: t, n: n }; })
@@ -1681,8 +1681,8 @@
   /* Efficiency and volume are two different things and each keeps its own
      channel: the PPP cell is always coloured, whatever the sample, so a good
      number on five possessions is still visible; the share column carries the
-     volume. A row under SMALL possessions is ringed instead of dimmed — the
-     warning is there without the number being taken away. */
+     volume. A cell under SMALL possessions keeps its number and loses its
+     colour (the hub's rule since 28/10/2026: colour from five possessions). */
   var SMALL = 5;
   /* one channel, one fact: the Poss cell is tinted by how big the row is next
      to the biggest row of its own table, the share stays a plain number, and
@@ -2170,7 +2170,7 @@
         return list.length ? 100 * m / list.length : 0;
       };
       var grade = function (v) { return v >= 70 ? "good" : v >= 60 ? "neutral" : "bad"; };
-      var vs = function (v) { return v == null ? "neutral" : v >= anchor + 0.05 ? "good" : v <= anchor - 0.05 ? "bad" : "neutral"; };
+      var vs = function (v) { return v == null ? "neutral" : v >= anchor + 0.10 ? "good" : v <= anchor - 0.10 ? "bad" : "neutral"; };
       var qStrip = function (key, title, graded) {
         if (byQ.length < 2) return null;
         return K.strip({ title: title, sub: "share of possessions, by quarter", items: byQ.map(function (it) {
@@ -2213,13 +2213,13 @@
       var tdP = function (o) { return o && o.n ? o.pts / o.n : null; };
       var tdT = function (v) { return v == null ? "neutral" : v <= 0.9 ? "good" : v >= 1.15 ? "bad" : "neutral"; };
       put(gTD, { figures: [
-        { label: "TAG · after a long shot", value: f2(tdP(TD.tag)), note: (TD.tag.pts || 0) + " conceded in " + (TD.tag.n || 0) + " situations", tone: tdT(tdP(TD.tag)) },
-        { label: "BACK · after a miss at the rim or a turnover", value: f2(tdP(TD.back)), note: (TD.back.pts || 0) + " conceded in " + (TD.back.n || 0) + " situations", tone: tdT(tdP(TD.back)) }] });
+        { label: "TAG · after a long shot", value: f2(tdP(TD.tag)), note: (TD.tag.pts || 0) + " conceded in " + (TD.tag.n || 0) + " situations", tone: (TD.tag.n || 0) < 5 ? "neutral" : tdT(tdP(TD.tag)) },
+        { label: "BACK · after a miss at the rim or a turnover", value: f2(tdP(TD.back)), note: (TD.back.pts || 0) + " conceded in " + (TD.back.n || 0) + " situations", tone: (TD.back.n || 0) < 5 ? "neutral" : tdT(tdP(TD.back)) }] });
       if (DN) {
         var dAll = shotLine(DP), cats = Object.keys(byCat || {}).filter(function (k) { return !/^balance$/i.test(k); }).sort(function (a, b) { return byCat[b].length - byCat[a].length; });
         var head = cats.slice(0, 6), restN = 0; cats.slice(6).forEach(function (k) { restN += byCat[k].length; });
         var parts = head.map(function (k) { var s = shotLine(byCat[k]);
-          return { label: k, share: byCat[k].length / DN, value: f2(s.ppp), tone: s.ppp == null ? "neutral" : s.ppp <= dAll.ppp - 0.08 ? "good" : s.ppp >= dAll.ppp + 0.08 ? "bad" : "neutral" }; });
+          return { label: k, share: byCat[k].length / DN, value: f2(s.ppp), tone: s.ppp == null ? "neutral" : s.ppp <= dAll.ppp - 0.10 ? "good" : s.ppp >= dAll.ppp + 0.10 ? "bad" : "neutral" }; });
         if (restN) parts.push({ label: "Other (" + (cats.length - 6) + ")", share: restN / DN });
         put(gDF, { figures: [
           { label: "Points allowed per possession", value: f2(dAll.ppp), note: dAll.pts + " points · " + DN + " possessions defended", tone: tdT(dAll.ppp) },
@@ -3486,7 +3486,7 @@
         n: function (s) { return s.tagN; }, roll: function (s) { return [s.tagP, s.tagN]; } },
       { name: "BACK — DER after a miss at the rim or a turnover", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2,
         n: function (s) { return s.backN; }, roll: function (s) { return [s.backP, s.backN]; } }
-    ], { axisFmt: f2, height: 200, minN: 4, rollWindow: 5 }));
+    ], { axisFmt: f2, height: 200, minN: 5, rollWindow: 5 }));
     sec.appendChild(el("div", "sx-sub", "The line is the last five sessions added together, points over possessions. Small dots are trainings and diamonds are games; a day with fewer than four possessions is left out."));
     var sum = function (list, f) { return list.reduce(function (a, p) { return a + p.s[f]; }, 0); };
     var tot = function (label, list) {
@@ -3624,7 +3624,7 @@
       }));
       cells.push(t.n);
       cells.push(shareCellLike(totAll ? Math.round(100 * t.n / totAll) : 0));
-      cells.push(t.n >= 4 ? { v: f2(t.pts / t.n), cls: "sx-cell " + pppStep(t.pts / t.n) }
+      cells.push(t.n >= 5 ? { v: f2(t.pts / t.n), cls: "sx-cell " + pppStep(t.pts / t.n) }
                           : { v: f2(t.pts / t.n), cls: "tr-thin" });
       return cells;
     }), { sort: false }));
@@ -3667,8 +3667,8 @@
     var rows = order.map(function (k) { return bySet[k]; })
       .sort(function (a, b) { return b.n - a.n || (a.k < b.k ? -1 : 1); });
     if (!rows.length) { sec.appendChild(el("div", "sx-empty", "No called set in the tagging yet.")); return null; }
-    var MIN = 4;     /* under this a season PPP is an anecdote and is left uncoloured */
-    var MINGAMES = 3;  /* a trend off two nights is a line through two dots */
+    var MIN = 5;     /* under this a season PPP is an anecdote and is left uncoloured */
+    var MINGAMES = 5;  /* the hub's rule: a trend from five games */
     var head = ["Set"].concat(games.map(function (g) { return g.label; }),
       ["Runs", "PPP", "Trend"]);
 
@@ -3750,7 +3750,8 @@
       if (seq.length < MINGAMES) cells.push({ v: seq.length + " game" + (seq.length === 1 ? "" : "s"), cls: "tr-thin" });
       else {
         var f = linfit(seq);
-        var flat = !f || f2(Math.abs(f.b)) === f2(0);
+        /* and only a move of 0.10 a possession or more over its games is a move */
+        var flat = !f || Math.abs(f.b) * (seq.length - 1) < 0.10;
         cells.push(flat ? { v: "flat", cls: "tr-thin" }
           : { v: (f.b > 0 ? "▲ +" : "▼ −") + f2(Math.abs(f.b)) + " / game",
               cls: f.b > 0 ? "tr-up" : "tr-down" });
@@ -4191,7 +4192,7 @@
        handful of runs to be ranked at all, and a handful on each side of the split to be
        said to have moved: two possessions are not a trend. */
     if (sets4 && sets4.length) {
-      var minRuns = 4, minSide = 3;
+      var minRuns = 5, minSide = 5;
       var ranked = sets4.filter(function (x) { return x.n >= minRuns; })
         .map(function (x) { return { k: x.k, n: x.n, ppp: x.pts / x.n }; })
         .sort(function (a, b) { return (b.ppp - a.ppp) || (b.n - a.n); });
@@ -4200,8 +4201,8 @@
       var moved = [];
       sets4.forEach(function (x) {
         var gs = Object.keys(x.per || {}).map(Number).sort(function (a, b) { return a - b; });
-        if (gs.length < 3) return;
-        var k = Math.min(3, Math.floor(gs.length / 2));
+        if (gs.length < 5) return;
+        var k = 3;
         var sum = function (list) { var n = 0, p = 0;
           list.forEach(function (gi) { n += x.per[gi].n; p += x.per[gi].pts; });
           return { n: n, p: p }; };
@@ -4210,9 +4211,9 @@
         moved.push({ k: x.k, n: x.n, now: a.p / a.n, was: b.p / b.n, d: a.p / a.n - b.p / b.n,
           games: k, nNow: a.n, nWas: b.n });
       });
-      var upList = moved.filter(function (x) { return x.d > 0.005; })
+      var upList = moved.filter(function (x) { return x.d >= 0.10; })
         .sort(function (a, b) { return b.d - a.d; }).slice(0, 5);
-      var downList = moved.filter(function (x) { return x.d < -0.005; })
+      var downList = moved.filter(function (x) { return x.d <= -0.10; })
         .sort(function (a, b) { return a.d - b.d; }).slice(0, 5);
       if (ranked.length >= 2) {
         var nTop = Math.min(8, Math.floor(ranked.length / 2) || 1);
@@ -4331,7 +4332,7 @@
     if (tb && tb.pts && tb.pts.length) {
       var derGet = function (s) { return s.der; };
       var derAvg = meanOf(tb.pts, derGet), derLast = lastOf(tb.pts, derGet);
-      var tOpt = { axisFmt: f2, height: 200, minN: 4, rollWindow: 5 }, tKpi = [{ l: "TAG", v: f2(tb.tag) }, { l: "BACK", v: f2(tb.back) }];
+      var tOpt = { axisFmt: f2, height: 200, minN: 5, rollWindow: 5 }, tKpi = [{ l: "TAG", v: f2(tb.tag) }, { l: "BACK", v: f2(tb.back) }];
       /* a training has no DER of its own - both fives are ours, so what one concedes is
          what the other scores and the figure would just be the OER again - so the band
          carries the games, where there is an opponent to concede to */
@@ -5032,7 +5033,8 @@
       ".sx-table td.sx-indent{padding-left:18px;font-weight:500;color:var(--ink-soft)}",
       /* small sample: ringed, never dimmed — a good number on five
          possessions still has to be visible */
-      ".sx-table td.sx-cell.sx-small{outline:1.5px dotted currentColor;outline-offset:-4px}",
+      /* under five possessions the number stays and the colour goes: the hub's rule */
+      ".sx-table td.sx-cell.sx-small{background:transparent!important;color:var(--ink-faint,#687180)!important;font-weight:600}",
       ".sx-table tr.sx-famrow td{background:transparent;padding-top:10px;padding-bottom:2px}",
       ".sx-table td.sx-famc{font:700 10px 'Inter',sans-serif;letter-spacing:.16em;text-transform:uppercase;",
       "color:var(--accent-strong,#a8801a)}",
