@@ -11698,7 +11698,40 @@ function _preOpenCard(L, tid, c, canEd, save){
   if(c.yt) play(c.yt); else place();
   try{ if(window.phxStyleStats) setTimeout(window.phxStyleStats,30); }catch(e){_quiet(e)}
 }
+/* WHO HAS BEEN MISSING, ON HIS OWN CARD (Oriol, 28/10/2026). A man of their rotation who
+   missed their last game or games - the "Doubt" of How they arrive - or who has been out long
+   term carries DOUBT on his card by himself, with the reason under it, without anybody
+   pressing it. It is read off their last five games before this one every time the report is
+   opened, so a man who plays again loses it by himself. The staff still decide: pressing it
+   walks on to OUT and once more clears it, and a mark cleared by hand stays off on this report. */
+const _preAvlMemo={};
+function _preAvlKey(tid){ return String(tid||"")+"|"+String(_scoutDate||""); }
+function _preAvlLoad(tid, then){
+  const k=_preAvlKey(tid);
+  if(!tid || _preAvlMemo[k]) return;
+  _preAvlMemo[k]={ men:[], busy:true };
+  Promise.all([_lgFormRows(tid, _scoutDate||null, 5), _lgAvailX(tid)]).then(both=>{
+    const F=both[0], X=both[1], men=[];
+    if(F && (F.rows||[]).length>=2){ const A=_lgAvail(F.rows.slice(0,5), X);
+      const one=(e, why)=>men.push({ id:String(e.id), num:String(e.num||"").trim(), name:String(e.name||""), why:why });
+      A.out.forEach(e=>one(e, "missed the last "+(e.missed>1? e.missed+" games" : "game")));
+      A.long.forEach(e=>one(e, "out long term")); }
+    _preAvlMemo[k]={ men:men };
+    if(men.length && then) then();
+  }).catch(e=>{ _quiet(e); _preAvlMemo[k]={ men:[] }; });
+}
+/* the man of the list this card is: the league's id, else the whole name, else number and surname */
+function _preAvlMan(c){
+  const m=c && _preAvlMemo[_preAvlKey(_preTidForCards||_preClub())];
+  if(!m || !m.men.length) return null;
+  const pid=String(c.pid||""), num=String(c.num||"").trim(), nm=_lgNorm(String(c.name||"")), ln=_lgNorm(_lgLastName(c.name||""));
+  return m.men.filter(e=>pid && e.id===pid)[0]
+    || m.men.filter(e=>nm && _lgNorm(e.name)===nm)[0]
+    || m.men.filter(e=>num && e.num===num && ln && _lgNorm(_lgLastName(e.name))===ln)[0] || null;
+}
+function _preAutoDoubt(c){ return (!c || c.doubt || c.out || c.doubtNo)? null : _preAvlMan(c); }
 function _preCardToPhx(L, c){
+  const ad=_preAutoDoubt(c);
   return { num:String(c.num||""), pos:String(c.pos||""),
            name:String(c.name||""), meta:String(c.meta||""),
            badge:String(c.badge||""),
@@ -11706,7 +11739,7 @@ function _preCardToPhx(L, c){
            minutes:String(c.min||""), tagline:String(c.tag||""),
            stats:(c.stats||[]).map(x=>[String(x[0]),String(x[1])]),
            closeout:c.co||"neutral", hand:String(c.hand||""),
-           doubt:!!(c.doubt||c.out), doubtWhy:String(c.doubtWhy||""),
+           doubt:!!(c.doubt||c.out||ad), doubtWhy:String(c.doubtWhy||(ad? ad.why : "")),
            pub:(c.pub!==false), unlocked:!!c.unlocked,
            photo: c.pid? _lgImgUrl(L,"player",c.pid) : "", px:c.px, py:c.py, ps:c.ps,
            ideas:(c.ideas||[]).slice(), blocks:(c.blocks||[]).slice(), yt:c.yt||"" };
@@ -11986,11 +12019,15 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
   const db=q(".doubt-badge");
   if(db) db.addEventListener("click",e=>{
     e.preventDefault(); e.stopPropagation();
-    /* ? -> DOUBT -> OUT (he will not play: the card stays, greyed) -> nothing */
-    if(c.out){ c.out=false; c.doubt=false; c.doubtWhy=""; } else if(c.doubt){ c.doubt=false; c.out=true; } else c.doubt=true;
+    /* ? -> DOUBT -> OUT (he will not play: the card stays, greyed) -> nothing. A DOUBT the hub
+       put there by itself walks the same way, and cleared by hand it stays off */
+    const ad=_preAutoDoubt(c);
+    if(c.out){ c.out=false; c.doubt=false; c.doubtWhy=""; if(_preAvlMan(c)) c.doubtNo=true; }
+    else if(c.doubt || ad){ c.doubt=false; c.out=true; if(ad && !c.doubtWhy) c.doubtWhy=ad.why; delete c.doubtNo; }
+    else { c.doubt=true; delete c.doubtNo; }
     redraw();
   });
-  put(q(".doubt-why"), ()=>c.doubtWhy, v=>{ c.doubtWhy=v; });
+  put(q(".doubt-why"), ()=>c.doubtWhy||((_preAutoDoubt(c)||{}).why||""), v=>{ c.doubtWhy=v; });
   /* the closeout strip: click it to walk through unrated, shooter, mix, driver */
   const co=q(".closeout-bar");
   if(co) co.addEventListener("click",e=>{
@@ -12208,7 +12245,8 @@ function _preHl(L, card, c, canEd, save, tid){
   /* he will not play: the card stays where it is, in grey, the badge saying OUT */
   if(c.out){ card.classList.add("is-out");
     const db=card.querySelector(".doubt-badge"); if(db){ db.textContent="OUT"; db.classList.add("on","out"); db.title="Will not play — click to clear"; } }
-  else { const db=card.querySelector(".doubt-badge"); if(db && !c.doubt) db.title="Mark him doubtful (click again: will not play)"; }
+  else { const db=card.querySelector(".doubt-badge"), ad=_preAutoDoubt(c);
+    if(db && !c.doubt) db.title=ad? ("Marked by the hub: "+ad.why+" - click: will not play; again: clear") : "Mark him doubtful (click again: will not play)"; }
   /* the frame */
   const lv=c.hl==="key"? "key" : c.hl==="stop"? "stop" : "";
   /* the tag takes its own place beside the name and the passport line, in the flow, so
@@ -13077,6 +13115,8 @@ function _preCardsBlock(L, tid, rep, canEd, save){
       _preLgForCards=L; _preTidForCards=tid;
       /* every card with the league's numbers of today */
       try{ _preCardsFresh(L, tid, C); }catch(e){_quiet(e)}
+      /* and who has been missing: the board is drawn again once their last games are read */
+      try{ _preAvlLoad(tid, ()=>{ try{ paintCards(); }catch(e){_quiet(e)} }); }catch(e){_quiet(e)}
       const phx=_prePhxBoard(L, C, canEd, redraw);
       if(phx) board.appendChild(phx);
       const all=PRE_CARD_POS.reduce((n,k)=>n+(C.pos[k]||[]).length,0);
@@ -23717,22 +23757,22 @@ function _lgRsElig(c, t, strict){
   if(att!=null && (att/t.gp<1 || att<5)) return false;
   return true;
 }
-/* the key under the roster: what the bar and the underlines say */
+/* the key under the roster: what the colour of a number and the shade of a cell say */
 /* HOW TO READ THE TABLE, for everybody who opens it - staff and players: two boxes, each mark
    shown as it looks in the table with one plain sentence beside it */
 function _lgRsKey(){
-  const ex=(txt, cls, w, tick)=>h("span",{class:"rx-ex "+(cls||"")}, h("b",{}, txt),
-    w!=null? h("span",{class:"rx-b"}, h("i",{style:"width:"+w+"%"}), h("u",{style:"left:"+(tick||50)+"%"})) : null);
+  const ex=(txt, cls, rk)=>h("span",{class:"rx-ex "+(cls||"")}, h("b",{}, txt, rk? h("sup",{class:"rx-rk"}, rk) : null));
   const row=(sample, text)=>h("div",{class:"rx-kr"}, sample, h("span",{}, text));
   /* folded: the table is read without it; one press opens it */
   return h("details",{class:"rx-det"}, h("summary",{},"How to read this table"), h("div",{class:"rx-key"},
-    h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"The colour · inside the team"),
+    h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"The colour of the number · inside the team"),
       row(ex("14.3","g"), "Green: one of the best of the team in that column"),
       row(ex("0.3","r"), "Red: one of the weakest of the team in that column")),
-    h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"The bar · against the whole league"),
-      row(ex("16.8","",88,45), "A bar under a number: he is at one end of the league - green among its best 10%, red among its weakest 10%; the three best of the league also carry their place (1º BBL)"),
-      row(h("span",{class:"rx-ex"}, h("span",{class:"rx-b big"}, h("i",{style:"width:62%"}), h("u",{style:"left:45%"}))), "The bar runs from the league's weakest (left) to its best (right); the black line is the league's middle player"),
-      h("div",{class:"rx-kn"}, "No bar: he is close to the rest of the league. League: every player with 3 games and 10 minutes a game; a percentage needs one attempt a game."))));
+    h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"The shade of the cell · against the whole BBL"),
+      row(ex("16.8","top"), "Blue: among the best 10% of the league in that column"),
+      row(ex("3.0","low"), "Orange: among the weakest 10% of the league in that column"),
+      row(ex("25.3","top","1º"), "The small number beside it: his place in the whole league, for the three best"),
+      h("div",{class:"rx-kn"}, "No shade: he is close to the rest of the league. In turnovers and fouls fewer is better, so a blue there is few. League: every player with 3 games and 10 minutes a game; a percentage needs one attempt a game."))));
 }
 function _lgRsVal(c, t, per, ctx){
   if(c.pair) return null;
@@ -23824,8 +23864,6 @@ function _lgRoster(L){
      dimmed \u2014 and within every column the best two and the worst two are marked, with
      the direction of each column respected. Columns where high is not better, and rows
      with too little floor time to mean anything, are left alone. */
-  const mins=rows.map(r=>r[split].sec||0);
-  const maxMin=Math.max.apply(null, mins.concat([1]));
   const core={}; rows.slice().sort((a,b)=>(b[split].sec||0)-(a[split].sec||0)).slice(0,5).forEach(r=>{ core[r.id]=1; });
   const thin={}; rows.forEach(r=>{ if(((r[split].sec||0)/60) < 5*(r[split].gp||1)) thin[r.id]=1; });
   /* the same rule as the league tables: three deep at each end, and everyone level with
@@ -23839,11 +23877,12 @@ function _lgRoster(L){
     edge[c.k]=_lgEdges(pool, r=>_lgRsVal(c,r[split],per,ctx), dir, r=>r.id, LG_EDGE_K);
   });
   /* AGAINST THE LEAGUE, ONLY AT THE EXTREMES; INSIDE THE TEAM, THE BEST AND THE WEAKEST.
-     Every player of the league with two games and ten minutes a game sets the cuts of each
-     column: the top 10% and the bottom 10%. A number of ours past a cut gets a bar - where he
-     sits between the league's worst and best, the tick its median - green or red; the rest is
-     left plain. Inside the team, the best in each column is underlined gold and the weakest of
-     those who play grey. A percentage counts only on one attempt a game or more. */
+     Every player of the league with three games and ten minutes a game sets the cuts of each
+     column: the top 10% and the bottom 10%. A number of ours past a cut has its cell shaded -
+     blue at the league's good end, orange at its bad one - and the rest is left plain; the
+     colour of the number stays the team's. A percentage counts only on one attempt a game
+     or more. (It was a bar under the number with the league's median as a tick: nobody could
+     read it - Oriol, 28/10/2026.) */
   const LX={};
   const dirOf=c=>(c.k==="tov"||c.k==="pf"||c.k==="tovp") ? -1 : 1;
   { const pool=[], seen={};
@@ -23925,27 +23964,20 @@ function _lgRoster(L){
       h("td",{class:"l lg-team"}, _lgFace(L, {n:p.num, photo:p.photo, pid:p.pid, id:p.id}), h("span",{}, p.name||("#"+p.num))),
       h("td",{}, String(t.gp)));
     cols.forEach(c=>{
-      /* ONE THING EACH: the colour is the team - green its best in the column, red its weakest -
-         and a bar under the number appears only when he is at one end of the whole league */
-      let cls=(edge[c.k]||{})[p.id]||"", bar=null, tip=cls==="pos"? "one of the team's best in this column" : cls==="neg"? "one of the team's weakest in this column" : "";
+      /* ONE THING EACH: the colour of the number is the team - green its best in the column, red
+         its weakest - and the shade of the cell the whole league, only at its two ends */
+      let cls=(edge[c.k]||{})[p.id]||"", lxc="", rkEl=null, tip=cls==="pos"? "one of the team's best in this column" : cls==="neg"? "one of the team's weakest in this column" : "";
       const v=c.pair? null : _lgRsVal(c,t,per,ctx), lx=LX[c.k], dir=dirOf(c);
       if(lx && v!=null && !thin[p.id] && _lgRsElig(c,t,true)){
         const good=dir>0? v>=lx.hi : v<=lx.lo, bad=dir>0? v<=lx.lo : v>=lx.hi;
-        if(good || bad){ const sp=(lx.max-lx.min)||1, cl=x=>Math.max(0, Math.min(100, Math.round(100*x)));
-          /* WHICH END, SAID: the bar is green at the league's good end and red at its bad one -
-             it was blue at both, so the best PIR of the league looked like any other bar - and
-             the three best of the whole league carry their place */
+        if(good || bad){
+          /* the three best of the whole league carry their place, small, beside the number */
           const rk=good && lx.vs? 1+lx.vs.filter(x=>dir>0? x>v+1e-9 : x<v-1e-9).length : 0;
-          tip=(tip? tip+" · " : "")+(good? "and among the league's best 10%"+(rk && rk<=3? " · "+rk+"º of the league" : "") : "and among the league's weakest 10%");
-          bar=h("span",{class:"rx-b "+(good? "g" : "r")}, h("i",{style:"width:"+cl((v-lx.min)/sp)+"%"}), h("u",{style:"left:"+cl((lx.med-lx.min)/sp)+"%"}));
-          if(rk && rk<=3) bar=h("span",{class:"rx-bw"}, bar, h("em",{class:"rx-rk"}, rk+"º BBL")); } }
-      const td=h("td",{class:cls, title:tip}, h("span",{class:"rx-v"}, _lgRsTxt(c,t,per,ctx)), bar);
-      if(c.k==="min"){
-        /* a bar behind the minutes, the way the pre-game sheets read */
-        td.className=(cls+" lg-minbar").trim();
-        td.style.setProperty("--s", String(Math.round(1000*(t.sec||0)/maxMin)/1000));
-      }
-      tr.appendChild(td);
+          tip=(tip? tip+" · " : "")+(good? "among the league's best 10%"+(rk && rk<=3? " · "+rk+"º of the BBL" : "") : "among the league's weakest 10%");
+          lxc=good? " lx-top" : " lx-low";
+          if(rk && rk<=3) rkEl=h("sup",{class:"rx-rk"}, rk+"º"); } }
+      /* no bar under the minutes either: the number says it, and the rotation has its gold edge */
+      tr.appendChild(h("td",{class:(cls+lxc).trim(), title:tip}, h("span",{class:"rx-v"}, _lgRsTxt(c,t,per,ctx)), rkEl));
     });
     if(TG){ let r=tgBy[String(parseInt(p.num,10))]||null; if(!r){ const k=tgNm(_lgLastName(p.name||"")); const c2=k? tgByName[k] : null; if(c2 && !tgSeen[c2.label]) r=c2; } if(r) tgSeen[r.label]=1; tgCells(tr, r, t); }
     tbl.appendChild(tr);
@@ -31898,7 +31930,8 @@ init();
   .modal-meta{font-family:'IBM Plex Mono',monospace; color:var(--muted); font-size:9.5px; margin-bottom:5px;}
   .modal-row2{display:flex; align-items:center; gap:8px; margin-bottom:6px;}
   .modal-row2 .roster-badge{font-size:8.5px; padding:2px 6px;}
-  .modal-minutes{font-family:'IBM Plex Mono',monospace; color:var(--gold-soft); font-size:9.5px;}
+  .modal-minutes{font-family:'IBM Plex Mono',monospace; color:#1d2633; background:#e9ecf0; border-radius:6px; padding:2px 7px; font-weight:700; font-size:10px;}
+  .modal-minutes:empty{display:none}
   .modal-tagline{
     font-family:'Oswald',sans-serif; text-transform:uppercase; font-weight:700; font-size:12.5px;
     color:var(--gold-soft); margin:0 0 6px;
@@ -32655,7 +32688,8 @@ body.edit-mode .phx .add-block-btn{display:block;}
 .phx .modal-meta{font-family:'IBM Plex Mono',monospace; color:var(--muted); font-size:9.5px; margin-bottom:5px;}
 .phx .modal-row2{display:flex; align-items:center; gap:8px; margin-bottom:6px;}
 .phx .modal-row2 .roster-badge{font-size:8.5px; padding:2px 6px;}
-.phx .modal-minutes{font-family:'IBM Plex Mono',monospace; color:var(--gold-soft); font-size:9.5px;}
+.phx .modal-minutes{font-family:'IBM Plex Mono',monospace; color:#1d2633; background:#e9ecf0; border-radius:6px; padding:2px 7px; font-weight:700; font-size:10px;}
+.phx .modal-minutes:empty{display:none}
 .phx .modal-tagline{
     font-family:'Oswald',sans-serif; text-transform:uppercase; font-weight:700; font-size:12.5px;
     color:var(--gold-soft); margin:0 0 6px;
@@ -33059,7 +33093,7 @@ body.role-player .phx .vb-tile{cursor:default;}
 .phx .card .row2{display:flex!important;gap:6px!important;flex-wrap:wrap!important;align-items:center!important;margin:0 0 12px!important}
 .phx .card .roster-badge{font-size:10.5px!important;font-weight:800!important;letter-spacing:.05em!important;border-radius:6px!important;padding:3px 8px!important;text-transform:uppercase!important;background:#fef3c7!important;color:#92660a!important}
 .phx .card .roster-badge.outline{background:#e7f1fb!important;color:#20618f!important}
-.phx .card .minutes{font-family:'IBM Plex Mono',monospace!important;font-size:10.5px!important;font-weight:600!important;color:#606770!important;background:#f1f3f5!important;border-radius:6px!important;padding:3px 8px!important}
+.phx .card .minutes{font-family:'IBM Plex Mono',monospace!important;font-size:10.5px!important;font-weight:700!important;color:#1d2633!important;background:#e9ecf0!important;border-radius:6px!important;padding:3px 8px!important}
 .phx .card .tagline-wrap{margin:0 0 11px!important}
 .phx .card .tagline{font-family:'Oswald',sans-serif!important;font-weight:700!important;font-size:15.5px!important;line-height:1.15!important;
   text-transform:uppercase!important;color:#171a1f!important;padding-left:11px!important;border-left:4px solid var(--gold-soft)!important;margin:0!important}
@@ -33096,7 +33130,7 @@ body.role-player .phx .vb-tile{cursor:default;}
 .phx .card .idea-line{font-size:14px!important;color:#3d434d!important}
 /* min/g como píldora clara junto al NEW (si hay dato) */
 .phx .card .row2{gap:6px!important}
-.phx .card .minutes{font-family:'IBM Plex Mono',monospace!important;font-weight:600!important;font-size:10.5px!important;color:#606770!important;background:#f1f3f5!important;border-radius:6px!important;padding:3px 8px!important}
+.phx .card .minutes{font-family:'IBM Plex Mono',monospace!important;font-weight:700!important;font-size:10.5px!important;color:#1d2633!important;background:#e9ecf0!important;border-radius:6px!important;padding:3px 8px!important}
 
 /* --- FIX borde inferior: barra a los bordes para que siga el redondeo --- */
 .phx .card{overflow:hidden!important}
@@ -38380,13 +38414,15 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .lg-rost td .rx-v.rx-tb{box-shadow:inset 0 -2px 0 #d9a521;font-weight:800}
 .lg-rost td .rx-v.rx-tw{box-shadow:inset 0 -2px 0 #9aa1ac;color:var(--ink-soft,#5b6472)}
 .lg-rost td.rx-g{color:#13804f;font-weight:700}.lg-rost td.rx-r{color:#c0392b;font-weight:700}
-.lg-rost .rx-b{display:block;position:relative;height:4px;margin:2px 4px 0;border-radius:2px;background:var(--line,#e6e8ec)}
-.lg-rost .rx-b i{position:absolute;left:0;top:0;bottom:0;border-radius:2px}
-.lg-rost .rx-b i{background:#4a86d8}
-.lg-rost .rx-b.g i{background:#2f9e86}.lg-rost .rx-b.r i{background:#d8524e}
-.lg-rost .rx-bw{display:block}
-.lg-rost .rx-rk{display:block;font:800 9.5px 'Oswald',sans-serif;font-style:normal;letter-spacing:.06em;color:#1f8068;margin-top:1px}
-.lg-rost .rx-b u{position:absolute;top:-2px;bottom:-2px;width:1.5px;margin-left:-1px;background:var(--ink,#141821)}
+/* the whole league, as the shade of the cell: blue at its good end, orange at its bad one; the
+   number keeps the team's green or red over either */
+.lg-rost td.lx-top,.lg-rost td.lx-low,.rx-ex.top,.rx-ex.low{white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.lg-rost td.lx-top,.rx-ex.top{background:rgba(74,134,216,.17)}
+.lg-rost td.lx-low,.rx-ex.low{background:rgba(232,135,48,.19)}
+.lg-rost .rx-rk,.rx-ex .rx-rk{vertical-align:super;margin-left:1px;font:800 9px/0 'Oswald',sans-serif;letter-spacing:.02em;color:#2b62b5}
+body.dark .lg-rost td.lx-top,body.dark .rx-ex.top{background:rgba(96,150,230,.24)}
+body.dark .lg-rost td.lx-low,body.dark .rx-ex.low{background:rgba(232,135,48,.22)}
+body.dark .lg-rost .rx-rk,body.dark .rx-ex .rx-rk{color:#9cc0f3}
 .rx-key{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin:12px 0 14px}
 .rx-kc{border:1px solid var(--line,#e6e8ec);border-radius:10px;background:var(--panel,#fff);padding:10px 12px;display:flex;flex-direction:column;gap:7px}
 .rx-kh{font:700 11px 'Oswald',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--ink,#141821)}
@@ -38395,11 +38431,6 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .rx-ex{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:26px;padding:3px 4px;border-radius:6px;background:var(--panel-2,#f4f5f7)}
 .rx-ex b{font:700 13px 'IBM Plex Mono',monospace;color:var(--ink,#141821)}
 .rx-ex.g b{color:#13804f}.rx-ex.r b{color:#c0392b}
-.rx-ex .rx-b{display:block;position:relative;width:46px;height:4px;margin-top:3px;border-radius:2px;background:var(--line,#e2e5ea)}
-.rx-ex .rx-b.big{width:52px;height:6px;margin:0}
-.rx-ex .rx-b i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:#9fb4d1}
-.rx-ex .rx-b i{background:#2f9e86}
-.rx-ex .rx-b u{position:absolute;top:-2px;bottom:-2px;width:1.5px;margin-left:-1px;background:var(--ink,#141821)}
 .rx-ex .rx-v{display:inline-block;padding:0 3px}.rx-ex .rx-v.rx-tb{box-shadow:inset 0 -2px 0 #d9a521}.rx-ex .rx-v.rx-tw{box-shadow:inset 0 -2px 0 #9aa1ac;color:var(--ink-soft,#5b6472)}
 .rx-sw{display:inline-block;position:relative;width:28px;height:4px;border-radius:2px;background:var(--line,#e6e8ec)}
 .rx-sw i{position:absolute;left:0;top:0;bottom:0;width:82%;border-radius:2px}.rx-sw.g i{background:#2f9e86}.rx-sw.r i{background:#d8524e}
