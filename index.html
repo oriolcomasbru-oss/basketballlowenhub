@@ -649,6 +649,9 @@ body.dark .tb-tab.active{background:var(--accent);color:#14181f}
   color:var(--ink);font-size:26px;line-height:1;font-weight:700;padding:0 0 3px;cursor:pointer;display:grid;place-items:center}
 .tb-back:hover:not([disabled]){background:color-mix(in srgb, var(--ink) 9%, var(--panel,#fff))}
 .tb-back[disabled]{opacity:.28;cursor:default}
+/* the tabs share the row with the back button and wrap inside their own box: with their
+   full width as the basis the whole strip dropped under the button and left it alone on a row */
+.tb-left > .tb-tabs{flex-basis:0}
 .plan-srv{font-size:12px;font-weight:700;color:var(--ink-soft);white-space:nowrap;margin-right:8px}
 .plan-srv.err{color:var(--alert,#c0392b)}
 .errlog{max-width:720px}.errlog h3{margin:0 0 4px;font-size:18px}.errlog-n{margin:0 0 12px;color:var(--ink-soft);font-size:13px}
