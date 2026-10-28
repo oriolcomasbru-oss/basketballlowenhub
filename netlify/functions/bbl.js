@@ -698,18 +698,6 @@ function blankTeam() {
   return { gp: 0, sec: 0, pts: 0, fgm: 0, fga: 0, p3m: 0, p3a: 0, ftm: 0, fta: 0,
            oreb: 0, dreb: 0, tov: 0, ast: 0, stl: 0, blk: 0, pf: 0 };
 }
-function addTeam(t, row, secs) {
-  if (!row) return;
-  const n = k => num(row[k]) || 0;
-  t.gp++;
-  t.sec += secs || 0;
-  t.fgm += n("P2M") + n("P3M"); t.fga += n("P2A") + n("P3A");
-  t.p3m += n("P3M"); t.p3a += n("P3A");
-  t.ftm += n("FTM"); t.fta += n("FTA");
-  t.pts += n("FTM") + 2 * n("P2M") + 3 * n("P3M");
-  t.oreb += n("OREB"); t.dreb += n("DREB"); t.tov += n("TOV");
-  t.ast += n("AST"); t.stl += n("STL"); t.blk += n("BL"); t.pf += n("FOUL");
-}
 /* The roster endpoint is the only place a name lives, and its field names are not
    guaranteed, so the likely ones are tried and the shirt number is kept as a second
    way in for when the ids do not line up. */
@@ -1272,6 +1260,7 @@ exports.handler = async (event) => {
   const q = (event && event.queryStringParameters) || {};
   const res = S(q.res || "all");
   const fresh = q.fresh === "1";
+  _freshReq = fresh;
   const key = env("BBL_API_KEY", "");
   const askSeason = S(env("BBL_SEASON", "") || q.season || "");
 
@@ -1660,6 +1649,13 @@ exports.handler = async (event) => {
         });
         teamFromBox(tm.all, mineBox); teamFromBox(home ? tm.home : tm.away, mineBox);
         teamFromBox(op.all, foeBox); teamFromBox(home ? op.home : op.away, foeBox);
+        /* THE TEAM'S MINUTES. USG%, AST%, ORB% and DRB% weigh a man's minutes against his
+           team's, and the team's were never added: every one of them came out 0 and the
+           usage leaders never had a list. Five men on the floor for the whole game - four
+           quarters and every overtime that was played. */
+        { let lastQ = 3; acts.forEach(a => { const i = qIndex(a.quarter); if (i > lastQ) lastQ = i; });
+          let len = 0; for (let k = 0; k <= lastQ; k++) len += Q_SECS[Q_ORDER[k]] || (k < 4 ? 600 : 300);
+          [tm.all, home ? tm.home : tm.away, op.all, home ? op.home : op.away].forEach(t => { t.sec += 5 * len; }); }
 
         /* AND THE SAME NUMBERS, GAME BY GAME.
            Every feed is already read and every box already built; the only thing missing
@@ -2014,13 +2010,16 @@ exports.handler = async (event) => {
     /* a partial answer is a staging post, not the answer: caching it would freeze the
        view at whatever the first call managed to read */
     if (out.ok && !out.partial) setCache(ck, out);
-    return reply(out.ok ? 200 : 502, out, out.ok ? ttl : 0);
+    /* and the CDN holds a partial answer for a minute only, for the same reason */
+    return reply(out.ok ? 200 : 502, out, out.ok ? (out.partial ? 60e3 : ttl) : 0);
 
   } catch (e) {
     return reply(502, { ok: false, demo: false, updated: new Date().toISOString(), errors: [(e && e.message) || String(e)] }, 0);
   }
 };
 
+/* one request at a time per instance: set by the handler, read by reply() */
+let _freshReq = false;
 function reply(code, body, ttl) {
   const secs = Math.max(0, Math.round((ttl || 0) / 1000));
   return {
@@ -2028,7 +2027,14 @@ function reply(code, body, ttl) {
     headers: {
       "content-type": "application/json; charset=utf-8",
       "access-control-allow-origin": "*",
-      "cache-control": secs ? ("public, max-age=" + Math.min(secs, 600) + ", s-maxage=" + secs) : "no-store"
+      "cache-control": secs ? ("public, max-age=" + Math.min(secs, 600) + ", s-maxage=" + secs) : "no-store",
+      /* A LIST THAT CHANGES EVERY FEW MINUTES IS NOT WORTH A FOUR-SECOND WAIT. Netlify kept
+         the answer per edge, so the first visitor on each edge after ten minutes waited
+         while the league was read again. Kept once for every edge now, and after its time
+         an answer is still given at once while the new one is read behind it. Only what
+         keeps ten minutes or more, and never a request that asked for a fresh reading: the
+         live channel and the plays of a game in progress are never served from an old copy. */
+      "netlify-cdn-cache-control": (secs >= 600 && !_freshReq) ? ("public, durable, s-maxage=" + secs + ", stale-while-revalidate=" + Math.max(secs * 6, 3600)) : (secs ? ("public, s-maxage=" + secs) : "no-store")
     },
     body: JSON.stringify(body)
   };

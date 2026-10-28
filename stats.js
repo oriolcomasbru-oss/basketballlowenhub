@@ -68,7 +68,7 @@
     if (!stamp) return;
     idb().then(function (db) {
       if (!db) return;
-      try { db.transaction("files", "readwrite").objectStore("files").put({ m: stamp, t: text }, id); } catch (e) {}
+      try { db.transaction("files", "readwrite").objectStore("files").put({ m: stamp, t: text }, id); } catch(e){_quiet(e)}
     });
   }
 
@@ -178,7 +178,7 @@
         tags: desc.split(" - ").map(function (t) { return t.trim(); }).filter(Boolean)
       };
     }).filter(function (r) { return r.cat; });
-    try { out.header = top; } catch (e) {}
+    try { out.header = top; } catch(e){_quiet(e)}
     return out;
   }
 
@@ -951,7 +951,7 @@
       tb.appendChild(row);
     });
     t.appendChild(tb); wrap.appendChild(t);
-    if (opts.sort !== false) { try { sortable(t, tb); } catch (e) {} }
+    if (opts.sort !== false) { try { sortable(t, tb); } catch(e){_quiet(e)} }
     return wrap;
   }
 
@@ -1113,7 +1113,7 @@
      measured against instead of standing on its own. */
   function leagueOrbLine() {
     var w = el("div", "sx-sub");
-    var LO = null; try { LO = window.LowenLeagueORB && window.LowenLeagueORB(); } catch (e) {}
+    var LO = null; try { LO = window.LowenLeagueORB && window.LowenLeagueORB(); } catch(e){_quiet(e)}
     if (!LO || LO.off == null) {
       w.textContent = "The league's own offensive-rebound rate is not loaded yet \u2014 open League once and it appears here.";
       return w;
@@ -1196,7 +1196,7 @@
     var withPT = P.filter(function (q) { return q.pt > 0; });
     var withBR = P.filter(function (q) { return (q.br || 0) > 0; });
 
-    try{ if(window.LowenColourKey) root.appendChild(window.LowenColourKey("us")); }catch(e){}
+    try{ if(window.LowenColourKey) root.appendChild(window.LowenColourKey("us")); }catch(e){_quiet(e)}
     root.appendChild(el("div", "sx-meta", label + " · " + sets.length + (sets.length === 1 ? " session" : " sessions") +
       " · " + N + " possessions · " + all.pts + " points · " + f2(all.ppp) + " PPP"));
 
@@ -1240,7 +1240,7 @@
               parts: types.map(function (x) { return { label: x.label, share: x.n / typeTot, value: x.n }; }) }) : null,
             perSet("br", "Ball reversal rate", false), worthP("br", "What a reversal is worth")] }));
       }
-    } catch (e) { }
+    } catch(e){_quiet(e)}
 
     var pG = g2Group("pt", "01", "Paint touches");
     var bG = g2Group("br", "02", "Ball reversals");
@@ -1756,7 +1756,7 @@
     });
     var pbp = gameTouchTable(P);
 
-    try{ if(window.LowenColourKey) box.appendChild(window.LowenColourKey("us")); }catch(e){}
+    try{ if(window.LowenColourKey) box.appendChild(window.LowenColourKey("us")); }catch(e){_quiet(e)}
     box.appendChild(el("div", "sx-meta", meta + " · " + N + " possessions · " +
       all.pts + "–" + model.oppPts + " from the tagging · " + f2(all.ppp) + " PPP"));
 
@@ -2163,7 +2163,7 @@
       var K = (typeof window !== "undefined") && window.UIKit;
       if (!K || !K.strip) return;
       var put = function (g, o) {
-        try { o.cls = "sx-cathead fit-span"; var c = K.summary(o); g.insertBefore(c, g.children[1] || null); } catch (e) { }
+        try { o.cls = "sx-cathead fit-span"; var c = K.summary(o); g.insertBefore(c, g.children[1] || null); } catch(e){_quiet(e)}
       };
       var rate = function (list, key) {
         var m = list.filter(function (q) { return q.phase === "Fastbreak" || (q[key] || 0) > 0; }).length;
@@ -2483,30 +2483,6 @@
     return d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
   }
 
-  /* ---- little chart ---------------------------------------------------- */
-  /* One bar per session, in date order. No library: a div per row. */
-  function trendChart(title, sub, rows, fmt, ref) {
-    var wrap = el("div", "sx-sec");
-    wrap.appendChild(el("div", "sx-h", title));
-    if (!rows.length) { wrap.appendChild(el("div", "sx-empty", "Nothing in this range.")); return wrap; }
-    var max = Math.max.apply(null, rows.map(function (r) { return r.v || 0; })) || 1;
-    if (ref != null && ref > max) max = ref;
-    var box = el("div", "cmp-chart");
-    rows.forEach(function (r) {
-      var row = el("div", "cmp-row" + (r.kind === "game" ? " game" : ""));
-      row.appendChild(el("div", "cmp-lab", r.label));
-      var track = el("div", "cmp-track");
-      if (ref != null) { var rf = el("div", "cmp-ref"); rf.style.left = (100 * ref / max) + "%"; track.appendChild(rf); }
-      var fill = el("div", "cmp-fill " + (r.step || ""));
-      fill.style.width = Math.max(2, Math.round(100 * (r.v || 0) / max)) + "%";
-      track.appendChild(fill);
-      row.appendChild(track);
-      row.appendChild(el("div", "cmp-val", fmt(r)));
-      box.appendChild(row);
-    });
-    wrap.appendChild(box);
-    return wrap;
-  }
 
   /* ==================================================================
      TIMELINE — sessions and games in one chronological line, dots and
@@ -2800,7 +2776,7 @@
         hit.style.cursor = "pointer";
         hit.addEventListener("click", function (ev) {
           var p = points[at(ev)];
-          if (p) try { window.LowenOpenDay(p.kind, p.d, p.label); } catch (e) {}
+          if (p) try { window.LowenOpenDay(p.kind, p.d, p.label); } catch(e){_quiet(e)}
         });
       }
 
@@ -2853,7 +2829,7 @@
           var bg = sv("rect", { x: bb.x - 3, y: bb.y - 1, width: bb.width + 6, height: bb.height + 2,
             rx: 3, class: "tl-reflab-bg" });
           svg.insertBefore(bg, refLabel);
-        } catch (e) { }
+        } catch(e){_quiet(e)}
       }
     }
 
@@ -3238,7 +3214,6 @@
     var done = hits.filter(function (g) { return playedFix(g); });
     return done.length ? done[done.length - 1] : hits[0];
   }
-  function fixtureDate(name) { var g = fixtureFor(name, null); return g ? g.date : null; }
 
   /* ---------------------------------------------- ONE FILE, ONE GAME
      Dating each file on its own lets two of them land on the same night: two Rostock
@@ -3325,7 +3300,6 @@
     return { a: a, b: b, n: n, r2: ssT ? Math.max(0, 1 - ssR / ssT) : 0, mean: mean,
              at: function (i) { return a + b * i; } };
   }
-  function pct0(v) { return v == null || !isFinite(v) ? "—" : Math.round(v) + "%"; }
 
   /* the mark the pre-game report uses, in the same words: a star on what is worth
      walking into the room with, a warning on what is going the wrong way */
@@ -4122,7 +4096,7 @@
       window.LowenTrendsData = { games: games.map(function (g) { return { d: g.d, label: g.label, s: g.s, m: g.m }; }),
                                  sets: sets4 || [] };
       window.dispatchEvent(new Event("lowen-trends"));
-    } catch (e) { }
+    } catch(e){_quiet(e)}
 
     var METRICS = [
       { name: "Paint touches \u2014 the 70% measure", get: function (s) { return measured(s, "pt"); },
@@ -4458,149 +4432,7 @@
     return c;
   }
 
-  /*  WHERE THE POSSESSIONS CAME FROM, AS A GRID AND NOT AS SEVEN LINES.
-      Two charts of seven lines each answered this, and seven lines crossing over four
-      games is a knot: nobody can say from it how much of last Saturday was transition.
-      It is a grid. A row is a phase, a column is a game, and the cell says what share of
-      that game the phase was - the darker the cell, the more of the game it was - with
-      what it returned per possession written small under it. Read across, a row is how
-      the phase has moved from game to game; read down, a column is the shape of one
-      night. The season is the last two columns.                                         */
-  function tdPhaseHeat(games) {
-    if (!games.length) return null;
-    var known = PHASE_ROW.map(function (x) { return x.k; }), extra = [];
-    var per = games.map(function (g) {
-      var m = {}, tot = 0;
-      (g.m && g.m.poss ? g.m.poss : []).forEach(function (q) {
-        var k = phaseOf(q.first);
-        if (known.indexOf(k) < 0 && extra.indexOf(k) < 0) extra.push(k);
-        var e = m[k] || (m[k] = { n: 0, pts: 0 });
-        e.n++; e.pts += q.pts || 0; tot++;
-      });
-      return { m: m, tot: tot };
-    });
-    var keys = known.concat(extra).filter(function (k) { return per.some(function (p) { return (p.m[k] || {}).n; }); });
-    if (!keys.length) return null;
-    var tot = {}, all = 0;
-    per.forEach(function (p) { keys.forEach(function (k) {
-      var e = p.m[k]; if (!e) return;
-      var t = tot[k] || (tot[k] = { n: 0, pts: 0 }); t.n += e.n; t.pts += e.pts; all += e.n; }); });
-    keys.sort(function (a, b) { return ((tot[b] || {}).n || 0) - ((tot[a] || {}).n || 0); });
-    var wrap = el("div", "td-heatwrap"), t = el("table", "td-heat");
-    /* Two numbers stacked in one cell with a dot between them had to be decoded. Each
-       game is two columns with their own headings instead: how much of the game the phase
-       was, as a bar that fills with the share, and what it scored per possession, tinted
-       green above the season's own average for that game and red below it. */
-    var allPts = 0; keys.forEach(function (k) { allPts += (tot[k] || {}).pts || 0; });
-    var seasonPpp = all ? allPts / all : NaN;
-    var h1 = el("tr"), h2 = el("tr", "sub");
-    var ph = el("th", "l", "Phase"); ph.rowSpan = 2; h1.appendChild(ph);
-    games.forEach(function (g) {
-      var th = el("th", "g", g.label); th.colSpan = 2; h1.appendChild(th);
-      h2.appendChild(el("th", null, "% of game")); h2.appendChild(el("th", null, "pts / poss"));
-    });
-    var ths = el("th", "g sum", "Season"); ths.colSpan = 3; h1.appendChild(ths);
-    h2.appendChild(el("th", "sum", "% of all")); h2.appendChild(el("th", "sum", "pts / poss")); h2.appendChild(el("th", "sum", "poss"));
-    t.appendChild(h1); t.appendChild(h2);
-    var shareCell = function (share, n, cls) {
-      var td = el("td", "pc" + (cls ? " " + cls : ""));
-      if (share == null) { td.className += " none"; td.textContent = "—"; return td; }
-      var bar = el("span", "bar"); bar.style.width = Math.max(2, Math.min(100, share)) + "%";
-      td.appendChild(bar);
-      td.appendChild(el("b", null, Math.round(share) + "%"));
-      td.title = n + " possessions";
-      return td;
-    };
-    var pppCell = function (v, n, cls) {
-      var td = el("td", "pp" + (cls ? " " + cls : ""));
-      if (v == null) { td.className += " none"; td.textContent = "—"; return td; }
-      td.textContent = f2(v);
-      /* under four possessions a rate is an anecdote: shown, not judged */
-      if (n >= 4 && isFinite(seasonPpp)) td.className += (v >= seasonPpp + 0.1 ? " hi" : v <= seasonPpp - 0.1 ? " lo" : "");
-      else td.className += " thin";
-      td.title = n + " possessions";
-      return td;
-    };
-    keys.forEach(function (k) {
-      var tr = el("tr");
-      tr.appendChild(el("td", "l", k));
-      per.forEach(function (p) {
-        var e = p.m[k];
-        if (e && p.tot) { tr.appendChild(shareCell(100 * e.n / p.tot, e.n)); tr.appendChild(pppCell(e.pts / e.n, e.n)); }
-        else { tr.appendChild(shareCell(null)); tr.appendChild(pppCell(null)); }
-      });
-      var s = tot[k];
-      if (s && all) {
-        tr.appendChild(shareCell(100 * s.n / all, s.n, "sum")); tr.appendChild(pppCell(s.pts / s.n, s.n, "sum"));
-        tr.appendChild(el("td", "n sum", String(s.n)));
-      } else { tr.appendChild(shareCell(null, 0, "sum")); tr.appendChild(pppCell(null, 0, "sum")); tr.appendChild(el("td", "n sum", "—")); }
-      t.appendChild(tr);
-    });
-    wrap.appendChild(t);
-    wrap.appendChild(el("div", "td-note", "% of game: how many of that game's possessions started in this phase — the bar fills with it. " +
-      "pts / poss: points scored per possession from it; green is above our season average of " + f2(seasonPpp) +
-      ", red below, grey is fewer than four possessions."));
-    return wrap;
-  }
 
-  /*  THE NEXT FIVE GAMES, SAID THE WAY ONE WOULD SAY IT.
-      The table had seven columns - now, average, slope per game, the value in five, R²
-      and a reading - which is the working, not the answer. The answer is one line per
-      measure: where it is, where it is going, and whether that can be believed. So each
-      measure is a row with the last game on the left, an arrow, and where the trend puts
-      it in five games on the right, on a bar that shows the two against the season. When
-      the games are too irregular for a line to mean anything the row says exactly that,
-      in words, and draws no arrow - a guess is not dressed up as a forecast.             */
-  function tdProjection(proj, nGames) {
-    if (!proj || !proj.length) {
-      if (nGames >= 3) return null;
-      return el("div", "sx-empty", "Three games are the fewest a trend can be read from. There are " + nGames + ".");
-    }
-    var box = el("div", "td-proj");
-    proj.forEach(function (r) {
-      var row = el("div", "td-pr" + (r.firm ? (r.good ? " up" : " down") : " flat"));
-      row.appendChild(el("div", "td-pr-n", r.name.replace(/ —.*$/, "")));
-      var now = el("div", "td-pr-v");
-      now.appendChild(el("i", null, "last game")); now.appendChild(el("b", null, r.fmt(r.last)));
-      row.appendChild(now);
-      /* the bar: season average as a tick, the last game and the projection as dots */
-      /* a percentage is drawn on the whole 0-100; anything else on the stretch it moves in */
-      var mn = Math.min(r.last, r.end, r.mean), mx = Math.max(r.last, r.end, r.mean), lo, hi;
-      if (r.clamp && r.clamp[1] > 10) { lo = 0; hi = 100; }
-      else { var pad = (mx - mn) * 0.6 || 0.2; lo = mn - pad; hi = mx + pad; }
-      var at = function (v) { return Math.max(0, Math.min(100, 100 * (v - lo) / ((hi - lo) || 1))); };
-      var bar = el("div", "td-pr-bar");
-      var avg = el("span", "td-pr-avg"); avg.style.left = at(r.mean) + "%"; avg.title = "season average " + r.fmt(r.mean);
-      bar.appendChild(avg);
-      if (r.firm) {
-        var seg = el("span", "td-pr-seg");
-        seg.style.left = Math.min(at(r.last), at(r.end)) + "%";
-        seg.style.width = Math.abs(at(r.end) - at(r.last)) + "%";
-        bar.appendChild(seg);
-      }
-      var d1 = el("span", "td-pr-dot now"); d1.style.left = at(r.last) + "%"; bar.appendChild(d1);
-      if (r.firm) { var d2 = el("span", "td-pr-dot end"); d2.style.left = at(r.end) + "%"; bar.appendChild(d2); }
-      row.appendChild(bar);
-      var end = el("div", "td-pr-v end");
-      if (r.firm) {
-        end.appendChild(el("i", null, "in 5 games"));
-        end.appendChild(el("b", null, (r.end >= r.last ? "▲ " : "▼ ") + r.fmt(r.end)));
-      } else {
-        end.appendChild(el("i", null, "in 5 games"));
-        end.appendChild(el("b", null, "—"));
-      }
-      row.appendChild(end);
-      row.appendChild(el("div", "td-pr-say", r.firm
-        ? ((r.good ? "Improving" : "Getting worse") + " · " +
-           (r.fmt(Math.abs(r.slope)) === r.fmt(0) ? "barely moving" : ((r.slope >= 0 ? "+" : "−") + r.fmt(Math.abs(r.slope)) + " a game")) +
-           " · season average " + r.fmt(r.mean))
-        : ("No clear trend — the games go up and down too much to project · season average " + r.fmt(r.mean))));
-      box.appendChild(row);
-    });
-    box.appendChild(el("div", "td-note", "Grey tick: season average. Dark dot: the last game. Coloured dot: where a straight line through the " +
-      nGames + " games played puts it five games from now."));
-    return box;
-  }
 
   function hookTrends(host) {
     dropCache();
@@ -4800,7 +4632,7 @@
       ".sx-h{font-size:11.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-soft,#5b6472);margin:0 0 4px}",
       ".sx-sub{font-size:11.5px;color:var(--ink-faint);margin:0 0 10px;line-height:1.5}",
       ".sx-band{display:flex;align-items:center;gap:9px;background:transparent;color:var(--ink-faint,#8a93a2);",
-      "font-size:9px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;padding:0;margin:14px 0 5px;border-radius:0}",
+      "font-size:10px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;padding:0;margin:14px 0 5px;border-radius:0}",
       ".sx-band:after{content:'';flex:1;height:1px;background:var(--line,#e4e7ec)}",
       ".sx-tablewrap{overflow-x:visible}",
       /* A table is as wide as what it says, and no wider. Filling the card was tried and
@@ -4814,12 +4646,12 @@
          grows a little into the room it has been given and stops well before its columns
          start swimming. */
       "min-width:min(100%,560px);font-variant-numeric:tabular-nums}",
-      ".sx-table th{font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);padding:4px 7px;text-align:right;white-space:nowrap}",
+      ".sx-table th{font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);padding:4px 7px;text-align:right;white-space:nowrap}",
       ".sx-table th:first-child{text-align:left}",
       ".sx-table th.sx-sortable{cursor:pointer;user-select:none;position:relative}",
       ".sx-table th.sx-sortable:hover{color:var(--ink)}",
       ".sx-table th.sx-sortable::after{content:'';opacity:0}",
-      ".sx-table th.sx-sort-up::after,.sx-table th.sx-sort-down::after{opacity:1;font-size:8px;margin-left:3px}",
+      ".sx-table th.sx-sort-up::after,.sx-table th.sx-sort-down::after{opacity:1;font-size:9px;margin-left:3px}",
       ".sx-table th.sx-sort-up::after{content:'\u25b2'}",
       ".sx-table th.sx-sort-down::after{content:'\u25bc'}",
       ".sx-table th.sx-sort-up,.sx-table th.sx-sort-down{color:var(--ink)}",
@@ -4841,17 +4673,17 @@
       ".sx-gtop{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:6px;flex-wrap:wrap}",
       ".sx-gname{font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}",
       ".sx-gbig{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}",
-      ".sx-verdict{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;margin-left:9px;border-radius:5px;vertical-align:middle}",
+      ".sx-verdict{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;margin-left:9px;border-radius:5px;vertical-align:middle}",
       ".sx-perfect{background:#2f7a56;color:#fff}.sx-ok{background:#6fab8d;color:#fff}",
       ".sx-regular{background:var(--gold-2);color:#1c1405}.sx-below{background:var(--alert);color:#fff}",
       ".sx-gtrack{position:relative;height:30px;background:rgba(0,0,0,.06);border-radius:6px;overflow:visible}",
       ".sx-gseg{position:absolute;left:0;top:0;height:100%;background:var(--b4);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;border-radius:6px 0 0 6px;overflow:hidden}",
       ".sx-gtick{position:absolute;top:-5px;bottom:-5px;width:2px;background:var(--ink);opacity:.75}",
       ".sx-gtick.soft{opacity:.3}",
-      ".sx-gscale{display:flex;gap:14px;margin-top:7px;font-size:10px;color:var(--ink-faint)}",
+      ".sx-gscale{display:flex;gap:14px;margin-top:7px;font-size:11px;color:var(--ink-faint)}",
       ".sx-gsc{display:inline-flex;align-items:baseline;gap:4px;white-space:nowrap}",
-      ".sx-gsc b{font:700 10px 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-soft,#5b6472)}",
-      ".sx-gsc i{font-style:normal;letter-spacing:.06em;text-transform:uppercase;font-size:8.5px}",
+      ".sx-gsc b{font:700 11px 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-soft,#5b6472)}",
+      ".sx-gsc i{font-style:normal;letter-spacing:.06em;text-transform:uppercase;font-size:9.5px}",
       ".sx-gnote{margin-top:8px;font-size:11.5px;color:var(--ink-soft)}",
       ".sx-gseg.fb{background:var(--b2);color:var(--ink);border-radius:6px 0 0 6px}",
       ".sx-gseg.rest{background:var(--b4);color:#fff}",
@@ -4873,15 +4705,15 @@
       ".sx-mixrow{display:grid;grid-template-columns:62px 1fr 48px;align-items:center;gap:8px}",
       ".sx-ml{font-size:11.5px;font-weight:700;text-align:right;color:var(--ink-soft)}",
       ".sx-mixbar{display:flex;height:24px;border-radius:5px;overflow:hidden;background:rgba(0,0,0,.05)}",
-      ".sx-mixbar span{display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:800;overflow:hidden;white-space:nowrap}",
+      ".sx-mixbar span{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;overflow:hidden;white-space:nowrap}",
       ".sx-two{background:var(--s4);color:#fff}.sx-three{background:var(--b2);color:#12161d}",
       ".sx-none{color:var(--ink-faint);font-weight:600;width:100%}",
       /* a cell for a set nobody ran in that quarter: a dash, never a zero, because a
          zero is a result and this is an absence */
       ".sx-dash{color:var(--ink-faint);opacity:.45;text-align:center}",
       ".sx-mp{font-size:14px;font-weight:800;text-align:right;padding:2px 4px;border-radius:4px}",
-      ".sx-mixsub{grid-column:2/4;font-size:10.5px;color:var(--ink-faint);margin:2px 0 8px 70px}",
-      ".sx-legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:10.5px;color:var(--ink-faint);margin-top:6px}",
+      ".sx-mixsub{grid-column:2/4;font-size:11px;color:var(--ink-faint);margin:2px 0 8px 70px}",
+      ".sx-legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--ink-faint);margin-top:6px}",
       ".sx-scale{display:flex}",
       ".sx-sw{width:42px;text-align:center}",
       ".sx-sw i{display:block;height:12px}",
@@ -4916,25 +4748,25 @@
       ".td-h{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px}",
       ".td-t{min-width:0}",
       ".td-t b{display:block;font:800 13px/1.15 'Oswald',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink)}",
-      ".td-t span{display:block;margin-top:2px;font-size:10.5px;color:var(--ink-faint);line-height:1.3}",
+      ".td-t span{display:block;margin-top:2px;font-size:11px;color:var(--ink-faint);line-height:1.3}",
       ".td-kpis{display:flex;gap:14px;flex:0 0 auto}",
       ".td-kpi{text-align:right}",
-      ".td-kpi i{display:block;font:600 9px/1 'Inter',sans-serif;font-style:normal;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}",
+      ".td-kpi i{display:block;font:600 10px/1 'Inter',sans-serif;font-style:normal;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}",
       ".td-kpi b{display:block;margin-top:3px;font:800 19px/1 'Oswald',sans-serif;color:var(--ink);font-variant-numeric:tabular-nums}",
       ".td-kpi.good b{color:#17805a}.td-kpi.bad b{color:#c53727}",
       ".td-card .sx-sec.tl{margin:0;display:block}",
       ".td-card .sx-sec.tl > .sx-h{display:none}",
-      ".td-card .tl-legend{margin:0 0 2px;font-size:10px}",
-      ".td-note{margin-top:7px;font-size:10.5px;color:var(--ink-faint);line-height:1.4}",
+      ".td-card .tl-legend{margin:0 0 2px;font-size:11px}",
+      ".td-note{margin-top:7px;font-size:11px;color:var(--ink-faint);line-height:1.4}",
       /* phases as a grid */
       ".td-heatwrap{overflow-x:auto}",
       "table.td-heat{border-collapse:separate;border-spacing:3px;width:100%;table-layout:fixed}",
-      ".td-heat th{font:700 9.5px/1.2 'Inter',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);",
+      ".td-heat th{font:700 10.5px/1.2 'Inter',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);",
       "  padding:2px 4px 4px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
       ".td-heat th.l,.td-heat td.l{text-align:left;width:170px}",
       ".td-heat td.l{font:700 12px/1.2 'Inter',sans-serif;color:var(--ink);padding:0 6px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
-      ".td-heat th.g{font-size:10.5px;color:var(--ink);border-bottom:2px solid var(--ink,#15181f);padding-bottom:3px}",
-      ".td-heat tr.sub th{font-size:8.5px;letter-spacing:.06em;padding-top:3px}",
+      ".td-heat th.g{font-size:11px;color:var(--ink);border-bottom:2px solid var(--ink,#15181f);padding-bottom:3px}",
+      ".td-heat tr.sub th{font-size:9.5px;letter-spacing:.06em;padding-top:3px}",
       ".td-heat td{text-align:center;border-radius:5px;padding:0 4px;height:26px;font-variant-numeric:tabular-nums}",
       ".td-heat td.pc{position:relative;text-align:left;background:var(--panel-2,#f1f3f5);overflow:hidden;padding:0}",
       ".td-heat td.pc .bar{position:absolute;left:0;top:0;bottom:0;background:#9fb2d6;border-radius:5px 0 0 5px}",
@@ -4954,7 +4786,7 @@
       "  padding:8px 10px;border-radius:9px;background:var(--panel-2,#f6f7f9);border-left:5px solid var(--line-strong,#d7dbe0)}",
       ".td-pr.up{border-left-color:#17805a}.td-pr.down{border-left-color:#c53727}",
       ".td-pr-n{font:800 12.5px/1.2 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}",
-      ".td-pr-v i{display:block;font:600 9px/1 'Inter',sans-serif;font-style:normal;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint)}",
+      ".td-pr-v i{display:block;font:600 10px/1 'Inter',sans-serif;font-style:normal;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint)}",
       ".td-pr-v b{display:block;margin-top:3px;font:800 20px/1 'Oswald',sans-serif;color:var(--ink);font-variant-numeric:tabular-nums}",
       ".td-pr-v.end{text-align:right}",
       ".td-pr.up .td-pr-v.end b{color:#17805a}.td-pr.down .td-pr-v.end b{color:#c53727}",
@@ -4971,7 +4803,7 @@
       "@media(max-width:720px){.td-pr{grid-template-columns:1fr 1fr}.td-pr-n,.td-pr-bar{grid-column:1/-1}}",
       /* the detail picker */
       ".td-more{margin-top:10px;border-top:1px solid var(--line,#e4e7ec);padding-top:8px}",
-      ".td-more > summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;font:700 10.5px/1 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft,#5b6472);border:1px solid var(--line-strong,#cfd4dc);border-radius:999px;padding:6px 12px}",
+      ".td-more > summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;font:700 11px/1 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft,#5b6472);border:1px solid var(--line-strong,#cfd4dc);border-radius:999px;padding:6px 12px}",
       ".td-more > summary::-webkit-details-marker{display:none}",
       ".td-more > summary::before{content:\"▸\";transition:transform .15s}",
       ".td-more[open] > summary::before{transform:rotate(90deg)}",
@@ -4982,7 +4814,7 @@
       "  font:700 11px/1 'Inter',sans-serif;padding:7px 11px;cursor:pointer}",
       ".td-pick-b:hover{border-color:var(--ink)}",
       ".td-pick-b.on{background:var(--ink,#15181f);color:var(--panel,#fff);border-color:var(--ink)}",
-      ".td-pick-n{font-size:10.5px;color:var(--ink-faint);margin-left:6px}",
+      ".td-pick-n{font-size:11px;color:var(--ink-faint);margin-left:6px}",
       ".td-detail:empty{display:none}",
       ".td-detail{border:1px solid var(--line-strong,#d7dbe0);border-radius:12px;padding:14px 16px 4px;margin:0 0 18px;background:var(--panel,#fff)}",
       /* the sets: the name next to its numbers, not a screen away from them */
@@ -5018,7 +4850,7 @@
       ".tr-sets .sx-table tr.tr-bandrow td.sx-cell{box-shadow:inset 0 2px 0 #141821!important}",
 
       ".tr-h{display:flex;align-items:baseline;gap:10px}",
-      ".tr-no{font:800 10px/1 'Oswald',sans-serif;letter-spacing:.16em;color:var(--ink-faint);",
+      ".tr-no{font:800 11px/1 'Oswald',sans-serif;letter-spacing:.16em;color:var(--ink-faint);",
       "  border:1px solid var(--line-strong);border-radius:5px;padding:4px 6px}",
       ".tr-top{background:var(--panel-2,#f6f7f9);border:1px solid var(--line-strong);",
       "  border-radius:12px;padding:14px 16px;margin:0 0 18px;box-sizing:border-box}",
@@ -5050,7 +4882,7 @@
       ".sx-err{border:1px solid var(--alert-bd);background:var(--alert-bg);color:var(--alert);border-radius:10px;padding:14px;font-size:12.5px}",
       /* trends & comparison */
       ".cmp-ctr{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 16px}",
-      ".cmp-lbl{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint)}",
+      ".cmp-lbl{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint)}",
       ".cmp-sel{font:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;",
       "background:var(--panel);color:var(--ink);max-width:270px}",
       ".cmp-sel:disabled{opacity:.5}",
@@ -5090,7 +4922,7 @@
       ".tl-lg{display:flex;align-items:center;gap:6px}",
       ".tl-lgk{width:14px;height:3px;border-radius:2px;flex:none}",
       ".tl-lgk.dot{width:10px;height:10px;border-radius:50%}",
-      ".tl-undname{font-size:9.5px;font-weight:700;letter-spacing:.04em;font-family:'Inter',sans-serif}",
+      ".tl-undname{font-size:10.5px;font-weight:700;letter-spacing:.04em;font-family:'Inter',sans-serif}",
       ".tl-undrule{stroke:var(--line,#e4e7ec);stroke-width:1}",
       ".tr-count{color:var(--ink,#1b1f24)}",
       ".tr-datelist{margin:6px 0 0 2px;max-height:230px;overflow:auto;font-size:11.5px;line-height:1.7}",
@@ -5105,18 +4937,18 @@
       ".tl-svg{display:block;width:100%;overflow:visible}",
       ".tl-grid{stroke:var(--tl-grid);stroke-width:1}",
       ".tl-ref{stroke:#c0392b;stroke-width:1.5;opacity:.8}",
-      ".tl-reflab{fill:#c0392b;font-size:10px;font-weight:800}",
+      ".tl-reflab{fill:#c0392b;font-size:11px;font-weight:800}",
       ".tl-reflab-bg{fill:var(--tl-surface);opacity:.92}",
       ".tl-gameline{stroke:var(--tl-grid);stroke-width:1}",
       ".tl-line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}",
       ".tl-line.dash{stroke-dasharray:5 4;opacity:.75}",
       ".tl-mk.hollow{stroke-width:2.2}",
       ".tl-band{stroke:var(--tl-grid);stroke-width:1}",
-      ".tl-bandlab{fill:var(--ink-faint);font-size:9.5px}",
+      ".tl-bandlab{fill:var(--ink-faint);font-size:10.5px}",
       ".tl-mk{stroke:var(--tl-surface);stroke-width:2}",
-      ".tl-axis{fill:var(--ink-faint);font-size:10px}",
+      ".tl-axis{fill:var(--ink-faint);font-size:11px}",
       ".tl-axis.game{fill:var(--ink);font-weight:700}",
-      ".tl-dlab{fill:var(--ink-soft);font-size:10.5px;font-weight:700}",
+      ".tl-dlab{fill:var(--ink-soft);font-size:11px;font-weight:700}",
       ".tl-cross{stroke:var(--ink-faint);stroke-width:1;opacity:.5;pointer-events:none}",
       ".tl-hit{cursor:crosshair}",
       ".tl-tip{position:absolute;z-index:5;pointer-events:none;background:var(--panel);color:var(--ink);",
@@ -5156,7 +4988,7 @@
       ".cmp-unit > .tl-tblbtn{margin-top:6px}",
       ".cmp-note{margin:0 0 14px}",
       ".sx-tab{border:1px solid var(--line-strong,#d2d7df);background:transparent;cursor:pointer;border-radius:20px;",
-      "padding:4px 13px;font:600 9.5px 'Inter',sans-serif;letter-spacing:.1em;text-transform:uppercase;",
+      "padding:4px 13px;font:600 10.5px 'Inter',sans-serif;letter-spacing:.1em;text-transform:uppercase;",
       "color:var(--ink-faint,#8a93a2)}",
       ".sx-tab:hover{border-color:var(--ink-faint,#8a93a2);color:var(--ink)}",
       ".sx-tab.on{background:var(--accent-strong,#a8801a);border-color:var(--accent-strong,#a8801a);color:#fff}",
@@ -5175,7 +5007,7 @@
       ".sx-cat > *{min-width:0}",
       ".sx-post .sx-cath{display:flex;align-items:baseline;gap:9px;margin:0;padding-top:12px;",
       "border-top:1px solid var(--line,#e4e7ec);border-bottom:0}",
-      ".sx-catno{font:700 10px 'IBM Plex Mono',monospace;letter-spacing:.1em;color:var(--accent-strong,#a8801a)}",
+      ".sx-catno{font:700 11px 'IBM Plex Mono',monospace;letter-spacing:.1em;color:var(--accent-strong,#a8801a)}",
       ".sx-post .sx-catt{font:700 15px 'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.1em;",
       "line-height:1.1;color:var(--ink)}",
       ".sx-post .sx-catn{display:block;max-width:64ch;margin:9px 0 0;font:400 11.5px/1.6 'Inter',sans-serif;",
@@ -5191,7 +5023,7 @@
       ".sx-post .sx-sub{margin:0 0 11px 17px;max-width:64ch;font-size:11px;color:var(--ink-faint,#8a93a2)}",
       /* level 3 — the band inside a section */
       ".sx-post .sx-band{display:flex;align-items:center;gap:9px;background:transparent;color:var(--ink-faint,#8a93a2);",
-      "padding:0;margin:15px 0 5px;border-radius:0;font:600 9px 'Inter',sans-serif;letter-spacing:.2em}",
+      "padding:0;margin:15px 0 5px;border-radius:0;font:600 10px 'Inter',sans-serif;letter-spacing:.2em}",
       ".sx-post .sx-band:after{content:'';flex:1;height:1px;background:var(--line,#e4e7ec)}",
       /* a band and what it labels, as one panel */
       ".sx-bgrp{min-width:0}",
@@ -5202,7 +5034,7 @@
          possessions still has to be visible */
       ".sx-table td.sx-cell.sx-small{outline:1.5px dotted currentColor;outline-offset:-4px}",
       ".sx-table tr.sx-famrow td{background:transparent;padding-top:10px;padding-bottom:2px}",
-      ".sx-table td.sx-famc{font:700 9px 'Inter',sans-serif;letter-spacing:.16em;text-transform:uppercase;",
+      ".sx-table td.sx-famc{font:700 10px 'Inter',sans-serif;letter-spacing:.16em;text-transform:uppercase;",
       "color:var(--accent-strong,#a8801a)}",
       ".sx-post .sx-legend{margin-top:26px;padding-top:10px;border-top:1px solid var(--line,#e4e7ec)}",
       ".sx-gap{border:1px solid var(--gold-2,#b0873c);border-left:4px solid var(--gold-2,#b0873c);",
@@ -5210,7 +5042,7 @@
       ".sx-gap b{font-size:12.5px;color:#7a5a20}",
       ".sx-gap span{font-size:11.5px;color:var(--ink-soft);line-height:1.55}",
       ".sx-foot{display:flex;flex-direction:column;gap:3px;margin-top:10px;",
-      "font:400 10px/1.5 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}"
+      "font:400 11px/1.5 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}"
     ].join("");
     document.head.appendChild(s);
   }

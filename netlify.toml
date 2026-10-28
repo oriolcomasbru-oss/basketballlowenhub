@@ -48,7 +48,11 @@
   status = 404
   force = true
 
+# The browser keeps a copy and asks every time whether it is still the current one: an
+# unchanged page answers "not modified" with no body, so the 1 MB page and its scripts are
+# not downloaded again on every visit, and a new deploy is still seen at once. no-store
+# made every visit a full download.
 [[headers]]
   for = "/*"
   [headers.values]
-    Cache-Control = "no-store, max-age=0, must-revalidate"
+    Cache-Control = "public, max-age=0, must-revalidate"

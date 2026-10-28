@@ -81,7 +81,7 @@
     if (!stamp) return;
     idb().then(function (db) {
       if (!db) return;
-      try { db.transaction("files", "readwrite").objectStore("files").put({ m: stamp, b: buf }, id); } catch (e) {}
+      try { db.transaction("files", "readwrite").objectStore("files").put({ m: stamp, b: buf }, id); } catch(e){_quiet(e)}
     });
   }
 
@@ -842,7 +842,7 @@
       p3r: a ? rp(a.p3r) : 0, conf: conf(a ? a.poss : 0),
       end1: eo.length ? eo[0] : "",
       ends: eo.slice(0, 3).map(function (k) { return k + " " + ends[k]; }) };
-    try { Object.defineProperty(row, "_chs", { value: chs, enumerable: false }); } catch (e) { }
+    try { Object.defineProperty(row, "_chs", { value: chs, enumerable: false }); } catch(e){_quiet(e)}
     return row;
   }
   /* the possessions of a row, one line each, to choose from when splitting it */
@@ -1572,7 +1572,7 @@
   }
 
   /* so a check can read a call sheet without a Drive folder behind it */
-  try { window.ScoutPre._csvRows = csvRows; window.ScoutPre._parseCalls = parseCalls; } catch (e) {}
+  try { window.ScoutPre._csvRows = csvRows; window.ScoutPre._parseCalls = parseCalls; } catch(e){_quiet(e)}
 
   function tableShell(headCells) {
     var wrap = el("div", "sxp-scroll");
@@ -1618,7 +1618,7 @@
   var TABS = [["over", "Overview"], ["off", "Their offense"], ["def", "Their defense"],
               ["bs", "Ball screen"], ["games", "Games and quarters"], ["pace", "Pace"], ["reb", "Rebounding"], ["all", "Everything"]];
   var TAB = "over";
-  function tabOf(node, tabs) { try { node.setAttribute("data-tabs", tabs); } catch (e) {} return node; }
+  function tabOf(node, tabs) { try { node.setAttribute("data-tabs", tabs); } catch(e){_quiet(e)} return node; }
   function tabBar(root) {
     var bar = el("div", "sxp-tabs");
     var paint = function () {
@@ -1628,7 +1628,7 @@
     TABS.forEach(function (t) {
       var b = el("button", "sxp-tab", t[1]); b.type = "button"; b.setAttribute("data-t", t[0]);
       b.addEventListener("click", function () { TAB = t[0]; paint();
-        try { window.dispatchEvent(new Event("resize")); } catch (e) {} });
+        try { window.dispatchEvent(new Event("resize")); } catch(e){_quiet(e)} });
       bar.appendChild(b);
     });
     paint();
@@ -1638,13 +1638,13 @@
     var b = el("div", "sxp-blk sxp-card");
     var hd = el("div", "sxp-sub");
     hd.appendChild(el("b", null, title));
-    if (what) { try { hd.title = String(what).replace(/\s+/g, " "); } catch (e) {} }
+    if (what) { try { hd.title = String(what).replace(/\s+/g, " "); } catch(e){_quiet(e)} }
     if (title) b.appendChild(hd);
     host.appendChild(b);
     return b;
   }
   /* the prose under a table moves to the hover; the page keeps the numbers */
-  function tnote(host, txt) { try { host.title = String(txt || "").replace(/\s+/g, " "); } catch (e) {} }
+  function tnote(host, txt) { try { host.title = String(txt || "").replace(/\s+/g, " "); } catch(e){_quiet(e)} }
 
   /* ------------------------------------------------- the workhorse table */
   /* Poss · % all · PPP · Ref · extra % columns · vs ref (cream) */
@@ -1688,104 +1688,7 @@
     if (note) tnote(host, note);
   }
 
-  /* ---------------------------------------------------- identity panels */
-  function idPanel(p, ref, title, subtitle, dirtxt, luck) {
-    var box = el("div", "sxp-idp " + (p.side === "O" ? "off" : "def"));
-    var hd = el("div", "sxp-idh");
-    hd.appendChild(el("h3", "", title));
 
-    box.appendChild(hd);
-
-    var delta = p.ppp - ref.ppp;
-    var good = p.side === "O" ? delta < 0 : delta > 0;
-
-    var hero = el("div", "sxp-hero");
-    hero.appendChild(el("span", "sxp-big", f2(p.ppp)));
-    var u = el("span", "sxp-unit");
-    u.appendChild(document.createTextNode("points per possession"));
-    u.appendChild(el("br"));
-    u.appendChild(el("i", "", dirtxt));
-    hero.appendChild(u);
-    hero.appendChild(el("span", "sxp-badge " + (good ? "good" : "bad"),
-      (delta >= 0 ? "ABOVE REF" : "BELOW REF")));
-    box.appendChild(hero);
-
-    var SCALE = 1.6;
-    var tgt = el("div", "sxp-tgt");
-    var fill = el("div", "sxp-tfill " + (good ? "g" : "b"));
-    fill.style.width = Math.min(100, p.ppp / SCALE * 100).toFixed(1) + "%";
-    var mk = el("div", "sxp-tmk");
-    mk.style.left = (ref.ppp / SCALE * 100).toFixed(1) + "%";
-    tgt.appendChild(fill); tgt.appendChild(mk);
-    box.appendChild(tgt);
-    var sc = el("div", "sxp-tlab");
-    sc.appendChild(el("span", "", "0.00"));
-    sc.appendChild(el("span", "mid", "reference " + f2(ref.ppp)));
-    sc.appendChild(el("span", "", SCALE.toFixed(2)));
-    box.appendChild(sc);
-
-    box.appendChild(el("div", "sxp-ci",
-      "95% confidence " + f2(p.ci[0]) + " – " + f2(p.ci[1]) +
-      " · " + Math.round(p.poss) + " possessions"));
-
-    var dl = el("dl", "sxp-idrow");
-    [["League reference", f2(ref.ppp), delta, good],
-     ["Shot quality (xPPP)", f2(p.xppp), p.luck, (p.luck > 0) === (p.side === "O")],
-     ["eFG%", p.efg + "%", null, null],
-     ["Turnovers", p.tov + "%", null, null]].forEach(function (x) {
-      var d = el("div");
-      d.appendChild(el("dt", "", x[0]));
-      var dd = el("dd", "", x[1]);
-      if (x[2] != null) {
-        dd.appendChild(document.createTextNode(" "));
-        dd.appendChild(el("span", "sxp-ev " + (x[3] ? "pos" : "neg"), sgn(x[2])));
-      }
-      d.appendChild(dd);
-      dl.appendChild(d);
-    });
-    box.appendChild(dl);
-    /* the luck sentence is gone: the number is already in the row above it as
-       "Shot quality (xPPP)" with its own colour, and a paragraph saying the same
-       thing in words was one more grey block over every card */
-
-    var tot = p.f2a + p.f3a;
-    var s2 = tot ? p.f2a / tot * 100 : 50;
-    var rtot = ref.f2a + ref.f3a;
-    var r2s = rtot ? ref.f2a / rtot * 100 : 50;
-    var shot = el("div", "sxp-shot");
-    shot.appendChild(el("div", "sxp-shotlbl", "Shot profile vs reference"));
-    var bar = el("div", "sxp-shotbar");
-    var i2 = el("i", "s2", p.f2a + " 2PA"); i2.style.width = s2.toFixed(0) + "%";
-    var i3 = el("i", "s3", p.f3a + " 3PA"); i3.style.width = (100 - s2).toFixed(0) + "%";
-    bar.appendChild(i2); bar.appendChild(i3);
-    shot.appendChild(bar);
-    var rb = el("div", "sxp-shotbar ref");
-    var r2a = el("i", "s2"); r2a.style.width = r2s.toFixed(0) + "%";
-    var r3a = el("i", "s3"); r3a.style.width = (100 - r2s).toFixed(0) + "%";
-    rb.appendChild(r2a); rb.appendChild(r3a);
-    shot.appendChild(rb);
-    shot.appendChild(el("div", "sxp-shotfoot",
-      p.s3 + "% of their shots are threes · reference " + Math.round(100 - r2s) +
-      "% · 2P " + p.p2 + "% · 3P " + p.p3 + "% · " + p.fta + " free throws"));
-    box.appendChild(shot);
-    return box;
-  }
-
-  function luckLine(p) {
-    var d = Math.abs(p.luck), dir = p.luck > 0 ? "above" : "below";
-    var tail;
-    if (p.side === "O") {
-      tail = p.luck > 0.05 ? "they have been hot and should come down"
-        : p.luck < -0.05 ? "the looks are better than the results, so read their offense as a touch better than the raw number"
-          : "essentially no luck either way, the number is the number";
-      return "They scored " + d.toFixed(2) + " " + dir + " what their shot selection is worth — " + tail + ".";
-    }
-    tail = p.luck > 0.05 ? "they have been punished on the shots they conceded, so their defense is not quite as bad as it looks"
-      : p.luck < -0.05 ? ("missed open shots have flattered them, so the real level is worse than " + f2(p.ppp))
-        : "no luck either way, what they allow is what they are";
-    return "Opponents scored " + d.toFixed(2) + " " + dir +
-      " the value of the shots they were given — " + tail + ".";
-  }
 
   /* ============================================================= render */
 
@@ -1917,7 +1820,7 @@
         if (hi.s - lo.s >= 30) gCov.push({ text: k + " changes from game to game: " + Math.round(hi.s) + "% of the ball screens against " + hi.g + ", " + Math.round(lo.s) + "% against " + lo.g,
           tone: "neutral", size: Math.min(1, (hi.s - lo.s) / 70), n: Math.round(hi.p + lo.p), solidN: 16, unit: "poss" });
       });
-    } catch (e) { }
+    } catch(e){_quiet(e)}
     /* their quarters, added up over the games */
     var gQ = [];
     try {
@@ -1944,7 +1847,7 @@
       }
       if (D.second && D.second.chains >= 6) gQ.push({ text: "Second chances: " + D.second.orb + " offensive rebounds, " + D.second.pts + " points — " + f2n(D.second.ppp) + " per second chance",
         tone: D.second.ppp >= 1.1 ? "bad" : "neutral", size: Math.min(1, D.second.chains / 20), n: D.second.chains, solidN: 15, unit: "chances", weight: 1.1 });
-    } catch (e) { }
+    } catch(e){_quiet(e)}
     /* what the summary used to leave to the tables: their defense by court state, where
        their pressure forces turnovers, and who finishes their possessions */
     try {
@@ -1954,7 +1857,7 @@
         gDef.push({ text: r.label + ": forces a turnover on " + r.rate + "% (league " + r.ref + "%)", tone: r.rate < r.ref ? "good" : "bad",
           size: Math.min(1, Math.abs(r.rate - r.ref) / 12), n: Math.round(r.poss), solidN: 40, unit: "poss" });
       });
-    } catch (e) { }
+    } catch(e){_quiet(e)}
     var gWho = [];
     try {
       var avgP = S.selfPpp;
@@ -1965,7 +1868,7 @@
         gWho.push({ k: p.label, v: f2n(p.ppp), text: p.use + "% of their possessions" + (top && p.roles[top] ? " · mostly " + top.toLowerCase() : ""),
           tone: d >= 0.08 ? "bad" : d <= -0.08 ? "good" : "neutral", size: Math.min(1, p.use / 22), n: p.n, solidN: 20, unit: "poss" });
       });
-    } catch (e) { }
+    } catch(e){_quiet(e)}
     /* the same tables as pictures: what their offense is made of, what they have to
        defend, how they cover the ball, and how the games and the quarters went */
     var visuals = [];
@@ -1994,7 +1897,7 @@
         items: qk.map(function (k) { var v = qq[k].opts / qq[k].op - qq[k].dpts / qq[k].dp;
           return { label: k, value: v, text: (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2), tone: v > 0.03 ? "bad" : v < -0.03 ? "good" : "neutral",
             title: k + ": " + f2n(qq[k].opts / qq[k].op) + " scored, " + f2n(qq[k].dpts / qq[k].dp) + " allowed" }; }) }));
-    } catch (e) { }
+    } catch(e){_quiet(e)}
     return K.summary({ title: "The opponent, from the tagging",
       sub: "red is what hurts us · green is what we can go at · each line says what it rests on", figures: figs, visuals: visuals,
       groups: [ { title: "How they score", ideas: K.pick(gOff, 5) }, { title: "How their possessions end", ideas: K.pick(gFin, 4) },
@@ -2014,11 +1917,11 @@
     try {
       root.title = "From the tagging of " + M.team + " · " + M.ngames + " game" +
         (M.ngames === 1 ? "" : "s") + " (" + M.games.join(" · ") + ")";
-    } catch (e) {}
+    } catch(e){_quiet(e)}
 
     /* what the tables below say, before the tables */
-    try { root.appendChild(tabBar(root)); } catch (e) { }
-    try { var dashT = teamDash(D); if (dashT) root.appendChild(tabOf(dashT, "over")); } catch (e) { }
+    try { root.appendChild(tabBar(root)); } catch(e){_quiet(e)}
+    try { var dashT = teamDash(D); if (dashT) root.appendChild(tabOf(dashT, "over")); } catch(e){_quiet(e)}
 
     /* Said loudly and at the top: a category nobody taught the parser is a
        category that is not in a single number below it. */
@@ -2032,7 +1935,7 @@
       /* "Descriptors not read: DFI x3" is a note to whoever tags, not to whoever reads the
          report, and it opened the page. It lives on the hover of the warning instead. */
       if (M.unknown.dsc.length) {
-        try{ w.title = "Descriptors not read: " + M.unknown.dsc.join(" \u00b7 "); }catch(e){}
+        try{ w.title = "Descriptors not read: " + M.unknown.dsc.join(" \u00b7 "); }catch(e){_quiet(e)}
       }
       root.appendChild(w);
     }
@@ -2296,7 +2199,7 @@
        cannot say is whether that share is any good, because it has nothing to compare
        with but itself - so the league's own average comes in from the feed, and the gap
        is written next to it. */
-    var LO = null; try{ LO = window.LowenLeagueORB && window.LowenLeagueORB(); }catch(e){}
+    var LO = null; try{ LO = window.LowenLeagueORB && window.LowenLeagueORB(); }catch(e){_quiet(e)}
     var orbRows = [["Offensive rebounds", D.second.orb, D.second.orbRate + "% of their own misses"],
      ["Possessions extended", D.second.chains, "over " + M.ngames + " games"],
      ["Points from them", D.second.pts, f2(D.second.ppp) + " per extended possession"],
@@ -2619,7 +2522,7 @@
       }
       var again = el("button", "btn sm", "Try again");
       again.style.marginTop = "8px";
-      again.addEventListener("click", function () { try { dropCache(); } catch (e2) {} scan(); });
+      again.addEventListener("click", function () { try { dropCache(); } catch(e2){_quiet(e2)} scan(); });
       wrap.appendChild(again);
       box.appendChild(wrap);
       host.style.display = "";
@@ -2772,7 +2675,7 @@
         try {
           box.title = "From the tagging of " + M.team + " \u00b7 " + M.ngames + " game" +
             (M.ngames === 1 ? "" : "s") + " (" + M.games.join(" \u00b7 ") + ")";
-        } catch (e) {}
+        } catch(e){_quiet(e)}
         if (!playersBlock(box, R.D, "01")) {
           box.appendChild(el("div", "sxp-empty", "The tagging carries no player tags for this opponent."));
         }
@@ -2816,7 +2719,7 @@
 
       ".sxp-rulebox{border:1px solid var(--line);border-radius:10px;padding:13px 15px;background:var(--panel,#fff);margin-bottom:12px}",
       ".sxp-keyrow{display:flex;align-items:center;gap:11px;margin-bottom:9px;flex-wrap:wrap}",
-      ".sxp-k{font-size:10px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;white-space:nowrap}",
+      ".sxp-k{font-size:11px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;white-space:nowrap}",
       ".sxp-k.us{color:#27654c}.sxp-k.them{color:#8a6829}",
       ".sxp-grad{flex:1 1 180px;min-width:140px;height:13px;border-radius:4px;display:block;",
       "background:linear-gradient(90deg,#8a6829,#b0873c,#e0c99b,#f1f2f4 48%,#f1f2f4 52%,#a9c9b9,#44876a,#27654c)}",
@@ -2833,25 +2736,25 @@
       ".sxp-big{font:800 40px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.02em}",
       ".sxp-unit{font-size:11.5px;color:var(--ink-faint);line-height:1.35}",
       ".sxp-unit i{font-style:normal;font-weight:700;color:var(--ink-soft)}",
-      ".sxp-badge{font-size:10px;font-weight:800;letter-spacing:.1em;padding:4px 8px;border-radius:5px;align-self:center}",
+      ".sxp-badge{font-size:11px;font-weight:800;letter-spacing:.1em;padding:4px 8px;border-radius:5px;align-self:center}",
       ".sxp-badge.good{background:#27654c;color:#fff}.sxp-badge.bad{background:var(--alert,#c0392b);color:#fff}",
       ".sxp-tgt{position:relative;height:14px;border-radius:4px;background:rgba(0,0,0,.08);margin-top:11px;overflow:hidden}",
       ".sxp-tfill{position:absolute;left:0;top:0;bottom:0;border-radius:4px}",
       ".sxp-tfill.g{background:#44876a}.sxp-tfill.b{background:#b0873c}",
       ".sxp-tmk{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink)}",
-      ".sxp-tlab{display:flex;justify-content:space-between;font:400 10px/1 ui-monospace,monospace;color:var(--ink-faint);margin-top:4px}",
+      ".sxp-tlab{display:flex;justify-content:space-between;font:400 11px/1 ui-monospace,monospace;color:var(--ink-faint);margin-top:4px}",
       ".sxp-tlab .mid{color:var(--ink-soft);font-weight:700}",
       ".sxp-ci{font:400 11.5px ui-monospace,monospace;color:var(--ink-faint);margin-top:6px}",
       ".sxp-idrow{display:grid;grid-template-columns:1fr 1fr;gap:9px 16px;margin:13px 0 0;padding:11px 0 0;border-top:1px solid var(--line)}",
-      ".sxp-idrow dt{font-size:10px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-faint)}",
+      ".sxp-idrow dt{font-size:11px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-faint)}",
       ".sxp-idrow dd{margin:4px 0 0;font:700 15px ui-monospace,monospace}",
       ".sxp-ev{font:700 12.5px ui-monospace,monospace}",
       ".sxp-ev.pos{color:#17805A}.sxp-ev.neg{color:#C53727}",
       ".sxp-luck{margin:11px 0 0;font-size:12.5px;color:var(--ink-soft);background:rgba(0,0,0,.035);border-radius:7px;padding:9px 11px;line-height:1.5}",
       ".sxp-shot{margin-top:13px}",
-      ".sxp-shotlbl{font-size:10px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:6px}",
+      ".sxp-shotlbl{font-size:11px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:6px}",
       ".sxp-shotbar{display:flex;height:21px;gap:2px;margin-bottom:3px}",
-      ".sxp-shotbar i{font:800 10px/21px ui-monospace,monospace;font-style:normal;text-align:center;overflow:hidden;white-space:nowrap;border-radius:4px}",
+      ".sxp-shotbar i{font:800 11px/21px ui-monospace,monospace;font-style:normal;text-align:center;overflow:hidden;white-space:nowrap;border-radius:4px}",
       ".sxp-shotbar .s2{background:#44876a;color:#fff}.sxp-shotbar .s3{background:#b3c3da;color:#12161d}",
       ".sxp-shotbar.ref{height:5px;opacity:.5}",
       ".sxp-shotfoot{font-size:11px;color:var(--ink-faint);margin-top:5px;line-height:1.5}",
@@ -2866,7 +2769,7 @@
       ".sxp-sec > .sxp-blk{min-width:0}",
       ".sxp-sec > .sxp-blk.wide{grid-column:1/-1}",
       ".sxp-sechead{display:flex;align-items:baseline;gap:9px}",
-      ".sxp-num{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;",
+      ".sxp-num{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;",
       "color:var(--gold-2,#b0873c);letter-spacing:.1em}",
       ".sxp-h2{font-family:var(--f-head,'Oswald',sans-serif);font-size:15px;font-weight:700;",
       "text-transform:uppercase;letter-spacing:.1em;margin:0}",
@@ -2880,11 +2783,11 @@
       ".sxp-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:8px;",
       "border:1px solid var(--line);border-radius:9px;background:var(--panel,#fff)}",
       ".sxp-t{border-collapse:collapse;width:100%;background:transparent;font-variant-numeric:tabular-nums}",
-      ".sxp-t thead th{background:rgba(0,0,0,.035);color:var(--ink-faint);font-weight:700;font-size:9.5px;",
+      ".sxp-t thead th{background:rgba(0,0,0,.035);color:var(--ink-faint);font-weight:700;font-size:10.5px;",
       "letter-spacing:.08em;text-transform:uppercase;text-align:left;padding:7px 9px;white-space:nowrap;",
       "border-bottom:1px solid var(--line)}",
       ".sxp-t thead th.n{text-align:right}",
-      ".sxp-t thead th.rot{font-size:9px;letter-spacing:.02em}",
+      ".sxp-t thead th.rot{font-size:10px;letter-spacing:.02em}",
       /* Every column sorts — the page-wide listener does it. All this says is that the
          heading can be clicked, because a control nobody can see is a control nobody uses,
          and that is why this was asked for twice. The caret slot is always reserved, so a
@@ -2892,7 +2795,7 @@
          stays true. */
       ".sxp-t thead th{cursor:pointer;user-select:none;-webkit-user-select:none}",
       ".sxp-t thead th:hover{background:rgba(0,0,0,.075);color:var(--ink)}",
-      ".sxp-t thead th::after{display:inline-block;width:7px;margin-left:3px;font-size:8px}",
+      ".sxp-t thead th::after{display:inline-block;width:7px;margin-left:3px;font-size:9px}",
       ".sxp-t thead th:not(.sort-up):not(.sort-down)::after{content:\"▾\";opacity:0}",
       ".sxp-t thead th:hover:not(.sort-up):not(.sort-down)::after{opacity:.35}",
       ".sxp-t thead th.sort-up,.sxp-t thead th.sort-down{color:var(--ink);background:rgba(0,0,0,.075)}",
@@ -2935,7 +2838,7 @@
       ".sxp-clips .sxp-scroll{max-height:420px;overflow:auto}",
       ".sxp-c{text-align:right}",
       /* the possession count beside a rate: present, and clearly not the number */
-      ".sxp-n2{margin-left:5px;font-size:9px;color:var(--ink-faint);font-variant-numeric:tabular-nums}",
+      ".sxp-n2{margin-left:5px;font-size:10px;color:var(--ink-faint);font-variant-numeric:tabular-nums}",
       ".sxp-v{display:block;padding:4px 8px;border-radius:5px;text-align:right;font-size:12px;",
       "font-family:ui-monospace,SFMono-Regular,Menlo,monospace}",
       ".sxp-v.chip{font-weight:800;color:#12161d}",
@@ -2951,28 +2854,28 @@
       ".sxp-call{display:inline-block;font:800 11px ui-monospace,SFMono-Regular,Menlo,monospace;",
       "background:var(--accent-soft,#f6efe0);color:#7a5a20;border:1px solid var(--gold-1,#d8b877);",
       "border-radius:5px;padding:2px 7px}",
-      ".sxp-nocall{display:inline-block;font:400 10.5px ui-monospace,monospace;color:var(--ink-faint);",
+      ".sxp-nocall{display:inline-block;font:400 11px ui-monospace,monospace;color:var(--ink-faint);",
       "border:1px dashed var(--line-strong,#d2d7df);border-radius:5px;padding:2px 7px;opacity:.75}",
       ".sxp-t tbody tr.dim td{opacity:.5}",
       ".sxp-t tbody tr.tot td{background:var(--cream);font-weight:800;border-top:1px solid var(--creamline)}",
-      ".sxp-t tbody tr.band td{background:rgba(0,0,0,.05);font-size:10px;font-weight:800;",
+      ".sxp-t tbody tr.band td{background:rgba(0,0,0,.05);font-size:11px;font-weight:800;",
       "letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);padding:7px 10px}",
       ".sxp-t tfoot td{font-size:11px;color:var(--ink-faint);background:rgba(0,0,0,.035);border-top:1px solid var(--line)}",
       ".sxp-sortbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:9px 0 0}",
-      ".sxp-sortlbl{font-size:10px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;",
+      ".sxp-sortlbl{font-size:11px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;",
       "color:var(--ink-faint);margin-right:2px}",
       ".sxp-sortb{font:700 11px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;",
       "border:1px solid var(--line-strong,#ccc);background:var(--panel,#fff);color:var(--ink-soft);",
       "border-radius:6px;padding:6px 11px;cursor:pointer}",
       ".sxp-sortb:hover{border-color:var(--ink-faint);color:var(--ink)}",
       ".sxp-sortb.on{background:var(--ink);color:#fff;border-color:var(--ink)}",
-      ".sxp-flag{display:inline-block;font:800 9px/1 ui-monospace,monospace;letter-spacing:.05em;",
+      ".sxp-flag{display:inline-block;font:800 10px/1 ui-monospace,monospace;letter-spacing:.05em;",
       "border-radius:3px;padding:3px 5px;margin-left:5px;vertical-align:1px;white-space:nowrap}",
       ".sxp-flag.use{background:var(--alert,#c0392b);color:#fff;border:1px solid var(--alert,#c0392b)}",
       ".sxp-flag.ppp{background:transparent;color:var(--alert,#c0392b);border:1px solid var(--alert,#c0392b)}",
       ".sxp-t tbody tr.flag td{background:rgba(192,57,43,.045)}",
       ".sxp-t tbody tr.flag .sxp-lbl{box-shadow:inset 3px 0 0 var(--alert,#c0392b)}",
-      ".sxp-ptag{display:inline-block;font:800 9px/1 ui-monospace,monospace;letter-spacing:.06em;",
+      ".sxp-ptag{display:inline-block;font:800 10px/1 ui-monospace,monospace;letter-spacing:.06em;",
       "text-transform:uppercase;color:var(--ink-faint);border:1px solid var(--line-strong,#ccc);",
       "border-radius:3px;padding:2px 5px;margin-left:6px;vertical-align:1px}",
 
@@ -2985,9 +2888,9 @@
       ".sxp-qbars{display:flex;align-items:flex-end;justify-content:center;gap:4px;height:76px;border-bottom:1px solid var(--line-strong,#ccc)}",
       ".sxp-qb{width:18px;position:relative;min-height:3px;border-radius:3px 3px 0 0}",
       ".sxp-qb.o{background:#5a76a2}.sxp-qb.d{background:#44876a}",
-      ".sxp-qb b{position:absolute;top:-13px;font:800 9px ui-monospace,monospace;color:var(--ink-soft);white-space:nowrap}",
+      ".sxp-qb b{position:absolute;top:-13px;font:800 10px ui-monospace,monospace;color:var(--ink-soft);white-space:nowrap}",
       ".sxp-qb.o b{right:50%;padding-right:2px}.sxp-qb.d b{left:50%;padding-left:2px}",
-      ".sxp-qlab{font-size:10.5px;font-weight:800;letter-spacing:.1em;margin-top:6px;color:var(--ink-soft)}",
+      ".sxp-qlab{font-size:11px;font-weight:800;letter-spacing:.1em;margin-top:6px;color:var(--ink-soft)}",
       ".sxp-qnet{font:800 11.5px ui-monospace,monospace;margin-top:2px}",
       ".sxp-qnet.pos{color:#17805A}.sxp-qnet.neg{color:#C53727}",
       ".sxp-qkey{display:flex;gap:14px;flex-wrap:wrap;margin-top:9px;font-size:11px;color:var(--ink-faint);align-items:center}",
@@ -3005,7 +2908,7 @@
       ".sxp-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;",
       "background:var(--line);border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:8px}",
       ".sxp-stats>div{background:var(--panel,#fff);padding:10px 12px;min-width:0}",
-      ".sxp-stats dt{font-size:10px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-faint)}",
+      ".sxp-stats dt{font-size:11px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-faint)}",
       ".sxp-stats dd{margin:5px 0 0;font:800 20px ui-monospace,monospace;line-height:1.1}",
       ".sxp-stats small{display:block;margin-top:4px;font-size:11px;color:var(--ink-faint);line-height:1.4}",
 
