@@ -23816,31 +23816,17 @@ const LG_RS_COLS=[
   {k:"ato", t:"A/TO", set:"a", get:t=>t.tov? t.ast/t.tov : null, rate:true, d:2},
   {k:"pir", t:"PIR",  set:"x", get:t=>LG_PIR(t), avg:true, d:1}
 ];
-/* a line that can be read in a column: two games and ten minutes a game for the league's cuts,
-   and for a percentage one attempt a game or more */
-function _lgRsElig(c, t, strict){
-  if(!t || !t.gp) return false;
-  if(strict && (t.gp<3 || ((t.sec||0)/60)/t.gp<10)) return false;
-  const att={ twp:t.p2a, tpp:t.p3a, fgp:(t.p2a||0)+(t.p3a||0), ftp:t.fta, ts:(t.p2a||0)+(t.p3a||0)+(t.fta||0), efg:(t.p2a||0)+(t.p3a||0) }[c.k];
-  if(att!=null && (att/t.gp<1 || att<5)) return false;
-  return true;
-}
-/* the key under the roster: what the colour of a number and the shade of a cell say */
-/* HOW TO READ THE TABLE, for everybody who opens it - staff and players: two boxes, each mark
+/* HOW TO READ THE TABLE, for everybody who opens it - staff and players: the colour of a number,
    shown as it looks in the table with one plain sentence beside it */
 function _lgRsKey(){
-  const ex=(txt, cls, rk)=>h("span",{class:"rx-ex "+(cls||"")}, h("b",{}, txt, rk? h("sup",{class:"rx-rk"}, rk) : null));
+  const ex=(txt, cls)=>h("span",{class:"rx-ex "+(cls||"")}, h("b",{}, txt));
   const row=(sample, text)=>h("div",{class:"rx-kr"}, sample, h("span",{}, text));
   /* folded: the table is read without it; one press opens it */
   return h("details",{class:"rx-det"}, h("summary",{},"How to read this table"), h("div",{class:"rx-key"},
     h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"The colour of the number · inside the team"),
       row(ex("14.3","g"), "Green: one of the best of the team in that column"),
-      row(ex("0.3","r"), "Red: one of the weakest of the team in that column")),
-    h("div",{class:"rx-kc"}, h("div",{class:"rx-kh"},"The shade of the cell · against the whole BBL"),
-      row(ex("16.8","top"), "Blue: among the best 10% of the league in that column"),
-      row(ex("3.0","low"), "Orange: among the weakest 10% of the league in that column"),
-      row(ex("25.3","top","1º"), "The small number beside it: his place in the whole league, for the three best"),
-      h("div",{class:"rx-kn"}, "No shade: he is close to the rest of the league. In turnovers and fouls fewer is better, so a blue there is few. League: every player with 3 games and 10 minutes a game; a percentage needs one attempt a game."))));
+      row(ex("0.3","r"), "Red: one of the weakest of the team in that column"),
+      h("div",{class:"rx-kn"}, "In turnovers and fouls fewer is better, so a green there is few. Players under 5 minutes a game are left out."))));
 }
 function _lgRsVal(c, t, per, ctx){
   if(c.pair) return null;
@@ -23944,26 +23930,9 @@ function _lgRoster(L){
     const pool=rows.filter(r=>!thin[r.id]);
     edge[c.k]=_lgEdges(pool, r=>_lgRsVal(c,r[split],per,ctx), dir, r=>r.id, LG_EDGE_K);
   });
-  /* AGAINST THE LEAGUE, ONLY AT THE EXTREMES; INSIDE THE TEAM, THE BEST AND THE WEAKEST.
-     Every player of the league with three games and ten minutes a game sets the cuts of each
-     column: the top 10% and the bottom 10%. A number of ours past a cut has its cell shaded -
-     blue at the league's good end, orange at its bad one - and the rest is left plain; the
-     colour of the number stays the team's. A percentage counts only on one attempt a game
-     or more. (It was a bar under the number with the league's median as a tick: nobody could
-     read it - Oriol, 28/10/2026.) */
-  const LX={};
-  const dirOf=c=>(c.k==="tov"||c.k==="pf"||c.k==="tovp") ? -1 : 1;
-  { const pool=[], seen={};
-    const add=(key,t)=>{ if(!t || seen[key]) return; seen[key]=1; pool.push(t); };
-    Object.keys(L.lead||{}).forEach(tid=>((L.lead[tid]||{}).players||[]).forEach(p=>add(tid+":"+p.id, p.all)));
-    Object.keys(L.players||{}).forEach(tid=>((L.players[tid]||{}).players||[]).forEach(p=>add(tid+":"+p.id, p.all)));
-    /* the clubs read with older numbers are read again in the background, whatever the pool holds */
-    try{ _lgLeadLoad(L); }catch(e){_quiet(e)}
-    if(pool.length>=60) cols.forEach(c=>{ if(c.pair || c.solo || c.k==="pm") return;
-      const vs=pool.filter(t=>_lgRsElig(c,t,true)).map(t=>_lgRsVal(c,t,per,{tm:{},op:{}})).filter(v=>v!=null && isFinite(v)).sort((a,b)=>a-b);
-      if(vs.length<30) return;
-      const q=f=>vs[Math.min(vs.length-1, Math.max(0, Math.round(f*(vs.length-1))))];
-      LX[c.k]={ lo:q(0.10), hi:q(0.90), min:q(0.02), max:q(0.98), med:q(0.5), vs:vs }; }); }
+  /* THE TEAM ONLY. The cell carried the whole league too - shaded at its best and weakest
+     10%, with the place of the three best - and a man with no turnovers in thirteen minutes a
+     game read as the league's best: gone, the colour of the number is enough (Oriol, 28/10/2026) */
 
   /* ONE TABLE A PLAYER. Inside a pre game report the same line carries what our own
      tagging says about him: how much he finishes, what it returns, and where his
@@ -24032,20 +24001,10 @@ function _lgRoster(L){
       h("td",{class:"l lg-team"}, _lgFace(L, {n:p.num, photo:p.photo, pid:p.pid, id:p.id}), h("span",{}, p.name||("#"+p.num))),
       h("td",{}, String(t.gp)));
     cols.forEach(c=>{
-      /* ONE THING EACH: the colour of the number is the team - green its best in the column, red
-         its weakest - and the shade of the cell the whole league, only at its two ends */
-      let cls=(edge[c.k]||{})[p.id]||"", lxc="", rkEl=null, tip=cls==="pos"? "one of the team's best in this column" : cls==="neg"? "one of the team's weakest in this column" : "";
-      const v=c.pair? null : _lgRsVal(c,t,per,ctx), lx=LX[c.k], dir=dirOf(c);
-      if(lx && v!=null && !thin[p.id] && _lgRsElig(c,t,true)){
-        const good=dir>0? v>=lx.hi : v<=lx.lo, bad=dir>0? v<=lx.lo : v>=lx.hi;
-        if(good || bad){
-          /* the three best of the whole league carry their place, small, beside the number */
-          const rk=good && lx.vs? 1+lx.vs.filter(x=>dir>0? x>v+1e-9 : x<v-1e-9).length : 0;
-          tip=(tip? tip+" · " : "")+(good? "among the league's best 10%"+(rk && rk<=3? " · "+rk+"º of the BBL" : "") : "among the league's weakest 10%");
-          lxc=good? " lx-top" : " lx-low";
-          if(rk && rk<=3) rkEl=h("sup",{class:"rx-rk"}, rk+"º"); } }
+      /* the colour of the number is the team: green its best in the column, red its weakest */
+      const cls=(edge[c.k]||{})[p.id]||"", tip=cls==="pos"? "one of the team's best in this column" : cls==="neg"? "one of the team's weakest in this column" : "";
       /* no bar under the minutes either: the number says it, and the rotation has its gold edge */
-      tr.appendChild(h("td",{class:(cls+lxc).trim(), title:tip}, h("span",{class:"rx-v"}, _lgRsTxt(c,t,per,ctx)), rkEl));
+      tr.appendChild(h("td",{class:cls, title:tip}, h("span",{class:"rx-v"}, _lgRsTxt(c,t,per,ctx))));
     });
     if(TG){ let r=tgBy[String(parseInt(p.num,10))]||null; if(!r){ const k=tgNm(_lgLastName(p.name||"")); const c2=k? tgByName[k] : null; if(c2 && !tgSeen[c2.label]) r=c2; } if(r) tgSeen[r.label]=1; tgCells(tr, r, t); }
     tbl.appendChild(tr);
@@ -24131,7 +24090,7 @@ function _preTagRows(tid){
     if(!_preTagOn || !_scoutOpponent) return null;
     const K=_preTagKeep, opp=_scoutOpponent;
     const SP=window.ScoutPre;
-    const again=()=>{ _lgEmbeds=_lgEmbeds.filter(x=>x.el && document.body.contains(x.el)); _lgEmbeds.forEach(x=>{ try{ x.draw(); }catch(e){_quiet(e)} });
+    const again=()=>{ _lgEmbeds=_lgEmbeds.filter(_lgEmbedKept); _lgEmbeds.forEach(x=>{ if(!document.body.contains(x.el)) return; try{ x.draw(); }catch(e){_quiet(e)} });
       /* and the report itself, whose roster table carries the tagging */
       try{ _preRefresh(); }catch(e){_quiet(e)} };
     /* the tagging reader is its own script and can arrive after the report is drawn */
@@ -26623,12 +26582,22 @@ function _lgClubBar(L){
    the document is dropped on the next call, so a report that is closed takes its panels
    with it. */
 let _lgEmbeds=[], _lgEmbedding=false;
+/* A HOST IS DROPPED ONCE IT HAS BEEN ON THE PAGE AND LEFT IT. A report builds all its blocks
+   before it puts them on the page, and the next table built dropped the ones not there yet:
+   in a pre game the roster's All / Home / Away, per game / totals and box score / advanced
+   changed the setting and left the table as it was. One never put on the page goes after
+   a quarter of a minute. */
+function _lgEmbedKept(x){
+  if(!x || !x.el) return false;
+  if(document.body.contains(x.el)){ x.on=1; return true; }
+  return !x.on && Date.now()-(x.at||0)<15000;
+}
 function _lgRerender(){
   /* A pre-game report stays in the document when its tab is hidden, so "an embed exists"
      is not the same as "an embed is on screen" - and taking that for the same thing is
      what stopped every button in the league view from doing anything. What is visible is
      redrawn; the league view is redrawn when it is the one showing. */
-  _lgEmbeds=_lgEmbeds.filter(x=>x.el && document.body.contains(x.el));
+  _lgEmbeds=_lgEmbeds.filter(_lgEmbedKept);
   const seen=el=>!!(el && (el.offsetParent || (el.getClientRects && el.getClientRects().length)));
   const live=_lgEmbeds.filter(x=>seen(x.el));
   const root=$("#viewLeague");
@@ -26673,8 +26642,8 @@ function _lgEmbed(teamId, panels, cls){
     }
   };
   /* a report redrawn many times would otherwise pile up hosts that are no longer anywhere */
-  _lgEmbeds=_lgEmbeds.filter(x=>x.el && document.body.contains(x.el));
-  _lgEmbeds.push({ el:el, draw:draw });
+  _lgEmbeds=_lgEmbeds.filter(_lgEmbedKept);
+  _lgEmbeds.push({ el:el, draw:draw, at:Date.now() });
   draw();
   return el;
 }
@@ -38491,15 +38460,6 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .lg-rost td .rx-v.rx-tb{box-shadow:inset 0 -2px 0 #d9a521;font-weight:800}
 .lg-rost td .rx-v.rx-tw{box-shadow:inset 0 -2px 0 #9aa1ac;color:var(--ink-soft,#5b6472)}
 .lg-rost td.rx-g{color:#13804f;font-weight:700}.lg-rost td.rx-r{color:#c0392b;font-weight:700}
-/* the whole league, as the shade of the cell: blue at its good end, orange at its bad one; the
-   number keeps the team's green or red over either */
-.lg-rost td.lx-top,.lg-rost td.lx-low,.rx-ex.top,.rx-ex.low{white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.lg-rost td.lx-top,.rx-ex.top{background:rgba(74,134,216,.17)}
-.lg-rost td.lx-low,.rx-ex.low{background:rgba(232,135,48,.19)}
-.lg-rost .rx-rk,.rx-ex .rx-rk{vertical-align:super;margin-left:1px;font:800 9px/0 'Oswald',sans-serif;letter-spacing:.02em;color:#2b62b5}
-body.dark .lg-rost td.lx-top,body.dark .rx-ex.top{background:rgba(96,150,230,.24)}
-body.dark .lg-rost td.lx-low,body.dark .rx-ex.low{background:rgba(232,135,48,.22)}
-body.dark .lg-rost .rx-rk,body.dark .rx-ex .rx-rk{color:#9cc0f3}
 .rx-key{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin:12px 0 14px}
 .rx-kc{border:1px solid var(--line,#e6e8ec);border-radius:10px;background:var(--panel,#fff);padding:10px 12px;display:flex;flex-direction:column;gap:7px}
 .rx-kh{font:700 11px 'Oswald',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--ink,#141821)}
