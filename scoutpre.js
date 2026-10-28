@@ -2678,11 +2678,20 @@
           var runs = []; for (var j = 0; j < Math.min(n, list.length); j++) runs.push(next());
           return Promise.all(runs).then(function () { return out; });
         };
+        /* TWO GAMES AGAINST THE SAME CLUB ARE TWO GAMES: the label keeps only the rival's name,
+           so "G8 ROSTOCK ALBA" and "G21 ROSTOCK ALBA" were both "ALBA" - one game holding both
+           nights' clips, interleaved. A label that repeats carries its game number. */
+        var labOf = {}, byLab = {};
+        mine.forEach(function (f) { var l = rivalLabel(f.name, opponent); labOf[f.id] = l; (byLab[l] = byLab[l] || []).push(f); });
+        Object.keys(byLab).forEach(function (l) {
+          if (byLab[l].length < 2) return;
+          byLab[l].forEach(function (f, k) { var m = /(?:^|[^A-Za-z0-9])G ?(\d{1,2})(?![0-9])/i.exec(f.name); labOf[f.id] = l + " · " + (m ? "G" + m[1] : (k + 1)); });
+        });
         return Promise.all([
           loadCalls(calls).catch(function () { return {}; }),
           pool(files, 4, function (f) {
             return within(25000, f.name, getText(f.id)).then(function (txt) {
-              var label = rivalLabel(f.name, opponent);
+              var label = labOf[f.id] || rivalLabel(f.name, opponent);
               var game = (mine.indexOf(f) >= 0 ? label : f.name);
               return { file: f, game: game, evs: buildEvents(parseFile(txt), game) };
             });

@@ -632,6 +632,10 @@ body.dark .tb-tab.active{background:var(--accent);color:#14181f}
 .tb-tab.soon .tag{font-size:9px;border:1px solid var(--line-strong);border-radius:5px;padding:0 4px;margin-left:4px}
 .tb-right{margin-left:auto;display:flex;align-items:center;gap:6px;flex:0 0 auto}
 .tb-sep{width:1px;height:20px;background:var(--line-strong);margin:0 2px}
+.tb-back{flex:none;width:38px;height:38px;border-radius:50%;border:1px solid var(--line-strong);background:var(--panel,#fff);
+  color:var(--ink);font-size:26px;line-height:1;font-weight:700;padding:0 0 3px;cursor:pointer;display:grid;place-items:center}
+.tb-back:hover:not([disabled]){background:color-mix(in srgb, var(--ink) 9%, var(--panel,#fff))}
+.tb-back[disabled]{opacity:.28;cursor:default}
 #charBtn.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 body.dark #charBtn.on{background:var(--accent);color:#14181f;border-color:var(--accent)}
 .tb-logo-btn{width:36px;height:36px;border-radius:50%;border:1px solid var(--line-strong);background:#000;padding:0;cursor:pointer;overflow:hidden;display:grid;place-items:center}
@@ -2725,6 +2729,7 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
   <div class="main">
     <header class="topbar glass" id="topbar">
       <div class="tb-left">
+        <button class="tb-back" id="viewBack" type="button" title="Back" aria-label="Back" disabled>&#8249;</button>
         <button class="tb-nav" id="navBtn" type="button" aria-expanded="false">
           <span class="tb-nav-ic" aria-hidden="true"></span>
           <span class="tb-nav-l" id="navBtnLabel">Menu</span>
@@ -3245,6 +3250,7 @@ function demoPlayers(){
    as it is called. So nothing was being guarded against and the save was costing three
    copies of everything instead of one. It writes the state itself now. */
 function persist(){
+  try{ _navPush(); }catch(e){}
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async ()=>{
     await Store.set("kv","appState", state);
@@ -3597,7 +3603,7 @@ function applyView(v){
   const rs=$("#rosterSettings"); if(rs) rs.style.display = canEdRoster ? "" : "none";
   const roMap={dashboard:"#viewDash",rooster:"#viewRooster",planification:"#viewPlan",calendar:"#viewCal",league:"#viewLeague",teamscout:"#viewTeamScout",oppscout:"#viewOppScout",gameplan:"#viewGamePlan",playbook:"#viewPlaybook",playerdev:"#viewPlayerDev",playerdb:"#viewPlayerDB",trends:"#viewTrends",prob:"#viewProb"};
   const roEl=$(roMap[v]); if(roEl) roEl.classList.toggle("readonly", v!=="playbook" && !!currentUser && !canEdit(v));
-  const b=$("#viewBack"), f=$("#viewFwd"); if(b) b.disabled = viewIdx<=0; if(f) f.disabled = viewIdx>=viewHist.length-1;
+  const f=$("#viewFwd"); if(f) f.disabled = viewIdx>=viewHist.length-1;
   tbFade();
   if(v==="planification") renderPlan();
   if(v==="league") renderLeague();
@@ -3666,6 +3672,28 @@ function setView(v){
   applyView(v);
 }
 function navView(dir){ const ni=viewIdx+dir; if(ni<0||ni>=viewHist.length) return; viewIdx=ni; applyView(viewHist[viewIdx]); }
+/* THE BROWSER'S BACK BUTTON. The hub never wrote to the browser's history, so Back - the
+   button, or the swipe on an iPad or a phone - left the hub altogether. Every screen, and
+   every report opened inside one, is now a step in the history: Back returns to where you
+   were (the dashboard, the list, the report before), Forward goes again. */
+let _navLast="", _navRestoring=false, _navPos=0;
+function _navSnap(){ const u=state.ui||{}, cp=o=>{ try{ return o? JSON.parse(JSON.stringify(o)) : null; }catch(e){ return null; } };
+  const v=u.view||"dashboard";   /* only the screen's own report: the others are reset on leaving */
+  return { v, os: v==="oppscout"? cp(u.os) : null, ts: v==="teamscout"? cp(u.ts) : null, gp: v==="gameplan"? cp(u.gp) : null }; }
+function _navPush(){
+  if(_navRestoring || typeof history==="undefined" || !history.pushState) return;
+  try{ const s=_navSnap(), k=JSON.stringify(s); if(k===_navLast) return;
+    if(!_navLast){ s.n=_navPos=0; history.replaceState(s, ""); } else { s.n=++_navPos; history.pushState(s, ""); }
+    _navLast=k; _navBtn(); }catch(e){}
+}
+try{ window.addEventListener("popstate", e=>{ const s=e.state; if(!s || !s.v) return;
+  _navRestoring=true; _navPos=+s.n||0;
+  try{ ["os","ts","gp"].forEach(k=>{ if(s[k]) state.ui[k]=s[k]; });
+    if(viewHist[viewIdx]!==s.v){ viewHist=viewHist.slice(0,viewIdx+1); viewHist.push(s.v); viewIdx=viewHist.length-1; }
+    applyView(s.v); }
+  catch(err){}
+  finally{ _navLast=JSON.stringify(_navSnap()); _navRestoring=false; _navBtn(); } }); }catch(e){}
+function _navBtn(){ const b=$("#viewBack"); if(b) b.disabled = _navPos<=0; }
 function sessionsFor(iso){ const S=state.plan.sessions; let v=S[iso];
   if(!v){ v=S[iso]=[]; }
   else if(!Array.isArray(v)){ v.id=v.id||uid(); v.label=v.label||"Session"; v.start=v.start||"11:15"; v.blocks=v.blocks||[]; S[iso]=[v]; v=S[iso]; }
@@ -18110,7 +18138,7 @@ function rivalCard(p,i,rep,editable,body,g,key,kind,from){
     h("button",{class:"rp-del", onclick:()=>{ rep.data.players.splice(i,1); renderScout(body,g,key,kind,from,rep); }},"✕ Remove"));
 }
 function renderTeamScout(){
-  syncPrintBtn();
+  syncPrintBtn(); try{ _navPush(); }catch(e){}
   phxHideSub(); const root=$("#viewTeamScout"); root.innerHTML="";
   const ts=state.ui.ts||(state.ui.ts={mode:"overview"});
   if(ts.mode==="training"){ root.appendChild(trainingCard(ts.date, ts.idx)); return; }
@@ -30159,7 +30187,7 @@ function renderLeague(){
 }
 
 function renderOppScout(){
-  syncPrintBtn();
+  syncPrintBtn(); try{ _navPush(); }catch(e){}
   phxHideSub(); const root=$("#viewOppScout"); root.innerHTML="";
   const os=state.ui.os||(state.ui.os={mode:"overview"});
   if(os.mode==="game"){ root.appendChild(gameCard(os.gameId, "oppscout")); return; }
@@ -30171,7 +30199,7 @@ function renderOppScout(){
    gives you that game's plan and nothing else. It is the same stored report —
    editing the plan here is editing the plan inside the pre game. */
 function renderGamePlan(){
-  syncPrintBtn();
+  syncPrintBtn(); try{ _navPush(); }catch(e){}
   phxHideSub(); const root=$("#viewGamePlan"); if(!root) return; root.innerHTML="";
   const gp=state.ui.gp||(state.ui.gp={mode:"overview"});
   if(gp.mode==="game"){ root.appendChild(gameCard(gp.gameId, "gameplan")); return; }
@@ -31910,7 +31938,7 @@ function wireEvents(){
   /* The two arrows were taken out of the bar. The history itself is kept - applyView
      still records it - so nothing else has to change, but these two lines looked the
      buttons up without checking and would now throw before the rest of the wiring ran. */
-  { const vb=$("#viewBack"); if(vb) vb.onclick=()=>navView(-1);
+  { const vb=$("#viewBack"); if(vb) vb.onclick=()=>{ if(_navPos>0) history.back(); else navView(-1); };
     const vf=$("#viewFwd");  if(vf) vf.onclick=()=>navView(1); }
   /* ELEVEN TABS DO NOT FIT ON A PHONE. They were a row that slid sideways, so two and a
      half of them were visible and the other eight had to be hunted for, and the bar ate a
