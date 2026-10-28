@@ -3276,7 +3276,7 @@ function _planMerge(base, loc, srv){
     else v=(!_planTouched(ls[d]) && _planTouched(ss[d]))? ss[d] : ls[d];
     if(v!=null) out.sessions[d]=v;
   });
-  return out;
+  return _planDocPick(out);
 }
 /* somebody typing in Planning or the Playbook is not interrupted: the sync waits for them */
 function _planTyping(){ const a=document.activeElement; if(!a || a===document.body) return false;
