@@ -1396,10 +1396,26 @@
     return false;
   }
 
+  /* ONE CLUB, SEVERAL NAMES. Our calendar says "München" and the video staff write
+     "BAYERN" in the file name: the same club, and the folder came back empty for it
+     (29/10/2026). The page's list of each club's names (LG_CLUBS, the one that ties a
+     European game to its BBL team) is read when it is there, so the scouted team at the
+     front of a name may be written any of the ways that club is known by. */
+  function clubNames(opponent) {
+    try {
+      if (typeof _lgClubKey === "function" && typeof LG_CLUBS !== "undefined") {
+        var k = _lgClubKey(opponent);
+        for (var i = 0; k && i < LG_CLUBS.length; i++) if (LG_CLUBS[i][0] === k) return LG_CLUBS[i][1].split(" ");
+      }
+    } catch (e) { /* the page's list is a help, never a need */ }
+    return [];
+  }
+
   /* -> {match:bool, rival:string} */
   function classify(name, opponent) {
     var toks = nameTokens(name), want = slug(opponent), i = 0;
     if (!want) return { match: false, rival: "" };
+    want = [want].concat(clubNames(opponent).map(slug)).join("|");
     while (i < toks.length) {
       var k = slug(toks[i]);
       if (k.length >= 3 && (want.indexOf(k) >= 0 || nearIn(k, want))) i++;
