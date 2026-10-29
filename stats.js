@@ -2827,8 +2827,14 @@
 
       /* x axis — every label if they fit, otherwise thin them out, games always kept */
       var every = Math.ceil(n / Math.max(4, Math.floor(iw / 54)));
+      /* a training's day beside a game's was printed over it ("09/1010/09"): the game keeps
+         its day and the training's next to it is left out */
+      var gameX = [], lastX = -1e9;
+      points.forEach(function (p, i) { if (p.kind === "game") gameX.push(X(i)); });
       points.forEach(function (p, i) {
         if (p.kind !== "game" && i % every !== 0 && i !== n - 1) return;
+        if (p.kind !== "game" && (X(i) - lastX < 34 || gameX.some(function (x) { return Math.abs(x - X(i)) < 34; }))) return;
+        lastX = X(i);
         var tx = sv("text", { x: X(i), y: plotBot + 16, class: "tl-axis" + (p.kind === "game" ? " game" : ""), "text-anchor": "middle" });
         tx.textContent = shortDate(p.d);
         svg.appendChild(tx);
