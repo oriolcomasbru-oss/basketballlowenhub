@@ -4628,8 +4628,8 @@
         kp.push({ l: "Trainings", parts: [{ v: pct0f(rsD), cls: rbTone(rsD, lgD, true) }, { v: pct0f(rsO) }] });
         if (isFinite(lgO)) kp.push({ l: "League average", parts: [{ v: pct0f(lgD) }, { v: pct0f(lgO) }] });
         var refs = isFinite(lgO) ? [{ v: lgD, label: "League DREB% · " + pct0f(lgD) }, { v: lgO, label: "League OREB% · " + pct0f(lgO) }] : null;
-        var sub = "each figure above DREB% · OREB% · of the shots missed, who got the ball back · dots trainings, diamonds games, hollow the Pokal's" +
-          (refs ? " · the lines across are the league's average" : "") + " · days under five missed shots left out" +
+        var sub = "each figure DREB% · OREB% · dots trainings, diamonds games, hollow the Pokal's" +
+          (refs ? " · the lines: the league's average" : "") + " · days under five missed shots left out" +
           (wait ? " · reading the games…" : "");
         var fresh = tdCard(rbTitle, sub, kp, null);
         rbCard.replaceChild(fresh.querySelector(".td-h"), rbCard.querySelector(".td-h"));
