@@ -19297,6 +19297,11 @@ function _lgFourTrend(TB){
     }
 
     /* ------------------------------------------------- 6 · four factors and the shooting */
+    /* ONE MORE TAB OF THE LEAGUE'S NUMBERS (Oriol, 29/10/2026): the four factors, the shooting
+       and their every-game table were drawn under the tabs, loose. "sx" carries the charts'
+       palette, which the tabs' panes do not. */
+    const ffTab=sec("FOUR FACTORS · AND THE SHOOTING", null), ffBox=h("div",{class:"sx trg lg-ff-tab"});
+    ffTab.appendChild(ffBox);
     const legend=h("div",{class:"lg-leg"},
       h("span",{class:"lg-leg-i"}, h("i",{class:"lg-leg-k us"}), "Us"),
       h("span",{class:"lg-leg-i"}, h("i",{class:"lg-leg-k them"}), "Them"),
@@ -19310,9 +19315,9 @@ function _lgFourTrend(TB){
       const minis=h("div",{class:"lg-minis"});
       grp[1].forEach(d=>minis.appendChild(mini(d)));
       s.appendChild(minis);
-      body.appendChild(s);
+      ffBox.appendChild(s);
     });
-    body.appendChild(legend);
+    ffBox.appendChild(legend);
 
     /* ------------------------------------------------------ 7 · the players, game by game */
     {
@@ -19418,7 +19423,7 @@ function _lgFourTrend(TB){
         pts.map(p=>[p.label, p.d].concat(
           defs.map(d=>{ const v=val(d,"us",p.s); return isFinite(v)? d.fmt(v) : "—"; }),
           defs.map(d=>{ const v=val(d,"them",p.s); return isFinite(v)? d.fmt(v) : "—"; })))));
-      body.appendChild(det);
+      ffBox.appendChild(det);
     }
     wrap.appendChild(body);
     wrap.appendChild(h("div",{class:"pc-foot"},
