@@ -18203,7 +18203,7 @@ function _rebTot(R){ return { dr:R.u.dr, dC:R.u.dr+R.t.or, or:R.u.or, oC:R.u.or+
 /* the league's OREB% average, from the four factors (DREB% is its other side) */
 function _rebLeagueAvg(L){ const f=(L.four||[]).filter(x=>x.off && x.off.reb!=null); if(!f.length) return null;
   return 100*f.reduce((a,x)=>a+x.off.reb,0)/f.length; }
-/* THE GAMES' REBOUNDING FOR TRENDS (Oriol, 29/10/2026): each league game of ours as the post
+/* THE GAMES' REBOUNDING FOR TRENDS (Oriol, 29/10/2026): each game of ours, BBL or Pokal, as the post
    game reads it from the play by play, and the league's OREB% as the ruler (its DREB% is the
    other side of it). stats.js draws them beside the trainings. The four factors are fetched
    when they were never loaded, so the ruler does not wait for a visit to League. */
@@ -18211,8 +18211,9 @@ try{ window.LowenGameRebounds=async function(){
   const R=await _trgRead(), L=leagueState();
   let lgO=_rebLeagueAvg(L);
   if(lgO==null && !L.demo){ try{ await syncFour(false); for(let i=0;i<40 && _lgFourBusy;i++) await new Promise(r=>setTimeout(r,250)); }catch(e){_quiet(e)} lgO=_rebLeagueAvg(L); }
-  return { lgO:lgO, games:((R && R.games)||[]).filter(x=>x && x.rb && x.rb.u && x.rb.t)
-    .map(x=>({ d:x.g.date, label:(x.home? "vs " : "@ ")+(x.opp||""), u:{ or:x.rb.u.or, dr:x.rb.u.dr }, t:{ or:x.rb.t.or, dr:x.rb.t.dr } })) };
+  /* every game of ours, the Pokal's marked: Trends shows the BBL's, the cup's and both */
+  return { lgO:lgO, games:((R && (R.allGames||R.games))||[]).filter(x=>x && x.rb && x.rb.u && x.rb.t)
+    .map(x=>({ d:x.g.date, cup:!!x.cup, label:(x.home? "vs " : "@ ")+(x.opp||""), u:{ or:x.rb.u.or, dr:x.rb.u.dr }, t:{ or:x.rb.t.or, dr:x.rb.t.dr } })) };
 }; }catch(e){_quiet(e)}
 function _trgGame(x, j, tid){
   if(!j || !j.feed || !(j.feed.actions||[]).length) return null;

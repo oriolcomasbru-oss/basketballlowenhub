@@ -2609,7 +2609,11 @@
         km.appendChild(el("span", "tl-lgshape circle"));
         km.appendChild(el("span", null, "training"));
         km.appendChild(el("span", "tl-lgshape diamond"));
-        km.appendChild(el("span", null, "game"));
+        km.appendChild(el("span", null, points.some(function (p) { return p.cup; }) ? "BBL game" : "game"));
+        if (points.some(function (p) { return p.cup; })) {
+          km.appendChild(el("span", "tl-lgshape diamond hollow"));
+          km.appendChild(el("span", null, "Pokal game"));
+        }
         lg.appendChild(km);
       }
       wrap.appendChild(lg);
@@ -2730,7 +2734,7 @@
           } else {
             m = sv("circle", { cx: q[0], cy: q[1], r: 4.5, class: "tl-mk", fill: s.color });
           }
-          if (s.hollow) { m.setAttribute("class", "tl-mk hollow"); m.style.fill = "var(--tl-surface)"; m.style.stroke = s.color; }
+          if (s.hollow || points[i].cup) { m.setAttribute("class", "tl-mk hollow"); m.style.fill = "var(--tl-surface)"; m.style.stroke = s.color; }
           /* a thin day: half the size and pale. Under a line of sessions added together,
              every day steps back a little, since the line is now what is being read */
           /* Under a line of sessions added together the days step right back: a day too
@@ -3699,18 +3703,29 @@
         if (!isFinite(v) || !isFinite(ref) || Math.abs(v - ref) < 5) return txt;
         return { v: txt, cls: v > ref ? "tr-good" : "tr-warn" };
       };
-      var gline = function (lab, u, t, tot) {
+      var gline = function (lab, comp, u, t, tot) {
         var d = rebShare(u.dr, u.dr + t.or), o = rebShare(u.or, u.or + t.dr);
-        return { cls: tot ? "tr-tot" : "", cells: [lab, u.dr + t.or, u.dr, tot ? pct1f(d) : tone(d, lgD),
+        return { cls: tot ? "tr-tot" : "", cells: [lab, comp, u.dr + t.or, u.dr, tot ? pct1f(d) : tone(d, lgD),
           u.or + t.dr, u.or, tot ? pct1f(o) : tone(o, lgO)] };
       };
-      var U = { or: 0, dr: 0 }, T = { or: 0, dr: 0 };
-      gm.forEach(function (g) { U.or += g.u.or; U.dr += g.u.dr; T.or += g.t.or; T.dr += g.t.dr; });
-      var grows = gm.map(function (g) { return gline(shortDate(g.d) + " " + g.label, g.u, g.t, false); })
-        .concat([gline("Every game · " + gm.length, U, T, true)]);
-      if (isFinite(lgO)) grows.push({ cls: "tr-tot", cells: ["League average", "", "", pct1f(lgD), "", "", pct1f(lgO)] });
+      /* the BBL's games and the Pokal's apart, each with its own total, then all of them:
+         the league's average is the BBL's, so a cup night is read against it but not mixed in */
+      var sumUp = function (list) { var U = { or: 0, dr: 0 }, T = { or: 0, dr: 0 };
+        list.forEach(function (g) { U.or += g.u.or; U.dr += g.u.dr; T.or += g.t.or; T.dr += g.t.dr; });
+        return [U, T]; };
+      var grows = [];
+      [[false, "BBL"], [true, "Pokal"]].forEach(function (k) {
+        var part = gm.filter(function (g) { return !!g.cup === k[0]; });
+        if (!part.length) return;
+        part.forEach(function (g) { grows.push(gline(shortDate(g.d) + " " + g.label, k[1], g.u, g.t, false)); });
+        var A = sumUp(part);
+        grows.push(gline(k[1] + " · " + part.length + (part.length === 1 ? " game" : " games"), "", A[0], A[1], true));
+      });
+      var AL = sumUp(gm);
+      grows.push(gline("Every game · " + gm.length, "", AL[0], AL[1], true));
+      if (isFinite(lgO)) grows.push({ cls: "tr-tot", cells: ["League average", "BBL", "", "", pct1f(lgD), "", "", pct1f(lgO)] });
       sec.appendChild(el("div", "sx-sub fit-span", "The games · from the league's play by play"));
-      sec.appendChild(trTable(["Game", "Their misses", "Our DREB", "DREB%", "Our misses", "Our OREB", "OREB%"], grows, { sort: false }));
+      sec.appendChild(trTable(["Game", "Comp.", "Their misses", "Our DREB", "DREB%", "Our misses", "Our OREB", "OREB%"], grows, { sort: false }));
       sec.appendChild(el("div", "sx-sub fit-span", "DREB% = our defensive rebounds of their missed shots; OREB% = our offensive " +
         "rebounds of ours; a team rebound counts. " + (isFinite(lgO)
           ? "Green or red: five points or more off the league's average, its OREB% from the four factors and its DREB% the other side of it."
@@ -4592,24 +4607,28 @@
         var gm = (G && G.games) || [];
         var tp = rb.pts.map(function (p) { return { d: p.d, kind: "practice", label: p.label,
           s: { dr: p.s.dr, o: p.s.o, nD: p.s.miss, nO: p.s.miss } }; });
-        var gp = gm.map(function (g) { return { d: g.d, kind: "game", label: g.label,
+        var gp = gm.map(function (g) { return { d: g.d, kind: "game", cup: !!g.cup, label: (g.cup ? "Pokal · " : "") + g.label,
           s: { dr: rebShare(g.u.dr, g.u.dr + g.t.or), o: rebShare(g.u.or, g.u.or + g.t.dr), nD: g.u.dr + g.t.or, nO: g.u.or + g.t.dr } }; });
         var all = tp.concat(gp).sort(function (a, b) {
           return a.d < b.d ? -1 : a.d > b.d ? 1 : (a.kind === "game" ? 1 : 0) - (b.kind === "game" ? 1 : 0); });
-        var sum = function (f) { return gm.reduce(function (a, g) { return a + f(g); }, 0); };
-        var gD = rebShare(sum(function (g) { return g.u.dr; }), sum(function (g) { return g.u.dr + g.t.or; }));
-        var gO = rebShare(sum(function (g) { return g.u.or; }), sum(function (g) { return g.u.or + g.t.dr; }));
-        var kp = [];
-        if (gm.length) {
-          /* the games' figures are coloured from five games, the hub's rule for a season line */
-          kp.push({ l: "DREB% games", v: pct0f(gD), cls: rbTone(gD, lgD, gm.length >= 5) });
-          kp.push({ l: "OREB% games", v: pct0f(gO), cls: rbTone(gO, lgO, gm.length >= 5) });
-        }
-        kp.push({ l: "DREB% trainings", v: pct0f(rsD), cls: rbTone(rsD, lgD, true) });
-        kp.push({ l: "OREB% trainings", v: pct0f(rsO) });
-        if (isFinite(lgO)) kp.push({ l: "League DREB% · OREB%", v: pct0f(lgD) + " · " + pct0f(lgO) });
+        /* THE SUMMARY IN PAIRS, DREB% · OREB% (Oriol, 29/10/2026): the BBL's games, the Pokal's,
+           all of them together, the trainings and the league. A pair of games is coloured
+           against the league from five games, the hub's rule for a season line */
+        var pair = function (list) {
+          var sum = function (f) { return list.reduce(function (a, g) { return a + f(g); }, 0); };
+          return [rebShare(sum(function (g) { return g.u.dr; }), sum(function (g) { return g.u.dr + g.t.or; })),
+                  rebShare(sum(function (g) { return g.u.or; }), sum(function (g) { return g.u.or + g.t.dr; }))]; };
+        var gKpi = function (lab, list) {
+          if (!list.length) return null;
+          var p = pair(list), ok = list.length >= 5;
+          return { l: lab + " · " + list.length + (list.length === 1 ? " game" : " games"),
+            parts: [{ v: pct0f(p[0]), cls: rbTone(p[0], lgD, ok) }, { v: pct0f(p[1]), cls: rbTone(p[1], lgO, ok) }] }; };
+        var bbl = gm.filter(function (g) { return !g.cup; }), cup = gm.filter(function (g) { return !!g.cup; });
+        var kp = [gKpi("BBL", bbl), gKpi("Pokal", cup), cup.length && bbl.length ? gKpi("All games", gm) : null].filter(Boolean);
+        kp.push({ l: "Trainings", parts: [{ v: pct0f(rsD), cls: rbTone(rsD, lgD, true) }, { v: pct0f(rsO) }] });
+        if (isFinite(lgO)) kp.push({ l: "League average", parts: [{ v: pct0f(lgD) }, { v: pct0f(lgO) }] });
         var refs = isFinite(lgO) ? [{ v: lgD, label: "League DREB% · " + pct0f(lgD) }, { v: lgO, label: "League OREB% · " + pct0f(lgO) }] : null;
-        var sub = "of the shots missed, who got the ball back · dots trainings, diamonds games" +
+        var sub = "each figure above DREB% · OREB% · of the shots missed, who got the ball back · dots trainings, diamonds games, hollow the Pokal's" +
           (refs ? " · the lines across are the league's average" : "") + " · days under five missed shots left out" +
           (wait ? " · reading the games…" : "");
         var fresh = tdCard(rbTitle, sub, kp, null);
@@ -4698,7 +4717,11 @@
       kpis.forEach(function (x) {
         var one = el("div", "td-kpi" + (x.cls ? " " + x.cls : ""));
         one.appendChild(el("i", null, x.l));
-        one.appendChild(el("b", null, x.v));
+        if (x.parts) {
+          var pb = el("b");
+          x.parts.forEach(function (p, i) { if (i) pb.appendChild(el("s", null, "·")); pb.appendChild(el("u", p.cls || null, p.v)); });
+          one.appendChild(pb);
+        } else one.appendChild(el("b", null, x.v));
         k.appendChild(one);
       });
       h.appendChild(k);
@@ -5047,6 +5070,8 @@
       ".td-kpi i{display:block;font:600 10px/1 'Inter',sans-serif;font-style:normal;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}",
       ".td-kpi b{display:block;margin-top:3px;font:800 19px/1 'Oswald',sans-serif;color:var(--ink);font-variant-numeric:tabular-nums}",
       ".td-kpi.good b{color:#17805a}.td-kpi.bad b{color:#c53727}",
+      ".td-kpi b u{text-decoration:none}.td-kpi b u.good{color:#17805a}.td-kpi b u.bad{color:#c53727}",
+      ".td-kpi b s{text-decoration:none;color:var(--ink-faint);font-weight:400;margin:0 5px}",
       ".td-card .sx-sec.tl{margin:0;display:block}",
       ".td-card .sx-sec.tl > .sx-h{display:none}",
       ".td-card .tl-legend{margin:0 0 2px;font-size:11px}",
@@ -5226,6 +5251,7 @@
       ".tl-lgshape{width:9px;height:9px;background:var(--ink-faint);flex:none}",
       ".tl-lgshape.circle{border-radius:50%}",
       ".tl-lgshape.diamond{transform:rotate(45deg)}",
+      ".tl-lgshape.hollow{background:transparent;box-shadow:inset 0 0 0 2px var(--ink-faint)}",
       ".tl-host{position:relative;width:100%}",
       ".tl-svg{display:block;width:100%;overflow:visible}",
       ".tl-grid{stroke:var(--tl-grid);stroke-width:1}",
