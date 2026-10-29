@@ -18360,9 +18360,18 @@ function _trgRead(onProg){
     let tid=tm? tm.id : ""; if(!tid){ try{ tid=_lgOurTeamId(L); }catch(e){_quiet(e)} }
     if(!tid) throw new Error("the league did not say which club is ours");
     const seen={}, inLeague={}, tlc={};
-    ((all&&all.games)||[]).forEach(x=>{ inLeague[x.id]=1; });
+    /* THE LEAGUE'S GAMES APART FROM THE CUP'S. The feed's "games" is every game of the season,
+       the Pokal's included ("cup" is the same Pokal games again, apart), so the two cup nights -
+       Bremerhaven and Chemnitz - were in every season figure set beside the league's: Trends
+       read 62% DREB% where the League view's four factors read 57.5% (Oriol, 29/10/2026).
+       Every game of ours is still read and kept, each marked cup or not; "games" is the
+       league's only, for every figure measured against the league, and "allGames" all of
+       them, for what counts every game played - the minutes of the load. */
+    const cupIds={}; ((all&&all.cup)||[]).forEach(x=>{ cupIds[x.id]=1; });
+    const isCup=x=>!!cupIds[x.id] || x.phase==="cup" || /pokal|cup/i.test(String(x.competition||""));
+    ((all&&all.games)||[]).forEach(x=>{ if(!isCup(x)) inLeague[x.id]=1; });
     ((all&&all.teams)||[]).forEach(t=>{ tlc[t.id]=t.tlc||t.short||""; });
-    const games=((all&&all.games)||[])   /* the league's games only: a cup night was being added into every "season" figure set beside the league's */
+    const games=((all&&all.games)||[])
       .filter(x=>{ if(seen[x.id]) return false; seen[x.id]=1;
         return _lgDone(x) && (String(x.homeId)===String(tid)||String(x.awayId)===String(tid)); })
       .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
@@ -18392,7 +18401,8 @@ function _trgRead(onProg){
       ((ros&&ros.players)||[]).forEach(p=>{ const s=String(p.pos||"").toUpperCase();
         const lab=TRG_POS_STAFF[String(_lgLastName(p.name||((p.first||"")+" "+(p.last||"")))).toLowerCase()] || (/POINT/.test(s)? "PG" : /SHOOTING/.test(s)? "SG" : /SMALL/.test(s)? "SF" : /POWER/.test(s)? "PF" : /CENT/.test(s)? "C" : /GUARD/.test(s)? "G" : /FORWARD/.test(s)? "F" : "");
         if(lab){ pos[String(p.id)]=lab; if(p.pid) pos[String(p.pid)]=lab; } }); }catch(e){_quiet(e)}
-    return { tid:tid, games:out, missing:games.length-out.length, pos:pos };
+    const lg=out.filter(x=>!x.cup);
+    return { tid:tid, games:lg, allGames:out, missing:games.filter(x=>!isCup(x)).length-lg.length, pos:pos };
   })();
   _trgMemo=p;
   p.catch(()=>{ if(_trgMemo===p) _trgMemo=null; });
@@ -28815,7 +28825,8 @@ function renderDashboard(){
       const c=card("wide", "Game minutes · the load from the games", null);
       const body=h("div",{}, loading("Reading our games…")); c.__b.appendChild(body);
       _trgRead().then(R=>{ body.innerHTML="";
-        const GL=(R && R.games)||[];
+        /* the load counts every game played, the cup's too */
+        const GL=(R && (R.allGames||R.games))||[];
         if(!GL.length){ body.appendChild(h("div",{class:"dash-miss"},"No game of ours read from the league yet.")); return; }
         const last=GL.slice(-6), by={};
         GL.forEach((x,gi)=>(x.pl||[]).forEach(q=>{ if(!(q.s>0)) return; const k=q.nm; const e=by[k]||(by[k]={ nm:q.nm, n:q.n, sec:0, gp:0, g:{} }); e.sec+=q.s; e.gp++; e.g[gi]=q.s/60; }));
