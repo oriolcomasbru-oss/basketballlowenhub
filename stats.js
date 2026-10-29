@@ -904,13 +904,20 @@
      the bottom whichever way the column runs. A row whose first cell says TOTAL, TEAM or
      ALL is a summary of the others, not one of them, so it stays at the foot. */
   function sortKey(txt) {
-    var t = String(txt == null ? "" : txt).trim();
+    /* a minus written as a minus sign, not a hyphen, is still a minus */
+    var t = String(txt == null ? "" : txt).replace(/−/g, "-").trim();
     if (!t || t === "\u2014" || t === "-" || t === "\u2013") return null;
+    /* a day is a day, not its year: 2026-10-25 read as 2026 left every date equal and the
+       column would not move; "Tue 20/10" too, the season running from the summer */
+    var iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
+    if (iso) return +(iso[1] + iso[2] + iso[3]);
+    var dm = /^(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?\s+(\d{1,2})\/(\d{1,2})$/i.exec(t);
+    if (dm) { var mo = +dm[2]; return (mo >= 7 ? mo : mo + 12) * 100 + (+dm[1]); }
     var m = t.replace(/,/g, ".").match(/-?\d+(\.\d+)?/);
     if (m && /^[^A-Za-z]*-?[\d.]/.test(t)) return parseFloat(m[0]);
     return t.toLowerCase();
   }
-  var SX_PIN = /^(total|totals|team|all|sum|overall)\b/i;
+  var SX_PIN = /^(total|totals|team|all|sum|overall|every|average)\b/i;
   function sortable(t, tb) {
     var heads = [].slice.call(t.querySelectorAll("thead th"));
     var body = [].slice.call(tb.children);
@@ -925,23 +932,32 @@
     heads.forEach(function (th, ci) {
       th.classList.add("sx-sortable");
       th.setAttribute("title", "Sort by " + (th.textContent || "this column")
-        + " \u2014 click again to reverse, a third time for the original order");
+        + " \u2014 click again to reverse");
+      /* ONE CLICK, ONE CHANGE (Oriol, 29/10/2026). A table is mostly written already in the
+         order of its first column of numbers, so the first click sorted it high to low again
+         and nothing moved, and the third put it back the way it was written: a heading looked
+         dead. A first click now always moves something - when the order asked for is the one
+         showing, it takes the other - and every click after it flips the order. */
       th.addEventListener("click", function () {
         var first = (ci === 0) ? 1 : -1;            /* words up, numbers down */
-        if (state.col !== ci) { state.col = ci; state.dir = first; }
-        else if (state.dir === first) { state.dir = -first; }
-        else { state.col = -1; state.dir = 0; }
+        var dir = (state.col === ci) ? -state.dir : first;
+        var out = arrange(dir);
+        var showing = [].slice.call(tb.children).filter(function (r) { return kept.indexOf(r) >= 0; });
+        if (state.col !== ci && out.every(function (r, i) { return r === showing[i]; })) { dir = -dir; out = arrange(dir); }
+        state.col = ci; state.dir = dir;
         heads.forEach(function (h2) { h2.classList.remove("sx-sort-up", "sx-sort-down"); });
-        if (state.dir === 0) { put(kept.slice()); return; }
-        th.classList.add(state.dir > 0 ? "sx-sort-up" : "sx-sort-down");
+        th.classList.add(dir > 0 ? "sx-sort-up" : "sx-sort-down");
+        put(out);
+      });
+      function arrange(dir) {
         var cmp = function (a, b) {
           if (a.k === null && b.k === null) return a.i - b.i;
           if (a.k === null) return 1;
           if (b.k === null) return -1;
           var na = typeof a.k === "number", nb = typeof b.k === "number";
-          if (na && nb) return (a.k - b.k) * state.dir || a.i - b.i;
+          if (na && nb) return (a.k - b.k) * dir || a.i - b.i;
           if (na !== nb) return na ? -1 : 1;
-          return String(a.k).localeCompare(String(b.k)) * state.dir || a.i - b.i;
+          return String(a.k).localeCompare(String(b.k)) * dir || a.i - b.i;
         };
         /* A TABLE IN BLOCKS SORTS INSIDE EACH BLOCK: a phase's heading (and the gap above it)
            stays where it is and only the sets under it are reordered among themselves, so a
@@ -954,8 +970,8 @@
           keyed.sort(cmp); keyed.forEach(function (x) { out.push(x.r); }); cur = []; };
         kept.forEach(function (r) { if (isHead(r)) { flush(); out.push(r); } else cur.push(r); });
         flush();
-        put(out);
-      });
+        return out;
+      }
     });
   }
   function table(head, rows, opts) {

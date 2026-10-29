@@ -18865,7 +18865,7 @@ function _lgFourTrend(TB){
       if(hi==null) return "background:rgba(74,134,216,"+(0.06+0.30*t).toFixed(2)+")";
       return "background:rgba("+(((dev>0)===hi)? "47,158,134" : "216,82,78")+","+(0.10+0.50*t).toFixed(2)+")";
     };
-    const gameTh=g=>h("th",{class:"trg-g "+(win(g)?"w":"l"), title:tip(g), onclick:()=>open(g)},
+    const gameTh=g=>h("th",{class:"trg-g "+(win(g)?"w":"l"), title:tip(g), "data-sort":"own", onclick:()=>open(g)},
       h("b",{}, code(g)), h("i",{}, score(g)));
     const gameTd=g=>h("td",{class:"trg-n trg-gn "+(win(g)?"w":"l"), title:tip(g), onclick:()=>open(g)},
       h("em",{}, win(g)?"W":"L"), h("b",{}, (g.home? "vs " : "@ ")+g.opp), h("i",{}, score(g)+" · "+day(g)));
@@ -25794,7 +25794,7 @@ function _paceTable(L, R, rows, opts){
   const g=h("tr",{class:"lg-grph"}, h("th",{},""), h("th",{},""));
   sides.forEach(s=>g.appendChild(h("th",{colspan:"5", class:"grp "+(s==="o"? "pace-go" : "pace-gd")}, s==="o"? "Offense · OER by when they shoot" : "Defense · DER by when they let you shoot")));
   t.appendChild(g);
-  const th=(k, lab, cls, tip)=>h("th",{class:(cls||"")+(sk===k? " on" : ""), title:tip||"", style:opts.sortable? "cursor:pointer" : "",
+  const th=(k, lab, cls, tip)=>h("th",{class:(cls||"")+(sk===k? " on" : ""), title:tip||"", style:opts.sortable? "cursor:pointer" : "", "data-sort":opts.sortable? "own" : null,
     onclick:opts.sortable? ()=>{ _lgPaceSort=_lgPaceSort.k===k? { k:k, d:-_lgPaceSort.d } : { k:k, d:1 }; _lgRerender(); } : null},
     lab+(sk===k? (_lgPaceSort.d>0? " ▲" : " ▼") : ""));
   const hr=h("tr",{class:"lg-tbl-h"}, h("th",{}, opts.sortable? "#" : ""), h("th",{class:"l"},"Team"));
@@ -25804,7 +25804,7 @@ function _paceTable(L, R, rows, opts){
     PACE_BANDS.forEach(b=>{ const k=s+b[0], kv=k+"v", on=sk===k||sk===kv;
       const pick=(key, lab, tip)=>h("span",{class:"pbh-k"+(sk===key? " on" : ""), title:tip, onclick:opts.sortable? e=>{ e.stopPropagation(); _lgPaceSort=_lgPaceSort.k===key? { k:key, d:-_lgPaceSort.d } : { k:key, d:1 }; _lgRerender(); } : null},
         lab+(sk===key? (_lgPaceSort.d>0? " ▲" : " ▼") : ""));
-      hr.appendChild(h("th",{class:"pbh"+(on? " on" : "")}, h("div",{}, b[3]),
+      hr.appendChild(h("th",{class:"pbh"+(on? " on" : ""), "data-sort":opts.sortable? "own" : null}, h("div",{}, b[3]),
         opts.sortable? h("div",{class:"pbh-ks"}, pick(k, s==="o"? "OER" : "DER", "sort by the points a possession in "+b[3]), pick(kv, "Vol", "sort by the share of the possessions in "+b[3])) : null)); }); });
   t.appendChild(hr);
   const avgTone=(v, lv, s)=>{ if(v==null || lv==null) return ""; const d=v-lv; return Math.abs(d)<0.6? "" : (d<0)===(s==="o")? "fast" : "slow"; };
@@ -25865,7 +25865,7 @@ function _lgReb(L){
   const rank={}; Object.keys(K).forEach(k=>{ const v=rows.map(r=>r[k]).filter(x=>x!=null).sort((a,b)=>b-a); rank[k]=x=>x==null? null : 1+v.indexOf(x); });
   const t=h("table",{class:"lg-tbl reb-lg"});
   t.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Team"),
-    ...Object.keys(K).map(k=>h("th",{class:(k===sk? "on " : "")+(k==="og"? "grp" : ""), style:"cursor:pointer", onclick:()=>{ _lgRebSort=_lgRebSort.k===k? { k:k, d:-_lgRebSort.d } : { k:k, d:1 }; _lgRerender(); }},
+    ...Object.keys(K).map(k=>h("th",{class:(k===sk? "on " : "")+(k==="og"? "grp" : ""), style:"cursor:pointer", "data-sort":"own", onclick:()=>{ _lgRebSort=_lgRebSort.k===k? { k:k, d:-_lgRebSort.d } : { k:k, d:1 }; _lgRerender(); }},
       K[k].lab+(k===sk? (_lgRebSort.d>0? " ▼" : " ▲") : "")))));
   list.forEach((r,i)=>{
     /* one line a club, its numbers only */
@@ -26743,88 +26743,124 @@ function _lgEmbed(teamId, panels, cls){
 
    The tables that already sort themselves - the league view and the post game - are left
    alone, and so is anything marked .no-sort, where the written order IS the content. */
-const SORT_PIN=/^(total|totals|team|all|sum|overall|league)\b/i;
-function _sortValue(txt){
-  const t=String(txt==null? "" : txt).trim();
-  if(!t || t==="\u2014" || t==="-" || t==="\u2013") return null;
-  const m=t.replace(/,/g,".").match(/-?\d+(\.\d+)?/);
+/* ONE CLICK, ONE CHANGE (Oriol, 29/10/2026: "a veces el primer click no funciona y hay que
+   hacer varios"). Three things made a heading look dead:
+   - most tables are written already in the order of their first column of numbers, so the
+     first click sorted them high to low again and nothing moved; a first click now always
+     moves something - when the order asked for is the one on the screen, it takes the other;
+   - a third click put the table back the way it was written, which often looked like the
+     first: a click now flips the order, every time;
+   - a table built row by row has no thead and no tbody, and the sorter only knew tables that
+     had them: the league's panels inside the reports (standings, fixtures, pace, rebounding,
+     availability) never sorted at all. The headings are now the rows of headings at the top
+     of any table, a cell that spans several columns is read in the column it stands in, and
+     the rows are put back where they live.
+   Left alone: a heading with a sort of its own (.srt, .sortable, data-sort="own"), the post
+   game's tables (stats.js sorts them), anything .no-sort, and a table being written in. */
+const SORT_PIN=/^(total|totals|team|all|sum|overall|league|week|season|every|average|avg)\b/i;
+const SORT_PIN_CLS=/\b(tot|tr-tot|sx-totrow|reb-ssn|total)\b/;
+const SORT_DOW=/^(mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?\s+/i;
+function _sortValue(txt, dateCol){
+  const t=String(txt==null? "" : txt).replace(/−/g,"-").replace(/\s+/g," ").trim();
+  if(!t || /^[—–-]$/.test(t) || /^no data$/i.test(t)) return null;
+  let m=t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return +(m[1]+m[2]+m[3]);
+  /* a day: "Tue 20/10" always, a bare 20/10 only under a heading that says it is a date -
+     elsewhere 5/12 is made over attempted. The season runs from summer, so October comes
+     before January when the year is not written. */
+  if(SORT_DOW.test(t) || dateCol){
+    m=t.replace(SORT_DOW,"").match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+    if(m){ const d=+m[1], mo=+m[2]; let y=m[3]? +m[3] : 0; if(y && y<100) y+=2000;
+      return y? y*10000+mo*100+d : (mo>=7? mo : mo+12)*100+d; }
+  }
+  m=t.replace(/,/g,".").match(/-?\d+(\.\d+)?/);
   if(m && /^[^A-Za-z]*-?[\d.]/.test(t)) return parseFloat(m[0]);
   return t.toLowerCase();
 }
-function _sortTable(tbl, ci, headRow){
-  const tb=tbl.tBodies && tbl.tBodies[0];
-  if(!tb) return;
-  /* rows of headings written inside the body stay where they are, at the top */
-  const isHead=r=>r.cells.length && [].every.call(r.cells, c=>c.tagName==="TH");
-  const all=[].slice.call(tb.rows).filter(r=>!isHead(r));
-  /* A row that spans the whole table is a heading inside the table - the playbook's
-     "BLOB · 3 sets · 12 calls" line, and the group rows the pre-game report writes. It is
-     not data, so it does not move, and the rows under it are sorted among themselves:
-     sorting across one would carry a BLOB set up into the half-court block, which is a
-     table that lies. Before this, those rows were swept to the bottom as unsortable and
-     the groups they named were left behind. */
-  const isBand=r=>(r.cells.length===1 && (r.cells[0].colSpan||1)>1) || r.classList.contains("tr-bandrow");
-  const sortable=all.filter(r=>!isBand(r) && r.cells.length>ci
-    && !SORT_PIN.test(r.cells[0]? r.cells[0].textContent : ""));
-  if(sortable.length<3) return;
-  if(!tbl._sortOrig) tbl._sortOrig=all.slice();
-  const first=(ci===0)? 1 : -1;
-  const st=tbl._sortState||{col:-1,dir:0};
-  if(st.col!==ci){ st.col=ci; st.dir=first; }
-  else if(st.dir===first){ st.dir=-first; }
-  else { st.col=-1; st.dir=0; }
-  tbl._sortState=st;
-  const heads=headRow? [].slice.call(headRow.children) : [].slice.call(tbl.querySelectorAll("thead th, thead td"));
-  heads.forEach(h2=>h2.classList.remove("sort-up","sort-down"));
-  if(st.dir===0){ tbl._sortOrig.forEach(r=>tb.appendChild(r)); return; }
-  if(heads[ci]) heads[ci].classList.add(st.dir>0? "sort-up" : "sort-down");
-  /* the table split at its headings: each block is sorted on its own and put back in the
-     order the headings were written in */
+/* the rows of headings: the thead, or the rows at the top made of heading cells */
+function _sortHeadRows(tbl){
+  if(tbl.tHead && tbl.tHead.rows.length) return [].slice.call(tbl.tHead.rows);
+  const out=[];
+  for(const r of tbl.rows){
+    const cells=[].slice.call(r.cells);
+    if(cells.length && cells.some(c=>c.tagName==="TH") && cells.every(c=>c.tagName==="TH" || !c.textContent.trim())){ out.push(r); continue; }
+    break;
+  }
+  return out;
+}
+/* the column each heading stands in, counting the cells before it that span several */
+function _sortGrid(rows){
+  const occ=[], pos=new Map();
+  rows.forEach((r,ri)=>{ occ[ri]=occ[ri]||[]; let c=0;
+    [].forEach.call(r.cells, cell=>{ while(occ[ri][c]) c++; pos.set(cell, c);
+      const cs=cell.colSpan||1, rs=Math.max(1, cell.rowSpan||1);
+      for(let a=0;a<rs;a++){ const row=occ[ri+a]=occ[ri+a]||[]; for(let b=0;b<cs;b++) row[c+b]=1; }
+      c+=cs; }); });
+  return pos;
+}
+function _sortCell(row, col){ let c=0;
+  for(const x of row.cells){ const s=x.colSpan||1; if(col<c+s) return s===1? x : null; c+=s; }
+  return null; }
+function _sortTable(tbl, th){
+  const heads=_sortHeadRows(tbl);
+  if(heads.indexOf(th.parentElement)<0 || (th.colSpan||1)>1) return;
+  const col=_sortGrid(heads).get(th);
+  if(col==null) return;
+  const hs=new Set(heads);
+  const rows=[].slice.call(tbl.rows).filter(r=>!hs.has(r) && r.parentElement && r.parentElement.tagName!=="TFOOT");
+  /* a table being written in keeps the order it is written in */
+  if(rows.some(r=>r.querySelector("input,select,textarea,[contenteditable='true'],[draggable='true']"))) return;
+  const isBand=r=>(r.cells.length===1 && (r.cells[0].colSpan||1)>1) || /\b(tr-bandrow|tr-gaprow)\b/.test(r.className);
+  /* a total or a reference line (Team, League, Week, Season…) is read off its first cell with
+     something in it: some tables start every row with an empty cell for a mark or a face */
+  const label=r=>{ for(const c of r.cells){ const x=c.textContent.trim(); if(x) return x; } return ""; };
+  const isPin=r=>SORT_PIN.test(label(r)) || SORT_PIN_CLS.test(r.className) || !_sortCell(r, col);
+  const dateCol=/\b(date|day|when|training|session)\b/i.test(th.textContent||"");
+  const keyOf=r=>{ const c=_sortCell(r, col); return c? _sortValue(c.textContent, dateCol) : null; };
+  const data=rows.filter(r=>!isBand(r) && !isPin(r));
+  if(data.length<2) return;
+  const numeric=data.filter(r=>typeof keyOf(r)==="number").length*2>=data.length;
+  /* a table split by heading rows is sorted inside each block; a total stays where it was,
+     above the rows or under them */
   const blocks=[]; let cur=null;
-  all.forEach(r=>{
-    if(isBand(r)){ blocks.push({band:r, rows:[]}); cur=blocks[blocks.length-1]; return; }
-    if(!cur){ blocks.push({band:null, rows:[]}); cur=blocks[blocks.length-1]; }
-    cur.rows.push(r);
-  });
-  const order=rows=>{
-    const data=rows.filter(r=>r.cells.length>ci
-      && !SORT_PIN.test(r.cells[0]? r.cells[0].textContent : ""));
-    const pinned=rows.filter(r=>data.indexOf(r)<0);
-    const keyed=data.map((r,i)=>({ r:r, i:i, k:_sortValue(r.cells[ci].textContent) }));
-    keyed.sort((a,b)=>{
-      if(a.k===null && b.k===null) return a.i-b.i;
-      if(a.k===null) return 1;
-      if(b.k===null) return -1;
-      const na=typeof a.k==="number", nb=typeof b.k==="number";
-      if(na&&nb) return (a.k-b.k)*st.dir || a.i-b.i;
-      if(na!==nb) return na? -1 : 1;
-      return String(a.k).localeCompare(String(b.k))*st.dir || a.i-b.i;
-    });
-    return keyed.map(x=>x.r).concat(pinned);
-  };
-  blocks.forEach(bl=>{
-    if(bl.band) tb.appendChild(bl.band);
-    order(bl.rows).forEach(r=>tb.appendChild(r));
-  });
+  rows.forEach(r=>{ if(isBand(r)){ cur={ band:r, rows:[] }; blocks.push(cur); return; }
+    if(!cur){ cur={ band:null, rows:[] }; blocks.push(cur); } cur.rows.push(r); });
+  const arrange=dir=>{ const out=[];
+    blocks.forEach(bl=>{ if(bl.band) out.push(bl.band);
+      const top=[], body=[], bottom=[]; let seen=false;
+      bl.rows.forEach(r=>{ if(isPin(r)) (seen? bottom : top).push(r); else { seen=true; body.push(r); } });
+      const keyed=body.map((r,i)=>({ r:r, i:i, k:keyOf(r) }));
+      keyed.sort((a,b)=>{
+        if(a.k===null && b.k===null) return a.i-b.i;
+        if(a.k===null) return 1;
+        if(b.k===null) return -1;
+        const na=typeof a.k==="number", nb=typeof b.k==="number";
+        if(na && nb) return (a.k-b.k)*dir || a.i-b.i;
+        if(na!==nb) return na? -1 : 1;
+        return String(a.k).localeCompare(String(b.k))*dir || a.i-b.i;
+      });
+      top.concat(keyed.map(x=>x.r), bottom).forEach(r=>out.push(r)); });
+    return out; };
+  const st=tbl._sortState||{ col:-1, dir:0 };
+  /* numbers high to low first and words A to Z - unless that is the order already showing */
+  let dir=(st.col===col)? -st.dir : (numeric? -1 : 1);
+  let next=arrange(dir);
+  if(st.col!==col && next.every((r,i)=>r===rows[i])){ dir=-dir; next=arrange(dir); }
+  tbl._sortState={ col:col, dir:dir };
+  heads.forEach(r=>[].forEach.call(r.cells, c=>c.classList.remove("sort-up","sort-down")));
+  th.classList.add(dir>0? "sort-up" : "sort-down");
+  next.forEach(r=>r.parentNode.appendChild(r));
 }
 document.addEventListener("click", e=>{
-  /* a heading in a thead, or a row of headings at the top of a table that has no thead -
-     the league's panels inside the reports are written that way */
-  const th=e.target.closest? e.target.closest("thead th, thead td, tr.lg-tbl-h th, tbody tr:first-child > th") : null;
+  const th=e.target.closest? e.target.closest("th, thead td") : null;
   if(!th) return;
   const tbl=th.closest("table");
   if(!tbl) return;
-  /* the tables that sort themselves: the post game's, and a league heading that has its
-     own sort (the roster's .srt columns) */
-  if(tbl.classList.contains("sx-table") || th.classList.contains("srt")
-     || tbl.classList.contains("no-sort") || tbl.closest(".no-sort")) return;
-  if(tbl.classList.contains("lg-tbl") && !tbl.closest("#viewOppScout, #viewTeamScout, #viewGamePlan")) return;
-  if(e.target.closest("button,input,select,a,[contenteditable='true']")) return;
-  const tr=th.parentElement;
-  if(tr.cells && [].some.call(tr.cells, c=>(c.colSpan||1)>1)) return;   /* a group row over the headings */
-  const ci=[].slice.call(tr.children).indexOf(th);
-  if(ci<0) return;
-  try{ _sortTable(tbl, ci, tr); }catch(err){_quiet(err)}
+  /* the tables and headings that sort themselves */
+  if(tbl.classList.contains("sx-table") || tbl.classList.contains("no-sort") || tbl.closest(".no-sort")) return;
+  if(th.classList.contains("srt") || th.classList.contains("sortable") || th.dataset.sort==="own") return;
+  if(e.target.closest("button,input,select,textarea,a,label,[contenteditable='true'],[data-sort='own']")) return;
+  try{ _sortTable(tbl, th); }catch(err){_quiet(err)}
 }, true);
 function _lgFold(L, key, label, build){
   /* Opening a fold used to redraw everything, which threw the page back to the top - and
@@ -29720,7 +29756,7 @@ function renderProB(root){
       ["ts","TS%",p=>ts(p)||-1],["p3","3P",p=>p.tot&&p.tot.p3a? p.tot.p3m/p.tot.p3a : -1],["ft","FT",p=>p.tot&&p.tot.fta? p.tot.ftm/p.tot.fta : -1],["eff","EFF",p=>p.avg? p.avg.eff : -1]];
     const t=h("table",{class:"lg-tbl pb-ro"});
     const hr=h("tr",{class:"lg-tbl-h"});
-    cols.forEach(c=>hr.appendChild(h("th",{class:(c[0]==="name"? "l " : "")+(_pbSort.k===c[0]? "on" : ""), style:"cursor:pointer",
+    cols.forEach(c=>hr.appendChild(h("th",{class:(c[0]==="name"? "l " : "")+(_pbSort.k===c[0]? "on" : ""), style:"cursor:pointer", "data-sort":"own",
       onclick:()=>{ _pbSort=_pbSort.k===c[0]? {k:c[0], d:-_pbSort.d} : {k:c[0], d:(c[0]==="name"||c[0]==="num"||c[0]==="pos")? 1 : -1}; _pbRedraw(); }},
       c[1]+(_pbSort.k===c[0]? (_pbSort.d>0? " ▲" : " ▼") : ""))));
     t.appendChild(hr);
@@ -36547,9 +36583,10 @@ td.trg-man{display:table-cell}
 .pc-roles .pc-role:empty::before{content:attr(data-ph);color:var(--muted);font-style:italic}
 @media (max-width:1100px){ .pc-grid{grid-template-columns:repeat(2,1fr)} }
 @media print{ .pc-x,.pc-add,.pc-addi{display:none!important} .pc-grid{grid-template-columns:repeat(5,1fr)} }
-thead th.sort-up::after{content:"\u25b2";font-size:7px;margin-left:3px;opacity:.75}
-thead th.sort-down::after{content:"\u25bc";font-size:7px;margin-left:3px;opacity:.75}
+th.sort-up::after{content:"\u25b2";font-size:7px;margin-left:3px;opacity:.75}
+th.sort-down::after{content:"\u25bc";font-size:7px;margin-left:3px;opacity:.75}
 .sxp thead th,.pbx thead th{cursor:pointer}
+table:not(.no-sort) thead th:not([colspan]),table:not(.no-sort) tr.lg-tbl-h > th:not([colspan]){cursor:pointer}
 .lg-fold{overflow-anchor:none}
 /* Blocks, not bands - and a block is as wide as what is inside it. The columns are set
    by measurement in _fitGrid, never by a guess in a media query: a box that cannot hold
