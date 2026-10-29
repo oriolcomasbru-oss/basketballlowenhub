@@ -21462,8 +21462,13 @@ function _postLeagueGame(sg, list){
    the second chances, the quarters, who took them - exteriors and interiors, ours and
    theirs - which miss they came from, and each of ours with the team's rebounding around him */
 function _postRebounds(sg){
-  const box=h("div",{class:"reb"});
-  if(!sg || !sg.date) return box;
+  const outer=h("div",{class:"reb"}), box=h("div",{});
+  if(!sg || !sg.date) return outer;
+  /* THE GAME AND THE TRAINING WEEK APART (Oriol, 29/10/2026): the game's rebounding from the
+     league's play by play, and under it the trainings before the game, from our tagging */
+  outer.appendChild(h("div",{class:"reb-part"}, h("b",{},"The game"), h("span",{},"from the league's play by play")));
+  outer.appendChild(box);
+  outer.appendChild(_postRebTrain(sg));
   box.appendChild(h("div",{class:"ld"},"Reading the play by play of this game…", h("span",{class:"ld-bar"})));
   (async ()=>{
     const L=leagueState();
@@ -21523,6 +21528,77 @@ function _postRebounds(sg){
     box.appendChild(h("div",{class:"reb-card"}, h("h5",{},"Ours on the floor · the team's rebounding with each of them on and off"), _rebPlayersTable(R.pl, names, grpU, _rebTot(R))));
     box.appendChild(h("div",{class:"gpo-note"},"From the league's play by play. OREB% = our offensive rebounds of our misses; DREB% = our defensive rebounds of theirs. A team rebound counts for the team and for no player. Green or red: 4 points better or worse than our season. Positions: the league's roster, the staff's where it differs (Thiers a 5). A name with a dot played under 20 minutes."));
   }).catch(e=>{ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"},"The rebounds could not be read: "+((e&&e.message)||e))); });
+  return outer;
+}
+/* THE TRAINING WEEK'S REBOUNDING (the video staff's measure, 29/10/2026). The trainings after
+   the game before this one, up to its day, from our tagging: each with its missed shots and
+   who got the ball back, the week and the season added up, the categories, and the rows the
+   count left out with their minute. Both fives are ours, so DREB% and OREB% add up to a
+   hundred; DREB% is the one read, against the season's. The count itself is stats.js's
+   (rebPractice), the same one the Trends chart draws. */
+function _postRebTrain(sg){
+  const box=h("div",{class:"reb-tw"});
+  box.appendChild(h("div",{class:"reb-part"}, h("b",{},"The training week"), h("span",{},"from our tagging of the trainings")));
+  const PS=window.LowenPostStats;
+  if(!PS || !PS.trainingRebounds){ box.appendChild(h("div",{class:"lg-empty"},"The tagging reader is not loaded yet - open the tab again in a moment.")); return box; }
+  const body=h("div",{}, h("div",{class:"ld"},"Reading the trainings' tagging…", h("span",{class:"ld-bar"})));
+  box.appendChild(body);
+  /* the game before is ours: the calendar also holds the ProB's and the NBBL's */
+  const before=((state && state.games)||[]).filter(x=>x && x.date && x.date<sg.date && !/^(ProB|NBBL)$/i.test(String(x.competition||""))).sort((a,b)=>a.date<b.date? -1 : a.date>b.date? 1 : 0).pop()||null;
+  const from=before? before.date : addDays(sg.date, -7);
+  const y=+sg.date.slice(0,4), m=+sg.date.slice(5,7), s0=(m>=8? y : y-1)+"-08-01";
+  PS.trainingRebounds().then(all=>{
+    body.innerHTML="";
+    const season=all.filter(x=>x.d>=s0 && x.d<=sg.date), week=season.filter(x=>x.d>from);
+    const W=PS.reboundsAdd(week), S=PS.reboundsAdd(season);
+    const sh=(a,b)=>b? 100*a/b : null, pc=v=>v==null? "no data" : v.toFixed(1)+"%";
+    const sD=sh(S.dreb,S.miss);
+    /* one rule for the whole hub: a colour from five missed shots and five points of difference */
+    const tone=(v, ref, n)=>(v==null || ref==null || n<5 || Math.abs(v-ref)<5)? "" : (v>ref? "up" : "dn");
+    const clk=a=>{ a=Math.max(0, Math.round(a||0)); return Math.floor(a/60)+":"+String(a%60).padStart(2,"0"); };
+    const span=week.length? _dashFmt(week[0].d)+(week.length>1? " → "+_dashFmt(week[week.length-1].d) : "") : "";
+    body.appendChild(h("div",{class:"reb-sub"},
+      (before? "After "+_gTidy(before.opponent)+" ("+_dashFmt(before.date)+") up to this game" : "The seven days before this game")+
+      (span? " · "+span : "")+" · "+week.length+" training"+(week.length===1? "" : "s")));
+    if(!week.length){ body.appendChild(h("div",{class:"lg-empty"},"No training tagged in that week. Season: DREB% "+pc(sD)+" over "+S.miss+" missed shots.")); return; }
+    const fig=(lab, v, sub, t)=>h("div",{class:"reb-fig"}, h("i",{}, lab), h("b",{class:t||""}, v), h("span",{}, sub));
+    const wD=sh(W.dreb,W.miss);
+    body.appendChild(h("div",{class:"reb-figs"},
+      fig("DREB%", pc(wD), "the defending five · season "+pc(sD), tone(wD, sD, W.miss)),
+      fig("OREB%", pc(sh(W.oreb,W.miss)), "the attacking five · season "+pc(sh(S.oreb,S.miss))),
+      fig("Missed shots", String(W.miss), W.oreb+" OREB · "+W.dreb+" DREB")));
+    const grid=h("div",{class:"reb-grid"});
+    const head=first=>h("tr",{}, h("th",{class:"l"},first), h("th",{},"Missed"), h("th",{},"OREB"), h("th",{},"DREB"), h("th",{},"OREB%"), h("th",{},"DREB%"));
+    /* each training, the week, the season */
+    { const t=h("table",{class:"lg-tbl reb-t"}, head("Training"));
+      const row=(lab, r, cls, t2)=>{ const d=sh(r.dreb,r.miss);
+        t.appendChild(h("tr",{class:cls||""}, h("td",{class:"l"}, lab), h("td",{}, String(r.miss)), h("td",{}, String(r.oreb)), h("td",{}, String(r.dreb)),
+          h("td",{}, pc(sh(r.oreb,r.miss))), h("td",{class:t2||""}, pc(d)))); };
+      /* a training whose count left OREB rows out has no colour: its DREB% is high by those */
+      week.forEach(x=>row(_dashFmt(x.d), x.reb, "", x.reb.warn.length? "" : tone(sh(x.reb.dreb,x.reb.miss), sD, x.reb.miss)));
+      row("Week", W, "tot", tone(wD, sD, W.miss));
+      row("Season · "+S.n+" trainings", S, "reb-ssn");
+      grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"By training"), t)); }
+    /* the categories of the week, each against its own season */
+    { const t=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},"Category"), h("th",{},"Missed"), h("th",{},"OREB"), h("th",{},"DREB"), h("th",{},"OREB%"), h("th",{},"DREB%"), h("th",{class:"grp", title:"the same category, the whole season"},"Season DREB%")));
+      PS.reboundCats(W).forEach(k=>{ const c=W.cat[k], z=S.cat[k]||{ miss:0, oreb:0, dreb:0 }, d=sh(c.dreb,c.miss), ds=sh(z.dreb,z.miss);
+        t.appendChild(h("tr",{}, h("td",{class:"l"}, k), h("td",{}, String(c.miss)), h("td",{}, String(c.oreb)), h("td",{}, String(c.dreb)),
+          h("td",{}, pc(sh(c.oreb,c.miss))), h("td",{class:tone(d, ds, c.miss)}, pc(d)), h("td",{class:"grp mu"}, pc(ds)))); });
+      grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"By category · the week"), h("div",{class:"pb-scroll"}, t))); }
+    body.appendChild(grid);
+    /* the rows the count left out: OREB on a row that does not end in a missed shot */
+    if(W.warn.length){
+      const t=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},"Training"), h("th",{},"Minute"), h("th",{class:"l"},"Category"), h("th",{class:"l"},"Descriptors")));
+      W.warn.forEach(w=>t.appendChild(h("tr",{}, h("td",{class:"l"}, _dashFmt(w.d)), h("td",{}, clk(w.a)), h("td",{class:"l"}, w.cat), h("td",{class:"l reb-desc"}, w.tags||"(none)"))));
+      body.appendChild(h("div",{class:"reb-card reb-warn"}, h("h5",{}, W.warn.length+(W.warn.length===1? " row" : " rows")+" with OREB not counted · the row does not end in a missed shot"), h("div",{class:"pb-scroll"}, t)));
+    }
+    body.appendChild(h("div",{class:"gpo-note"},
+      "From our tagging of the trainings. A missed shot is a row that ends in M2, ML2 or M3; made shots, turnovers, fouls drawn and out of bounds are left out of both sides. "+
+      "OREB = a miss whose row carries OREB; every other miss is a defensive rebound, so an OREB that was not tagged counts as defensive. Every category counts, SECOND CHANCE included. "+
+      "Green or red: five points or more off the season, on five missed shots or more and no OREB left out. "+
+      (W.bad.length? "OREB + DREB does not come to the missed shots in "+W.bad.join(", ")+"." : "OREB + DREB = missed shots in every training of the week.")+
+      (S.warn.length>W.warn.length? " Season: "+S.warn.length+" rows with OREB not counted, listed in Trends." : "")));
+  }).catch(e=>{ body.innerHTML=""; body.appendChild(h("div",{class:"lg-empty"},"The trainings' tagging could not be read: "+((e&&e.message)||e))); });
   return box;
 }
 /* THE GAME MINUTE BY MINUTE, QUARTER BY QUARTER. OER, DER and the offensive rebounding come
@@ -38275,6 +38351,15 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .tpt-chip:hover{border-color:var(--ink,#141821);color:var(--ink,#141821)}
 .tpt-chip.on{background:var(--ink,#141821);border-color:var(--ink,#141821);color:var(--panel,#fff)}
 /* rebounding: post game, trends, league, pre game */
+/* the post game's Rebounds: the game, then the training week */
+.reb-part{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin:2px 0 10px;padding-bottom:5px;border-bottom:2px solid var(--ink,#141821)}
+.reb-part b{font:700 13px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink,#141821)}
+.reb-part span{font-size:11.5px;color:var(--ink-soft,#5b6472)}
+.reb-tw{margin-top:22px}
+.reb-sub{font-size:12px;color:var(--ink-soft,#5b6472);margin:-4px 0 10px}
+.reb-t tr.reb-ssn td{color:var(--ink-soft,#5b6472);font-weight:700}
+.reb-t td.l.reb-desc{white-space:normal;font:500 11.5px 'Inter',sans-serif;min-width:220px}
+.reb-warn{margin-bottom:12px}
 .reb-figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:12px}
 .reb-fig{border:1px solid var(--line,#e6e8ec);border-radius:10px;padding:10px 12px;background:var(--panel,#fff);display:flex;flex-direction:column;gap:2px}
 .reb-fig i{font:700 11px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;font-style:normal;color:var(--ink-soft,#5b6472)}

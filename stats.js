@@ -729,6 +729,34 @@
     return o;
   }
 
+  /* REBOUNDING IN A TRAINING (the video staff's definition, 29/10/2026).
+     Every row ends in one final: its last end event. OREB is written after the miss it
+     follows, so it is not one. A missed shot is a row whose final is M2, ML2 or M3; made
+     shots, turnovers, fouls drawn and out of bounds are left out of both sides of the
+     division. OREB = a miss whose row carries OREB; DREB = every other miss, so an OREB
+     that was not tagged counts as defensive. Every category counts, SECOND CHANCE
+     included. A row with OREB that does not end in a miss is not counted and is listed,
+     with its minute, and DREB is counted on its own so OREB + DREB = misses is checked
+     rather than assumed. */
+  var REB_END = ["M2", "ML2", "M3", "C1", "C2", "C3", "CL2", "CL3", "Turnover", "Foul Drawn", "Out of bounds"];
+  var REB_MISS = ["M2", "ML2", "M3"];
+  function rebPractice(rows) {
+    var o = { miss: 0, oreb: 0, dreb: 0, cat: {}, warn: [] };
+    rows.forEach(function (r) {
+      var t = r.tags || [], fin = null;
+      for (var i = t.length - 1; i >= 0; i--) if (REB_END.indexOf(t[i]) >= 0) { fin = t[i]; break; }
+      var ore = has(t, "OREB") || has(t, "Offensive Rebound");
+      if (REB_MISS.indexOf(fin) < 0) {
+        if (ore) o.warn.push({ a: r.a, cat: r.cat, fin: fin || "", tags: t.join(" - ") });
+        return;
+      }
+      var c = o.cat[r.cat] || (o.cat[r.cat] = { miss: 0, oreb: 0, dreb: 0 });
+      o.miss++; c.miss++;
+      if (ore) { o.oreb++; c.oreb++; } else { o.dreb++; c.dreb++; }
+    });
+    return o;
+  }
+
   function buildPractice(rows) {
     /* A practice file can carry defensive clips too — in the 5x5 stretch both ends get
        tagged. They were being folded into the offensive possessions, which inflated the
@@ -766,7 +794,7 @@
     if (anyPhase) poss.forEach(function (q) { if (!q.phase) q.phase = q.oreb > 0 ? "Offensive rebound" : "Half court"; });
     /* on the raw rows, not on the merged possessions: a SECOND CHANCE row folds
        into the one before it, and the merged tags would then hold two misses */
-    return { poss: poss, kind: "practice", oreb: orebSplit(offRows),
+    return { poss: poss, kind: "practice", oreb: orebSplit(offRows), reb: rebPractice(offRows),
              trans: buildTransPractice(rows), defN: defN,
              /* the defensive clips of the 5x5, chained into possessions, and what they gave up */
              dposs: chainDef(rows), oppPts: rows.filter(function (r) { return r.def; }).reduce(function (s, r) { return s + points(r.tags); }, 0) };
@@ -2797,7 +2825,7 @@
             '<span class="tl-tn">' + s.name + '</span><span class="tl-tv">' +
             (isFinite(v) ? (s.fmt ? s.fmt(v) : Math.round(v)) : "—") +
             /* what the figure stands on, and a word when that is not enough to read */
-            (s.n ? ' <i style="opacity:.6;font-style:normal">· ' + (s.n(p.s) || 0) + " poss" + (thinAt(s, p) ? ", too few" : "") + "</i>" : "") +
+            (s.n ? ' <i style="opacity:.6;font-style:normal">· ' + (s.n(p.s) || 0) + " " + (s.unit || "poss") + (thinAt(s, p) ? ", too few" : "") + "</i>" : "") +
             "</span></div>";
         }).join("");
         if (UND) {
@@ -3526,6 +3554,92 @@
     return { tag: tAll ? tPts / tAll : NaN, back: bAll ? bPts / bAll : NaN, pts: pts };
   }
 
+  /* ---- REB · the rebounding of the trainings ---------------------------- */
+  /*  The video staff's measure (29/10/2026). Of the shots missed in a training, the share the
+      defending five got back - DREB% - and the share the attacking five did - OREB%; both
+      fives are ours, so the two add up to a hundred. Trainings only: a game's rebounds are
+      the league's play by play, in the post game's Rebounds. Each training is a point, and
+      every figure over several is the misses added up, never an average of days.          */
+  function rebShare(a, b) { return b ? 100 * a / b : NaN; }
+  var pct1f = function (v) { return (v == null || !isFinite(v)) ? "no data" : v.toFixed(1) + "%"; };
+  var REB_CAT_ORDER = ["0 BALL REVERSAL", "1 BALL REVERSAL", "2 BALL REVERSAL", "3 BALL REVERSAL", "FASTBERAK", "SECOND CHANCE"];
+  /* several trainings added up: [{ d, reb }] -> the same shape, the listed rows carrying their day */
+  function rebAdd(list) {
+    var t = { miss: 0, oreb: 0, dreb: 0, cat: {}, warn: [], bad: [], n: 0 };
+    (list || []).forEach(function (x) {
+      var r = x && x.reb; if (!r) return;
+      t.n++; t.miss += r.miss; t.oreb += r.oreb; t.dreb += r.dreb;
+      if (r.oreb + r.dreb !== r.miss) t.bad.push(x.d);
+      Object.keys(r.cat).forEach(function (k) {
+        var c = t.cat[k] || (t.cat[k] = { miss: 0, oreb: 0, dreb: 0 });
+        c.miss += r.cat[k].miss; c.oreb += r.cat[k].oreb; c.dreb += r.cat[k].dreb; });
+      r.warn.forEach(function (w) { t.warn.push({ d: x.d, a: w.a, cat: w.cat, fin: w.fin, tags: w.tags }); });
+    });
+    return t;
+  }
+  /* the categories in the tagging window's order, anything else after them */
+  function rebCats(t) {
+    var ks = Object.keys((t && t.cat) || {});
+    return REB_CAT_ORDER.filter(function (k) { return ks.indexOf(k) >= 0; })
+      .concat(ks.filter(function (k) { return REB_CAT_ORDER.indexOf(k) < 0; }).sort());
+  }
+  function rebClock(a) { a = Math.max(0, Math.round(a || 0)); var s = a % 60; return Math.floor(a / 60) + ":" + (s < 10 ? "0" : "") + s; }
+  function trRebounds(root, sessions) {
+    var sec = trSection(root, "REB", "Rebounding — every training",
+      "Of the shots missed in a training, the share the defending five got back (DREB%) and the share " +
+      "the attacking five did (OREB%). A missed shot is a row that ends in M2, ML2 or M3; made shots, " +
+      "turnovers, fouls drawn and out of bounds are left out of both sides of the division. A miss with " +
+      "OREB on its row is an offensive rebound and every other miss a defensive one, so an OREB that was " +
+      "not tagged counts as defensive. Every category counts, SECOND CHANCE included.");
+    var list = sessions.filter(function (x) { return x.kind === "practice" && x.m && x.m.reb; })
+      .map(function (x) { return { d: x.d, reb: x.m.reb }; });
+    var S = rebAdd(list);
+    if (!S.miss) { sec.appendChild(el("div", "sx-empty", "No missed shot tagged in a training yet.")); return null; }
+    var pts = list.map(function (x) { var r = x.reb;
+      return { d: x.d, kind: "practice", label: x.d,
+        s: { miss: r.miss, oreb: r.oreb, dreb: r.dreb, o: rebShare(r.oreb, r.miss), dr: rebShare(r.dreb, r.miss), loose: r.warn.length } }; });
+    var sD = rebShare(S.dreb, S.miss);
+    /* one rule for the whole hub: a colour from five missed shots and five points of difference.
+       A training whose count left OREB rows out has no colour: its DREB% is high by those */
+    var vs = function (r) {
+      var v = rebShare(r.dreb, r.miss);
+      if (!isFinite(v)) return { v: "—", cls: "tr-none" };
+      var d = v - sD, txt = (d >= 0 ? "+" : "−") + Math.abs(d).toFixed(1);
+      if (r.miss < 5 || r.warn.length || Math.abs(d) < 5) return { v: txt, cls: (r.miss < 5 || r.warn.length) ? "tr-none" : "" };
+      return { v: txt, cls: d > 0 ? "tr-good" : "tr-warn" };
+    };
+    var line = function (lab, r, tot) {
+      return { cls: tot ? "tr-tot" : "", cells: [lab, r.miss, r.oreb, r.dreb,
+        pct1f(rebShare(r.oreb, r.miss)), pct1f(rebShare(r.dreb, r.miss)), tot ? "" : vs(r),
+        r.warn.length || ""] };
+    };
+    sec.appendChild(trTable(["Training", "Missed", "OREB", "DREB", "OREB%", "DREB%", "DREB% vs trainings", "OREB not counted"],
+      list.map(function (x) { return line(x.d, x.reb, false); })
+        .concat([line("Every training · " + S.n, S, true)]), { sort: false }));
+    sec.appendChild(el("div", "sx-sub fit-span" + (S.bad.length ? " tr-warnline" : ""), S.bad.length
+      ? "OREB + DREB does not come to the missed shots in " + S.bad.join(", ") + "."
+      : "OREB + DREB = missed shots in every training. Green or red: five points or more off the trainings' DREB%, on five missed shots or more and no OREB left out."));
+    /* by category, the whole season */
+    sec.appendChild(trTable(["Category", "Missed", "OREB", "DREB", "OREB%", "DREB%"],
+      rebCats(S).map(function (k) { var c = S.cat[k];
+        return [k, c.miss, c.oreb, c.dreb, pct1f(rebShare(c.oreb, c.miss)), pct1f(rebShare(c.dreb, c.miss))]; }), { sort: false }));
+    /* the rows the count left out, by day and minute */
+    if (S.warn.length) {
+      var wb = el("div", "sx-sub fit-span tr-warnline");
+      var det = document.createElement("details");
+      var sm = document.createElement("summary");
+      sm.textContent = S.warn.length + (S.warn.length === 1 ? " row carries" : " rows carry") +
+        " OREB but does not end in a missed shot, so it is not counted. Show which";
+      det.appendChild(sm);
+      var ul = el("div", "tr-datelist");
+      S.warn.forEach(function (w) {
+        ul.appendChild(el("div", null, w.d + "  ·  " + rebClock(w.a) + "  ·  " + w.cat + "  ·  " + (w.tags || "(no descriptors)")));
+      });
+      det.appendChild(ul); wb.appendChild(det); sec.appendChild(wb);
+    }
+    return { pts: pts, season: S };
+  }
+
   /* ---- 04 · where the possessions come from ---------------------------- */
   /*  Thirty-odd sets is a table, not a picture: a line each would be unreadable and would
       say nothing, because most of them are run three times. The thing that CAN be drawn is
@@ -4099,6 +4213,7 @@
       pts, "br", { target: false, what: "Reversal" });
 
     var tb = trTagBack(stage, live);
+    var rb = trRebounds(stage, live);
     var phases = trPhases(stage, games);
     var sets4 = trSets(setsHost, games);
     /* the same games and sets, handed to the page: the season dashboard and the league's
@@ -4376,6 +4491,26 @@
           { name: "BACK: after our shot at the rim or a turnover", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2,
             n: function (s) { return s.backN; }, roll: function (s) { return [s.backP, s.backN]; } } ], tOpt)));
     }
+    /* THE TRAININGS' REBOUNDING, under the transition defence (Oriol, 29/10/2026): DREB% and
+       OREB% of the shots missed in each training - the two add up to a hundred, both fives
+       being ours - with the trainings' DREB% as the line across */
+    if (rb && rb.pts.length) {
+      var RS = rb.season, rsD = rebShare(RS.dreb, RS.miss), rsO = rebShare(RS.oreb, RS.miss), rLast = null;
+      for (var ri = rb.pts.length - 1; ri >= 0; ri--) { if (rb.pts[ri].s.miss) { rLast = rb.pts[ri].s; break; } }
+      var rKpi = [];
+      if (rLast) rKpi.push({ l: "DREB% last training", v: pct0f(rLast.dr),
+        cls: (rLast.miss >= 5 && !rLast.loose && Math.abs(rLast.dr - rsD) >= 5) ? (rLast.dr > rsD ? "good" : "bad") : "" });
+      rKpi.push({ l: "DREB% trainings", v: pct0f(rsD) });
+      rKpi.push({ l: "OREB% trainings", v: pct0f(rsO) });
+      rKpi.push({ l: "Missed shots", v: String(RS.miss) });
+      var missN = function (s) { return s.miss; };
+      dash.appendChild(tdCard("Rebounding · trainings", "of the shots missed in each training, who got the ball back · days under five missed shots left out",
+        rKpi,
+        timelineChart("", "", rb.pts, [
+          { name: "DREB%: the defending five", color: "var(--tl-2)", get: function (s) { return s.dr; }, fmt: pct0f, n: missN, unit: "missed shots" },
+          { name: "OREB%: the attacking five", color: "var(--tl-1)", get: function (s) { return s.o; }, fmt: pct0f, n: missN, unit: "missed shots" } ],
+          { max: 100, axisFmt: pct0f, height: 200, minN: 5, kinds: false, ref: { v: rsD, label: "DREB% trainings · " + pct0f(rsD) } })));
+    }
     /* where our possessions came from is in the sets table now: each phase's line */
     /* The projection is not on the dashboard. With a season of real sessions every row of
        it read "no clear trend", which is the honest answer and an empty panel: it stays
@@ -4387,8 +4522,8 @@
     var secs = [].slice.call(stage.children);
     /* THE DETAIL UNDER ITS OWN CHART, FOLDED: each panel's table and reading go under the
        chart they explain, closed; the one with no chart of its own keeps the picker below */
-    var UNDER = { "01": /^Paint touches/, "02": /^Ball reversals/, "03": /^Transition defense/ };
-    var DNAME = { "01": "Paint touches", "02": "Ball reversals", "03": "TAG / BACK" };
+    var UNDER = { "01": /^Paint touches/, "02": /^Ball reversals/, "03": /^Transition defense/, "REB": /^Rebounding/ };
+    var DNAME = { "01": "Paint touches", "02": "Ball reversals", "03": "TAG / BACK", "REB": "Rebounding" };
     secs = secs.filter(function (sec) {
       var no = (sec.querySelector(".tr-no") || {}).textContent || "", re = UNDER[no];
       if (!re) return true;
@@ -4536,6 +4671,23 @@
      the last words of it, and that is the whole name a coach needs on a chart. */
   /* every tagged game of the season as numbers, for a page that wants the trend without the
      Trends screen: the same files, the same reading, kept once per visit */
+  /* every training of the season as its rebounding, for the post game's Rebounds tab: the
+     same files and the same dates the Trends screen reads */
+  function trainingRebounds() {
+    return listFolder("practice").then(function (files) {
+      return Promise.all((files || []).map(function (f) {
+        return getRows(f.id).then(function (rows) {
+          var g = datedPractice(f, rows);
+          if (!g.d) return null;
+          return { d: g.d, name: f.name,
+                   reb: rebPractice(rows.filter(function (r) { return DEF_CATS.indexOf(r.cat) < 0; })) };
+        }, function () { return null; });
+      }));
+    }).then(function (list) {
+      return list.filter(Boolean).sort(function (a, b) {
+        return a.d < b.d ? -1 : a.d > b.d ? 1 : (String(a.name) < String(b.name) ? -1 : 1); });
+    });
+  }
   var _seasonGamesP = null;
   function seasonGames() {
     if (_seasonGamesP) return _seasonGamesP;
@@ -5104,6 +5256,8 @@
     window.LowenPostStats = { mount: mountPostTeam, dropCache: dropCache,
                               gameModel: gameModel, shotLine: shotLine, measured: measured, summarise: summarise,
                               seasonGames: seasonGames, addUp: addUp,
+                              /* the trainings' rebounding, one a session, and several added up */
+                              trainingRebounds: trainingRebounds, reboundsAdd: rebAdd, reboundCats: rebCats,
                               datesWithFiles: datesWithFiles,
                               /* the folders as files (name, created), for the video staff's deadlines */
                               files: listFolder, findGameFile: findGameFile, fileDate: fileDate,
