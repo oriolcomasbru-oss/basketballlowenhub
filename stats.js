@@ -2660,7 +2660,9 @@
       var vals = [];
       points.forEach(function (p) { series.forEach(function (s) { var v = s.get(p.s); if (isFinite(v) && !thinAt(s, p)) vals.push(v); }); });
       series.forEach(function (s) { (rollOf(s) || []).forEach(function (v) { if (isFinite(v)) vals.push(v); }); });
-      var peak = Math.max.apply(null, vals.concat(opts.ref ? [opts.ref.v] : [0]));
+      /* one line across or several - the rebounding draws the league's DREB% and its OREB% */
+      var REFS = [].concat(opts.ref || []).filter(function (r) { return r && isFinite(r.v); });
+      var peak = Math.max.apply(null, vals.concat(REFS.map(function (r) { return r.v; })).concat([0]));
       var sc = opts.max != null ? { max: opts.max, step: opts.max / 4 } : niceScale(peak * 1.08, 4);
       var max = sc.max;
       var n = points.length;
@@ -2668,7 +2670,7 @@
       var Y = function (v) { return padT + ih - (Math.max(0, Math.min(v, max)) / max) * ih; };
 
       var svg = sv("svg", { width: W, height: H, viewBox: "0 0 " + W + " " + H, class: "tl-svg", role: "img" });
-      var refLabel = null, refY = null;
+      var refYs = [], refLabs = [];
 
       /* grid — solid hairlines, one shade off the surface */
       var ticks = Math.round(max / sc.step);
@@ -2681,11 +2683,11 @@
       }
 
       /* the 70% rule, when this panel has one */
-      if (opts.ref) {
-        var ry = Y(opts.ref.v);
+      REFS.forEach(function (r) {
+        var ry = Y(r.v);
         svg.appendChild(sv("line", { x1: padL, x2: padL + iw, y1: ry, y2: ry, class: "tl-ref" }));
-        refY = ry;   /* the label itself is drawn after the series, on top of them */
-      }
+        refYs.push([ry, r.label]);   /* the label itself is drawn after the series, on top of them */
+      });
 
       /* softer bands under the main rule, the same 60 / 65 the gauge uses */
       (opts.bands || []).forEach(function (b) {
@@ -2759,11 +2761,12 @@
 
       /* the rule label goes on last so no series line runs across it; it sits
          inside the plot because the right gutter belongs to the end labels */
-      if (opts.ref && refY != null) {
-        refLabel = sv("text", { x: padL + 6, y: refY - 5, class: "tl-reflab" });
-        refLabel.textContent = opts.ref.label;
+      refYs.forEach(function (r) {
+        var refLabel = sv("text", { x: padL + 6, y: r[0] - 5, class: "tl-reflab" });
+        refLabel.textContent = r[1];
         svg.appendChild(refLabel);
-      }
+        refLabs.push(refLabel);
+      });
 
       /* ---- the band itself: its own scale, its own average, its own end label ---- */
       if (UND) {
@@ -2890,14 +2893,14 @@
 
       /* getBBox only measures once the node is in the page, so the backing that
          keeps a series line from running through the rule label goes on here */
-      if (refLabel) {
+      refLabs.forEach(function (refLabel) {
         try {
           var bb = refLabel.getBBox();
           var bg = sv("rect", { x: bb.x - 3, y: bb.y - 1, width: bb.width + 6, height: bb.height + 2,
             rx: 3, class: "tl-reflab-bg" });
           svg.insertBefore(bg, refLabel);
         } catch(e){_quiet(e)}
-      }
+      });
     }
 
     /* paint() needs a real width, and at build time the node is not in the page
@@ -3622,7 +3625,7 @@
   }
   function rebClock(a) { a = Math.max(0, Math.round(a || 0)); var s = a % 60; return Math.floor(a / 60) + ":" + (s < 10 ? "0" : "") + s; }
   function trRebounds(root, sessions) {
-    var sec = trSection(root, "REB", "Rebounding — every training",
+    var sec = trSection(root, "REB", "Rebounding — every training and game",
       "Of the shots missed in a training, the share the defending five got back (DREB%) and the share " +
       "the attacking five did (OREB%). A missed shot is a row that ends in M2, ML2 or M3; made shots, " +
       "turnovers, fouls drawn and out of bounds are left out of both sides of the division. A miss with " +
@@ -3677,7 +3680,37 @@
       });
       det.appendChild(ul); wb.appendChild(det); sec.appendChild(wb);
     }
-    return { pts: pts, season: S };
+    /* THE GAMES, FROM THE LEAGUE'S PLAY BY PLAY (Oriol, 29/10/2026): the post game's reading
+       of each league game - DREB% our defensive rebounds of their missed shots, OREB% our
+       offensive rebounds of ours - against the league's average, added once the page has
+       read them */
+    var addGames = function (G) {
+      var gm = (G && G.games) || [];
+      if (!gm.length) return;
+      var lgO = (G && isFinite(G.lgO)) ? G.lgO : NaN, lgD = isFinite(lgO) ? 100 - lgO : NaN;
+      var tone = function (v, ref) {
+        var txt = pct1f(v);
+        if (!isFinite(v) || !isFinite(ref) || Math.abs(v - ref) < 5) return txt;
+        return { v: txt, cls: v > ref ? "tr-good" : "tr-warn" };
+      };
+      var gline = function (lab, u, t, tot) {
+        var d = rebShare(u.dr, u.dr + t.or), o = rebShare(u.or, u.or + t.dr);
+        return { cls: tot ? "tr-tot" : "", cells: [lab, u.dr + t.or, u.dr, tot ? pct1f(d) : tone(d, lgD),
+          u.or + t.dr, u.or, tot ? pct1f(o) : tone(o, lgO)] };
+      };
+      var U = { or: 0, dr: 0 }, T = { or: 0, dr: 0 };
+      gm.forEach(function (g) { U.or += g.u.or; U.dr += g.u.dr; T.or += g.t.or; T.dr += g.t.dr; });
+      var grows = gm.map(function (g) { return gline(shortDate(g.d) + " " + g.label, g.u, g.t, false); })
+        .concat([gline("Every game · " + gm.length, U, T, true)]);
+      if (isFinite(lgO)) grows.push({ cls: "tr-tot", cells: ["League average", "", "", pct1f(lgD), "", "", pct1f(lgO)] });
+      sec.appendChild(el("div", "sx-sub fit-span", "The games · from the league's play by play"));
+      sec.appendChild(trTable(["Game", "Their misses", "Our DREB", "DREB%", "Our misses", "Our OREB", "OREB%"], grows, { sort: false }));
+      sec.appendChild(el("div", "sx-sub fit-span", "DREB% = our defensive rebounds of their missed shots; OREB% = our offensive " +
+        "rebounds of ours; a team rebound counts. " + (isFinite(lgO)
+          ? "Green or red: five points or more off the league's average, its OREB% from the four factors and its DREB% the other side of it."
+          : "The league's average is not loaded yet - open League once and it is the line to measure against.")));
+    };
+    return { pts: pts, season: S, addGames: addGames };
   }
 
   /* ---- 04 · where the possessions come from ---------------------------- */
@@ -4531,25 +4564,60 @@
           { name: "BACK: after our shot at the rim or a turnover", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2,
             n: function (s) { return s.backN; }, roll: function (s) { return [s.backP, s.backN]; } } ], tOpt)));
     }
-    /* THE TRAININGS' REBOUNDING, under the transition defence (Oriol, 29/10/2026): DREB% and
-       OREB% of the shots missed in each training - the two add up to a hundred, both fives
-       being ours - with the trainings' DREB% as the line across */
+    /* REBOUNDING · TRAININGS AND GAMES (Oriol, 29/10/2026), under the transition defence. The
+       trainings from our tagging - both fives ours, so their DREB% and OREB% add up to a
+       hundred - and the league games from the play by play, the post game's reading: DREB%
+       our defensive rebounds of their misses, OREB% our offensive rebounds of ours. The ruler
+       is the league's average: its OREB% off the four factors, its DREB% the other side of it.
+       The page reads the games; until they are in, the trainings stand alone. In a training
+       one five's DREB% is the other's OREB%, so only the DREB% of the trainings is coloured. */
     if (rb && rb.pts.length) {
-      var RS = rb.season, rsD = rebShare(RS.dreb, RS.miss), rsO = rebShare(RS.oreb, RS.miss), rLast = null;
-      for (var ri = rb.pts.length - 1; ri >= 0; ri--) { if (rb.pts[ri].s.miss) { rLast = rb.pts[ri].s; break; } }
-      var rKpi = [];
-      if (rLast) rKpi.push({ l: "DREB% last training", v: pct0f(rLast.dr),
-        cls: (rLast.miss >= 5 && !rLast.loose && Math.abs(rLast.dr - rsD) >= 5) ? (rLast.dr > rsD ? "good" : "bad") : "" });
-      rKpi.push({ l: "DREB% trainings", v: pct0f(rsD) });
-      rKpi.push({ l: "OREB% trainings", v: pct0f(rsO) });
-      rKpi.push({ l: "Missed shots", v: String(RS.miss) });
-      var missN = function (s) { return s.miss; };
-      dash.appendChild(tdCard("Rebounding · trainings", "of the shots missed in each training, who got the ball back · days under five missed shots left out",
-        rKpi,
-        timelineChart("", "", rb.pts, [
-          { name: "DREB%: the defending five", color: "var(--tl-2)", get: function (s) { return s.dr; }, fmt: pct0f, n: missN, unit: "missed shots" },
-          { name: "OREB%: the attacking five", color: "var(--tl-1)", get: function (s) { return s.o; }, fmt: pct0f, n: missN, unit: "missed shots" } ],
-          { max: 100, axisFmt: pct0f, height: 200, minN: 5, kinds: false, ref: { v: rsD, label: "DREB% trainings · " + pct0f(rsD) } })));
+      var RS = rb.season, rsD = rebShare(RS.dreb, RS.miss), rsO = rebShare(RS.oreb, RS.miss);
+      var rbTitle = "Rebounding · trainings and games";
+      var rbCard = tdCard(rbTitle, "", [], null), rbBody = el("div");
+      rbCard.appendChild(rbBody);
+      dash.appendChild(rbCard);
+      var rbTone = function (v, ref, ok) {
+        return (ok && isFinite(v) && isFinite(ref) && Math.abs(v - ref) >= 5) ? (v > ref ? "good" : "bad") : ""; };
+      var paintReb = function (G, wait) {
+        var lgO = (G && isFinite(G.lgO)) ? G.lgO : NaN;
+        if (!isFinite(lgO)) { try { var LO = window.LowenLeagueORB && window.LowenLeagueORB(); if (LO && LO.off != null) lgO = LO.off; } catch(e){_quiet(e)} }
+        var lgD = isFinite(lgO) ? 100 - lgO : NaN;
+        var gm = (G && G.games) || [];
+        var tp = rb.pts.map(function (p) { return { d: p.d, kind: "practice", label: p.label,
+          s: { dr: p.s.dr, o: p.s.o, nD: p.s.miss, nO: p.s.miss } }; });
+        var gp = gm.map(function (g) { return { d: g.d, kind: "game", label: g.label,
+          s: { dr: rebShare(g.u.dr, g.u.dr + g.t.or), o: rebShare(g.u.or, g.u.or + g.t.dr), nD: g.u.dr + g.t.or, nO: g.u.or + g.t.dr } }; });
+        var all = tp.concat(gp).sort(function (a, b) {
+          return a.d < b.d ? -1 : a.d > b.d ? 1 : (a.kind === "game" ? 1 : 0) - (b.kind === "game" ? 1 : 0); });
+        var sum = function (f) { return gm.reduce(function (a, g) { return a + f(g); }, 0); };
+        var gD = rebShare(sum(function (g) { return g.u.dr; }), sum(function (g) { return g.u.dr + g.t.or; }));
+        var gO = rebShare(sum(function (g) { return g.u.or; }), sum(function (g) { return g.u.or + g.t.dr; }));
+        var kp = [];
+        if (gm.length) {
+          /* the games' figures are coloured from five games, the hub's rule for a season line */
+          kp.push({ l: "DREB% games", v: pct0f(gD), cls: rbTone(gD, lgD, gm.length >= 5) });
+          kp.push({ l: "OREB% games", v: pct0f(gO), cls: rbTone(gO, lgO, gm.length >= 5) });
+        }
+        kp.push({ l: "DREB% trainings", v: pct0f(rsD), cls: rbTone(rsD, lgD, true) });
+        kp.push({ l: "OREB% trainings", v: pct0f(rsO) });
+        if (isFinite(lgO)) kp.push({ l: "League DREB% · OREB%", v: pct0f(lgD) + " · " + pct0f(lgO) });
+        var refs = isFinite(lgO) ? [{ v: lgD, label: "League DREB% · " + pct0f(lgD) }, { v: lgO, label: "League OREB% · " + pct0f(lgO) }] : null;
+        var sub = "of the shots missed, who got the ball back · dots trainings, diamonds games" +
+          (refs ? " · the lines across are the league's average" : "") + " · days under five missed shots left out" +
+          (wait ? " · reading the games…" : "");
+        var fresh = tdCard(rbTitle, sub, kp, null);
+        rbCard.replaceChild(fresh.querySelector(".td-h"), rbCard.querySelector(".td-h"));
+        while (rbBody.firstChild) rbBody.removeChild(rbBody.firstChild);
+        rbBody.appendChild(timelineChart("", "", all, [
+          { name: "DREB%", color: "var(--tl-2)", get: function (s) { return s.dr; }, fmt: pct0f, n: function (s) { return s.nD; }, unit: "missed shots" },
+          { name: "OREB%", color: "var(--tl-1)", get: function (s) { return s.o; }, fmt: pct0f, n: function (s) { return s.nO; }, unit: "missed shots" } ],
+          { max: 100, axisFmt: pct0f, height: 200, minN: 5, ref: refs }));
+      };
+      var hasG = typeof window.LowenGameRebounds === "function";
+      paintReb(null, hasG);
+      if (hasG) window.LowenGameRebounds().then(function (G) { paintReb(G, false); if (rb.addGames) rb.addGames(G); },
+        function () { paintReb(null, false); });
     }
     /* where our possessions came from is in the sets table now: each phase's line */
     /* The projection is not on the dashboard. With a season of real sessions every row of
