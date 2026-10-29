@@ -735,24 +735,45 @@
      shots, turnovers, fouls drawn and out of bounds are left out of both sides of the
      division. OREB = a miss whose row carries OREB; DREB = every other miss, so an OREB
      that was not tagged counts as defensive. Every category counts, SECOND CHANCE
-     included. A row with OREB that does not end in a miss is not counted and is listed,
-     with its minute, and DREB is counted on its own so OREB + DREB = misses is checked
-     rather than assumed. */
+     included. DREB is counted on its own so OREB + DREB = misses is checked rather than
+     assumed.
+     THE LOOSE OREB (the video staff, 29/10/2026). Before OREB was a tag of its own it was
+     written on a row of its own after the miss ("Tajh 55 - OREB", or "OREB" alone, maybe with
+     the second chance after it). A row with OREB and no M2, ML2 or M3 is such a row: its OREB
+     is the row before's, as if written at its end, when that row is a miss with no OREB yet
+     and the loose row starts 25 s after it at most - two in a row is the second chance's miss
+     rebounded too, and the row before the second is that miss. It is not a miss itself, so
+     the missed shots do not change. Any other row with OREB that is not a miss - a loose one
+     that fails that, or one with a miss inside that ends in something else - is not counted
+     and is listed, with its minute and why. */
   var REB_END = ["M2", "ML2", "M3", "C1", "C2", "C3", "CL2", "CL3", "Turnover", "Foul Drawn", "Out of bounds"];
   var REB_MISS = ["M2", "ML2", "M3"];
+  var REB_JOIN_S = 25;
   function rebPractice(rows) {
-    var o = { miss: 0, oreb: 0, dreb: 0, cat: {}, warn: [] };
-    rows.forEach(function (r) {
+    var o = { miss: 0, oreb: 0, dreb: 0, cat: {}, warn: [], joined: 0 };
+    var R = rows.slice().sort(function (x, y) { return (x.a - y.a) || (x.b - y.b); }).map(function (r) {
       var t = r.tags || [], fin = null;
       for (var i = t.length - 1; i >= 0; i--) if (REB_END.indexOf(t[i]) >= 0) { fin = t[i]; break; }
-      var ore = has(t, "OREB") || has(t, "Offensive Rebound");
-      if (REB_MISS.indexOf(fin) < 0) {
-        if (ore) o.warn.push({ a: r.a, cat: r.cat, fin: fin || "", tags: t.join(" - ") });
-        return;
-      }
-      var c = o.cat[r.cat] || (o.cat[r.cat] = { miss: 0, oreb: 0, dreb: 0 });
+      var ore = has(t, "OREB") || has(t, "Offensive Rebound"), miss = REB_MISS.indexOf(fin) >= 0;
+      return { r: r, t: t, fin: fin, ore: ore, miss: miss, got: miss && ore,
+               loose: ore && !t.some(function (x) { return REB_MISS.indexOf(x) >= 0; }) };
+    });
+    R.forEach(function (x, i) {
+      if (!x.ore || x.miss) return;
+      var p = R[i - 1], why;
+      if (!x.loose) why = "a missed shot inside, but the row ends in " + (x.fin || "no final");
+      else if (!p) why = "the first row of the training";
+      else if (!p.miss) why = "the row before is not a missed shot";
+      else if (p.got) why = "the miss before has its OREB already";
+      else if (x.r.a - p.r.a > REB_JOIN_S) why = Math.round(x.r.a - p.r.a) + " s after the miss before";
+      else { p.got = true; o.joined++; return; }
+      o.warn.push({ a: x.r.a, cat: x.r.cat, fin: x.fin || "", tags: x.t.join(" - "), why: why });
+    });
+    R.forEach(function (x) {
+      if (!x.miss) return;
+      var c = o.cat[x.r.cat] || (o.cat[x.r.cat] = { miss: 0, oreb: 0, dreb: 0 });
       o.miss++; c.miss++;
-      if (ore) { o.oreb++; c.oreb++; } else { o.dreb++; c.dreb++; }
+      if (x.got) { o.oreb++; c.oreb++; } else { o.dreb++; c.dreb++; }
     });
     return o;
   }
@@ -3581,15 +3602,15 @@
   var REB_CAT_ORDER = ["0 BALL REVERSAL", "1 BALL REVERSAL", "2 BALL REVERSAL", "3 BALL REVERSAL", "FASTBERAK", "SECOND CHANCE"];
   /* several trainings added up: [{ d, reb }] -> the same shape, the listed rows carrying their day */
   function rebAdd(list) {
-    var t = { miss: 0, oreb: 0, dreb: 0, cat: {}, warn: [], bad: [], n: 0 };
+    var t = { miss: 0, oreb: 0, dreb: 0, cat: {}, warn: [], bad: [], n: 0, joined: 0 };
     (list || []).forEach(function (x) {
       var r = x && x.reb; if (!r) return;
-      t.n++; t.miss += r.miss; t.oreb += r.oreb; t.dreb += r.dreb;
+      t.n++; t.miss += r.miss; t.oreb += r.oreb; t.dreb += r.dreb; t.joined += r.joined || 0;
       if (r.oreb + r.dreb !== r.miss) t.bad.push(x.d);
       Object.keys(r.cat).forEach(function (k) {
         var c = t.cat[k] || (t.cat[k] = { miss: 0, oreb: 0, dreb: 0 });
         c.miss += r.cat[k].miss; c.oreb += r.cat[k].oreb; c.dreb += r.cat[k].dreb; });
-      r.warn.forEach(function (w) { t.warn.push({ d: x.d, a: w.a, cat: w.cat, fin: w.fin, tags: w.tags }); });
+      r.warn.forEach(function (w) { t.warn.push({ d: x.d, a: w.a, cat: w.cat, fin: w.fin, tags: w.tags, why: w.why || "" }); });
     });
     return t;
   }
@@ -3606,7 +3627,9 @@
       "the attacking five did (OREB%). A missed shot is a row that ends in M2, ML2 or M3; made shots, " +
       "turnovers, fouls drawn and out of bounds are left out of both sides of the division. A miss with " +
       "OREB on its row is an offensive rebound and every other miss a defensive one, so an OREB that was " +
-      "not tagged counts as defensive. Every category counts, SECOND CHANCE included.");
+      "not tagged counts as defensive. An OREB written on a row of its own, with no missed shot on it, is the " +
+      "row before's when that row is a miss with no OREB yet and starts 25 s before it at most. " +
+      "Every category counts, SECOND CHANCE included.");
     var list = sessions.filter(function (x) { return x.kind === "practice" && x.m && x.m.reb; })
       .map(function (x) { return { d: x.d, reb: x.m.reb }; });
     var S = rebAdd(list);
@@ -3632,9 +3655,10 @@
     sec.appendChild(trTable(["Training", "Missed", "OREB", "DREB", "OREB%", "DREB%", "DREB% vs trainings", "OREB not counted"],
       list.map(function (x) { return line(x.d, x.reb, false); })
         .concat([line("Every training · " + S.n, S, true)]), { sort: false }));
-    sec.appendChild(el("div", "sx-sub fit-span" + (S.bad.length ? " tr-warnline" : ""), S.bad.length
+    sec.appendChild(el("div", "sx-sub fit-span" + (S.bad.length ? " tr-warnline" : ""), (S.bad.length
       ? "OREB + DREB does not come to the missed shots in " + S.bad.join(", ") + "."
-      : "OREB + DREB = missed shots in every training. Green or red: five points or more off the trainings' DREB%, on five missed shots or more and no OREB left out."));
+      : "OREB + DREB = missed shots in every training. Green or red: five points or more off the trainings' DREB%, on five missed shots or more and no OREB left out.") +
+      (S.joined ? " " + S.joined + " OREB written on a row of their own are counted on the miss before them." : "")));
     /* by category, the whole season */
     sec.appendChild(trTable(["Category", "Missed", "OREB", "DREB", "OREB%", "DREB%"],
       rebCats(S).map(function (k) { var c = S.cat[k];
@@ -3645,11 +3669,11 @@
       var det = document.createElement("details");
       var sm = document.createElement("summary");
       sm.textContent = S.warn.length + (S.warn.length === 1 ? " row carries" : " rows carry") +
-        " OREB but does not end in a missed shot, so it is not counted. Show which";
+        " OREB that could not be given to a missed shot, so it is not counted. Show which";
       det.appendChild(sm);
       var ul = el("div", "tr-datelist");
       S.warn.forEach(function (w) {
-        ul.appendChild(el("div", null, w.d + "  ·  " + rebClock(w.a) + "  ·  " + w.cat + "  ·  " + (w.tags || "(no descriptors)")));
+        ul.appendChild(el("div", null, w.d + "  ·  " + rebClock(w.a) + "  ·  " + w.cat + "  ·  " + (w.tags || "(no descriptors)") + (w.why ? "  ·  " + w.why : "")));
       });
       det.appendChild(ul); wb.appendChild(det); sec.appendChild(wb);
     }

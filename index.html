@@ -21591,18 +21591,20 @@ function _postRebTrain(sg){
           h("td",{}, pc(sh(c.oreb,c.miss))), h("td",{class:tone(d, ds, c.miss)}, pc(d)), h("td",{class:"grp mu"}, pc(ds)))); });
       grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"By category · the week"), h("div",{class:"pb-scroll"}, t))); }
     body.appendChild(grid);
-    /* the rows the count left out: OREB on a row that does not end in a missed shot */
+    /* the rows the count left out: an OREB that could not be given to a missed shot, and why */
     if(W.warn.length){
-      const t=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},"Training"), h("th",{},"Minute"), h("th",{class:"l"},"Category"), h("th",{class:"l"},"Descriptors")));
-      W.warn.forEach(w=>t.appendChild(h("tr",{}, h("td",{class:"l"}, _dashFmt(w.d)), h("td",{}, clk(w.a)), h("td",{class:"l"}, w.cat), h("td",{class:"l reb-desc"}, w.tags||"(none)"))));
-      body.appendChild(h("div",{class:"reb-card reb-warn"}, h("h5",{}, W.warn.length+(W.warn.length===1? " row" : " rows")+" with OREB not counted · the row does not end in a missed shot"), h("div",{class:"pb-scroll"}, t)));
+      const t=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},"Training"), h("th",{},"Minute"), h("th",{class:"l"},"Category"), h("th",{class:"l"},"Descriptors"), h("th",{class:"l"},"Why")));
+      W.warn.forEach(w=>t.appendChild(h("tr",{}, h("td",{class:"l"}, _dashFmt(w.d)), h("td",{}, clk(w.a)), h("td",{class:"l"}, w.cat), h("td",{class:"l reb-desc"}, w.tags||"(none)"), h("td",{class:"l reb-desc"}, w.why||""))));
+      body.appendChild(h("div",{class:"reb-card reb-warn"}, h("h5",{}, W.warn.length+" OREB not counted · it could not be given to a missed shot"), h("div",{class:"pb-scroll"}, t)));
     }
     body.appendChild(h("div",{class:"gpo-note"},
       "From our tagging of the trainings. A missed shot is a row that ends in M2, ML2 or M3; made shots, turnovers, fouls drawn and out of bounds are left out of both sides. "+
-      "OREB = a miss whose row carries OREB; every other miss is a defensive rebound, so an OREB that was not tagged counts as defensive. Every category counts, SECOND CHANCE included. "+
+      "OREB = a miss whose row carries OREB; every other miss is a defensive rebound, so an OREB that was not tagged counts as defensive. "+
+      "An OREB written on a row of its own, with no missed shot on it, is the row before's when that row is a miss with no OREB yet and starts 25 s before it at most"+
+      (W.joined? " ("+W.joined+" this week)" : "")+". Every category counts, SECOND CHANCE included. "+
       "Green or red: five points or more off the season, on five missed shots or more and no OREB left out. "+
       (W.bad.length? "OREB + DREB does not come to the missed shots in "+W.bad.join(", ")+"." : "OREB + DREB = missed shots in every training of the week.")+
-      (S.warn.length>W.warn.length? " Season: "+S.warn.length+" rows with OREB not counted, listed in Trends." : "")));
+      (S.warn.length>W.warn.length? " Season: "+S.warn.length+" OREB not counted, listed in Trends." : "")));
   }).catch(e=>{ body.innerHTML=""; body.appendChild(h("div",{class:"lg-empty"},"The trainings' tagging could not be read: "+((e&&e.message)||e))); });
   return box;
 }
