@@ -28821,7 +28821,10 @@ function renderDashboard(){
             const trb=l=>{ if(!RA || !l.length) return null; const t=RA(l.map(x=>({ d:x.d, reb:x.m.reb })));
               return t.miss? { o:100*t.oreb/t.miss, d:100*t.dreb/t.miss } : null; };
             const tw=trb(week7(PR)), ta=trb(PR);
-            if(GL.length) orFig=h("div",{class:"dash-kf rb-kf"},
+            /* ONE CARD SPLIT IN TWO (Oriol, 30/10/2026): each half takes the colour of its last game
+               against the league's average - red under it, green five points over, grey between -
+               as every other key figure takes the colour of its own */
+            if(GL.length) orFig=h("div",{class:"dash-kf rb-kf ra-"+(vsLg(vL, lgAvg)||"n")+" rd-"+(vsLg(dL, lgAvgD)||"n")},
               h("i",{}, "Rebounding"), h("span",{}, "last game · "+(GL[GL.length-1].opp||"")),
               h("div",{class:"rb-two"}, half("Offensive", vL, v3, vS, rank, lgAvg, "o", [+lg[0].us.oreb||0, +lg[0].them.dreb||0], "our misses", ta? [tw && tw.o, ta.o] : null),
                 half("Defensive", dL, d3, dS, rankD, lgAvgD, "d", [+lg[0].us.dreb||0, +lg[0].them.oreb||0], "their misses", ta? [tw && tw.d, ta.d] : null)),
@@ -38373,6 +38376,11 @@ body.dop-measure #print-area{display:block;position:fixed;left:-99999px;top:0}
 .dash-kf .row em u{text-decoration:none;font-weight:800;color:var(--ink,#141821)}
 .dash-kf .row em.good{background:rgba(47,158,134,.18)}.dash-kf .row em.bad{background:rgba(216,82,78,.15)}
 .dash-kf .row em.good u{color:#17805a}.dash-kf .row em.bad u{color:#c0403c}
+/* the rebounding card split down the middle, each half in the colour of its own figure */
+.rb-kf{--ra:var(--panel-2,#f4f5f7);--rat:#c6a15b;--rd:var(--panel-2,#f4f5f7);--rdt:#c6a15b;border-top:0;padding-top:14px;
+  background:linear-gradient(90deg,var(--rat) 50%,var(--rdt) 50%) top/100% 4px no-repeat,linear-gradient(90deg,var(--ra) 50%,var(--rd) 50%)}
+.rb-kf.ra-bad{--ra:rgba(216,82,78,.09);--rat:#d8524e}.rb-kf.ra-good{--ra:rgba(47,158,134,.1);--rat:#2f9e86}
+.rb-kf.rd-bad{--rd:rgba(216,82,78,.09);--rdt:#d8524e}.rb-kf.rd-good{--rd:rgba(47,158,134,.1);--rdt:#2f9e86}
 .dash-kf small{font-size:11px;color:var(--ink-soft,#5b6472)}
 /* games and trainings, told apart in a key figure: each line says which, and the trainings'
    chips are dashed like the trainings' line on the charts */
