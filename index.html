@@ -14052,14 +14052,25 @@ function _pbbRename(nm, r, itemFor, areas, save, after){
    after the two clubs and carries no date, so the date comes from the league's schedule - the
    club's played game against that rival (the latest when they met twice, each meeting once).
    dates is filled with the date of each game it places; a game it cannot place goes last. */
+/* A LABEL CAN SAY ITS COMPETITION (Oriol, 30/10/2026: München's "HAMBURG BBL" and "HAMBURG"). The
+   word was read as part of the rival's name, so "HAMBURG BBL" met no game and the bare "HAMBURG" -
+   the Pokal game of 18/10 - took the league game of 25/10. A competition word now picks the game
+   from that competition, and the labels that say one are placed first, so a bare label takes the
+   meeting that is left. A game outside our league's schedule (a EuroLeague game) still goes last */
+const _PB_COMP={ bbl:"main", liga:"main", league:"main", pokal:"cup", cup:"cup" };
 function _pbGameOrder(list, tid, dates){
     try{
       const L=leagueState(), T=todayISO(); tid=String(tid||"");
       if(!tid) return list;
       const mine=(L.games||[]).filter(x=>(String(x.homeId)===tid || String(x.awayId)===tid) && x.date && x.date<=T && (x.status==="final" || x.hs!=null));
       const used={}; const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]+/g," ");
-      list.forEach(g=>{ const toks=norm(g).split(" ").filter(t=>t.length>=3);
-        const hit=mine.filter(x=>{ const home=String(x.homeId)===tid, oid=String(home? x.awayId : x.homeId), tm=(L.teams||[]).filter(t=>String(t.id)===oid)[0]||{}, nm=norm((home? x.away : x.home)+" "+(tm.name||"")+" "+(tm.short||"")), tlc=norm(home? x.awayTlc : x.homeTlc).trim();
+      const isCup=x=>x.phase==="cup" || /pokal|cup/i.test(String(x.competition||""));
+      list.map((g,i)=>{ const all=norm(g).split(" ").filter(t=>t.length>=3);
+          return { g:g, i:i, comp:all.map(t=>_PB_COMP[t]).filter(Boolean)[0]||"", toks:all.filter(t=>!_PB_COMP[t]) }; })
+        .sort((a,b)=>(b.comp? 1 : 0)-(a.comp? 1 : 0) || a.i-b.i)
+        .forEach(w=>{ const g=w.g, toks=w.toks;
+        const hit=mine.filter(x=>{ if(w.comp && (w.comp==="cup")!==isCup(x)) return false;
+          const home=String(x.homeId)===tid, oid=String(home? x.awayId : x.homeId), tm=(L.teams||[]).filter(t=>String(t.id)===oid)[0]||{}, nm=norm((home? x.away : x.home)+" "+(tm.name||"")+" "+(tm.short||"")), tlc=norm(home? x.awayTlc : x.homeTlc).trim();
           return !used[x.id] && toks.length && (toks.every(t=>nm.indexOf(t)>=0) || toks.indexOf(tlc)>=0); }).sort((a,b)=>a.date<b.date? 1 : -1)[0];
         if(hit){ dates[g]=hit.date; used[hit.id]=1; } });
     }catch(e){_quiet(e)}
