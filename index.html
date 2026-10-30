@@ -28775,9 +28775,9 @@ function renderDashboard(){
         Object.assign({ name:name? name+" · trainings" : "Trainings", color:color, only:"practice", dash:true, hollow:true, get:s=>s.__g? NaN : get(s) }, extra||{}) ];
       const cupDay={}; (state.games||[]).forEach(g=>{ if(g && g.date && /pokal|cup/i.test(String(g.competition||""))) cupDay[g.date]=1; });
       /* the trainings' line of a key figure: the last seven days against the average */
-      const trRow=(lw, av, fm, tone, labs)=>{ labs=labs||["last 7 days ","average "];
+      const trRow=(lw, av, fm, tone, labs, tone2)=>{ labs=labs||["last 7 days ","average "];
         return h("div",{class:"row trn"}, h("span",{class:"rl"},"Trainings"),
-          h("em",{class:tone||""}, labs[0], h("u",{}, fm(lw))), h("em",{}, labs[1], h("u",{}, fm(av)))); };
+          h("em",{class:tone||""}, labs[0], h("u",{}, fm(lw))), h("em",{class:tone2||""}, labs[1], h("u",{}, fm(av)))); };
       const paintLast=()=>{ cL.__b.innerHTML="";
         if(!lastBits.length){ cL.__b.appendChild(h("div",{class:"dash-miss"},"No game read yet.")); return; }
         lastBits.forEach(b=>cL.__b.appendChild(b)); };
@@ -28789,7 +28789,11 @@ function renderDashboard(){
           const F=Object.values(leagueState().four||{}).filter(t=>t && t.off), me=F.filter(t=>String(t.teamId)===String(R.tid))[0];
           const lgAvg=F.length? 100*F.reduce((a,t)=>a+t.off.reb,0)/F.length : null, rank=me? 1+F.filter(t=>t.off.reb>me.off.reb).length : null;
           const f0=v=>v==null? "—" : Math.round(v)+"%";
-          const tone=(a,b)=>(a==null||b==null||Math.abs(a-b)<5)? "" : a>b? "good" : "bad";
+          /* UNDER THE LEAGUE'S AVERAGE IS RED (Oriol, 30/10/2026): every figure of a half - the last
+             game, the last three, the season, the trainings' last seven days and their average - is
+             read against the league's average of that half: red under it, green five points or more
+             over it. Compared as they are printed, so a 35% is never red beside a league of 35% */
+          const vsLg=(v, lg)=>(v==null||lg==null)? "" : Math.round(v)<Math.round(lg)? "bad" : v-lg>=5? "good" : "";
           /* REBOUNDING: the share of our misses we got back and of theirs we kept, the last game big,
              the last three and the season under each */
           const drb=l=>{ const o=l.reduce((a,x)=>a+(+x.us.dreb||0),0), d=l.reduce((a,x)=>a+(+x.them.oreb||0),0); return (o+d)? 100*o/(o+d) : null; };
@@ -28804,13 +28808,13 @@ function renderDashboard(){
           const lgAvgD=F.filter(t=>t.def).length? 100*F.filter(t=>t.def).reduce((a,t)=>a+t.def.reb,0)/F.filter(t=>t.def).length : null;
           const half=(lab, a, b3, s, rk, lgv, cls, cnt, whose, trn)=>h("div",{class:"rb-h "+cls},
             h("div",{class:"rb-top"}, h("i",{}, lab), rk? h("span",{class:"rb-rk", title:"Place in the league"}, "#"+rk+"/"+F.length) : null),
-            h("b",{class:tone(a, s)}, f0(a)),
+            h("b",{class:vsLg(a, lgv)}, f0(a)),
             a==null? null : h("div",{class:"rb-split", title:"Last game: we got "+f0(a)+", "+opp+" "+f0(100-a)+(lgv!=null? " · league average "+f0(lgv) : "")},
               h("span",{class:"us", style:"width:"+Math.round(a)+"%"}), h("span",{class:"them", style:"width:"+Math.round(100-a)+"%"}),
               lgv!=null? h("i",{class:"lg", style:"left:"+Math.round(lgv)+"%"}) : null),
             a==null? null : h("div",{class:"rb-lbl"}, h("span",{}, "US "+cnt[0]), h("span",{class:"mu"}, whose+" "+(cnt[0]+cnt[1])), h("span",{class:"opp"}, opp+" "+cnt[1])),
-            h("div",{class:"row"}, h("span",{class:"rl"},"Games"), h("em",{class:tone(b3, s)}, "L3 ", h("u",{}, f0(b3))), h("em",{}, "SEASON ", h("u",{}, f0(s)))),
-            trn && trn[1]!=null? trRow(trn[0], trn[1], f0, tone(trn[0], trn[1]), ["7 DAYS ","AVG "]) : null);
+            h("div",{class:"row"}, h("span",{class:"rl"},"Games"), h("em",{class:vsLg(b3, lgv)}, "L3 ", h("u",{}, f0(b3))), h("em",{class:vsLg(s, lgv)}, "SEASON ", h("u",{}, f0(s)))),
+            trn && trn[1]!=null? trRow(trn[0], trn[1], f0, vsLg(trn[0], lgv), ["7 DAYS ","AVG "], vsLg(trn[1], lgv)) : null);
           /* the trainings come in on their own: the key figure and the chart wait for them */
           prP.then(PR=>{
             const RA=window.LowenPostStats && window.LowenPostStats.reboundsAdd;
@@ -28917,11 +28921,16 @@ function renderDashboard(){
           ["Paint touches", ms(lx,"pt"), msL(l3,"pt"), msL(list,"pt"), f0, true, 5, "of possessions · target 70%", msL(w75,"pt"), msL(PR5,"pt")],
           ["Ball reversals", ms(lx,"br"), msL(l3,"br"), msL(list,"br"), f0, true, 5, "of possessions", msL(w75,"br"), msL(PR5,"br")]];
         const tone=(a,b,hi,th)=>(a==null||b==null||Math.abs(a-b)<th)? "" : ((a>b)===hi? "good" : "bad");
-        K.forEach(k=>{ const tgt=k[0]==="Paint touches"? (k[1]==null? "" : k[1]>=70? "good" : k[1]<60? "bad" : "") : tone(k[1],k[3],k[5],k[6]);
+        /* BALL REVERSALS RED AS SOON AS UNDER OUR OWN AVERAGE (Oriol, 30/10/2026): the last game and
+           the last three against the season, the trainings' last seven days against their average,
+           compared as printed; green still only when clearly over it */
+        const under=(a,b,hi,th)=>(a==null||b==null)? "" : (hi? Math.round(a)<Math.round(b) : Math.round(a)>Math.round(b))? "bad" : tone(a,b,hi,th)==="good"? "good" : "";
+        K.forEach(k=>{ const tn=k[0]==="Ball reversals"? under : tone;
+          const tgt=k[0]==="Paint touches"? (k[1]==null? "" : k[1]>=70? "good" : k[1]<60? "bad" : "") : tn(k[1],k[3],k[5],k[6]);
           key.appendChild(h("div",{class:"dash-kf "+tgt},
             h("i",{}, k[0]), h("b",{}, k[4](k[1])), h("span",{}, "last game · "+lx.label),
-            h("div",{class:"row"}, h("span",{class:"rl"},"Games"), h("em",{class:tone(k[2],k[3],k[5],k[6])}, "last 3 ", h("u",{}, k[4](k[2]))), h("em",{}, "season ", h("u",{}, k[4](k[3])))),
-            k[9]!=null? trRow(k[8], k[9], k[4], tone(k[8],k[9],k[5],k[6])) : null,
+            h("div",{class:"row"}, h("span",{class:"rl"},"Games"), h("em",{class:tn(k[2],k[3],k[5],k[6])}, "last 3 ", h("u",{}, k[4](k[2]))), h("em",{}, "season ", h("u",{}, k[4](k[3])))),
+            k[9]!=null? trRow(k[8], k[9], k[4], tn(k[8],k[9],k[5],k[6])) : null,
             h("small",{}, k[7]))); });
         /* BACK in its three parts under it: after our turnover, after our miss, after our make */
         { const bf=key.children[1], subOf=L2=>{ const o={ to:{ n:0, pts:0 }, miss:{ n:0, pts:0 }, make:{ n:0, pts:0 } };
@@ -38363,6 +38372,7 @@ body.dop-measure #print-area{display:block;position:fixed;left:-99999px;top:0}
 .dash-kf .row em{font:600 11px 'IBM Plex Mono',monospace;font-style:normal;border-radius:999px;padding:1px 8px;background:var(--panel,#fff);color:var(--ink-soft,#5b6472)}
 .dash-kf .row em u{text-decoration:none;font-weight:800;color:var(--ink,#141821)}
 .dash-kf .row em.good{background:rgba(47,158,134,.18)}.dash-kf .row em.bad{background:rgba(216,82,78,.15)}
+.dash-kf .row em.good u{color:#17805a}.dash-kf .row em.bad u{color:#c0403c}
 .dash-kf small{font-size:11px;color:var(--ink-soft,#5b6472)}
 /* games and trainings, told apart in a key figure: each line says which, and the trainings'
    chips are dashed like the trainings' line on the charts */
