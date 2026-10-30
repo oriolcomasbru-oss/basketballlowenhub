@@ -13173,6 +13173,8 @@ function _prePrintBoard(src, what){
   copy.querySelectorAll("button,.rm-x,.card-toolbar,.add-block-btn,.photo-lock-btn,.pc-addstat,.vb-foot,.vb-sws,.vb-rsz,.pre-lock,.vb-move,.hl-cell,.hl-auto,.drag-handle,.vb-tools,.vb-pool,.vb-hint").forEach(x=>x.remove());
   copy.querySelectorAll("[contenteditable]").forEach(x=>x.removeAttribute("contenteditable"));
   copy.querySelectorAll("[draggable]").forEach(x=>x.removeAttribute("draggable"));
+  /* the reveal on scroll holds a card at nothing until it is seen: on paper everything is seen */
+  copy.querySelectorAll(".an-r,.an-e,.an-hold,.an-wait").forEach(x=>x.classList.remove("an-r","an-e","an-hold","an-wait"));
   /* what a reader does not see is not printed: an empty line, an empty tagline, an empty note */
   copy.querySelectorAll(".idea-row").forEach(r=>{ const t=r.querySelector(".idea-line"); if(!t || !t.textContent.trim()) r.remove(); });
   copy.querySelectorAll(".tagline").forEach(t=>{ if(!t.textContent.trim()){ const w=t.closest(".tagline-wrap"); (w||t).remove(); } });
@@ -13181,7 +13183,7 @@ function _prePrintBoard(src, what){
   area.innerHTML="";
   area.appendChild(h("div",{class:"dop-page"}, p));
   const PW=1058, PH=715;
-  const widths=what==="roles"? [900,1050,1200,1350,1500,1700,1900,2150,2400,2700,3000] : [1050,1200,1350,1500,1650,1800,2000];
+  const widths=what==="roles"? [900,1050,1200,1350,1500,1700,1900,2150,2400,2700,3000] : [900,1000,1100,1200,1350,1500,1650,1800,2000];
   const at=W=>{ p.style.zoom="1"; p.style.width=W+"px"; return Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); };
   const refit=()=>{ let best={ s:0, w:widths[0] }; widths.forEach(W=>{ const sc=at(W); if(sc>best.s) best={ s:sc, w:W }; });
     at(best.w); p.style.zoom=best.s.toFixed(4); };
@@ -36680,7 +36682,8 @@ body.edit-mode .phx.pre-roles .pre-lock{bottom:24px}
 .pc-rebuild:hover{color:var(--ink);border-color:var(--ink)}
 .pc-rebuild + .pc-print{margin-left:8px}
 /* a board of the pre game alone on a sheet */
-.prb-roster .roster-columns{grid-template-columns:repeat(5,minmax(0,1fr))!important}
+/* five columns whatever the window: a narrow screen's three-column rule must not shape the paper */
+.prb.prb-roster .phx.phx .roster-columns:not(.pre-cm-cols){grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:9px!important}
 .prb-roles .vb-areas{justify-content:center!important}
 .pc-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;padding:9px 2px}
 .pc-col{min-width:0}
