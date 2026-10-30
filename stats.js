@@ -2753,8 +2753,11 @@
              thin to read is not drawn at all - pale dots pinned to the top and the bottom
              of the plot were the mess - a training is a small quiet dot, and a game keeps
              its diamond, because a game is the one day worth finding on the line. */
-          if (q[4]) return;
-          if (rl && kind !== "game") { m.setAttribute("r", 2.6); m.style.opacity = "0.38"; }
+          /* ...unless the page asks for every day to be marked (the dashboard, Oriol 30/10/2026:
+             every training its dot): a thin day is then a small pale dot, still off the line */
+          if (q[4] && !opts.thinDots) return;
+          if (q[4]) { m.setAttribute("class", m.getAttribute("class") + " thin"); m.style.opacity = "0.45"; }
+          else if (rl && kind !== "game") { m.setAttribute("r", 2.6); m.style.opacity = "0.38"; }
           svg.appendChild(m);
         });
         /* direct label at the end of the line — the relief the palette asks for */
@@ -2882,12 +2885,14 @@
         var i = at(ev), p = points[i];
         cross.setAttribute("x1", X(i)); cross.setAttribute("x2", X(i)); cross.style.display = "";
         var rows = series.map(function (s) {
+          /* a series of games has nothing to say on a training's day, and the other way round */
+          if (s.only && s.only !== (p.kind === "game" ? "game" : "practice")) return "";
           var v = s.get(p.s);
           return '<div class="tl-trow"><span class="tl-tk" style="background:' + s.color + '"></span>' +
             '<span class="tl-tn">' + s.name + '</span><span class="tl-tv">' +
             (isFinite(v) ? (s.fmt ? s.fmt(v) : Math.round(v)) : "—") +
             /* what the figure stands on, and a word when that is not enough to read */
-            (s.n ? ' <i style="opacity:.6;font-style:normal">· ' + (s.n(p.s) || 0) + " " + (s.unit || "poss") + (thinAt(s, p) ? ", too few" : "") + "</i>" : "") +
+            (s.n ? ' <i style="opacity:.6;font-style:normal">· ' + (s.n(p.s) || 0) + " " + (s.unit || "poss") + (thinAt(s, p) ? (opts.thinDots ? ", under " + MINN + " - off the line" : ", too few") : "") + "</i>" : "") +
             "</span></div>";
         }).join("");
         if (UND) {

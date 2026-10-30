@@ -17845,6 +17845,8 @@ function renderTrends(){
     /* the panel used to be a fold, and opening it threw the Drive cache away — which is
        how a file uploaded five minutes ago appeared. With no fold left, that is a button:
        forget what was read, redraw, and the block mounts itself again. */
+    h("button",{class:"btn sm", title:"Print the trends on two A4 pages: the key figures and TAG / BACK, then the rebounding, the ratings and the sets",
+      onclick:()=>_dashTrendsPrint()},"🖨 Print"),
     h("button",{class:"btn sm", title:"Read the tagging from Drive again",
       onclick:()=>{ try{ if(window.LowenPostStats && window.LowenPostStats.dropCache)
           window.LowenPostStats.dropCache(); }catch(e){_quiet(e)} renderTrends(); }},"↺ Read again")));
@@ -27743,8 +27745,10 @@ function _dashPostPrint(card, title){
         h("div",{class:"dop-col"}, keys, ...(pl? [...pl.children] : [])),
         sp? h("div",{class:"dop-col"}, ...[...sp.children]) : null),
       mm? h("div",{class:"dop-mm"}, mm) : null);
-    const pk=notesSub? notesSub.querySelector(".dash-pk") : null;
-    const p2=h("div",{class:"dop-fit dop-pnotes"}, top(title+" · key ideas"), pk? clean(pk.cloneNode(true)) : h("div",{class:"dash-miss"},"No key ideas marked in the post game."));
+    /* the key ideas as the pre game prints its notes: each box under its black banner */
+    const pk=notesSub? notesSub.querySelector(".dash-pk") : null, nb=pk? pk.parentElement : null, all=!!(nb && nb.__printAll);
+    const p2=h("div",{class:"dop-fit "+(all? "dop-notes" : "dop-pnotes")}, top(title+" · key ideas"),
+      all? nb.__printAll() : pk? clean(pk.cloneNode(true)) : h("div",{class:"dash-miss"},"No key ideas marked in the post game."));
     [p1, p2].forEach(p=>area.appendChild(h("div",{class:"dop-page"}, p)));
     const PW=1058, PH=715;
     const fit=(p, W)=>{ p.style.zoom="1"; p.style.width=W+"px"; return Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); };
@@ -27771,6 +27775,61 @@ function _dashPostPrint(card, title){
     });
   };
   go(0);
+}
+/* THE TEAM'S TRENDS ON TWO SHEETS (Oriol, 30/10/2026), in the style of the next opponent and the
+   last game: the key figures, TAG / BACK across the sheet, the paint touches, the reversals and
+   the last game on the first; the rebounding, the ratings, the possessions and the sets on the
+   second. The card is built again off the screen at the sheet's own width, so every chart is
+   drawn for the paper and not shrunk from the screen; each part is then moved onto its sheet,
+   drawn once more at its width there, copied still and scaled into a landscape A4 */
+let _dashTrendsBuild=null;
+function _dashTrendsPrint(){
+  const area=$("#print-area"); if(!area) return;
+  if(!_dashTrendsBuild){ try{ renderDashboard(); }catch(e){_quiet(e)} }
+  if(!_dashTrendsBuild){ toast("Open the dashboard once, then print the trends"); return; }
+  const W=1400, PW=1058, PH=715;
+  area.innerHTML=""; document.body.classList.add("dop-measure");
+  const hold=h("div",{style:"width:"+W+"px"}); area.appendChild(hold);
+  let c=null; try{ c=_dashTrendsBuild(hold); }catch(e){_quiet(e)}
+  if(!c){ document.body.classList.remove("dop-measure"); area.innerHTML=""; toast("The trends could not be built"); return; }
+  toast("Reading the trends for the paper…");
+  const t0=Date.now();
+  const lay=()=>{
+    const subOf=re=>[...c.querySelectorAll(".dash-sub")].filter(s=>re.test(((s.querySelector("h4")||{}).textContent)||""))[0]||null;
+    const top=t=>h("div",{class:"dop-top"}, h("b",{}, "Team trends"), h("span",{}, t));
+    const row=(cls, ...k)=>{ const r=h("div",{class:"dtp-row "+cls}); k.filter(Boolean).forEach(x=>r.appendChild(x)); return r; };
+    const day=_dashFmt(todayISO());
+    const p1=h("div",{class:"dop-fit dtp"}, top("game by game, practice by practice · "+day));
+    [c.querySelector(".dash-keyh"), c.querySelector(".dash-key"), subOf(/^TAG \/ BACK/),
+      row("c3", subOf(/^Paint touches/), subOf(/^Ball reversals/), subOf(/^The last game/))].forEach(x=>{ if(x) p1.appendChild(x); });
+    const p2=h("div",{class:"dop-fit dtp"}, top("rebounding, ratings and sets · "+day));
+    [subOf(/^Rebounding/), row("c3", subOf(/^OER/), subOf(/^Net rating/), subOf(/^Possessions/)),
+      row("c4", subOf(/best sets/), subOf(/worst sets/), subOf(/improving most/), subOf(/dropping most/))].forEach(x=>{ if(x) p2.appendChild(x); });
+    hold.remove();
+    const live=[p1, p2].map(p=>{ p.style.width=W+"px"; const pg=h("div",{class:"dop-page"}, p); area.appendChild(pg); return pg; });
+    /* each chart draws itself again at the width it has on the sheet; then the sheets are copied
+       still, so nothing redraws while the printer lays them out */
+    setTimeout(()=>{
+      const still=live.map(pg=>pg.cloneNode(true)); area.innerHTML=""; still.forEach(pg=>area.appendChild(pg));
+      area.querySelectorAll(".tl-tip,.tl-cross,.tl-hit,button,.dash-src").forEach(x=>x.remove());
+      const ps=still.map(pg=>pg.firstChild);
+      const fit=p=>{ p.style.zoom="1"; p.style.width=W+"px"; p.style.zoom=Math.min(PW/W, PH/Math.max(1, p.scrollHeight)).toFixed(4); };
+      const refit=()=>ps.forEach(fit);
+      refit();
+      const mq=window.matchMedia? window.matchMedia("print") : null, onMq=e=>{ if(e.matches) refit(); };
+      if(mq){ if(mq.addEventListener) mq.addEventListener("change", onMq); else if(mq.addListener) mq.addListener(onMq); }
+      const st=document.createElement("style"); st.textContent="@page{size:A4 landscape;margin:7mm} html,body{margin:0!important;padding:0!important}"; document.body.appendChild(st);
+      const done=()=>{ document.body.classList.remove("printing","printing-dop","dop-measure"); area.innerHTML=""; st.remove(); window.removeEventListener("afterprint", done);
+        if(mq){ if(mq.removeEventListener) mq.removeEventListener("change", onMq); else if(mq.removeListener) mq.removeListener(onMq); } };
+      window.addEventListener("afterprint", done);
+      document.body.classList.remove("dop-measure");
+      document.body.classList.add("printing","printing-dop");
+      setTimeout(()=>{ try{ window.print(); }catch(e){ done(); } }, 120);
+    }, 700);
+  };
+  /* printed once nothing on the card is still being read - the trainings come in last */
+  const wait=()=>{ if(c.querySelector(".ld") && Date.now()-t0<40000){ setTimeout(wait, 300); return; } setTimeout(lay, 600); };
+  setTimeout(wait, 400);
 }
 /* THEIR KEY SETS: the ten the staff starred in the pre game playbook that they run most - with
    the staff's names, calls and splits, how often and what they return, and game by game, as the
@@ -28011,6 +28070,12 @@ function _dashPostNotesInto(box, g){
       h("div",{class:"sl"}, c.n),
       c.gs.map(gp=>(gp.h && !gp.items.length)? h("div",{class:"solo"}, ...lab(gp.h))
         : h("div",{class:"g"}, gp.h? h("div",{class:"gh"}, gp.h) : null, h("ul",{}, gp.items.map(t=>h("li",{}, ...lab(t))))))))));
+    /* PRINTED AS THE PRE GAME'S NOTES ARE (Oriol, 30/10/2026): each box under its black banner,
+       Our offense on blue, Our defense on red, the rest on grey, the lists in the same type */
+    box.__printAll=()=>h("div",{class:"dash-nt all flat"}, cols.map(c=>{ const k=/defen/i.test(c.n)? "t" : /offen/i.test(c.n)? "w" : "n";
+      return h("div",{class:"cpt"}, h("div",{class:"cn"}, c.n), h("div",{class:"pt "+k},
+        c.gs.map(gp=>(gp.h && !gp.items.length)? h("div",{class:"solo"}, ...lab(gp.h))
+          : h("div",{class:"g"}, gp.h? h("div",{class:"gh"}, gp.h) : null, h("ul",{}, gp.items.map(t=>h("li",{}, ...lab(t)))))))); }));
     box.appendChild(h("div",{class:"dash-src"},"The key ideas marked in the post game"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"The post game could not be read.")); });
 }
@@ -28279,7 +28344,7 @@ function renderDashboard(){
   const paintAtt=()=>{ att.innerHTML=""; alerts.forEach(a=>att.appendChild(h("button",{type:"button", class:"dash-a "+a.tone, onclick:a.go||null}, a.text))); att.style.display=alerts.length? "" : "none"; };
   try{ if(_gSyncFail.length) alerts.push({ tone:"warn", text:"Could not read from Google just now: "+_gSyncFail.join(", ")+" - what is shown is the last copy read", go:()=>{ try{ syncFromGoogle(); }catch(e){ _quiet(e); } } }); }catch(e){ _quiet(e); }
   paintAtt();
-  const grid=h("div",{class:"dash-grid"}); page.appendChild(grid);
+  let grid=h("div",{class:"dash-grid"}); page.appendChild(grid);
   root.appendChild(page);
 
   /* ---- the parts of a card */
@@ -28629,6 +28694,9 @@ function renderDashboard(){
     /* ---------------------------------------------------- Oriol: the season in lines, sets best and worst */
     trends2:()=>{
       const c=card("wide", "Team trends · game by game, practice by practice", ()=>_dashOpen("trends"), "Trends");
+      /* the card on two sheets of paper, as the next opponent and the last game */
+      { const ch=c.querySelector(".dash-ch"), pb=h("button",{type:"button", class:"dash-go dash-print", title:"Print the trends on two A4 pages"},"🖨 Print");
+        pb.addEventListener("click",()=>_dashTrendsPrint()); ch.insertBefore(pb, ch.querySelector(".dash-go")); }
       const sub=(t, cls)=>{ const b=h("div",{class:"dash-sub"}, h("h4",{class:cls||""}, t)); const body=h("div",{}, loading()); b.appendChild(body); b.__b=body; return b; };
       /* WHAT IS KEY FOR US, FIRST: TAG and BACK, paint touches, ball reversals - the last game,
          the last three and the season, big - and the line of each game by game under them */
@@ -28672,23 +28740,30 @@ function renderDashboard(){
       /* ONE LANGUAGE FOR EVERY CHART (Oriol, 30/10/2026: "entiendes uno, entiendes todos"): a game
          is a filled diamond on a solid line, a training a hollow dot on a dashed one, always; the
          colour is the measure. A small key under each chart says the same in the same words */
-      const keySvg=(dash, dia)=>{ const NS="http://www.w3.org/2000/svg", mk=(t,a)=>{ const e=document.createElementNS(NS,t); Object.keys(a).forEach(k=>e.setAttribute(k,a[k])); return e; };
+      const keySvg=(dash, dia, bare)=>{ const NS="http://www.w3.org/2000/svg", mk=(t,a)=>{ const e=document.createElementNS(NS,t); Object.keys(a).forEach(k=>e.setAttribute(k,a[k])); return e; };
         const sv=mk("svg",{ viewBox:"0 0 28 12", class:"mk-s" });
-        sv.appendChild(mk("line",{ x1:1, x2:27, y1:6, y2:6, class:"mk-l"+(dash? " d" : "") }));
-        sv.appendChild(dia? mk("rect",{ x:10.5, y:2.5, width:7, height:7, transform:"rotate(45 14 6)", class:"mk-m" }) : mk("circle",{ cx:14, cy:6, r:3, class:"mk-m o" }));
+        if(!bare) sv.appendChild(mk("line",{ x1:1, x2:27, y1:6, y2:6, class:"mk-l"+(dash? " d" : "") }));
+        sv.appendChild(dia? mk("rect",{ x:10.5, y:2.5, width:7, height:7, transform:"rotate(45 14 6)", class:"mk-m" }) : mk("circle",{ cx:14, cy:6, r:bare? 2.4 : 3, class:"mk-m o"+(bare? " t" : "") }));
         return sv; };
-      const mixKey=(measures, tr)=>h("div",{class:"dash-mixkey"},
+      const mixKey=(measures, tr, thin)=>h("div",{class:"dash-mixkey"},
         measures.map(m=>h("span",{}, h("i",{style:"background:"+m[1]}), m[0])),
-        h("span",{class:"k k1"}, keySvg(false, true), "game"), tr? h("span",{class:"k"}, keySvg(true, false), "training") : null);
-      const mix=(pts, series, opts, measures)=>{ const API=window.LowenPostStats; if(!API || !API.chart || pts.length<2) return null;
+        h("span",{class:"k k1"}, keySvg(false, true), "game"), tr? h("span",{class:"k"}, keySvg(true, false), "training") : null,
+        thin? h("span",{class:"k"}, keySvg(false, false, true), thin) : null);
+      const mix=(pts, series, opts, measures)=>{ const API=window.LowenPostStats; if(!API || !API.chart) return null;
+        /* EVERY SESSION ON THE CHART HAS ITS DOT (Oriol, 30/10/2026): a day with nothing to draw -
+           no transition, no five on five - takes no place on the line of dates, and a training
+           under the minimum is a small pale dot off the line, not an empty column */
+        pts=pts.filter(p=>series.some(sr=>isFinite(sr.get(p.s))));
+        if(pts.length<2) return null;
         pts.sort((a,b)=>a.d<b.d? -1 : a.d>b.d? 1 : (a.kind==="game"? 1 : 0)-(b.kind==="game"? 1 : 0));
         /* a training's last value is not written at the end of its line: the games' are */
         series.forEach(sr=>{ if(sr.dash) sr.noEnd=true; });
-        return h("div",{class:"sx dash-mix"}, API.chart("", "", pts, series, Object.assign({ height:150, kinds:false, legend:false }, opts||{})),
-          mixKey(measures||[], series.some(sr=>sr.dash))); };
+        const MN=(opts && opts.minN)||0, thin=MN && pts.some(p=>series.some(sr=>sr.n && isFinite(sr.get(p.s)) && (sr.n(p.s)||0)<MN));
+        return h("div",{class:"sx dash-mix"}, API.chart("", "", pts, series, Object.assign({ height:150, kinds:false, legend:false, thinDots:true }, opts||{})),
+          mixKey(measures||[], series.some(sr=>sr.dash), thin? (opts.thinLbl||"under "+MN+" · off the line") : null)); };
       const pairS=(name, color, get, extra)=>[
-        Object.assign({ name:name? name+" · games" : "Games", color:color, get:s=>s.__g? get(s) : NaN }, extra||{}),
-        Object.assign({ name:name? name+" · trainings" : "Trainings", color:color, dash:true, hollow:true, get:s=>s.__g? NaN : get(s) }, extra||{}) ];
+        Object.assign({ name:name? name+" · games" : "Games", color:color, only:"game", get:s=>s.__g? get(s) : NaN }, extra||{}),
+        Object.assign({ name:name? name+" · trainings" : "Trainings", color:color, only:"practice", dash:true, hollow:true, get:s=>s.__g? NaN : get(s) }, extra||{}) ];
       const cupDay={}; (state.games||[]).forEach(g=>{ if(g && g.date && /pokal|cup/i.test(String(g.competition||""))) cupDay[g.date]=1; });
       /* the trainings' line of a key figure: the last seven days against the average */
       const trRow=(lw, av, fm, tone, labs)=>{ labs=labs||["last 7 days ","average "];
@@ -28746,11 +28821,11 @@ function renderDashboard(){
               .concat(PR.filter(x=>x.m && x.m.reb && x.m.reb.miss).map(x=>({ d:x.d, kind:"practice", label:x.d,
                 s:{ __g:false, o:100*x.m.reb.oreb/x.m.reb.miss, dr:100*x.m.reb.dreb/x.m.reb.miss, nO:x.m.reb.miss, nD:x.m.reb.miss } })));
             const ch=mix(pts, [
-              { name:"OREB% · games", color:"#c7a76a", get:s=>s.__g? s.o : NaN, fmt:f0, n:s=>s.nO, unit:"missed shots" },
-              { name:"DREB% · games", color:"#4a86d8", get:s=>s.__g? s.dr : NaN, fmt:f0, n:s=>s.nD, unit:"missed shots" },
-              { name:"OREB% · trainings", color:"#c7a76a", dash:true, hollow:true, get:s=>s.__g? NaN : s.o, fmt:f0, n:s=>s.nO, unit:"missed shots" },
-              { name:"DREB% · trainings", color:"#4a86d8", dash:true, hollow:true, get:s=>s.__g? NaN : s.dr, fmt:f0, n:s=>s.nD, unit:"missed shots" } ],
-              { max:100, axisFmt:f0, minN:5, ref:[lgAvgD!=null? { v:lgAvgD, label:"League DREB% · "+f0(lgAvgD) } : null,
+              { name:"OREB% · games", color:"#c7a76a", only:"game", get:s=>s.__g? s.o : NaN, fmt:f0, n:s=>s.nO, unit:"missed shots" },
+              { name:"DREB% · games", color:"#4a86d8", only:"game", get:s=>s.__g? s.dr : NaN, fmt:f0, n:s=>s.nD, unit:"missed shots" },
+              { name:"OREB% · trainings", color:"#c7a76a", only:"practice", dash:true, hollow:true, get:s=>s.__g? NaN : s.o, fmt:f0, n:s=>s.nO, unit:"missed shots" },
+              { name:"DREB% · trainings", color:"#4a86d8", only:"practice", dash:true, hollow:true, get:s=>s.__g? NaN : s.dr, fmt:f0, n:s=>s.nD, unit:"missed shots" } ],
+              { max:100, axisFmt:f0, minN:5, thinLbl:"under 5 missed shots · off the line", ref:[lgAvgD!=null? { v:lgAvgD, label:"League DREB% · "+f0(lgAvgD) } : null,
                 lgAvg!=null? { v:lgAvg, label:"League OREB% · "+f0(lgAvg) } : null].filter(Boolean) }, [["OREB%","#c7a76a"],["DREB%","#4a86d8"]]);
             if(ch) cRB.__b.appendChild(ch);
             putOr(); });
@@ -28772,9 +28847,9 @@ function renderDashboard(){
                   s:{ __g:false, tr:100*x.s.pts/x.s.poss, poss:x.s.poss } })));
               const f1=v=>v.toFixed(0);
               const ch=mix(pts, [
-                { name:"OER · games", color:"#2f9e86", get:s=>s.__g? s.oe : NaN, fmt:f1 },
-                { name:"DER · games", color:"#d8524e", get:s=>s.__g? s.de : NaN, fmt:f1 },
-                { name:"Trainings · both fives", color:"#7a8190", dash:true, hollow:true, get:s=>s.__g? NaN : s.tr, fmt:f1 } ],
+                { name:"OER · games", color:"#2f9e86", only:"game", get:s=>s.__g? s.oe : NaN, fmt:f1 },
+                { name:"DER · games", color:"#d8524e", only:"game", get:s=>s.__g? s.de : NaN, fmt:f1 },
+                { name:"Trainings · both fives", color:"#7a8190", only:"practice", dash:true, hollow:true, get:s=>s.__g? NaN : s.tr, fmt:f1 } ],
                 { axisFmt:f1 }, [["OER","#2f9e86"],["DER","#d8524e"],["Training · both fives","#7a8190"]]);
               if(ch) cOD.__b.insertBefore(ch, cOD.__b.firstChild); });
             const sp=(k,side)=>GL.reduce((a,y)=>a+(+y[side][k]||0),0);
@@ -28861,7 +28936,7 @@ function renderDashboard(){
         const fN=v=>v.toFixed(2), fP=v=>Math.round(v)+"%";
         /* a training with under four transitions of a kind is left off that line: one or two say nothing */
         const ch2=mix(pts.slice(), pairS("TAG","#d8524e", s=>s.tag, { fmt:fN, n:s=>s.tagN, unit:"transitions" })
-          .concat(pairS("BACK","#4a86d8", s=>s.back, { fmt:fN, n:s=>s.backN, unit:"transitions" })), { axisFmt:fN, minN:4, height:200 }, [["TAG","#d8524e"],["BACK","#4a86d8"]]);
+          .concat(pairS("BACK","#4a86d8", s=>s.back, { fmt:fN, n:s=>s.backN, unit:"transitions" })), { axisFmt:fN, minN:4, height:200, thinLbl:"under 4 transitions · off the line" }, [["TAG","#d8524e"],["BACK","#4a86d8"]]);
         if(ch2) cT.__b.appendChild(ch2);
         cT.__b.appendChild(h("div",{class:"dash-src"},"Points conceded per transition · lower is better"));
         const ch1=mix(pts.slice(), pairS("Paint touches", "#2f9e86", s=>s.pt, { fmt:fP }), { max:100, axisFmt:fP, ref:{ v:70, label:"70% target" } }, [["Paint touches","#2f9e86"]]);
@@ -29695,6 +29770,8 @@ function renderDashboard(){
     }
   };
   monthCard=prob=>builders.month0(prob); videoCard=w=>builders.video0(w);
+  /* the trends' report is printed from this card built again, off the screen, at the sheet's width */
+  _dashTrendsBuild=host=>{ const g0=grid; grid=host; try{ builders.trends2(); } finally{ grid=g0; } return host.lastElementChild; };
   D.cards.forEach(k=>{ try{ builders[k](); }catch(e){ try{ console.warn("dashboard", k, e); }catch(_){_quiet(_)} } });
 }
 let _lgClubOpen=false;
@@ -31242,6 +31319,8 @@ function printSpec(){
      you choose which blocks go on the sheet — so the button opens that instead
      of inventing a second layout for it. */
   if(v==="rooster") return {key:"rooster", dialog:true, paper:"landscape"};
+  /* the trends print the dashboard's two sheets */
+  if(v==="trends") return {key:"trends", trends:true, paper:"landscape"};
   if(v==="playbook")
     return {key:"playbook", el:"#viewPlaybook", paper:"landscape", margin:8, fit:false, both:true, each:true};
   if(v==="oppscout"){
@@ -31486,6 +31565,7 @@ function printCurrentView(){
   const spec=printSpec();
   if(!spec){ toast("This screen has no print layout of its own"); return; }
   if(spec.dialog){ exportPDF(); return; }
+  if(spec.trends){ _dashTrendsPrint(); return; }
   /* the session sheet and the game plan sheet already have print paths of
      their own, both built for A4 */
   if(spec.sheet==="gp"){
@@ -38143,6 +38223,15 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-nt.all.flat .pt > i{display:block;font:700 9.5px Oswald,sans-serif;font-style:normal;letter-spacing:.12em;text-transform:uppercase;color:#6c7583;break-after:avoid;page-break-after:avoid}
 .dash-nt.all.flat .pt.t li,.dash-nt.all.flat .pt.t .solo{color:#5c2417}
 .dash-nt.all.flat .pt.w li,.dash-nt.all.flat .pt.w .solo{color:#16304f}
+/* the post game's boxes that are neither offense nor defense, on grey */
+.dash-nt.all.flat .pt.n{border-left-color:#8a93a2;background:#f4f5f7}
+/* the trends on two sheets */
+.dtp .dtp-row{display:grid;gap:16px;align-items:start}
+.dtp .dtp-row.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.dtp .dtp-row.c4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.dtp .dtp-row > .dash-sub + .dash-sub{border-left:1px solid #e4e7ec;padding-left:14px}
+.dtp .dash-key{grid-template-columns:repeat(4,minmax(0,1fr)) minmax(0,1.7fr)!important;margin-bottom:0}
+.dtp .dash-keyh{margin-bottom:-4px}
 body.dop-measure #print-area{display:block;position:fixed;left:-99999px;top:0}
 @media print{
   body.printing-dop #print-area{display:block;position:static;width:auto;height:auto;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -38283,6 +38372,8 @@ body.dark .dash-kf .row.trn em{border-color:rgba(255,255,255,.28)}
 .dash-mix .sx-sec{border:0;padding:0;margin:0;background:none;box-shadow:none}
 .dash-mix .tl-line.dash{stroke-width:1.5;opacity:.75}
 .dash-mix circle.tl-mk.hollow{r:3px}
+.dash-mix circle.tl-mk.thin{r:2.4px}
+.dash-mixkey .mk-m.t{opacity:.5}
 .dash-mix .tl-legend{margin-bottom:2px}
 .dash-pstudy .big b.na{font-size:26px;color:var(--ink-faint,#8a93a2)}
 .dash-phist .na{color:var(--ink-faint,#8a93a2)}
