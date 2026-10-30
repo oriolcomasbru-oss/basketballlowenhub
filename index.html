@@ -27794,7 +27794,10 @@ function _dashTrendsPrint(){
   if(!c){ document.body.classList.remove("dop-measure"); area.innerHTML=""; toast("The trends could not be built"); return; }
   toast("Reading the trends for the paper…");
   const t0=Date.now();
-  const lay=()=>{
+  /* the parts go onto their sheets at once, before anything is read into them: the league's two
+     small charts are drawn at the width they are given, so they are given the paper's */
+  c.__tall=1.25;
+  {
     const subOf=re=>[...c.querySelectorAll(".dash-sub")].filter(s=>re.test(((s.querySelector("h4")||{}).textContent)||""))[0]||null;
     const top=t=>h("div",{class:"dop-top"}, h("b",{}, "Team trends"), h("span",{}, t));
     const row=(cls, ...k)=>{ const r=h("div",{class:"dtp-row "+cls}); k.filter(Boolean).forEach(x=>r.appendChild(x)); return r; };
@@ -27806,11 +27809,15 @@ function _dashTrendsPrint(){
     [subOf(/^Rebounding/), row("c3", subOf(/^OER/), subOf(/^Net rating/), subOf(/^Possessions/)),
       row("c4", subOf(/best sets/), subOf(/worst sets/), subOf(/improving most/), subOf(/dropping most/))].forEach(x=>{ if(x) p2.appendChild(x); });
     hold.remove();
-    const live=[p1, p2].map(p=>{ p.style.width=W+"px"; const pg=h("div",{class:"dop-page"}, p); area.appendChild(pg); return pg; });
-    /* each chart draws itself again at the width it has on the sheet; then the sheets are copied
-       still, so nothing redraws while the printer lays them out */
-    setTimeout(()=>{
-      const still=live.map(pg=>pg.cloneNode(true)); area.innerHTML=""; still.forEach(pg=>area.appendChild(pg));
+    [p1, p2].forEach(p=>{ p.style.width=W+"px"; area.appendChild(h("div",{class:"dop-page"}, p)); });
+  }
+  const lay=()=>{
+    /* each chart drawn once more at the width it has on the sheet - not left to the browser,
+       which does not redraw a page it is not showing - then the sheets are copied still, so
+       nothing redraws while the printer lays them out */
+    area.querySelectorAll(".tl").forEach(w=>{ try{ if(w.__paint) w.__paint(); }catch(e){_quiet(e)} });
+    {
+      const still=[...area.children].map(pg=>pg.cloneNode(true)); area.innerHTML=""; still.forEach(pg=>area.appendChild(pg));
       area.querySelectorAll(".tl-tip,.tl-cross,.tl-hit,button,.dash-src").forEach(x=>x.remove());
       const ps=still.map(pg=>pg.firstChild);
       const fit=p=>{ p.style.zoom="1"; p.style.width=W+"px"; p.style.zoom=Math.min(PW/W, PH/Math.max(1, p.scrollHeight)).toFixed(4); };
@@ -27825,10 +27832,10 @@ function _dashTrendsPrint(){
       document.body.classList.remove("dop-measure");
       document.body.classList.add("printing","printing-dop");
       setTimeout(()=>{ try{ window.print(); }catch(e){ done(); } }, 120);
-    }, 700);
+    }
   };
-  /* printed once nothing on the card is still being read - the trainings come in last */
-  const wait=()=>{ if(c.querySelector(".ld") && Date.now()-t0<40000){ setTimeout(wait, 300); return; } setTimeout(lay, 600); };
+  /* printed once nothing on the sheets is still being read - the trainings come in last */
+  const wait=()=>{ if(area.querySelector(".ld") && Date.now()-t0<40000){ setTimeout(wait, 300); return; } setTimeout(lay, 600); };
   setTimeout(wait, 400);
 }
 /* THEIR KEY SETS: the ten the staff starred in the pre game playbook that they run most - with
@@ -28759,7 +28766,9 @@ function renderDashboard(){
         /* a training's last value is not written at the end of its line: the games' are */
         series.forEach(sr=>{ if(sr.dash) sr.noEnd=true; });
         const MN=(opts && opts.minN)||0, thin=MN && pts.some(p=>series.some(sr=>sr.n && isFinite(sr.get(p.s)) && (sr.n(p.s)||0)<MN));
-        return h("div",{class:"sx dash-mix"}, API.chart("", "", pts, series, Object.assign({ height:150, kinds:false, legend:false, thinDots:true }, opts||{})),
+        const o2=Object.assign({ height:150, kinds:false, legend:false, thinDots:true }, opts||{});
+        if(c.__tall) o2.height=Math.round(o2.height*c.__tall);
+        return h("div",{class:"sx dash-mix"}, API.chart("", "", pts, series, o2),
           mixKey(measures||[], series.some(sr=>sr.dash), thin? (opts.thinLbl||"under "+MN+" · off the line") : null)); };
       const pairS=(name, color, get, extra)=>[
         Object.assign({ name:name? name+" · games" : "Games", color:color, only:"game", get:s=>s.__g? get(s) : NaN }, extra||{}),

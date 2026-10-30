@@ -2931,8 +2931,10 @@
     }
 
     /* paint() needs a real width, and at build time the node is not in the page
-       yet — so repaint whenever the host is measured or changes size. */
+       yet — so repaint whenever the host is measured or changes size. A page that moves
+       the chart and cannot wait for the browser (a sheet built for the printer) calls it */
     paint();
+    wrap.__paint = paint;
     var lastW = 0, rt = null;
     if (window.ResizeObserver) {
       /* the first measure draws at once; after that a chart is redrawn when its box has
