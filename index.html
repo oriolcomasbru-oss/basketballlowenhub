@@ -28738,16 +28738,17 @@ function renderDashboard(){
               h("div",{class:"rb-two"}, half("Offensive", vL, v3, vS, rank, lgAvg, "o", [+lg[0].us.oreb||0, +lg[0].them.dreb||0], "our misses", ta? [tw && tw.o, ta.o] : null),
                 half("Defensive", dL, d3, dS, rankD, lgAvgD, "d", [+lg[0].us.dreb||0, +lg[0].them.oreb||0], "their misses", ta? [tw && tw.d, ta.d] : null)),
               h("small",{class:"rb-key"}, h("i",{class:"lg"}), " league average"));
-            /* the chart: OREB% and DREB% a game, each training's DREB% (its OREB% is the rest),
-               and the league's two averages as the lines across */
+            /* the chart: OREB% and DREB% a game and a training, and the league's two averages as the
+               lines across - a training's two add up to a hundred, both fives being ours */
             cRB.__b.innerHTML="";
             const pts=GL.map(x=>({ d:x.g.date, kind:"game", label:(x.home? "vs " : "@ ")+(x.opp||""),
                 s:{ __g:true, o:nz(orb([x])), dr:nz(drb([x])), nO:(+x.us.oreb||0)+(+x.them.dreb||0), nD:(+x.us.dreb||0)+(+x.them.oreb||0) } }))
               .concat(PR.filter(x=>x.m && x.m.reb && x.m.reb.miss).map(x=>({ d:x.d, kind:"practice", label:x.d,
-                s:{ __g:false, dr:100*x.m.reb.dreb/x.m.reb.miss, nD:x.m.reb.miss } })));
+                s:{ __g:false, o:100*x.m.reb.oreb/x.m.reb.miss, dr:100*x.m.reb.dreb/x.m.reb.miss, nO:x.m.reb.miss, nD:x.m.reb.miss } })));
             const ch=mix(pts, [
               { name:"OREB% · games", color:"#c7a76a", get:s=>s.__g? s.o : NaN, fmt:f0, n:s=>s.nO, unit:"missed shots" },
               { name:"DREB% · games", color:"#4a86d8", get:s=>s.__g? s.dr : NaN, fmt:f0, n:s=>s.nD, unit:"missed shots" },
+              { name:"OREB% · trainings", color:"#c7a76a", dash:true, hollow:true, get:s=>s.__g? NaN : s.o, fmt:f0, n:s=>s.nO, unit:"missed shots" },
               { name:"DREB% · trainings", color:"#4a86d8", dash:true, hollow:true, get:s=>s.__g? NaN : s.dr, fmt:f0, n:s=>s.nD, unit:"missed shots" } ],
               { max:100, axisFmt:f0, minN:5, ref:[lgAvgD!=null? { v:lgAvgD, label:"League DREB% · "+f0(lgAvgD) } : null,
                 lgAvg!=null? { v:lgAvg, label:"League OREB% · "+f0(lgAvg) } : null].filter(Boolean) }, [["OREB%","#c7a76a"],["DREB%","#4a86d8"]]);
