@@ -2495,6 +2495,17 @@
     var o = { kind: list[0].kind, poss: 0, pts: 0, ptP: 0, brP: 0, orebP: 0, ptTot: 0, brTot: 0,
       fb: 0, ptRest: 0, brRest: 0, fgm: 0, fga: 0, t2a: 0, t3a: 0, fta: 0, tov: 0, oppPts: 0, files: list.length };
     o.phased = list.some(function (x) { return x.phased; });
+    /* EACH SESSION BY ITS OWN RULE, THEN ADDED. A session tagged with phases counts a
+       fastbreak whole and a touch in the rest; one without counts every touch (the floor).
+       Added up, "phased" was true as soon as one session had phases, and the sessions
+       without them then gave no touch at all: the trainings' paint touches read 45% where
+       every training was 65 to 100 (30/10/2026). So the touches are counted per session and
+       carried, and measured() reads them when they are there. */
+    o.ptM = 0; o.brM = 0;
+    list.forEach(function (x) {
+      o.ptM += x.ptM != null ? x.ptM : (x.phased ? (x.fb || 0) + (x.ptRest || 0) : (x.ptP || 0));
+      o.brM += x.brM != null ? x.brM : (x.phased ? (x.fb || 0) + (x.brRest || 0) : (x.brP || 0));
+    });
     list.forEach(function (x) {
       ["poss", "pts", "ptP", "brP", "orebP", "ptTot", "brTot", "fb", "ptRest", "brRest", "fgm", "fga", "t2a", "t3a", "fta", "tov"]
         .forEach(function (k) { o[k] += x[k] || 0; });
@@ -3437,6 +3448,7 @@
       training against a game as if they were measured the same way.                     */
   function measured(s, key) {   /* key: "pt" | "br" */
     if (!s.poss) return NaN;
+    if (s.ptM != null) return 100 * (key === "br" ? s.brM : s.ptM) / s.poss;   /* sessions added up */
     if (s.phased) return 100 * (s.fb + (key === "br" ? s.brRest : s.ptRest)) / s.poss;
     return 100 * (key === "br" ? s.brP : s.ptP) / s.poss;   /* the floor */
   }
