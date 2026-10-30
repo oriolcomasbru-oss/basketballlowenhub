@@ -28636,10 +28636,12 @@ function renderDashboard(){
       c.__b.appendChild(h("div",{class:"dash-keyh"}, h("b",{},"What is key for us"), h("span",{},"games: the last, the last 3, the season · trainings: the last 7 days, the average")));
       c.__b.appendChild(key);
       const cT=sub("TAG / BACK conceded"), cP=sub("Paint touches"), cR=sub("Ball reversals"), cL=sub("The last game");
-      c.__b.appendChild(h("div",{class:"dash-2 dash-mixg"}, cT, cP, cR, cL));
       const cN=sub("Net rating · league"), cPU=sub("Players improving · PIR"), cPD=sub("Players dropping · PIR","bad"), cX=sub("Team trends");
-      /* the players up and down and the list of trends are off the card: the net rating keeps the line */
-      c.__b.appendChild(h("div",{class:"dash-1 r2"}, cN));
+      /* TAG / BACK ACROSS THE WHOLE CARD (Oriol, 30/10/2026): four lines over every game and every
+         training want the width; the net rating, one line over the games, sits in its place */
+      c.__b.appendChild(h("div",{class:"dash-2 dash-mixg"}, cN, cP, cR, cL));
+      /* the players up and down and the list of trends are off the card: TAG / BACK has the line */
+      c.__b.appendChild(h("div",{class:"dash-1 r2"}, cT));
       /* our offense and defense game by game, and how many possessions each game had */
       const cOD=sub("OER / DER · games and trainings"), cPS=sub("Possessions · league");
       /* our rebounding game by game, above the ratings: OREB% and DREB% from the league */
@@ -28858,7 +28860,7 @@ function renderDashboard(){
         const fN=v=>v.toFixed(2), fP=v=>Math.round(v)+"%";
         /* a training with under four transitions of a kind is left off that line: one or two say nothing */
         const ch2=mix(pts.slice(), pairS("TAG","#d8524e", s=>s.tag, { fmt:fN, n:s=>s.tagN, unit:"transitions" })
-          .concat(pairS("BACK","#4a86d8", s=>s.back, { fmt:fN, n:s=>s.backN, unit:"transitions" })), { axisFmt:fN, minN:4 }, [["TAG","#d8524e"],["BACK","#4a86d8"]]);
+          .concat(pairS("BACK","#4a86d8", s=>s.back, { fmt:fN, n:s=>s.backN, unit:"transitions" })), { axisFmt:fN, minN:4, height:200 }, [["TAG","#d8524e"],["BACK","#4a86d8"]]);
         if(ch2) cT.__b.appendChild(ch2);
         cT.__b.appendChild(h("div",{class:"dash-src"},"Points conceded per transition · lower is better"));
         const ch1=mix(pts.slice(), pairS("Paint touches", "#2f9e86", s=>s.pt, { fmt:fP }), { max:100, axisFmt:fP, ref:{ v:70, label:"70% target" } }, [["Paint touches","#2f9e86"]]);
