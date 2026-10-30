@@ -13160,6 +13160,43 @@ function _preSeedCards(L, tid, C, rep, canEd, redraw, repaint){
     }).catch(_quiet);
   });
 }
+/* ONE BOARD OF THE PRE GAME ON ONE LANDSCAPE A4 (Oriol, 30/10/2026): the roster positions on a
+   sheet of their own and the roles on another, each as large as the sheet allows. The board is
+   copied as it reads - the editing furniture left out, and the empty lines - and laid out at a
+   range of widths: the one that leaves it largest is kept, so the roles go onto a second row of
+   areas when two rows make the faces bigger than one */
+function _prePrintBoard(src, what){
+  const area=$("#print-area"); if(!area || !src) return;
+  const g=(state.games||[]).filter(x=>x && x.id===((state.ui.os||{}).gameId))[0];
+  const title=[g? (g.venue==="Away"? "@ " : "vs ")+g.opponent+" · "+_dashFmt(g.date) : "", what==="roles"? "roster roles in the team" : "roster positions"].filter(Boolean).join(" · ");
+  const copy=src.cloneNode(true);
+  copy.querySelectorAll("button,.rm-x,.card-toolbar,.add-block-btn,.photo-lock-btn,.pc-addstat,.vb-foot,.vb-sws,.vb-rsz,.pre-lock,.vb-move,.hl-cell,.hl-auto,.drag-handle,.vb-tools,.vb-pool,.vb-hint").forEach(x=>x.remove());
+  copy.querySelectorAll("[contenteditable]").forEach(x=>x.removeAttribute("contenteditable"));
+  copy.querySelectorAll("[draggable]").forEach(x=>x.removeAttribute("draggable"));
+  /* what a reader does not see is not printed: an empty line, an empty tagline, an empty note */
+  copy.querySelectorAll(".idea-row").forEach(r=>{ const t=r.querySelector(".idea-line"); if(!t || !t.textContent.trim()) r.remove(); });
+  copy.querySelectorAll(".tagline").forEach(t=>{ if(!t.textContent.trim()){ const w=t.closest(".tagline-wrap"); (w||t).remove(); } });
+  copy.querySelectorAll(".vb-note").forEach(n=>{ if(!n.textContent.trim()) n.remove(); });
+  const p=h("div",{class:"dop-fit prb prb-"+what}, h("div",{class:"dop-top"}, h("b",{}, "Pre game"), h("span",{}, title)), copy);
+  area.innerHTML="";
+  area.appendChild(h("div",{class:"dop-page"}, p));
+  const PW=1058, PH=715;
+  const widths=what==="roles"? [900,1050,1200,1350,1500,1700,1900,2150,2400,2700,3000] : [1050,1200,1350,1500,1650,1800,2000];
+  const at=W=>{ p.style.zoom="1"; p.style.width=W+"px"; return Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); };
+  const refit=()=>{ let best={ s:0, w:widths[0] }; widths.forEach(W=>{ const sc=at(W); if(sc>best.s) best={ s:sc, w:W }; });
+    at(best.w); p.style.zoom=best.s.toFixed(4); };
+  document.body.classList.add("dop-measure");
+  refit();
+  const mq=window.matchMedia? window.matchMedia("print") : null, onMq=e=>{ if(e.matches) refit(); };
+  if(mq){ if(mq.addEventListener) mq.addEventListener("change", onMq); else if(mq.addListener) mq.addListener(onMq); }
+  const st=document.createElement("style"); st.textContent="@page{size:A4 landscape;margin:7mm} html,body{margin:0!important;padding:0!important}"; document.body.appendChild(st);
+  const done=()=>{ document.body.classList.remove("printing","printing-dop","dop-measure"); area.innerHTML=""; st.remove(); window.removeEventListener("afterprint", done);
+    if(mq){ if(mq.removeEventListener) mq.removeEventListener("change", onMq); else if(mq.removeListener) mq.removeListener(onMq); } };
+  window.addEventListener("afterprint", done);
+  document.body.classList.remove("dop-measure");
+  document.body.classList.add("printing","printing-dop");
+  setTimeout(()=>{ try{ window.print(); }catch(e){ done(); } }, 120);
+}
 function _preCardsBlock(L, tid, rep, canEd, save){
   const blk=h("div",{class:"rs-block rs-block-lg"});
   const ban=h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"},"ROSTER POSITIONS"));
@@ -13204,6 +13241,8 @@ function _preCardsBlock(L, tid, rep, canEd, save){
       d.bin = Array.isArray(C && C.bin) ? C.bin : [];
       rep.data.cards=d; C=d; redraw();
     }},"↻ Rebuild from the league"));
+  ban.appendChild(h("button",{class:"pc-rebuild pc-print", type:"button", title:"Print the roster positions on one A4 page, as large as it goes",
+    onclick:()=>_prePrintBoard(board.querySelector(".phx.pre-phx")||board, "roster")},"🖨 Print"));
   if(!C){
     blk.appendChild(h("div",{class:"lg-empty"},
       _lgRosBusy[tid] && !(ros&&ros.err)
@@ -13339,7 +13378,12 @@ function _preRolesBlock(rep, canEd, save, L, tid){
   const R=rep.data.roles || (rep.data.roles={});
   const blk=h("div",{class:"rs-block rs-block-lg"});
   blk.appendChild(h("div",{class:"rs-banner rs-banner-sec"},
-    h("span",{class:"rs-banner-t"},"ROSTER ROLES IN THE TEAM")));
+    h("span",{class:"rs-banner-t"},"ROSTER ROLES IN THE TEAM"),
+    /* the areas alone on one A4 - not the men still to place, nor the tools */
+    h("button",{class:"pc-rebuild pc-print", type:"button", title:"Print the roles on one A4 page, as large as they go", onclick:()=>{
+      const host=blk.querySelector(".phx.pre-roles"), ar=host && host.querySelector(".vb-areas"), w=h("div",{class:host? host.className : ""});
+      if(ar) w.appendChild(ar.cloneNode(true)); else [...blk.children].slice(1).forEach(x=>w.appendChild(x.cloneNode(true)));
+      _prePrintBoard(w, "roles"); }},"🖨 Print")));
   const C=(rep.data&&rep.data.cards)||null;
   if(L && tid && C && typeof window.PHX_cardHTML==="function"){
     blk.appendChild(_preRolesBoardBlock(L, tid, C, canEd, save));
@@ -36634,6 +36678,10 @@ body.edit-mode .phx.pre-roles .pre-lock{bottom:24px}
 .pc-rebuild{margin-left:auto;border:1px solid var(--line);background:none;color:var(--muted);
   font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;border-radius:3px;padding:3px 7px;cursor:pointer}
 .pc-rebuild:hover{color:var(--ink);border-color:var(--ink)}
+.pc-rebuild + .pc-print{margin-left:8px}
+/* a board of the pre game alone on a sheet */
+.prb-roster .roster-columns{grid-template-columns:repeat(5,minmax(0,1fr))!important}
+.prb-roles .vb-areas{justify-content:center!important}
 .pc-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;padding:9px 2px}
 .pc-col{min-width:0}
 .pc-colh{display:flex;align-items:baseline;gap:5px;padding:0 2px 5px;border-bottom:1px solid var(--line-gold,var(--line))}
