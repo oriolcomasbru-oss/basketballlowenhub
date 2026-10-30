@@ -11941,6 +11941,31 @@ function _preUnbin(C, bi){
   return pos;
 }
 
+/* TAB TO THE NEXT LINE (Oriol, 30/10/2026: "si le doy al tabulador me salta al siguiente punto,
+   para ir más rápido"). In a card being edited Tab goes to the next line to write in - the card's
+   lines in reading order, then the first of the next card - and Shift+Tab back. Leaving a line
+   that changed draws the board again, so where to go is worked out first, as a card and a place
+   in it, and found again in the board that has been drawn; the caret lands at the end */
+function _preTabTo(card, n, dir){
+  const lines=el=>[...el.querySelectorAll("[data-pre-f]")].filter(x=>x.getClientRects().length);
+  const root=card.closest(".pc-board")||card.closest(".roster-columns")||card.parentElement;
+  const cards=[...root.querySelectorAll(".card[data-pre-key]")];
+  let ci=cards.indexOf(card), fi=lines(card).indexOf(n)+dir;
+  if(ci<0) return;
+  while(fi<0 || fi>=lines(cards[ci]).length){
+    ci+=dir;
+    if(ci<0 || ci>=cards.length){ n.blur(); return; }
+    fi=dir>0? 0 : lines(cards[ci]).length-1;
+  }
+  const key=cards[ci].dataset.preKey;
+  n.blur();
+  const c2=[...root.querySelectorAll(".card[data-pre-key]")].filter(x=>x.dataset.preKey===key)[0];
+  const f=c2? lines(c2)[fi] : null;
+  if(!f) return;
+  f.focus();
+  try{ const r=document.createRange(); r.selectNodeContents(f); r.collapse(false);
+    const s=window.getSelection(); s.removeAllRanges(); s.addRange(r); }catch(e){_quiet(e)}
+}
 function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
   /* Clicking anywhere on the card that is not a control opens the popup - the photograph,
      the name, the stat bar. In edit mode the editable fields take the click first, so the
@@ -11959,11 +11984,14 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
     if(sel && !sel.isCollapsed && sel.anchorNode && card.contains(sel.anchorNode)) return;
     _preOpenCard(_preLgForCards||leagueState(), _preTidForCards||"", c, canEd, save||(()=>{}));
   });
+  card.dataset.preKey=pos+"|"+i;
   const put=(n, get, set)=>{
     if(!n || !canEd) return;
     n.setAttribute("contenteditable","true");
+    n.dataset.preF="1";
     n.addEventListener("blur",()=>{ const v=n.textContent.trim(); if(v!==String(get()||"")){ set(v); redraw(); } });
-    n.addEventListener("keydown",e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); n.blur(); } });
+    n.addEventListener("keydown",e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); n.blur(); }
+      if(e.key==="Tab" && !e.altKey && !e.ctrlKey && !e.metaKey){ e.preventDefault(); _preTabTo(card, n, e.shiftKey? -1 : 1); } });
   };
   const q=sel=>card.querySelector(sel);
   /* the photograph, framed by hand when the default does not suit a particular portrait:
