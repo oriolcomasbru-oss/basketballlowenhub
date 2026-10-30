@@ -11945,9 +11945,18 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
   /* Clicking anywhere on the card that is not a control opens the popup - the photograph,
      the name, the stat bar. In edit mode the editable fields take the click first, so the
      photograph and the badges are the way in. */
+  /* SELECTING IS NOT OPENING (Oriol, 30/10/2026): a line selected by dragging from inside the
+     text being edited out past its end lands its click on the card, not on the text, and the
+     video opened over what was being edited. A press that starts in an editable line, or a
+     click that leaves text selected on the card, is somebody selecting - not opening */
+  let downInText=false;
+  card.addEventListener("mousedown", e=>{ downInText=!!(canEd && e.target.closest("[contenteditable='true']")); });
   card.addEventListener("click", e=>{
     if(e.target.closest("button,.rm-x,.editable[contenteditable='true'],.closeout-bar,.drag-handle")) return;
     if(canEd && e.target.closest("[contenteditable='true']")) return;
+    if(downInText){ downInText=false; return; }
+    const sel=window.getSelection? window.getSelection() : null;
+    if(sel && !sel.isCollapsed && sel.anchorNode && card.contains(sel.anchorNode)) return;
     _preOpenCard(_preLgForCards||leagueState(), _preTidForCards||"", c, canEd, save||(()=>{}));
   });
   const put=(n, get, set)=>{
@@ -40884,6 +40893,9 @@ function _deadFetch(url){
       card.addEventListener('drop', function(e){ if(draggedCard) e.preventDefault(); });
       card.addEventListener('click', function(e){
         if(body.classList.contains('edit-mode')) return;
+        /* text selected on the card is somebody selecting, not opening the video */
+        var sl = window.getSelection ? window.getSelection() : null;
+        if(sl && !sl.isCollapsed && sl.anchorNode && card.contains(sl.anchorNode)) return;
         openCardModal(card);
       });
     });
