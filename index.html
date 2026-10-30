@@ -11315,6 +11315,17 @@ function _preLine(p){
   return null;
 }
 /* one card, written from one roster row */
+/* a card's bar holds six boxes at most - six numbers still fit in one row - and a box of what
+   stands out goes in before the free throws, unless the staff took that box off the card */
+const PRE_BOX_MAX=6;
+function _preWithKeys(stats, keys, gone){
+  const out=(stats||[]).slice(), has=new Set(out.map(x=>String((x&&x[1])||"").toUpperCase()));
+  (keys||[]).forEach(k=>{ const lab=String(k[1]||"").toUpperCase();
+    if(!lab || has.has(lab) || (gone && gone[lab]) || out.length>=PRE_BOX_MAX) return;
+    const ft=out.findIndex(x=>String((x&&x[1])||"").toUpperCase()==="FT%");
+    out.splice(ft<0? out.length : ft, 0, [String(k[0]), String(k[1])]); has.add(lab); });
+  return out;
+}
 function _preCardOf(p, ctx){
   const f1=v=>(Math.round(v*10)/10).toFixed(1);
   const pc=(m,a)=>a? Math.round(100*m/a) : null;
@@ -11344,23 +11355,24 @@ function _preCardOf(p, ctx){
     if(pos==="PF"||pos==="C") st.push([f1(per(a.oreb)),"OREB/G"]);
     st.push([(ftp!=null? ftp+"%" : "—"),"FT%"]);
   }
-  /* and what stands out, whatever he plays */
-  const ideas=[];
+  /* WHAT STANDS OUT GOES IN A BOX, NEVER IN A LINE (Oriol, 30/10/2026: "no me pongas textos arriba
+     con stats"). The draft wrote "Creates: 3.3 ast/g" among the ideas, and the lines up top are the
+     staff's own words: a number belongs in the bar below. What it used to write there is a box of
+     its own now - the passes, the offensive rebounds, the steals, the share of the shots - lit by
+     its rank like any other box; how well he shoots is in the boxes he already has, and a poor
+     shooter is marked on them (see _preHlLow) */
+  const keys=[];
   if(a && ctx){
-    const share=ctx.teamFga? Math.round(100*((a.p2a||0)+(a.p3a||0))/ctx.teamFga) : 0;
-    if(share>=20) ideas.push("Takes "+share+"% of their shots");
     /* Who creates and who crashes, whatever shirt he wears: the man who leads them in it
-       is always worth saying out loud, and someone doing it from a position that is not
-       asked to is worth saying twice as much. A point guard third in assists or a centre
-       third in offensive rebounds is doing his job, not standing out. */
+       is always worth a box, and someone doing it from a position that is not asked to is
+       worth it twice as much. A point guard third in assists or a centre third in offensive
+       rebounds is doing his job, not standing out. */
     const aR=ctx.rank(p,"ast"), oR=ctx.rank(p,"oreb");
-    if(per(a.ast)>=3 && aR<=2 && (pos!=="PG" || aR===1)) ideas.push("Creates: "+f1(per(a.ast))+" ast/g");
-    if(per(a.oreb)>=1.3 && oR<=2 && ((pos!=="PF" && pos!=="C") || oR===1)) ideas.push("Crashes: "+f1(per(a.oreb))+" oreb/g");
-    if(per(a.stl)>=1.2 && ctx.rank(p,"stl")<=2) ideas.push("Hands: "+f1(per(a.stl))+" stl/g");
-    if(p3p!=null && a.p3a>=15 && p3p>=37) ideas.push("3P "+p3p+"% on "+a.p3a+" — never leave him");
-    if(p3p!=null && a.p3a>=12 && p3p<30) ideas.push("3P "+p3p+"% on "+a.p3a+" — let him shoot it");
-    if(p2p!=null && a.p2a>=20 && p2p<45) ideas.push("2P "+p2p+"% — contest and live with it");
-    if(ftp!=null && a.fta>=10 && ftp<65) ideas.push("FT "+ftp+"% — foul him late");
+    if(per(a.ast)>=3 && aR<=2 && (pos!=="PG" || aR===1)) keys.push([f1(per(a.ast)),"AST/G"]);
+    if(per(a.oreb)>=1.3 && oR<=2 && ((pos!=="PF" && pos!=="C") || oR===1)) keys.push([f1(per(a.oreb)),"OREB/G"]);
+    if(per(a.stl)>=1.2 && ctx.rank(p,"stl")<=2) keys.push([f1(per(a.stl)),"STL/G"]);
+    const share=ctx.teamFga? Math.round(100*((a.p2a||0)+(a.p3a||0))/ctx.teamFga) : 0;
+    if(share>=20) keys.push([share+"%","SHOT%"]);
   }
   /* The headline the sheet puts under the name - "EXPLOSIVE CREATOR/SCORER PG",
      "GENUINE FLOOR-SPACING SHOOTER" - is the one line a coach reads first, so the draft
@@ -11399,7 +11411,7 @@ function _preCardOf(p, ctx){
     gp: gp,
     badge: start!=null? (start>=0.6? "STARTER" : (mn>=12? "ROTATION" : "BENCH"))
                       : (mn>=24? "STARTER" : (mn>=12? "ROTATION" : "BENCH")),
-    stats: st, ideas: ideas.slice(0,4), co: co, guessed: guessed, tag: tag
+    stats: _preWithKeys(st, keys), keys: keys, ideas: [], co: co, guessed: guessed, tag: tag
   };
 }
 /* the first draft: every man on the roster, in the column his position says */
@@ -11436,17 +11448,6 @@ function _preCardsDraft(L, tid){
 const PRE_AUTO_IDEA=[["takes",/^Takes \d+% of their shots$/],["creates",/^Creates: [\d.]+ ast\/g$/],["crashes",/^Crashes: [\d.]+ oreb\/g$/],
   ["hands",/^Hands: [\d.]+ stl\/g$/],["3p",/^3P \d+% on \d+ — (never leave him|let him shoot it)$/],["2p",/^2P \d+% — contest and live with it$/],["ft",/^FT \d+% — foul him late$/]];
 function _preIdeaKind(s){ const t=String(s||"").replace(/<[^>]+>/g,"").replace(/&nbsp;/g," ").trim(); const k=PRE_AUTO_IDEA.filter(x=>x[1].test(t))[0]; return k? k[0] : ""; }
-/* A LINE OF THE DRAFT'S THAT THE STAFF TOOK OFF STAYS OFF (Oriol, 30/10/2026: "si lo borro ya no
-   quiero que aparezca más en otros espacios, desaparece y punto"). The lines the draft writes itself -
-   Creates, Hands, FT, 3P... - were written back on every visit when they were missing, at the foot of
-   the list, so a line deleted or typed over came back under the staff's own. A line of the draft's
-   that is deleted or written over is remembered on the card, and is never written back; writing the
-   same kind of line again by hand lets the draft keep its number up to date once more */
-function _preIdeaGone(c, was, now){
-  const k=_preIdeaKind(was), k2=_preIdeaKind(now);
-  if(k && k!==k2){ c.ideasGone=c.ideasGone||{}; c.ideasGone[k]=1; }
-  if(k2 && c.ideasGone) delete c.ideasGone[k2];
-}
 function _preCardsFresh(L, tid, C){
   if(!C || !C.pos || !tid) return;
   PRE_CARD_POS.forEach(pos=>(C.pos[pos]||[]).forEach(c=>{ try{
@@ -11455,20 +11456,16 @@ function _preCardsFresh(L, tid, C){
     /* a card drafted before the man had played (no games, so no boxes) gets its boxes the day he
        has played - a card whose boxes the staff took off had games and is left without them */
     if((!Array.isArray(c.stats) || !c.stats.length) && !(+c.gp>0) && (d.gp||0)>0 && (d.stats||[]).length) c.stats=JSON.parse(JSON.stringify(d.stats));
+    /* what stands out, in a box of its own - unless the card has no bar, or the staff took it off */
+    if(Array.isArray(c.stats) && c.stats.length) c.stats=_preWithKeys(c.stats, d.keys, c.statsGone);
     /* the boxes the card has, each with today's value */
     const fresh={}; (d.stats||[]).forEach(s=>{ fresh[String(s[1]||"").toUpperCase()]=s[0]; });
     if(Array.isArray(c.stats)) c.stats.forEach(s=>{ const k=String((s&&s[1])||"").toUpperCase(); if(k in fresh) s[0]=fresh[k]; });
     /* the minutes a game, said to be the cup's when the numbers are */
     if(!c.min || /^\d+(\.\d+)? min\/g( · cup)?$/.test(String(c.min).trim())) c.min=d.min? d.min+(d.cupOnly? " · cup" : "") : c.min;
     if(d.gp!=null) c.gp=d.gp;
-    /* the ideas the draft writes itself, written again */
-    if(Array.isArray(c.ideas)){
-      const nw={}; (d.ideas||[]).forEach(s=>{ const k=_preIdeaKind(s); if(k) nw[k]=s; });
-      const had={}, out=[];
-      c.ideas.forEach(s=>{ const k=_preIdeaKind(s); if(!k){ out.push(s); return; } had[k]=1; if(nw[k]) out.push(nw[k]); });
-      Object.keys(nw).forEach(k=>{ if(!had[k] && !(c.ideasGone && c.ideasGone[k]) && out.filter(x=>String(x||"").trim()).length<4) out.push(nw[k]); });
-      c.ideas=out;
-    }
+    /* a number is never a line up top: the lines the draft used to write go, on every card */
+    if(Array.isArray(c.ideas)) c.ideas=c.ideas.filter(x=>!_preIdeaKind(x));
   }catch(e){_quiet(e)} }));
 }
 /* A MAN WHO HAS ONLY PLAYED IN THE CUP. The cards count the league's games (as the league's own
@@ -12066,7 +12063,7 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
   card.querySelectorAll(".idea-line").forEach((n,ii)=>{
     put(n, ()=>(c.ideas||[])[ii]||"", v=>{
       c.ideas=(c.ideas||[]).filter(x=>String(x||"").trim());
-      if(ii<c.ideas.length){ _preIdeaGone(c, c.ideas[ii], v); if(v) c.ideas[ii]=v; else c.ideas.splice(ii,1); }
+      if(ii<c.ideas.length){ if(v) c.ideas[ii]=v; else c.ideas.splice(ii,1); }
       else if(v) c.ideas.push(v);
     });
   });
@@ -12086,7 +12083,9 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
     if(canEd){
       const x=h("button",{class:"rm-x rm-x-stat", type:"button", title:"Remove this statistic",
         onclick:e=>{ e.preventDefault(); e.stopPropagation();
-          if(c.stats && si<c.stats.length){ c.stats.splice(si,1); redraw(); } }},"\u00d7");
+          if(c.stats && si<c.stats.length){ const lab=String((c.stats[si]||[])[1]||"").toUpperCase();
+            if(lab){ c.statsGone=c.statsGone||{}; c.statsGone[lab]=1; }
+            c.stats.splice(si,1); redraw(); } }},"\u00d7");
       cell.appendChild(x);
     }
   });
@@ -12187,7 +12186,7 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
     if(!c.ideas || ii>=c.ideas.length) return null;
     const t=c.ideas[ii];
     return ()=>{ let k=c.ideas.indexOf(t); if(k<0) k=ii<c.ideas.length? ii : -1;
-      if(k>=0){ _preIdeaGone(c, c.ideas[k], ""); c.ideas.splice(k,1); } }; }));
+      if(k>=0) c.ideas.splice(k,1); }; }));
   card.querySelectorAll(".extra-block .rm-x-inline").forEach((btn,bi)=>xPress(btn, ()=>{
     if(!c.blocks || bi>=c.blocks.length) return null;
     const t=c.blocks[bi];
@@ -12317,7 +12316,7 @@ function _preFindBox(pos, C, redraw){
    light red, each with where he ranks - in the BBL when he is among its 25 best, in his
    team otherwise. The staff can mark the card KEY (gold frame) or STOP HIM (red frame),
    and choose the lit numbers by hand; both are kept on the card in the report. */
-const PRE_HL_STAT={ "PTS/G":["pts",false,1], "AST/G":["ast",false,1], "OREB/G":["oreb",false,1], "2PT/G":["p2",true,15], "3PT/G":["p3",true,15], "FT%":["ft",true,10] };
+const PRE_HL_STAT={ "PTS/G":["pts",false,1], "AST/G":["ast",false,1], "OREB/G":["oreb",false,1], "STL/G":["stl",false,1], "SHOT%":["shot",false,1], "2PT/G":["p2",true,15], "3PT/G":["p3",true,15], "FT%":["ft",true,10] };
 function _preHlRanks(L, c, tid){
   const pool=(_lgLeadPool(L).pool||[]);
   const id=String(c.pid||"");
@@ -12325,8 +12324,12 @@ function _preHlRanks(L, c, tid){
   if(!me){ const k=_lgNorm(_lgLastName(c.name||"")); me=pool.filter(x=>String(x.tid)===String(tid) && _lgNorm(_lgLastName(x.name||""))===k)[0]||null; }
   if(!me) return null;
   const team=pool.filter(x=>String(x.tid)===String(me.tid));
+  /* the share of his team's shots, over the men of the team who count */
+  const tfa={}; pool.forEach(y=>{ const t=y.t||{}; tfa[y.tid]=(tfa[y.tid]||0)+(t.p2a||0)+(t.p3a||0); });
   const val=(x,s)=>{ const t=x.t, g=t.gp||1;
     if(s[0]==="pts") return t.pts/g; if(s[0]==="ast") return (t.ast||0)/g; if(s[0]==="oreb") return (t.oreb||0)/g;
+    if(s[0]==="stl") return (t.stl||0)/g;
+    if(s[0]==="shot") return tfa[x.tid]? ((t.p2a||0)+(t.p3a||0))/tfa[x.tid] : null;
     /* A SHOT IS A THREAT BY WHAT GOES IN. Ranked by percentage alone, a man at 38% on 16 threes
        came out 2nd of Hagen ahead of men who make twice as many, and the card lit him red while
        it still showed his 25% of a game before. So the threes and the twos are ranked by what
@@ -12362,6 +12365,7 @@ function _preHlRanks(L, c, tid){
    them is among the man's two best, it gets a fifth box of its own. */
 const PRE_HL_EXTRA=[["AST/G","ast"],["OREB/G","oreb"],["REB/G","reb"],["STL/G","stl"],["BLK/G","blk"]];
 function _preHlExtra(L, c, tid, ranks){
+  if((c.stats||[]).length>=PRE_BOX_MAX) return null;
   const shown=new Set((c.stats||[]).map(s=>String(s[1]||"").toUpperCase()));
   const pool=(_lgLeadPool(L).pool||[]);
   const id=String(c.pid||"");
@@ -12386,6 +12390,23 @@ function _preHlExtra(L, c, tid, ranks){
   const have=(ranks||[]).filter(Boolean).map(r=>r.score).sort((a,b)=>a-b);
   if(have.length && best.score>=have[0]) return null;
   return best;
+}
+/* A POOR SHOOTER IS MARKED ON HIS OWN BOX. What the draft used to write as a line - "FT 47% - foul
+   him late", "3P 26% on 31 - let him shoot it", "2P 41% - contest and live with it" - is the box he
+   already has, in green, with LOW under it and the reason under the pointer. On the season's
+   numbers, with the attempts the lines asked for */
+function _preHlLow(L, c, tid){
+  const pool=(_lgLeadPool(L).pool||[]);
+  const id=String(c.pid||"");
+  let me=id? pool.filter(x=>String(x.id)===id || String(x.pid||"")===id)[0] : null;
+  if(!me){ const k=_lgNorm(_lgLastName(c.name||"")); me=pool.filter(x=>String(x.tid)===String(tid) && _lgNorm(_lgLastName(x.name||""))===k)[0]||null; }
+  if(!me) return null;
+  const t=me.t||{}, pc=(m,a)=>a? Math.round(100*(m||0)/a) : null;
+  return (c.stats||[]).map(s=>{ const lab=String((s&&s[1])||"").toUpperCase();
+    if(lab==="3PT/G" && (t.p3a||0)>=12 && pc(t.p3m,t.p3a)<30) return pc(t.p3m,t.p3a)+"% on "+t.p3a+" threes - let him shoot it";
+    if(lab==="2PT/G" && (t.p2a||0)>=20 && pc(t.p2m,t.p2a)<45) return pc(t.p2m,t.p2a)+"% on "+t.p2a+" twos - contest and live with it";
+    if(lab==="FT%" && (t.fta||0)>=10 && pc(t.ftm,t.fta)<65) return pc(t.ftm,t.fta)+"% on "+t.fta+" free throws - foul him late";
+    return null; });
 }
 function _preHl(L, card, c, canEd, save, tid){
   /* he will not play: the card stays where it is, in grey, the badge saying OUT */
@@ -12433,8 +12454,11 @@ function _preHl(L, card, c, canEd, save, tid){
      Solid: top 10 of the BBL or first in his team; light: 11th to 25th of the BBL, or 2nd
      and 3rd in his team when it is above the league's middle */
   else if(ranks){ ranks.forEach((r,i)=>{ if(r) pick[i]=(r.hot || r.score<=10)? "hot" : "warm"; }); }
+  /* the poor shooting, on a box nothing else lights - and never against the staff's own choice */
+  let low=null; if(!man){ try{ low=_preHlLow(L, c, tid); }catch(e){ low=null; } }
   cells.forEach((cell,i)=>{
     const lvl=pick[i];
+    if(!lvl && low && low[i]){ cell.classList.add("hl-low"); cell.appendChild(h("span",{class:"hl-why"}, "LOW")); cell.title=low[i]; }
     /* the rank on one line and the season numbers it stands on under it, so neither is cut */
     if(lvl){ cell.classList.add("hl-"+lvl); const why=ranks && ranks[i] && ranks[i].why;
       /* the rank in one short line - "#2 WÜR", "#7 BBL" - and what it stands on under the pointer,
@@ -13402,7 +13426,7 @@ function _preCard(L, c, pos, i, C, canEd, redraw, drag){
   const ul=h("div",{class:"pc-ideas"});
   (c.ideas||[]).forEach((t,ii)=>{
     const row=h("div",{class:"pc-idea"});
-    row.appendChild(ed("pc-it", t, v=>{ _preIdeaGone(c, c.ideas[ii], v); if(v) c.ideas[ii]=v; else c.ideas.splice(ii,1); }, "span"));
+    row.appendChild(ed("pc-it", t, v=>{ if(v) c.ideas[ii]=v; else c.ideas.splice(ii,1); }, "span"));
     row.appendChild(h("span",{class:"pc-dot"}));
     ul.appendChild(row);
   });
@@ -16778,7 +16802,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
       if(hasCards && curOpp===opp){
         GP_POS.forEach((k,i)=>(cards[k]||[]).forEach(c=>{
           const m=pb["#"+String(c.num||"")] || pb[nk(c.name)] || null;
-          const ideas=(c.ideas||[]).filter(x=>String(x||"").trim());
+          const ideas=(c.ideas||[]).filter(x=>String(x||"").trim() && !_preIdeaKind(x));
           /* a man at the end of the bench with nothing written about him is left out */
           if(!m && String(c.badge||"").toUpperCase()==="BENCH" && !String(c.tag||"").trim() && !ideas.length) return;
           const mn=m? m.e.min : (parseFloat(c.min)||0);
@@ -27566,7 +27590,7 @@ function _dashRosterInto(box, g, wide){
     const byNum={}, byName={}; POS.forEach(k=>(cards[k]||[]).forEach(c0=>{ if(!c0) return; if(c0.num) byNum[String(c0.num)]=c0; const n=nk(c0.name); if(n) byName[n]=c0; }));
     const used={};
     const man=(p, start, cd)=>{ if(cd) used[cd.id||cd.name]=1;
-      const ideas=wide? [] : ((cd && cd.ideas)||[]).filter(x=>String(x||"").trim()).slice(0, 2);   /* the wide roster says the role only */
+      const ideas=wide? [] : ((cd && cd.ideas)||[]).filter(x=>String(x||"").trim() && !_preIdeaKind(x)).slice(0, 2);   /* the wide roster says the role only */
       /* the wide roster puts each man's face beside him, from the league roster */
       let face=null; if(wide){ try{ face=_lgFaceName(g, p.name||(cd&&cd.name)||"", "ros"); }catch(e){_quiet(e)} }
       return h("div",{class:"dash-man"+(face? " ph" : "")+(start? " start" : "")+((cd && (cd.hl==="key"||cd.hl==="stop"))? " hl-"+cd.hl : "")+((cd && cd.out)? " is-out" : ""), style:(cd && CO[cd.co])? "border-left-color:"+CO[cd.co] : ""},
@@ -39189,6 +39213,9 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .phx .card .stat-cell.hl-hot .stat-value,.phx .card .stat-cell.hl-hot .stat-label,.phx .card .stat-cell.hl-hot .sv-pc,.phx .card .stat-cell.hl-hot .sv-sep{color:#fff!important}
 .phx .card .stat-cell.hl-warm{background:rgba(216,82,78,.14)!important;border-radius:8px}
 .phx .card .stat-cell.hl-warm .stat-value{color:#c0403c!important}
+/* a weakness of his, ours to use: green, the colour the closeout strip gives a driver */
+.phx .card .stat-cell.hl-low{background:rgba(47,158,134,.13)!important;border-radius:8px}
+.phx .card .stat-cell.hl-low .stat-value,.phx .card .stat-cell.hl-low .hl-why{color:#17805a!important}
 .phx .card .stat-cell .hl-why{display:block;font:700 9px "IBM Plex Mono",monospace;margin-top:1px;white-space:normal;overflow-wrap:anywhere;line-height:1.15}
 /* the season numbers the rank stands on, under it */
 .phx .card .stat-cell .hl-basis{display:block;font:600 8.5px "IBM Plex Mono",monospace;line-height:1.1;opacity:.85;white-space:normal;overflow-wrap:anywhere}
