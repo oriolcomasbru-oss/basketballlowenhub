@@ -22760,7 +22760,7 @@ function _lgLeadPool(L){
 }
 function _lgLeaders(L){
   const box=_lgPanel("League leaders", null,
-    "The top five of the league in twelve measures, the league average of each, and the best man of the club picked. A player needs four in ten of his club's games and ten minutes a game to count, and a percentage needs enough attempts. The average is over the same players.");
+    "The top six of the league in twelve measures, the league average of each, and the best man of the club picked. A player needs four in ten of his club's games and ten minutes a game to count, and a percentage needs enough attempts. The average is over the same players.");
   box.classList.add("ldr");
   const P=_lgLeadPool(L);
   _lgLeadLoad(L);
@@ -22770,10 +22770,12 @@ function _lgLeaders(L){
   const sel=_lgNoClub(L)? "" : _lgTeamId(L);
   const selT=(L.teams||[]).filter(t=>t.id===sel)[0]||null;
   const grid=h("div",{class:"ldr-g"});
+  /* SIX A BOARD (Oriol, 30/10/2026: one more player in each table) */
+  const TOP=6;
   LG_LEAD.forEach(c=>{
     const rows=P.pool.filter(x=>!c.need || c.need(x.t,x.m)).map(x=>({ x:x, v:c.get(x.t,x.m) }))
       .filter(r=>r.v!=null && isFinite(r.v)).sort((a,b)=>b.v-a.v);
-    if(rows.length<5) return;
+    if(rows.length<TOP) return;
     const avg=rows.reduce((a,r)=>a+r.v,0)/rows.length;
     const top=rows[0].v, lo=Math.min(0, rows[rows.length-1].v);
     const fmt=v=>(c.sign&&v>0?"+":"")+v.toFixed(c.d)+(c.u==="%"?"%":"");
@@ -22787,14 +22789,14 @@ function _lgLeaders(L){
       h("span",{class:"ldr-bar"}, h("i",{style:"width:"+Math.max(4,Math.round(100*(r.v-lo)/Math.max(1e-9,top-lo)))+"%"}),
         h("u",{style:"left:"+Math.max(0,Math.min(100,Math.round(100*(avg-lo)/Math.max(1e-9,top-lo))))+"%"})),
       h("b",{class:"ldr-v"}, fmt(r.v)));
-    rows.slice(0,5).forEach((r,i)=>card.appendChild(line(r, i+1, r.x.tid===sel)));
+    rows.slice(0,TOP).forEach((r,i)=>card.appendChild(line(r, i+1, r.x.tid===sel)));
     /* the club picked: its best man here, with his place, when he is not already above */
     /* The club picked always shows its best three in every board. The ones who made the
        five are marked there; the ones who did not are added underneath with the place
        they really hold, so the board answers "who is theirs in this" every time. */
     if(sel){
       const mine=rows.map((r,i)=>({ r:r, i:i })).filter(o=>o.r.x.tid===sel).slice(0,3);
-      const below=mine.filter(o=>o.i>=5);
+      const below=mine.filter(o=>o.i>=TOP);
       if(below.length) card.appendChild(h("div",{class:"ldr-own"}, below.map(o=>line(o.r, o.i+1, true))));
       else if(!mine.length) card.appendChild(h("div",{class:"ldr-own none"}, (selT&&(selT.tlc||selT.short)||"This club")+": nobody qualifies"));
     }
