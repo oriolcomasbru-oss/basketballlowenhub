@@ -11436,6 +11436,17 @@ function _preCardsDraft(L, tid){
 const PRE_AUTO_IDEA=[["takes",/^Takes \d+% of their shots$/],["creates",/^Creates: [\d.]+ ast\/g$/],["crashes",/^Crashes: [\d.]+ oreb\/g$/],
   ["hands",/^Hands: [\d.]+ stl\/g$/],["3p",/^3P \d+% on \d+ — (never leave him|let him shoot it)$/],["2p",/^2P \d+% — contest and live with it$/],["ft",/^FT \d+% — foul him late$/]];
 function _preIdeaKind(s){ const t=String(s||"").replace(/<[^>]+>/g,"").replace(/&nbsp;/g," ").trim(); const k=PRE_AUTO_IDEA.filter(x=>x[1].test(t))[0]; return k? k[0] : ""; }
+/* A LINE OF THE DRAFT'S THAT THE STAFF TOOK OFF STAYS OFF (Oriol, 30/10/2026: "si lo borro ya no
+   quiero que aparezca más en otros espacios, desaparece y punto"). The lines the draft writes itself -
+   Creates, Hands, FT, 3P... - were written back on every visit when they were missing, at the foot of
+   the list, so a line deleted or typed over came back under the staff's own. A line of the draft's
+   that is deleted or written over is remembered on the card, and is never written back; writing the
+   same kind of line again by hand lets the draft keep its number up to date once more */
+function _preIdeaGone(c, was, now){
+  const k=_preIdeaKind(was), k2=_preIdeaKind(now);
+  if(k && k!==k2){ c.ideasGone=c.ideasGone||{}; c.ideasGone[k]=1; }
+  if(k2 && c.ideasGone) delete c.ideasGone[k2];
+}
 function _preCardsFresh(L, tid, C){
   if(!C || !C.pos || !tid) return;
   PRE_CARD_POS.forEach(pos=>(C.pos[pos]||[]).forEach(c=>{ try{
@@ -11455,7 +11466,7 @@ function _preCardsFresh(L, tid, C){
       const nw={}; (d.ideas||[]).forEach(s=>{ const k=_preIdeaKind(s); if(k) nw[k]=s; });
       const had={}, out=[];
       c.ideas.forEach(s=>{ const k=_preIdeaKind(s); if(!k){ out.push(s); return; } had[k]=1; if(nw[k]) out.push(nw[k]); });
-      Object.keys(nw).forEach(k=>{ if(!had[k] && out.filter(x=>String(x||"").trim()).length<4) out.push(nw[k]); });
+      Object.keys(nw).forEach(k=>{ if(!had[k] && !(c.ideasGone && c.ideasGone[k]) && out.filter(x=>String(x||"").trim()).length<4) out.push(nw[k]); });
       c.ideas=out;
     }
   }catch(e){_quiet(e)} }));
@@ -12045,6 +12056,7 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
   card.querySelectorAll(".idea-line").forEach((n,ii)=>{
     put(n, ()=>(c.ideas||[])[ii]||"", v=>{
       c.ideas=c.ideas||[];
+      _preIdeaGone(c, c.ideas[ii], v);
       while(c.ideas.length<ii) c.ideas.push("");
       if(v) c.ideas[ii]=v; else c.ideas.splice(ii,1);
     });
@@ -12149,7 +12161,7 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
   });
   card.querySelectorAll(".idea-row .rm-x-inline").forEach((btn,ii)=>{
     btn.addEventListener("click",e=>{ e.preventDefault(); e.stopPropagation();
-      if(c.ideas && ii<c.ideas.length){ c.ideas.splice(ii,1); redraw(); } });
+      if(c.ideas && ii<c.ideas.length){ _preIdeaGone(c, c.ideas[ii], ""); c.ideas.splice(ii,1); redraw(); } });
   });
   card.querySelectorAll(".extra-block .rm-x-inline").forEach((btn,bi)=>{
     btn.addEventListener("click",e=>{ e.preventDefault(); e.stopPropagation();
@@ -13367,7 +13379,7 @@ function _preCard(L, c, pos, i, C, canEd, redraw, drag){
   const ul=h("div",{class:"pc-ideas"});
   (c.ideas||[]).forEach((t,ii)=>{
     const row=h("div",{class:"pc-idea"});
-    row.appendChild(ed("pc-it", t, v=>{ if(v) c.ideas[ii]=v; else c.ideas.splice(ii,1); }, "span"));
+    row.appendChild(ed("pc-it", t, v=>{ _preIdeaGone(c, c.ideas[ii], v); if(v) c.ideas[ii]=v; else c.ideas.splice(ii,1); }, "span"));
     row.appendChild(h("span",{class:"pc-dot"}));
     ul.appendChild(row);
   });
