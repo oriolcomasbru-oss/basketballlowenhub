@@ -28626,22 +28626,22 @@ function renderDashboard(){
     },
     /* ---------------------------------------------------- Oriol: the season in lines, sets best and worst */
     trends2:()=>{
-      const c=card("wide", "Team trends · game by game", ()=>_dashOpen("trends"), "Trends");
+      const c=card("wide", "Team trends · game by game, practice by practice", ()=>_dashOpen("trends"), "Trends");
       const sub=(t, cls)=>{ const b=h("div",{class:"dash-sub"}, h("h4",{class:cls||""}, t)); const body=h("div",{}, loading()); b.appendChild(body); b.__b=body; return b; };
       /* WHAT IS KEY FOR US, FIRST: TAG and BACK, paint touches, ball reversals - the last game,
          the last three and the season, big - and the line of each game by game under them */
       const key=h("div",{class:"dash-key"}, loading("Reading our tagging…"));
-      c.__b.appendChild(h("div",{class:"dash-keyh"}, h("b",{},"What is key for us"), h("span",{},"our tagging · last game · last 3 · season")));
+      c.__b.appendChild(h("div",{class:"dash-keyh"}, h("b",{},"What is key for us"), h("span",{},"games: the last, the last 3, the season · trainings: the last 7 days, the average")));
       c.__b.appendChild(key);
       const cT=sub("TAG / BACK conceded"), cP=sub("Paint touches"), cR=sub("Ball reversals"), cL=sub("The last game");
-      c.__b.appendChild(h("div",{class:"dash-4"}, cT, cP, cR, cL));
+      c.__b.appendChild(h("div",{class:"dash-2 dash-mixg"}, cT, cP, cR, cL));
       const cN=sub("Net rating · league"), cPU=sub("Players improving · PIR"), cPD=sub("Players dropping · PIR","bad"), cX=sub("Team trends");
       /* the players up and down and the list of trends are off the card: the net rating keeps the line */
       c.__b.appendChild(h("div",{class:"dash-1 r2"}, cN));
       /* our offense and defense game by game, and how many possessions each game had */
-      const cOD=sub("OER / DER · league"), cPS=sub("Possessions · league");
+      const cOD=sub("OER / DER · games and trainings"), cPS=sub("Possessions · league");
       /* our rebounding game by game, above the ratings: OREB% and DREB% from the league */
-      const cRB=sub("Rebounding · offensive and defensive, game by game");
+      const cRB=sub("Rebounding · games and trainings");
       c.__b.appendChild(cRB);
       c.__b.appendChild(h("div",{class:"dash-2 r2"}, cOD, cPS));
       const cB=sub("Our 10 best sets · half court"), cW=sub("Our 10 worst sets · half court","bad"), cU=sub("Sets improving most · last 3 games"), cD=sub("Sets dropping most · last 3 games","bad");
@@ -28656,6 +28656,25 @@ function renderDashboard(){
       const net=x=>(x.us.poss && x.them.poss)? 100*x.us.pts/x.us.poss-100*x.them.pts/x.them.poss : null;
       const fig=(k,v,n2,tone)=>h("div",{class:"dash-fig "+(tone||"")}, h("i",{},k), h("b",{},v), h("span",{},n2||""));
       const lastBits=[];
+      /* THE TRAININGS BESIDE THE GAMES (Oriol, 30/10/2026): every training of the season, read
+         once, for the key figures - the last seven days and the average - and for the charts */
+      const prP=_dashNeed(()=>window.LowenPostStats && window.LowenPostStats.seasonPractices)
+        .then(ok=>ok? window.LowenPostStats.seasonPractices() : []).catch(()=>[]);
+      const week7=PR=>{ if(!PR.length) return []; const from=addDays(PR[PR.length-1].d, -6); return PR.filter(x=>x.d>=from); };
+      const nz=v=>(v==null || !isFinite(v))? NaN : v;
+      /* GAMES AND TRAININGS ON ONE CHART: the Trends screen's own chart - a game a diamond on a
+         solid line, a training a hollow dot on a dashed one, in the measure's colour - so the two
+         are told apart at a glance and read on one scale. A Pokal game is a hollow diamond */
+      const mix=(pts, series, opts)=>{ const API=window.LowenPostStats; if(!API || !API.chart || pts.length<2) return null;
+        pts.sort((a,b)=>a.d<b.d? -1 : a.d>b.d? 1 : (a.kind==="game"? 1 : 0)-(b.kind==="game"? 1 : 0));
+        return h("div",{class:"sx dash-mix"}, API.chart("", "", pts, series, Object.assign({ height:150, kinds:false }, opts||{}))); };
+      const pairS=(name, color, get, extra)=>[
+        Object.assign({ name:name? name+" · games" : "Games", color:color, get:s=>s.__g? get(s) : NaN }, extra||{}),
+        Object.assign({ name:name? name+" · trainings" : "Trainings", color:color, dash:true, hollow:true, get:s=>s.__g? NaN : get(s) }, extra||{}) ];
+      const cupDay={}; (state.games||[]).forEach(g=>{ if(g && g.date && /pokal|cup/i.test(String(g.competition||""))) cupDay[g.date]=1; });
+      /* the trainings' line of a key figure: the last seven days against the average */
+      const trRow=(lw, av, fm, tone)=>h("div",{class:"row trn"}, h("span",{class:"rl"},"Trainings"),
+        h("em",{class:tone||""}, "last 7 days ", h("u",{}, fm(lw))), h("em",{}, "average ", h("u",{}, fm(av))));
       const paintLast=()=>{ cL.__b.innerHTML="";
         if(!lastBits.length){ cL.__b.appendChild(h("div",{class:"dash-miss"},"No game read yet.")); return; }
         lastBits.forEach(b=>cL.__b.appendChild(b)); };
@@ -28680,25 +28699,41 @@ function renderDashboard(){
              last three and the season as two chips, the place in the league in the corner */
           const opp=GL.length? (GL[GL.length-1].code || String(GL[GL.length-1].opp||"").slice(0,3).toUpperCase()) : "";
           const lgAvgD=F.filter(t=>t.def).length? 100*F.filter(t=>t.def).reduce((a,t)=>a+t.def.reb,0)/F.filter(t=>t.def).length : null;
-          const half=(lab, a, b3, s, rk, lgv, cls, cnt, whose)=>h("div",{class:"rb-h "+cls},
+          const half=(lab, a, b3, s, rk, lgv, cls, cnt, whose, trn)=>h("div",{class:"rb-h "+cls},
             h("div",{class:"rb-top"}, h("i",{}, lab), rk? h("span",{class:"rb-rk", title:"Place in the league"}, "#"+rk+"/"+F.length) : null),
             h("b",{class:tone(a, s)}, f0(a)),
             a==null? null : h("div",{class:"rb-split", title:"Last game: we got "+f0(a)+", "+opp+" "+f0(100-a)+(lgv!=null? " · league average "+f0(lgv) : "")},
               h("span",{class:"us", style:"width:"+Math.round(a)+"%"}), h("span",{class:"them", style:"width:"+Math.round(100-a)+"%"}),
               lgv!=null? h("i",{class:"lg", style:"left:"+Math.round(lgv)+"%"}) : null),
             a==null? null : h("div",{class:"rb-lbl"}, h("span",{}, "US "+cnt[0]), h("span",{class:"mu"}, whose+" "+(cnt[0]+cnt[1])), h("span",{class:"opp"}, opp+" "+cnt[1])),
-            h("div",{class:"row"}, h("em",{class:tone(b3, s)}, "L3 ", h("u",{}, f0(b3))), h("em",{}, "SEASON ", h("u",{}, f0(s)))));
-          if(GL.length) orFig=h("div",{class:"dash-kf rb-kf"},
-            h("i",{}, "Rebounding"), h("span",{}, "last game · "+(GL[GL.length-1].opp||"")),
-            h("div",{class:"rb-two"}, half("Offensive", vL, v3, vS, rank, lgAvg, "o", [+lg[0].us.oreb||0, +lg[0].them.dreb||0], "our misses"), half("Defensive", dL, d3, dS, rankD, lgAvgD, "d", [+lg[0].us.dreb||0, +lg[0].them.oreb||0], "their misses")),
-            h("small",{class:"rb-key"}, h("i",{class:"lg"}), " league average"));
-          /* the chart: both rates a game, the season's as dashed lines */
-          { const labs=GL.map(x=>x.code||"?"), ov=GL.map(x=>orb([x])), dv=GL.map(x=>drb([x]));
-            const SR=[{ name:"Our OREB%", v:ov, c:"#c7a76a" }, { name:"Our DREB%", v:dv, c:"#4a86d8" }, { name:"Rival OREB% · what we allowed", v:dv.map(x=>x==null? null : 100-x), c:"#d8524e" }];
+            h("div",{class:"row"}, h("span",{class:"rl"},"Games"), h("em",{class:tone(b3, s)}, "L3 ", h("u",{}, f0(b3))), h("em",{}, "SEASON ", h("u",{}, f0(s)))),
+            trn && trn[1]!=null? trRow(trn[0], trn[1], f0, tone(trn[0], trn[1])) : null);
+          /* the trainings come in on their own: the key figure and the chart wait for them */
+          prP.then(PR=>{
+            const RA=window.LowenPostStats && window.LowenPostStats.reboundsAdd;
+            const trb=l=>{ if(!RA || !l.length) return null; const t=RA(l.map(x=>({ d:x.d, reb:x.m.reb })));
+              return t.miss? { o:100*t.oreb/t.miss, d:100*t.dreb/t.miss } : null; };
+            const tw=trb(week7(PR)), ta=trb(PR);
+            if(GL.length) orFig=h("div",{class:"dash-kf rb-kf"},
+              h("i",{}, "Rebounding"), h("span",{}, "last game · "+(GL[GL.length-1].opp||"")),
+              h("div",{class:"rb-two"}, half("Offensive", vL, v3, vS, rank, lgAvg, "o", [+lg[0].us.oreb||0, +lg[0].them.dreb||0], "our misses", ta? [tw && tw.o, ta.o] : null),
+                half("Defensive", dL, d3, dS, rankD, lgAvgD, "d", [+lg[0].us.dreb||0, +lg[0].them.oreb||0], "their misses", ta? [tw && tw.d, ta.d] : null)),
+              h("small",{class:"rb-key"}, h("i",{class:"lg"}), " league average"));
+            /* the chart: OREB% and DREB% a game, each training's DREB% (its OREB% is the rest),
+               and the league's two averages as the lines across */
             cRB.__b.innerHTML="";
-            const chR=_dashChart(SR, labs, { fmt:v=>Math.round(v)+"%", h:130, w:Math.max(300, Math.round(cRB.__b.clientWidth||900)) });
-            if(chR){ cRB.__b.appendChild(chR); cRB.__b.appendChild(_dashLegend(SR)); }
-            cRB.__b.appendChild(h("div",{class:"dash-src"},"OREB%: our misses we got back · DREB%: their misses we kept · season "+f0(vS)+" and "+f0(dS)+(rank && rankD? " · "+_dashOrd(rank)+" and "+_dashOrd(rankD)+" in the league" : ""))); }
+            const pts=GL.map(x=>({ d:x.g.date, kind:"game", label:(x.home? "vs " : "@ ")+(x.opp||""),
+                s:{ __g:true, o:nz(orb([x])), dr:nz(drb([x])), nO:(+x.us.oreb||0)+(+x.them.dreb||0), nD:(+x.us.dreb||0)+(+x.them.oreb||0) } }))
+              .concat(PR.filter(x=>x.m && x.m.reb && x.m.reb.miss).map(x=>({ d:x.d, kind:"practice", label:x.d,
+                s:{ __g:false, dr:100*x.m.reb.dreb/x.m.reb.miss, nD:x.m.reb.miss } })));
+            const ch=mix(pts, [
+              { name:"OREB% · games", color:"#c7a76a", get:s=>s.__g? s.o : NaN, fmt:f0, n:s=>s.nO, unit:"missed shots" },
+              { name:"DREB% · games", color:"#4a86d8", get:s=>s.__g? s.dr : NaN, fmt:f0, n:s=>s.nD, unit:"missed shots" },
+              { name:"DREB% · trainings", color:"#4a86d8", dash:true, hollow:true, get:s=>s.__g? NaN : s.dr, fmt:f0, n:s=>s.nD, unit:"missed shots" } ],
+              { max:100, axisFmt:f0, minN:5, ref:[lgAvgD!=null? { v:lgAvgD, label:"League DREB% · "+f0(lgAvgD) } : null,
+                lgAvg!=null? { v:lgAvg, label:"League OREB% · "+f0(lgAvg) } : null].filter(Boolean) });
+            if(ch) cRB.__b.appendChild(ch);
+            putOr(); });
           putOr(); }
         if(GL.length>=2){
           const v=GL.map(net), avg=v.reduce((a,b)=>a+b,0)/v.length;
@@ -28706,11 +28741,22 @@ function renderDashboard(){
           if(ch) cN.__b.appendChild(ch);
           cN.__b.appendChild(h("div",{class:"dash-src"},"Ours minus theirs per 100 possessions · dashed: season "+(avg>0? "+" : "")+avg.toFixed(1)));
           /* OER and DER: our points and theirs per 100 possessions, the same box score as the net */
-          { const labs=GL.map(x=>x.code||"?"), oe=GL.map(x=>100*x.us.pts/x.us.poss), de=GL.map(x=>100*x.them.pts/x.them.poss);
-            const SO=[{ name:"OER · ours", v:oe, c:"#2f9e86" }, { name:"DER · theirs", v:de, c:"#d8524e" }];
-            const cw=Math.max(300, Math.round(cOD.__b.clientWidth||620));
-            const chO=_dashChart(SO, labs, { fmt:v=>v.toFixed(0), h:130, w:cw });
-            if(chO){ cOD.__b.appendChild(chO); cOD.__b.appendChild(_dashLegend(SO)); }
+          { const labs=GL.map(x=>x.code||"?");
+            /* OER and DER a game from the league's box score, and each training's points per 100
+               possessions from our tagging: both fives are ours, so what one scores the other
+               concedes and the one figure is both */
+            prP.then(PR=>{
+              const pts=GL.map(x=>({ d:x.g.date, kind:"game", label:(x.home? "vs " : "@ ")+(x.opp||""),
+                  s:{ __g:true, oe:100*x.us.pts/x.us.poss, de:100*x.them.pts/x.them.poss, poss:Math.round((x.us.poss+x.them.poss)/2) } }))
+                .concat(PR.filter(x=>!x.out && x.s && x.s.poss).map(x=>({ d:x.d, kind:"practice", label:x.d,
+                  s:{ __g:false, tr:100*x.s.pts/x.s.poss, poss:x.s.poss } })));
+              const f1=v=>v.toFixed(0);
+              const ch=mix(pts, [
+                { name:"OER · games", color:"#2f9e86", get:s=>s.__g? s.oe : NaN, fmt:f1 },
+                { name:"DER · games", color:"#d8524e", get:s=>s.__g? s.de : NaN, fmt:f1 },
+                { name:"Trainings · both fives", color:"#7a8190", dash:true, hollow:true, get:s=>s.__g? NaN : s.tr, fmt:f1 } ],
+                { axisFmt:f1 });
+              if(ch) cOD.__b.insertBefore(ch, cOD.__b.firstChild); });
             const sp=(k,side)=>GL.reduce((a,y)=>a+(+y[side][k]||0),0);
             cOD.__b.appendChild(h("div",{class:"dash-src"},"Points per 100 possessions · season OER "+(100*sp("pts","us")/sp("poss","us")).toFixed(1)+" · DER "+(100*sp("pts","them")/sp("poss","them")).toFixed(1)+" · green above red is a game won on efficiency"));
             const ps=GL.map(x=>(x.us.poss+x.them.poss)/2), pA=ps.reduce((a,b)=>a+b,0)/ps.length;
@@ -28746,27 +28792,32 @@ function renderDashboard(){
         cPU.__b.appendChild(h("div",{class:"dash-src"},"PIR a game: the games before → his last three · players with five games or more"));
       }).catch(()=>{ [cN,cPU,cPD,cOD,cPS].forEach(x=>{ x.__b.innerHTML=""; }); cN.__b.appendChild(h("div",{class:"dash-miss"},"Our games could not be read from the league.")); });
       /* our tagging: the key measures, the charts, the sets */
-      _dashNeed(()=>window.LowenPostStats && window.LowenPostStats.seasonGames).then(()=>window.LowenPostStats.seasonGames()).then(list=>{
+      _dashNeed(()=>window.LowenPostStats && window.LowenPostStats.seasonGames).then(()=>Promise.all([window.LowenPostStats.seasonGames(), prP])).then(([list, PR])=>{
+        PR=PR||[];
         [cP,cT,cR,cB,cW,cU,cD,cX].forEach(x=>{ x.__b.innerHTML=""; }); key.innerHTML="";
         const API=window.LowenPostStats;
         if(!list || !list.length){ key.appendChild(h("div",{class:"dash-miss"},"No tagged games in the Drive folder yet.")); putOr(); return; }
         const labs=list.map(x=>String(x.label||"").replace(/^(VS|@)\s+/,"").slice(0,3));
         const ms=(x,k)=>{ const v=API.measured(x.s,k); return isFinite(v)? v : null; };
-        const msL=(L2,k)=>{ const s=API.addUp(L2.map(x=>x.s)); if(!s) return null; const v=API.measured(s,k); return isFinite(v)? v : null; };
+        const msL=(L2,k)=>{ if(!L2.length) return null; const s=API.addUp(L2.map(x=>x.s)); if(!s) return null; const v=API.measured(s,k); return isFinite(v)? v : null; };
         const tb=(x,k)=>{ const t=x.m && x.m.trans && x.m.trans[k]; return (t && t.n)? t.pts/t.n : null; };
         const tbL=(L2,k)=>{ let n=0,p=0; L2.forEach(x=>{ const t=x.m && x.m.trans && x.m.trans[k]; if(t){ n+=t.n||0; p+=t.pts||0; } }); return n? p/n : null; };
         const lx=list[list.length-1], l3=list.slice(-3);
+        /* the trainings: the last seven days and all of them; paint touches and reversals only
+           from a session with five on five in it */
+        const w7=week7(PR), PR5=PR.filter(x=>!x.out), w75=w7.filter(x=>!x.out);
         const f0=v=>v==null? "—" : Math.round(v)+"%", f2=v=>v==null? "—" : v.toFixed(2);
         /* the four key measures, big */
-        const K=[["TAG conceded", tb(lx,"tag"), tbL(l3,"tag"), tbL(list,"tag"), f2, false, 0.1, "pts a transition after our long shot"],
-          ["BACK conceded", tb(lx,"back"), tbL(l3,"back"), tbL(list,"back"), f2, false, 0.1, "pts a transition after our miss at the rim or our turnover"],
-          ["Paint touches", ms(lx,"pt"), msL(l3,"pt"), msL(list,"pt"), f0, true, 5, "of possessions · target 70%"],
-          ["Ball reversals", ms(lx,"br"), msL(l3,"br"), msL(list,"br"), f0, true, 5, "of possessions"]];
+        const K=[["TAG conceded", tb(lx,"tag"), tbL(l3,"tag"), tbL(list,"tag"), f2, false, 0.1, "pts a transition after our long shot", tbL(w7,"tag"), tbL(PR,"tag")],
+          ["BACK conceded", tb(lx,"back"), tbL(l3,"back"), tbL(list,"back"), f2, false, 0.1, "pts a transition after our miss at the rim or our turnover", tbL(w7,"back"), tbL(PR,"back")],
+          ["Paint touches", ms(lx,"pt"), msL(l3,"pt"), msL(list,"pt"), f0, true, 5, "of possessions · target 70%", msL(w75,"pt"), msL(PR5,"pt")],
+          ["Ball reversals", ms(lx,"br"), msL(l3,"br"), msL(list,"br"), f0, true, 5, "of possessions", msL(w75,"br"), msL(PR5,"br")]];
         const tone=(a,b,hi,th)=>(a==null||b==null||Math.abs(a-b)<th)? "" : ((a>b)===hi? "good" : "bad");
         K.forEach(k=>{ const tgt=k[0]==="Paint touches"? (k[1]==null? "" : k[1]>=70? "good" : k[1]<60? "bad" : "") : tone(k[1],k[3],k[5],k[6]);
           key.appendChild(h("div",{class:"dash-kf "+tgt},
             h("i",{}, k[0]), h("b",{}, k[4](k[1])), h("span",{}, "last game · "+lx.label),
-            h("div",{class:"row"}, h("em",{class:tone(k[2],k[3],k[5],k[6])}, "last 3 ", h("u",{}, k[4](k[2]))), h("em",{}, "season ", h("u",{}, k[4](k[3])))),
+            h("div",{class:"row"}, h("span",{class:"rl"},"Games"), h("em",{class:tone(k[2],k[3],k[5],k[6])}, "last 3 ", h("u",{}, k[4](k[2]))), h("em",{}, "season ", h("u",{}, k[4](k[3])))),
+            k[9]!=null? trRow(k[8], k[9], k[4], tone(k[8],k[9],k[5],k[6])) : null,
             h("small",{}, k[7]))); });
         /* BACK in its three parts under it: after our turnover, after our miss, after our make */
         { const bf=key.children[1], subOf=L2=>{ const o={ to:{ n:0, pts:0 }, miss:{ n:0, pts:0 }, make:{ n:0, pts:0 } };
@@ -28780,18 +28831,25 @@ function renderDashboard(){
               lab, h("b",{}, v==null? "—" : v.toFixed(2)), h("i",{}, "season "+(vs==null? "—" : vs.toFixed(2)))); };
           if(bf) bf.appendChild(h("div",{class:"bsplit"}, pill("to","After TO"), pill("miss","After miss"))); }
         keyDone=true; putOr();
-        /* the three charts */
-        const S2=[{ name:"TAG", v:list.map(x=>tb(x,"tag")), c:"#d8524e" }, { name:"BACK", v:list.map(x=>tb(x,"back")), c:"#4a86d8" }];
-        const ch2=_dashChart(S2, labs, { fmt:v=>v.toFixed(2), h:110 });
-        if(ch2){ cT.__b.appendChild(ch2); cT.__b.appendChild(_dashLegend(S2)); }
+        /* the three charts: each game and each training on one line of dates */
+        const tr2=(x,k)=>{ const t=x.m && x.m.trans && x.m.trans[k]; return t? { n:t.n||0, p:t.pts||0 } : { n:0, p:0 }; };
+        const point=(x, g)=>{ const T=tr2(x,"tag"), B=tr2(x,"back");
+          return { d:x.d, kind:g? "game" : "practice", cup:g && !!cupDay[x.d], label:g? (cupDay[x.d]? "Pokal · " : "")+x.label : x.d,
+            s:{ __g:g, poss:x.s && x.s.poss, tag:T.n? T.p/T.n : NaN, tagN:T.n, back:B.n? B.p/B.n : NaN, backN:B.n,
+                pt:(g || !x.out)? nz(ms(x,"pt")) : NaN, br:(g || !x.out)? nz(ms(x,"br")) : NaN } }; };
+        const pts=list.map(x=>point(x, true)).concat(PR.map(x=>point(x, false)));
+        const fN=v=>v.toFixed(2), fP=v=>Math.round(v)+"%";
+        /* a training with under four transitions of a kind is left off that line: one or two say nothing */
+        const ch2=mix(pts.slice(), pairS("TAG","#d8524e", s=>s.tag, { fmt:fN, n:s=>s.tagN, unit:"transitions" })
+          .concat(pairS("BACK","#4a86d8", s=>s.back, { fmt:fN, n:s=>s.backN, unit:"transitions" })), { axisFmt:fN, minN:4 });
+        if(ch2) cT.__b.appendChild(ch2);
         cT.__b.appendChild(h("div",{class:"dash-src"},"Points conceded per transition · lower is better"));
-        const ch1=_dashChart([{ name:"Paint touches", v:list.map(x=>ms(x,"pt")), c:"#2f9e86" }], labs, { ref:70, fmt:v=>Math.round(v)+"%", h:110 });
+        const ch1=mix(pts.slice(), pairS("", "#2f9e86", s=>s.pt, { fmt:fP }), { max:100, axisFmt:fP, ref:{ v:70, label:"70%" } });
         if(ch1) cP.__b.appendChild(ch1);
-        cP.__b.appendChild(h("div",{class:"dash-src"},"Share of possessions with a paint touch · dashed: the 70% target"));
-        const brv=list.map(x=>ms(x,"br")), brA=msL(list,"br");
-        const ch3=_dashChart([{ name:"Ball reversals", v:brv, c:"#8a5bd1" }], labs, { ref:brA, fmt:v=>Math.round(v)+"%", h:110 });
+        cP.__b.appendChild(h("div",{class:"dash-src"},"Share of possessions with a paint touch · the line across: the 70% target"));
+        const ch3=mix(pts.slice(), pairS("", "#8a5bd1", s=>s.br, { fmt:fP }), { max:100, axisFmt:fP });
         if(ch3) cR.__b.appendChild(ch3);
-        cR.__b.appendChild(h("div",{class:"dash-src"},"Share of possessions with a ball reversal · dashed: season "+f0(brA)));
+        cR.__b.appendChild(h("div",{class:"dash-src"},"Share of possessions with a ball reversal"));
         /* the last tagged game, beside the league's */
         lastBits.push(h("div",{class:"dash-src"}, "Our tagging · "+lx.label+" · "+_dashFmt(lx.d)));
         lastBits.push(h("div",{class:"dash-figs"},
@@ -38188,6 +38246,14 @@ body.dop-measure #print-area{display:block;position:fixed;left:-99999px;top:0}
 .dash-kf .row em u{text-decoration:none;font-weight:800;color:var(--ink,#141821)}
 .dash-kf .row em.good{background:rgba(47,158,134,.18)}.dash-kf .row em.bad{background:rgba(216,82,78,.15)}
 .dash-kf small{font-size:11px;color:var(--ink-soft,#5b6472)}
+/* games and trainings, told apart in a key figure: each line says which, and the trainings'
+   chips are dashed like the trainings' line on the charts */
+.dash-kf .row .rl{font:700 9.5px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);align-self:center;min-width:56px}
+.dash-kf .row.trn em{background:transparent;border:1px dashed rgba(20,24,33,.3);padding:0 7px}
+.dash-kf .row.trn em.good{background:rgba(47,158,134,.12)}.dash-kf .row.trn em.bad{background:rgba(216,82,78,.1)}
+body.dark .dash-kf .row.trn em{border-color:rgba(255,255,255,.28)}
+.dash-mix .sx-h:empty{display:none}
+.dash-mix .tl-legend{margin-bottom:2px}
 .dash-pstudy .big b.na{font-size:26px;color:var(--ink-faint,#8a93a2)}
 .dash-phist .na{color:var(--ink-faint,#8a93a2)}
 .dash-phist i.old{font:500 11px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}

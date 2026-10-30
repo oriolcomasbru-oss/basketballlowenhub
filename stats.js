@@ -4844,6 +4844,29 @@
     _seasonGamesP.catch(function () { _seasonGamesP = null; });
     return _seasonGamesP;
   }
+  /* every training of the season as numbers, for the dashboard beside the games (Oriol,
+     30/10/2026): the same files, dates and reading the Trends screen uses, kept once per
+     visit. A session with no five on five is marked "out", not dropped: its paint touches
+     and reversals are not a 5x5's, but its transitions and its rebounds still count */
+  var _seasonPracticesP = null;
+  function seasonPractices() {
+    if (_seasonPracticesP) return _seasonPracticesP;
+    _seasonPracticesP = listFolder("practice").then(function (files) {
+      return Promise.all((files || []).map(function (f) {
+        return getRows(f.id).then(function (rows) {
+          var g = datedPractice(f, rows);
+          if (!g.d) return null;
+          var m = buildPractice(rows), sm = summarise(m);
+          return { d: g.d, label: g.d, name: f.name, m: m, s: sm, out: !!trWhyOut({ s: sm }) };
+        }, function () { return null; });
+      }));
+    }).then(function (l) {
+      return l.filter(Boolean).sort(function (a, b) {
+        return a.d < b.d ? -1 : a.d > b.d ? 1 : (String(a.name) < String(b.name) ? -1 : 1); });
+    });
+    _seasonPracticesP.catch(function () { _seasonPracticesP = null; });
+    return _seasonPracticesP;
+  }
   function shortGame(name) {
     var t = String(name).replace(/\.csv$/i, "")
       .replace(/^[0-9a-f]{6,}-/i, "")
@@ -5395,7 +5418,7 @@
        the file is parsed, without waiting for DOMContentLoaded */
     window.LowenPostStats = { mount: mountPostTeam, dropCache: dropCache,
                               gameModel: gameModel, shotLine: shotLine, measured: measured, summarise: summarise,
-                              seasonGames: seasonGames, addUp: addUp,
+                              seasonGames: seasonGames, seasonPractices: seasonPractices, addUp: addUp,
                               /* the trainings' rebounding, one a session, and several added up */
                               trainingRebounds: trainingRebounds, reboundsAdd: rebAdd, reboundCats: rebCats,
                               datesWithFiles: datesWithFiles,
