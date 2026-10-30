@@ -11941,26 +11941,32 @@ function _preUnbin(C, bi){
   return pos;
 }
 
-/* TAB TO THE NEXT LINE (Oriol, 30/10/2026: "si le doy al tabulador me salta al siguiente punto,
-   para ir más rápido"). In a card being edited Tab goes to the next line to write in - the card's
-   lines in reading order, then the first of the next card - and Shift+Tab back. Leaving a line
-   that changed draws the board again, so where to go is worked out first, as a card and a place
-   in it, and found again in the board that has been drawn; the caret lands at the end */
+/* TAB TO THE NEXT POINT (Oriol, 30/10/2026: "si le doy al tabulador me salta al siguiente punto,
+   para ir más rápido"). In a card being edited Tab goes to the next line the staff writes - the
+   tagline and the points under it, then the first of the next card - and Shift+Tab back; the
+   number, the name and the league's figures are skipped, a click still reaches them. Leaving a
+   line that changed draws the board again, so where to go is worked out first, as a card and a
+   place in it, and found again in the board that has been drawn; the caret lands at the end */
 function _preTabTo(card, n, dir){
   const lines=el=>[...el.querySelectorAll("[data-pre-f]")].filter(x=>x.getClientRects().length);
+  const pts=el=>lines(el).filter(x=>x.matches(".tagline,.idea-line,.extra-line"));
   const root=card.closest(".pc-board")||card.closest(".roster-columns")||card.parentElement;
   const cards=[...root.querySelectorAll(".card[data-pre-key]")];
-  let ci=cards.indexOf(card), fi=lines(card).indexOf(n)+dir;
+  let ci=cards.indexOf(card);
   if(ci<0) return;
-  while(fi<0 || fi>=lines(cards[ci]).length){
+  /* from wherever the caret is, the next point after it in the card, or the one before */
+  const all=lines(card), at=all.indexOf(n);
+  let P=pts(card), fi=-1;
+  P.forEach((x,j)=>{ const k=all.indexOf(x); if(dir>0? (k>at && fi<0) : k<at) fi=j; });
+  while(fi<0 || fi>=P.length){
     ci+=dir;
     if(ci<0 || ci>=cards.length){ n.blur(); return; }
-    fi=dir>0? 0 : lines(cards[ci]).length-1;
+    P=pts(cards[ci]); fi=dir>0? 0 : P.length-1;
   }
   const key=cards[ci].dataset.preKey;
   n.blur();
   const c2=[...root.querySelectorAll(".card[data-pre-key]")].filter(x=>x.dataset.preKey===key)[0];
-  const f=c2? lines(c2)[fi] : null;
+  const f=c2? pts(c2)[fi] : null;
   if(!f) return;
   f.focus();
   try{ const r=document.createRange(); r.selectNodeContents(f); r.collapse(false);
