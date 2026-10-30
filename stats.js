@@ -2596,8 +2596,9 @@
     wrap.appendChild(el("div", "sx-h", title));
     if (!points.length) { wrap.appendChild(el("div", "sx-empty", "Nothing in this range.")); return wrap; }
 
-    /* legend — always present for two series or more, identity never colour alone */
-    if (series.length > 1) {
+    /* legend — always present for two series or more, identity never colour alone; a page
+       that writes its own key under the chart (the dashboard) asks for none */
+    if (series.length > 1 && opts.legend !== false) {
       var lg = el("div", "tl-legend");
       series.forEach(function (s) {
         var it = el("span", "tl-lg");
@@ -2760,7 +2761,7 @@
         var last = null, lastSrc = rl ? linePts : pts;
         for (var i2 = lastSrc.length - 1; i2 >= 0; i2--) { if (lastSrc[i2] && !lastSrc[i2][4]) { last = lastSrc[i2]; break; } }
         if (!last) for (var i3 = pts.length - 1; i3 >= 0; i3--) { if (pts[i3]) { last = pts[i3]; break; } }
-        if (last) ends.push({ x: last[0], y: last[1], txt: s.fmt ? s.fmt(last[2]) : String(Math.round(last[2])) });
+        if (last && !s.noEnd) ends.push({ x: last[0], y: last[1], txt: s.fmt ? s.fmt(last[2]) : String(Math.round(last[2])) });
       });
 
       /* two series can finish on the same value — push the labels apart rather

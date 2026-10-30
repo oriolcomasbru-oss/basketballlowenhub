@@ -28079,7 +28079,9 @@ function _dashChart(series, labels, opts){
   series.forEach(sr=>{
     const pts=sr.v.map((v,i)=>(v==null||!isFinite(v))? null : X(i).toFixed(1)+","+Y(v).toFixed(1)).filter(Boolean);
     if(pts.length>1) s.appendChild(mk("polyline",{ points:pts.join(" "), class:"ln", stroke:sr.c }));
-    sr.v.forEach((v,i)=>{ if(v==null||!isFinite(v)) return; const c=mk("circle",{ cx:X(i), cy:Y(v), r:i===n-1? 4.2 : 2.4, fill:sr.c, class:i===n-1? "lp" : "" });
+    sr.v.forEach((v,i)=>{ if(v==null||!isFinite(v)) return; const z=i===n-1? 4.6 : 3.4;
+      const c=opts.dia? mk("rect",{ x:X(i)-z, y:Y(v)-z, width:2*z, height:2*z, transform:"rotate(45 "+X(i)+" "+Y(v)+")", fill:sr.c, class:i===n-1? "lp" : "" })
+        : mk("circle",{ cx:X(i), cy:Y(v), r:i===n-1? 4.2 : 2.4, fill:sr.c, class:i===n-1? "lp" : "" });
       const tt=mk("title",{}); tt.textContent=labels[i]+" · "+sr.name+" "+fm(v); c.appendChild(tt); s.appendChild(c); }); });
   labels.forEach((l,i)=>{ if(n>10 && i%2 && i!==n-1) return; const t=mk("text",{ x:X(i), y:H-5, class:"ax"+(i===n-1? " lt" : ""), "text-anchor":"middle" }); t.textContent=l; s.appendChild(t); });
   return s;
@@ -28665,9 +28667,23 @@ function renderDashboard(){
       /* GAMES AND TRAININGS ON ONE CHART: the Trends screen's own chart - a game a diamond on a
          solid line, a training a hollow dot on a dashed one, in the measure's colour - so the two
          are told apart at a glance and read on one scale. A Pokal game is a hollow diamond */
-      const mix=(pts, series, opts)=>{ const API=window.LowenPostStats; if(!API || !API.chart || pts.length<2) return null;
+      /* ONE LANGUAGE FOR EVERY CHART (Oriol, 30/10/2026: "entiendes uno, entiendes todos"): a game
+         is a filled diamond on a solid line, a training a hollow dot on a dashed one, always; the
+         colour is the measure. A small key under each chart says the same in the same words */
+      const keySvg=(dash, dia)=>{ const NS="http://www.w3.org/2000/svg", mk=(t,a)=>{ const e=document.createElementNS(NS,t); Object.keys(a).forEach(k=>e.setAttribute(k,a[k])); return e; };
+        const sv=mk("svg",{ viewBox:"0 0 28 12", class:"mk-s" });
+        sv.appendChild(mk("line",{ x1:1, x2:27, y1:6, y2:6, class:"mk-l"+(dash? " d" : "") }));
+        sv.appendChild(dia? mk("rect",{ x:10.5, y:2.5, width:7, height:7, transform:"rotate(45 14 6)", class:"mk-m" }) : mk("circle",{ cx:14, cy:6, r:3, class:"mk-m o" }));
+        return sv; };
+      const mixKey=(measures, tr)=>h("div",{class:"dash-mixkey"},
+        measures.map(m=>h("span",{}, h("i",{style:"background:"+m[1]}), m[0])),
+        h("span",{class:"k k1"}, keySvg(false, true), "game"), tr? h("span",{class:"k"}, keySvg(true, false), "training") : null);
+      const mix=(pts, series, opts, measures)=>{ const API=window.LowenPostStats; if(!API || !API.chart || pts.length<2) return null;
         pts.sort((a,b)=>a.d<b.d? -1 : a.d>b.d? 1 : (a.kind==="game"? 1 : 0)-(b.kind==="game"? 1 : 0));
-        return h("div",{class:"sx dash-mix"}, API.chart("", "", pts, series, Object.assign({ height:150, kinds:false }, opts||{}))); };
+        /* a training's last value is not written at the end of its line: the games' are */
+        series.forEach(sr=>{ if(sr.dash) sr.noEnd=true; });
+        return h("div",{class:"sx dash-mix"}, API.chart("", "", pts, series, Object.assign({ height:150, kinds:false, legend:false }, opts||{})),
+          mixKey(measures||[], series.some(sr=>sr.dash))); };
       const pairS=(name, color, get, extra)=>[
         Object.assign({ name:name? name+" · games" : "Games", color:color, get:s=>s.__g? get(s) : NaN }, extra||{}),
         Object.assign({ name:name? name+" · trainings" : "Trainings", color:color, dash:true, hollow:true, get:s=>s.__g? NaN : get(s) }, extra||{}) ];
@@ -28732,14 +28748,14 @@ function renderDashboard(){
               { name:"DREB% · games", color:"#4a86d8", get:s=>s.__g? s.dr : NaN, fmt:f0, n:s=>s.nD, unit:"missed shots" },
               { name:"DREB% · trainings", color:"#4a86d8", dash:true, hollow:true, get:s=>s.__g? NaN : s.dr, fmt:f0, n:s=>s.nD, unit:"missed shots" } ],
               { max:100, axisFmt:f0, minN:5, ref:[lgAvgD!=null? { v:lgAvgD, label:"League DREB% · "+f0(lgAvgD) } : null,
-                lgAvg!=null? { v:lgAvg, label:"League OREB% · "+f0(lgAvg) } : null].filter(Boolean) });
+                lgAvg!=null? { v:lgAvg, label:"League OREB% · "+f0(lgAvg) } : null].filter(Boolean) }, [["OREB%","#c7a76a"],["DREB%","#4a86d8"]]);
             if(ch) cRB.__b.appendChild(ch);
             putOr(); });
           putOr(); }
         if(GL.length>=2){
           const v=GL.map(net), avg=v.reduce((a,b)=>a+b,0)/v.length;
-          const ch=_dashChart([{ name:"Net rating", v:v, c:"#141821" }], GL.map(x=>x.code||"?"), { zero:true, ref:avg, fmt:x=>(x>0? "+" : "")+x.toFixed(0), h:110, w:Math.max(300, Math.round(cN.__b.clientWidth||900)) });
-          if(ch) cN.__b.appendChild(ch);
+          const ch=_dashChart([{ name:"Net rating", v:v, c:"#141821" }], GL.map(x=>x.code||"?"), { zero:true, ref:avg, fmt:x=>(x>0? "+" : "")+x.toFixed(0), h:110, w:Math.max(300, Math.round(cN.__b.clientWidth||900)), dia:true });
+          if(ch){ cN.__b.appendChild(ch); cN.__b.appendChild(mixKey([["Net rating","#141821"]], false)); }
           cN.__b.appendChild(h("div",{class:"dash-src"},"Ours minus theirs per 100 possessions · dashed: season "+(avg>0? "+" : "")+avg.toFixed(1)));
           /* OER and DER: our points and theirs per 100 possessions, the same box score as the net */
           { const labs=GL.map(x=>x.code||"?");
@@ -28756,13 +28772,13 @@ function renderDashboard(){
                 { name:"OER · games", color:"#2f9e86", get:s=>s.__g? s.oe : NaN, fmt:f1 },
                 { name:"DER · games", color:"#d8524e", get:s=>s.__g? s.de : NaN, fmt:f1 },
                 { name:"Trainings · both fives", color:"#7a8190", dash:true, hollow:true, get:s=>s.__g? NaN : s.tr, fmt:f1 } ],
-                { axisFmt:f1 });
+                { axisFmt:f1 }, [["OER","#2f9e86"],["DER","#d8524e"],["Training · both fives","#7a8190"]]);
               if(ch) cOD.__b.insertBefore(ch, cOD.__b.firstChild); });
             const sp=(k,side)=>GL.reduce((a,y)=>a+(+y[side][k]||0),0);
             cOD.__b.appendChild(h("div",{class:"dash-src"},"Points per 100 possessions · season OER "+(100*sp("pts","us")/sp("poss","us")).toFixed(1)+" · DER "+(100*sp("pts","them")/sp("poss","them")).toFixed(1)+" · green above red is a game won on efficiency"));
             const ps=GL.map(x=>(x.us.poss+x.them.poss)/2), pA=ps.reduce((a,b)=>a+b,0)/ps.length;
-            const chP=_dashChart([{ name:"Possessions", v:ps, c:"#4a86d8" }], labs, { ref:pA, fmt:v=>v.toFixed(0), h:130, w:Math.max(300, Math.round(cPS.__b.clientWidth||620)) });
-            if(chP) cPS.__b.appendChild(chP);
+            const chP=_dashChart([{ name:"Possessions", v:ps, c:"#4a86d8" }], labs, { ref:pA, fmt:v=>v.toFixed(0), h:130, w:Math.max(300, Math.round(cPS.__b.clientWidth||620)), dia:true });
+            if(chP){ cPS.__b.appendChild(chP); cPS.__b.appendChild(mixKey([["Possessions","#4a86d8"]], false)); }
             cPS.__b.appendChild(h("div",{class:"dash-src"},"Possessions a team in each game (≈ from the box score) · dashed: season "+pA.toFixed(1))); }
           const x=GL[GL.length-1], n=net(x), home=String(x.g.homeId)===String(R.tid), us=home? x.g.hs : x.g.as, th=home? x.g.as : x.g.hs;
           const S=(k,side)=>GL.reduce((a,y)=>a+(+y[side][k]||0),0);
@@ -28835,20 +28851,20 @@ function renderDashboard(){
         /* the three charts: each game and each training on one line of dates */
         const tr2=(x,k)=>{ const t=x.m && x.m.trans && x.m.trans[k]; return t? { n:t.n||0, p:t.pts||0 } : { n:0, p:0 }; };
         const point=(x, g)=>{ const T=tr2(x,"tag"), B=tr2(x,"back");
-          return { d:x.d, kind:g? "game" : "practice", cup:g && !!cupDay[x.d], label:g? (cupDay[x.d]? "Pokal · " : "")+x.label : x.d,
+          return { d:x.d, kind:g? "game" : "practice", label:g? (cupDay[x.d]? "Pokal · " : "")+x.label : x.d,
             s:{ __g:g, poss:x.s && x.s.poss, tag:T.n? T.p/T.n : NaN, tagN:T.n, back:B.n? B.p/B.n : NaN, backN:B.n,
                 pt:(g || !x.out)? nz(ms(x,"pt")) : NaN, br:(g || !x.out)? nz(ms(x,"br")) : NaN } }; };
         const pts=list.map(x=>point(x, true)).concat(PR.map(x=>point(x, false)));
         const fN=v=>v.toFixed(2), fP=v=>Math.round(v)+"%";
         /* a training with under four transitions of a kind is left off that line: one or two say nothing */
         const ch2=mix(pts.slice(), pairS("TAG","#d8524e", s=>s.tag, { fmt:fN, n:s=>s.tagN, unit:"transitions" })
-          .concat(pairS("BACK","#4a86d8", s=>s.back, { fmt:fN, n:s=>s.backN, unit:"transitions" })), { axisFmt:fN, minN:4 });
+          .concat(pairS("BACK","#4a86d8", s=>s.back, { fmt:fN, n:s=>s.backN, unit:"transitions" })), { axisFmt:fN, minN:4 }, [["TAG","#d8524e"],["BACK","#4a86d8"]]);
         if(ch2) cT.__b.appendChild(ch2);
         cT.__b.appendChild(h("div",{class:"dash-src"},"Points conceded per transition · lower is better"));
-        const ch1=mix(pts.slice(), pairS("", "#2f9e86", s=>s.pt, { fmt:fP }), { max:100, axisFmt:fP, ref:{ v:70, label:"70%" } });
+        const ch1=mix(pts.slice(), pairS("Paint touches", "#2f9e86", s=>s.pt, { fmt:fP }), { max:100, axisFmt:fP, ref:{ v:70, label:"70% target" } }, [["Paint touches","#2f9e86"]]);
         if(ch1) cP.__b.appendChild(ch1);
         cP.__b.appendChild(h("div",{class:"dash-src"},"Share of possessions with a paint touch · the line across: the 70% target"));
-        const ch3=mix(pts.slice(), pairS("", "#8a5bd1", s=>s.br, { fmt:fP }), { max:100, axisFmt:fP });
+        const ch3=mix(pts.slice(), pairS("Ball reversals", "#8a5bd1", s=>s.br, { fmt:fP }), { max:100, axisFmt:fP }, [["Ball reversals","#8a5bd1"]]);
         if(ch3) cR.__b.appendChild(ch3);
         cR.__b.appendChild(h("div",{class:"dash-src"},"Share of possessions with a ball reversal"));
         /* the last tagged game, beside the league's */
@@ -38254,6 +38270,13 @@ body.dop-measure #print-area{display:block;position:fixed;left:-99999px;top:0}
 .dash-kf .row.trn em.good{background:rgba(47,158,134,.12)}.dash-kf .row.trn em.bad{background:rgba(216,82,78,.1)}
 body.dark .dash-kf .row.trn em{border-color:rgba(255,255,255,.28)}
 .dash-mix .sx-h:empty{display:none}
+.dash-mixkey{display:flex;flex-wrap:wrap;align-items:center;gap:3px 14px;margin-top:4px;font:500 10.5px 'Inter',sans-serif;color:var(--ink-soft,#5b6472)}
+.dash-mixkey span{display:inline-flex;align-items:center;gap:5px}
+.dash-mixkey i{display:inline-block;width:10px;height:10px;border-radius:2px}
+.dash-mixkey .k{color:var(--ink-faint,#8a93a2)}.dash-mixkey .k1{margin-left:8px}
+.dash-mixkey svg.mk-s{width:28px;height:12px;overflow:visible}
+.dash-mixkey .mk-l{stroke:var(--ink-soft,#5b6472);stroke-width:2}.dash-mixkey .mk-l.d{stroke-dasharray:4 3;stroke-width:1.5}
+.dash-mixkey .mk-m{fill:var(--ink-soft,#5b6472)}.dash-mixkey .mk-m.o{fill:var(--panel,#fff);stroke:var(--ink-soft,#5b6472);stroke-width:1.5}
 .dash-mix .sx-sec{border:0;padding:0;margin:0;background:none;box-shadow:none}
 .dash-mix .tl-line.dash{stroke-width:1.5;opacity:.75}
 .dash-mix circle.tl-mk.hollow{r:3px}
