@@ -12006,7 +12006,10 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
     if(!n || !canEd) return;
     n.setAttribute("contenteditable","true");
     n.dataset.preF="1";
-    n.addEventListener("blur",()=>{ const v=n.textContent.trim(); if(v!==String(get()||"")){ set(v); redraw(); } });
+    /* kept once, by whichever comes first: leaving the line, or a ✕ pressed while it is open */
+    n.__commit=()=>{ if(n.__done) return false; const v=n.textContent.trim(); if(v===String(get()||"")) return false; n.__done=true; set(v); return true; };
+    /* a line that is no longer on the card - drawn again a moment ago - is not written a second time */
+    n.addEventListener("blur",()=>{ if(!n.isConnected) return; if(n.__commit()) redraw(); });
     n.addEventListener("keydown",e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); n.blur(); }
       if(e.key==="Tab" && !e.altKey && !e.ctrlKey && !e.metaKey){ e.preventDefault(); _preTabTo(card, n, e.shiftKey? -1 : 1); } });
   };
@@ -12053,12 +12056,18 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
   put(q(".tagline"), ()=>c.tag, v=>{ c.tag=v; });
   /* the builder pads the ideas out to three empty lines, so a card always has somewhere
      to write; an index past what the feed wrote simply lands at the end of the list */
+  /* THE LINES ARE READ AND WRITTEN AS THE CARD SHOWS THEM (Oriol, 30/10/2026: "si borro un texto
+     siempre reaparece"). The card draws only the lines with something in them, and the list kept
+     empty ones - a line typed into the third row of a card with one idea left two blanks before it.
+     So the third line on the card was the fourth in the list: deleting it changed nothing, it came
+     back, and its ✕ took an empty one. The empty entries go, and a line typed into a blank row is
+     added after the others */
+  if(Array.isArray(c.ideas)) c.ideas=c.ideas.filter(x=>String(x||"").trim());
   card.querySelectorAll(".idea-line").forEach((n,ii)=>{
     put(n, ()=>(c.ideas||[])[ii]||"", v=>{
-      c.ideas=c.ideas||[];
-      _preIdeaGone(c, c.ideas[ii], v);
-      while(c.ideas.length<ii) c.ideas.push("");
-      if(v) c.ideas[ii]=v; else c.ideas.splice(ii,1);
+      c.ideas=(c.ideas||[]).filter(x=>String(x||"").trim());
+      if(ii<c.ideas.length){ _preIdeaGone(c, c.ideas[ii], v); if(v) c.ideas[ii]=v; else c.ideas.splice(ii,1); }
+      else if(v) c.ideas.push(v);
     });
   });
   card.querySelectorAll(".extra-line").forEach((n,bi)=>{
@@ -12159,18 +12168,32 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
     c.co=PRE_CO_CYCLE[(k+1)%PRE_CO_CYCLE.length];
     redraw();
   });
-  card.querySelectorAll(".idea-row .rm-x-inline").forEach((btn,ii)=>{
-    btn.addEventListener("click",e=>{ e.preventDefault(); e.stopPropagation();
-      if(c.ideas && ii<c.ideas.length){ _preIdeaGone(c, c.ideas[ii], ""); c.ideas.splice(ii,1); redraw(); } });
-  });
-  card.querySelectorAll(".extra-block .rm-x-inline").forEach((btn,bi)=>{
-    btn.addEventListener("click",e=>{ e.preventDefault(); e.stopPropagation();
-      if(c.blocks && bi<c.blocks.length){ c.blocks.splice(bi,1); redraw(); } });
-  });
-  const row2=q(".row2 .rm-x"); if(row2) row2.addEventListener("click",e=>{
-    e.preventDefault(); e.stopPropagation(); c.badge=""; c.min=""; redraw(); });
-  const tl=q(".tagline-wrap .rm-x"); if(tl) tl.addEventListener("click",e=>{
-    e.preventDefault(); e.stopPropagation(); c.tag=""; redraw(); });
+  /* THE RED ✕ TAKES ITS LINE, EVERY TIME (Oriol, 30/10/2026: "no me deja borrar a veces clicando a
+     la x roja"). Pressing it took the focus from the line being written; leaving that line saved it
+     and drew the card again, and the click then landed on a ✕ that was no longer there. The ✕ acts
+     on the press now: what it removes is settled first, by what the line says, then what was being
+     written elsewhere on the card is kept, then its line goes - one drawing for both */
+  const xPress=(btn, prep)=>{ if(!btn) return;
+    btn.addEventListener("click",e=>{ e.preventDefault(); e.stopPropagation(); });
+    btn.addEventListener("mousedown",e=>{ e.preventDefault(); e.stopPropagation(); });
+    btn.addEventListener("pointerdown",e=>{ if(e.button!==0) return; e.preventDefault(); e.stopPropagation();
+      const act=prep(); if(!act) return;
+      const own=btn.parentElement, ae=document.activeElement;
+      if(ae && card.contains(ae) && ae.__commit && !(own && own.contains(ae))) ae.__commit();
+      if(own) own.querySelectorAll("[data-pre-f]").forEach(x=>{ x.__done=true; });
+      act(); redraw(); });
+  };
+  card.querySelectorAll(".idea-row .rm-x-inline").forEach((btn,ii)=>xPress(btn, ()=>{
+    if(!c.ideas || ii>=c.ideas.length) return null;
+    const t=c.ideas[ii];
+    return ()=>{ let k=c.ideas.indexOf(t); if(k<0) k=ii<c.ideas.length? ii : -1;
+      if(k>=0){ _preIdeaGone(c, c.ideas[k], ""); c.ideas.splice(k,1); } }; }));
+  card.querySelectorAll(".extra-block .rm-x-inline").forEach((btn,bi)=>xPress(btn, ()=>{
+    if(!c.blocks || bi>=c.blocks.length) return null;
+    const t=c.blocks[bi];
+    return ()=>{ let k=c.blocks.indexOf(t); if(k<0) k=bi<c.blocks.length? bi : -1; if(k>=0) c.blocks.splice(k,1); }; }));
+  xPress(q(".row2 .rm-x"), ()=>()=>{ c.badge=""; c.min=""; });
+  xPress(q(".tagline-wrap .rm-x"), ()=>()=>{ c.tag=""; });
   const sb=q(".stat-bar .rm-x"); if(sb) sb.addEventListener("click",e=>{
     e.preventDefault(); e.stopPropagation(); c.stats=[]; redraw(); });
   /* The cross on the closeout strip had no handler behind it at all - it was drawn, it
