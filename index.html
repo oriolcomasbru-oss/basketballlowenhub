@@ -36687,6 +36687,8 @@ body.edit-mode .phx.pre-roles .pre-lock{bottom:24px}
 /* five columns whatever the window: a narrow screen's three-column rule must not shape the paper */
 .prb.prb-roster .phx.phx .roster-columns:not(.pre-cm-cols){grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:9px!important}
 .prb-roles .vb-areas{justify-content:center!important}
+/* a board held by the height of the sheet sits in the middle of it, not against the left edge */
+#print-area .dop-page > .prb{position:relative;margin:0 auto}
 .pc-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;padding:9px 2px}
 .pc-col{min-width:0}
 .pc-colh{display:flex;align-items:baseline;gap:5px;padding:0 2px 5px;border-bottom:1px solid var(--line-gold,var(--line))}
