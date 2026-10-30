@@ -13179,11 +13179,13 @@ function _prePrintBoard(src, what){
   copy.querySelectorAll(".idea-row").forEach(r=>{ const t=r.querySelector(".idea-line"); if(!t || !t.textContent.trim()) r.remove(); });
   copy.querySelectorAll(".tagline").forEach(t=>{ if(!t.textContent.trim()){ const w=t.closest(".tagline-wrap"); (w||t).remove(); } });
   copy.querySelectorAll(".vb-note").forEach(n=>{ if(!n.textContent.trim()) n.remove(); });
+  /* a board with nothing on it is not sent to the printer */
+  if(!copy.querySelector(what==="roles"? ".vb-area" : ".card")){ toast(what==="roles"? "No roles written yet for this club" : "No cards on the roster yet"); return; }
   const p=h("div",{class:"dop-fit prb prb-"+what}, h("div",{class:"dop-top"}, h("b",{}, "Pre game"), h("span",{}, title)), copy);
   area.innerHTML="";
   area.appendChild(h("div",{class:"dop-page"}, p));
   const PW=1058, PH=715;
-  const widths=what==="roles"? [900,1050,1200,1350,1500,1700,1900,2150,2400,2700,3000] : [900,1000,1100,1200,1350,1500,1650,1800,2000];
+  const widths=what==="roles"? [700,800,900,1050,1200,1350,1500,1700,1900,2150,2400,2700,3000] : [900,1000,1100,1200,1350,1500,1650,1800,2000];
   const at=W=>{ p.style.zoom="1"; p.style.width=W+"px"; return Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); };
   const refit=()=>{ let best={ s:0, w:widths[0] }; widths.forEach(W=>{ const sc=at(W); if(sc>best.s) best={ s:sc, w:W }; });
     at(best.w); p.style.zoom=best.s.toFixed(4); };
