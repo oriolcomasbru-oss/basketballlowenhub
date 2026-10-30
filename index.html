@@ -22760,7 +22760,7 @@ function _lgLeadPool(L){
 }
 function _lgLeaders(L){
   const box=_lgPanel("League leaders", null,
-    "The top five of the league in twelve measures, the league average of each, and the best four of the club picked. A player needs four in ten of his club's games and ten minutes a game to count, and a percentage needs enough attempts. The average is over the same players.");
+    "The top five of the league in twelve measures, the league average of each, and underneath the best four of the club picked, in the five or not. A player needs four in ten of his club's games and ten minutes a game to count, and a percentage needs enough attempts. The average is over the same players.");
   box.classList.add("ldr");
   const P=_lgLeadPool(L);
   _lgLeadLoad(L);
@@ -22791,12 +22791,12 @@ function _lgLeaders(L){
       h("b",{class:"ldr-v"}, fmt(r.v)));
     rows.slice(0,TOP).forEach((r,i)=>card.appendChild(line(r, i+1, r.x.tid===sel)));
     /* the club picked: its best man here, with his place, when he is not already above */
-    /* The club picked always shows its best four in every board. The ones who made the
-       five are marked there; the ones who did not are added underneath with the place
-       they really hold, so the board answers "who is theirs in this" every time. */
+    /* The club picked always shows its best four in every board, underneath, with the place
+       they really hold - the ones who made the five too (Oriol, 30/10/2026: "siempre 4, estén
+       o no dentro del top 5"), so the four of the club are read in one block every time */
     if(sel){
       const mine=rows.map((r,i)=>({ r:r, i:i })).filter(o=>o.r.x.tid===sel).slice(0,OWN);
-      const below=mine.filter(o=>o.i>=TOP);
+      const below=mine;
       if(below.length) card.appendChild(h("div",{class:"ldr-own"}, below.map(o=>line(o.r, o.i+1, true))));
       else if(!mine.length) card.appendChild(h("div",{class:"ldr-own none"}, (selT&&(selT.tlc||selT.short)||"This club")+": nobody qualifies"));
     }
