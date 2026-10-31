@@ -2581,13 +2581,13 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
 .pb-edrag{cursor:grab;color:#c7ccd3;font-size:11px;letter-spacing:-1px;flex:0 0 auto}
 .pb-card.pb-drop{outline:2px dashed var(--gold,#c9a227);outline-offset:2px}
 .pb-entry.pb-drop{background:rgba(201,162,39,.08);border-radius:6px}
-.pb-card.c-blue .pb-cardhead{background:linear-gradient(90deg,#2f7fd1,#4a9bd8)}
-.pb-card.c-navy .pb-cardhead{background:linear-gradient(90deg,#1e5fae,#2f7fd1)}
-.pb-card.c-green .pb-cardhead{background:linear-gradient(90deg,#1f9d55,#2fb36a)}
-.pb-card.c-red .pb-cardhead{background:linear-gradient(90deg,#d9482f,#e5643a)}
-.pb-card.c-purple .pb-cardhead{background:linear-gradient(90deg,#6b3fa0,#8455bf)}
-.pb-card.c-gold .pb-cardhead{background:linear-gradient(90deg,#c9a227,#e0b64a);color:#14130b}
-.pb-card.c-dark .pb-cardhead{background:linear-gradient(90deg,#262b31,#3a4149)}
+.pb-card.c-blue .pb-cardhead,.pbp-card.c-blue .pbp-t{background:linear-gradient(90deg,#2f7fd1,#4a9bd8)}
+.pb-card.c-navy .pb-cardhead,.pbp-card.c-navy .pbp-t{background:linear-gradient(90deg,#1e5fae,#2f7fd1)}
+.pb-card.c-green .pb-cardhead,.pbp-card.c-green .pbp-t{background:linear-gradient(90deg,#1f9d55,#2fb36a)}
+.pb-card.c-red .pb-cardhead,.pbp-card.c-red .pbp-t{background:linear-gradient(90deg,#d9482f,#e5643a)}
+.pb-card.c-purple .pb-cardhead,.pbp-card.c-purple .pbp-t{background:linear-gradient(90deg,#6b3fa0,#8455bf)}
+.pb-card.c-gold .pb-cardhead,.pbp-card.c-gold .pbp-t{background:linear-gradient(90deg,#c9a227,#e0b64a);color:#14130b}
+.pb-card.c-dark .pb-cardhead,.pbp-card.c-dark .pbp-t{background:linear-gradient(90deg,#262b31,#3a4149)}
 .pb-cardtitle{font-family:'Oswald',sans-serif;font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.02em;flex:1}
 .pb-cardtitle-in{flex:1;min-width:0;border:0;background:transparent;color:inherit;font-family:'Oswald',sans-serif;font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.02em;outline:none}
 .pb-cardtitle-in::placeholder{color:rgba(255,255,255,.55)}
@@ -2599,6 +2599,8 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
 .pb-card.c-gold .pb-x{background:rgba(0,0,0,.12);color:#14130b}
 .pb-x.sm{background:transparent;color:var(--ink-faint);padding:1px 4px;font-size:11px}.pb-x.sm:hover{background:transparent;color:#c0392b}
 .pb-body{padding:9px 13px 11px}
+.pb-body:empty{display:none}
+.pb-empty{color:var(--ink-faint);font-size:13px;padding:6px 2px 18px}
 .pb-entry{display:flex;align-items:flex-start;gap:6px;padding:2px 0}
 .pb-dot{width:6px;height:6px;border-radius:50%;background:var(--ink-faint);opacity:.5;margin-top:6px;flex:0 0 auto}
 .pb-lab{font-weight:800;font-size:12.5px;color:var(--ink)}
@@ -3277,6 +3279,7 @@ function _pbIsFactory(kind, L){
 }
 /* a line of the factory's says nothing about what a browser added - the first list too, from before
    the sheet of 22/10 was written in */
+function _pbSaid(e){ return !!(_pbN(e.label) || _pbN(e.detail) || e.img); }
 function _pbFactoryLine(kind, lab){ const n=_pbN(lab); if(!n) return true; if(kind==="ato") return false;
   return n==="early / high pnr" || defaultPlaybook(kind).some(s=>s.entries.some(e=>_pbN(e.label)===n)); }
 function _pbMergeList(kind, B, L, S, hasBase){
@@ -3311,7 +3314,9 @@ function _planMerge(base, loc, srv){
     const l=_pJ(loc[k]), b=_pJ(B[k]);
     if(PB_LISTS[k] && Array.isArray(loc[k]) && Array.isArray(srv[k])){
       const K=PB_LISTS[k], s=_pJ(srv[k]);
-      if(l===s || (hasBase && l===b) || _pbIsFactory(K, loc[k])) out[k]=srv[k];
+      /* ATO's with nothing in it is only "still blank" for a browser that has never agreed anything:
+         with a copy agreed, it is what somebody has just cleared, and it stays cleared */
+      if(l===s || (hasBase && l===b) || (_pbIsFactory(K, loc[k]) && !(hasBase && K==="ato"))) out[k]=srv[k];
       else if((hasBase && s===b) || _pbIsFactory(K, srv[k])) out[k]=loc[k];
       else out[k]=_pbMergeList(K, B[k]||[], loc[k], srv[k], hasBase);
       return;
@@ -19758,14 +19763,18 @@ function defaultPlaybook(kind){
 }
 let _pbDrag=null;
 function pbData(kind){
-  if(kind==="def"){ if(!Array.isArray(state.playbookDef)||!state.playbookDef.length) state.playbookDef=defaultPlaybook("def"); return state.playbookDef; }
-  if(!Array.isArray(state.playbookOff)||!state.playbookOff.length) state.playbookOff=defaultPlaybook("off");
+  /* AN EMPTY LIST IS AN ANSWER (Oriol, 31/10/2026: "si aun no quiero nada en ATO's o en cualquier
+     seccion tengo que poder dejarla vacia"). Taking off the last section brought a blank one back in
+     ATO's and the whole factory list back in offense and defense: only a list that was never there
+     is started now */
+  if(kind==="def"){ if(!Array.isArray(state.playbookDef)) state.playbookDef=defaultPlaybook("def"); return state.playbookDef; }
+  if(!Array.isArray(state.playbookOff)) state.playbookOff=defaultPlaybook("off");
   /* ATO'S IS A SHEET OF ITS OWN, beside offense and defense. The section that was first
      added at the end of the offense moves across once, with whatever was written in it. */
-  if(!Array.isArray(state.playbookAto)||!state.playbookAto.length){
+  if(!Array.isArray(state.playbookAto)){
     const moved=state.playbookOff.filter(s=>/^\s*ATO/i.test(s.title||""));
     state.playbookOff=state.playbookOff.filter(s=>!/^\s*ATO/i.test(s.title||""));
-    state.playbookAto=moved.length? moved : [{ id:uid(), title:"ATO's", color:"gold", entries:[{ id:uid(), label:"", detail:"" }] }];
+    state.playbookAto=moved;
     state.pbAto=2; try{ persist(); }catch(e){_quiet(e)}
   }
   if(kind==="ato") return state.playbookAto;
@@ -19797,6 +19806,7 @@ function renderPlaybook(){
   wrap.appendChild(head);
   const grid=h("div",{class:"pb-grid"});
   const COLORS=["blue","navy","green","red","purple","gold","dark"];
+  if(!data.length) grid.appendChild(h("div",{class:"pb-empty"}, (kind==="ato"? "No ATO's yet." : "Nothing here yet.")+(canEd? " Add one with ＋ section." : "")));
   data.forEach((sec,si)=>{
     sec.entries=sec.entries||[];
     const card=h("div",{class:"pb-card c-"+(sec.color||"blue")});
@@ -19816,6 +19826,7 @@ function renderPlaybook(){
     card.appendChild(hdr);
     const body=h("div",{class:"pb-body"});
     sec.entries.forEach((en,ei)=>{
+      if(!canEd && !_pbSaid(en)) return;
       const row=h("div",{class:"pb-entry"});
       if(canEd){ row.addEventListener("focusin",()=>{ _pbPasteEn=en; }); row.addEventListener("mousedown",()=>{ _pbPasteEn=en; });
 
@@ -31598,7 +31609,7 @@ const PRT_PAD = 8;   /* our own page margin, in mm */
 /* Below this the type stops being type. A page that will not fit even then is
    let out onto a second sheet rather than handed over unreadable. */
 const PRT_MINZOOM = 0.22;
-const PRT_KEYS = ["playbook","pregame","postgame","postpractice","plancycle",
+const PRT_KEYS = ["pregame","postgame","postpractice","plancycle",
                   "planmonth","planseason","calmonth","calseason"];
 
 /* What the current screen prints as. null = this screen has nothing to print,
@@ -31611,8 +31622,7 @@ function printSpec(){
   if(v==="rooster") return {key:"rooster", dialog:true, paper:"landscape"};
   /* the trends print the dashboard's two sheets */
   if(v==="trends") return {key:"trends", trends:true, paper:"landscape"};
-  if(v==="playbook")
-    return {key:"playbook", el:"#viewPlaybook", paper:"landscape", margin:8, fit:false, both:true, each:true};
+  if(v==="playbook") return {key:"playbook", playbook:true, paper:"landscape"};
   if(v==="oppscout"){
     const m=(state.ui.os&&state.ui.os.mode)||"overview";
     return m==="game" ? {key:"pregame", el:"#viewOppScout", paper:"landscape", margin:8, fit:false} : null;
@@ -31721,7 +31731,7 @@ function prtFit(el, spec){
        widest table, so its own sections are measured and scaled separately and
        the section around them stops counting what is inside them. */
     const FINE=".sxp-sec";
-    const blocks=el.querySelectorAll(".rs-sections>*,.phx-holder,.scout-panel,.ts-sheet,.prt-pbsec,"+FINE);
+    const blocks=el.querySelectorAll(".rs-sections>*,.phx-holder,.scout-panel,.ts-sheet,"+FINE);
     Array.prototype.forEach.call(blocks.length?blocks:el.children, n=>{
       /* the section around them measures itself as if they were not there: its
          own wrappers stretch to whatever the widest table inside demands, so
@@ -31814,31 +31824,73 @@ function prtFit(el, spec){
   return k;
 }
 
-/* The playbook is two sheets — offense on one, defense on the other — but the
-   screen only ever holds the tab you are looking at. Both are rendered into a
-   printing-only holder and taken out again afterwards. */
-let _prtPb=null;
-function prtPlaybookBoth(root){
-  const prev=state.ui.pbTab;
-  const grab=(tab)=>{ state.ui.pbTab=tab; renderPlaybook();
-    const g=root.querySelector(".pb-grid"); return g? g.cloneNode(true) : null; };
-  const off=grab("off"), def=grab("def"), ato=grab("ato");
-  state.ui.pbTab=prev; renderPlaybook();
-  if(!off && !def) return;
-  const holder=document.createElement("div");
-  holder.className="prt-pb";
-  const sec=(title,grid)=>{
-    if(!grid) return;
-    const s=document.createElement("section"); s.className="prt-pbsec";
-    const hd=document.createElement("div"); hd.className="prt-pbh"; hd.textContent=title;
-    s.appendChild(hd); s.appendChild(grid); holder.appendChild(s);
-  };
-  sec("Offense", off); sec("Defense", def); sec("ATO's", ato);
-  root.appendChild(holder);
-  _prtPb=()=>{ holder.remove(); _prtPb=null; };
+/* THE PLAYBOOK ON PAPER: EACH TAB ON ONE LANDSCAPE A4 (Oriol, 31/10/2026: "quiero que quepa todo en
+   una unica pagina. Ahora se divide en 2"). Offense ran over onto a second sheet: the size was worked
+   out from the browser's own columns, which came out differently on paper. Now the columns are ours -
+   the sections in the order they are written, cut so the tallest column is as short as it can be -
+   and every width and number of columns is tried: the one that leaves the type largest is kept. What
+   a reader would not see is not printed: a blank line, a section with nothing in it, a tab with nothing */
+function _pbCut(hs, C, gap){
+  const cut=L=>{ const out=[[]]; let y=0;
+    hs.forEach((v,i)=>{ const col=out[out.length-1];
+      if(col.length && y+gap+v>L){ out.push([i]); y=v; }
+      else { y+=(col.length? gap : 0)+v; col.push(i); } });
+    return out; };
+  let lo=Math.max.apply(null,hs)-1, hi=hs.reduce((a,b)=>a+b+gap,0);
+  while(hi-lo>1){ const m=Math.floor((lo+hi)/2); if(cut(m).length<=C) hi=m; else lo=m; }
+  return { h:hi, cols:cut(hi) };
+}
+function _pbPrintSheets(){
+  const area=$("#print-area"); if(!area) return;
+  const tabs=[["off","Offense"],["def","Defense"],["ato","ATO's"]].map(x=>({ t:x[1],
+    secs:pbData(x[0]).map(s=>({ title:s.title, color:s.color, entries:(s.entries||[]).filter(_pbSaid) })).filter(s=>s.entries.length) })).filter(x=>x.secs.length);
+  if(!tabs.length){ toast("Nothing written in the playbook yet"); return; }
+  const card=s=>{ const b=h("div",{class:"pbp-b"});
+    s.entries.forEach(e=>{ const tx=h("div",{}, h("b",{}, e.label||"")); if(e.detail) tx.appendChild(h("span",{}, e.detail));
+      const r=h("div",{class:"pbp-e"}, h("i"), tx); if(e.img) r.appendChild(h("img",{src:e.img,alt:""})); b.appendChild(r); });
+    return h("div",{class:"pbp-card c-"+(s.color||"blue")}, h("div",{class:"pbp-t"}, s.title||""), b); };
+  const PW=1058, PH=715, GAP=10;
+  area.innerHTML="";
+  document.body.classList.add("dop-measure");
+  const sheets=tabs.map(tab=>{
+    const cards=tab.secs.map(card), cols=h("div",{class:"pbp-cols"}), col=h("div",{class:"pbp-col"});
+    const p=h("div",{class:"dop-fit pbp"}, h("div",{class:"dop-top"}, h("b",{}, "Playbook"), h("span",{}, tab.t)), cols);
+    area.appendChild(h("div",{class:"dop-page"}, p));
+    p.style.zoom="1"; p.style.setProperty("--pbp-gap", GAP+"px");
+    cols.appendChild(col); cards.forEach(c=>col.appendChild(c));
+    const memo={};
+    const heights=w=>{ const k=Math.round(w); if(memo[k]) return memo[k];
+      p.style.width=(k+40)+"px"; col.style.flex="0 0 "+k+"px";
+      return (memo[k]=cards.map(c=>Math.ceil(c.getBoundingClientRect().height))); };
+    const headH=p.querySelector(".dop-top").getBoundingClientRect().height+10;
+    let best={ s:0 };
+    /* narrow to wide: from where the width alone holds the type under the best so far, no wider can win */
+    for(let W=640; W<=2800; W=Math.round(W*1.03)){
+      if(PW/W<=best.s) break;
+      for(let C=1; C<=Math.min(7,cards.length); C++){
+        const cw=(W-(C-1)*GAP)/C; if(cw<170) break;
+        const R=_pbCut(heights(cw), C, GAP), sc=Math.min(PW/W, PH/(headH+R.h));
+        if(sc>best.s+0.0005) best={ s:sc, W:W, C:C, cols:R.cols };
+      }
+    }
+    cols.innerHTML="";
+    for(let i=0;i<best.C;i++){ const c=h("div",{class:"pbp-col"}); (best.cols[i]||[]).forEach(n=>c.appendChild(cards[n])); cols.appendChild(c); }
+    return { p:p, W:best.W };
+  });
+  /* the sum above is checked against the sheet as it really is, on the screen and again on paper */
+  const fit=()=>sheets.forEach(S=>{ S.p.style.zoom="1"; S.p.style.width=S.W+"px"; S.p.style.zoom=Math.min(PW/S.W, PH/Math.max(1,S.p.scrollHeight)).toFixed(4); });
+  fit();
+  const mq=window.matchMedia? window.matchMedia("print") : null, onMq=e=>{ if(e.matches) fit(); };
+  if(mq){ if(mq.addEventListener) mq.addEventListener("change", onMq); else if(mq.addListener) mq.addListener(onMq); }
+  const st=document.createElement("style"); st.textContent="@page{size:A4 landscape;margin:7mm} html,body{margin:0!important;padding:0!important}"; document.body.appendChild(st);
+  const done=()=>{ document.body.classList.remove("printing","printing-dop","dop-measure"); area.innerHTML=""; st.remove(); window.removeEventListener("afterprint", done);
+    if(mq){ if(mq.removeEventListener) mq.removeEventListener("change", onMq); else if(mq.removeListener) mq.removeListener(onMq); } };
+  window.addEventListener("afterprint", done);
+  document.body.classList.remove("dop-measure");
+  document.body.classList.add("printing","printing-dop");
+  setTimeout(()=>{ try{ window.print(); }catch(e){ done(); } }, 120);
 }
 function prtCleanup(){
-  if(_prtPb) _prtPb();
   if(_prtEl){ _prtEl.classList.remove("prt-target");
     _prtEl.querySelectorAll("[data-prt-zoom]").forEach(n=>{ n.style.zoom=""; delete n.dataset.prtZoom; });
     _prtEl.style.zoom=""; _prtEl.style.width=""; _prtEl.style.transform="";
@@ -31856,6 +31908,7 @@ function printCurrentView(){
   if(!spec){ toast("This screen has no print layout of its own"); return; }
   if(spec.dialog){ exportPDF(); return; }
   if(spec.trends){ _dashTrendsPrint(); return; }
+  if(spec.playbook){ _pbPrintSheets(); return; }
   /* the session sheet and the game plan sheet already have print paths of
      their own, both built for A4 */
   if(spec.sheet==="gp"){
@@ -31877,7 +31930,6 @@ function printCurrentView(){
   _prtEl=el;
   el.classList.add("prt-target");
   document.body.classList.add("prt-"+spec.key);
-  if(spec.both) prtPlaybookBoth(el);
   if(spec.textOnly){
     document.body.classList.add("prt-textonly");
     /* the last written section opens its own side: the two the coach reads out
@@ -36853,7 +36905,19 @@ body.edit-mode .phx.pre-roles .pre-lock{bottom:24px}
 .prb.prb-roster .phx.phx .roster-columns:not(.pre-cm-cols){grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:9px!important}
 .prb-roles .vb-areas{justify-content:center!important}
 /* a board held by the height of the sheet sits in the middle of it, not against the left edge */
-#print-area .dop-page > .prb{position:relative;margin:0 auto}
+#print-area .dop-page > .prb,#print-area .dop-page > .pbp{position:relative;margin:0 auto}
+/* the playbook on paper */
+.pbp-cols{display:flex;gap:var(--pbp-gap,10px);align-items:flex-start}
+.pbp-col{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:var(--pbp-gap,10px)}
+.pbp-card{border:1px solid #dfe3e8;border-radius:8px;overflow:hidden;background:#fff}
+.pbp-t{padding:5px 10px;color:#fff;font:700 14px/1.2 Oswald,sans-serif;letter-spacing:.03em;text-transform:uppercase}
+.pbp-b{padding:5px 10px 6px}
+.pbp-e{display:flex;align-items:flex-start;gap:6px;padding:1.5px 0;font-size:12.5px;line-height:1.3}
+.pbp-e > i{width:5px;height:5px;border-radius:50%;background:#a7aeb9;margin-top:6px;flex:0 0 auto}
+.pbp-e > div{flex:1;min-width:0}
+.pbp-e b{font-weight:800;color:#141821}
+.pbp-e span{font-size:11.5px;color:#4d5663;margin-left:6px}
+.pbp-e img{width:42px;height:30px;object-fit:cover;border-radius:4px;border:1px solid #dfe3e8;flex:0 0 auto}
 .pc-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;padding:9px 2px}
 .pc-col{min-width:0}
 .pc-colh{display:flex;align-items:baseline;gap:5px;padding:0 2px 5px;border-bottom:1px solid var(--line-gold,var(--line))}
@@ -38533,6 +38597,7 @@ body.dop-measure #print-area{display:block;position:fixed;left:-99999px;top:0}
 @media print{
   body.printing-dop #print-area{display:block;position:static;width:auto;height:auto;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   body.printing-dop #print-area *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body.printing-dop{background:#fff!important}
   body.printing-dop > *:not(#print-area){display:none!important}
   body.printing-dop .dop-page{break-after:page;page-break-after:always}
   body.printing-dop .dop-page:last-child{break-after:auto;page-break-after:auto}
@@ -42955,8 +43020,7 @@ body.prt-measure .prt-target .gp2-foot,body.prt-measure .prt-target .pb-add,
 body.prt-measure .prt-target .pb-x,body.prt-measure .prt-target .pb-imgdrop,
 body.prt-measure .prt-target .rs-drag,body.prt-measure .prt-target .rs-bar-btn,
 body.prt-measure .prt-target .ts-open,body.prt-measure .prt-target .sx-menu,
-body.prt-measure .prt-target .btn,body.prt-measure .prt-target button.subtab,
-body.prt-measure.prt-playbook .pb-video{display:none!important}
+body.prt-measure .prt-target .btn,body.prt-measure .prt-target button.subtab{display:none!important}
 body.prt-measure{padding:8mm!important;box-sizing:border-box!important}
 body.prt-measure .prt-target,body.prt-measure .prt-target *{overflow:visible!important;max-height:none!important}
 /* the wrapping rule below changes how tall everything is, so the measuring pass
@@ -42964,11 +43028,6 @@ body.prt-measure .prt-target,body.prt-measure .prt-target *{overflow:visible!imp
    that "fitted" still dribbled onto the next sheet */
 body.prt-measure .prt-target :not(table):not(thead):not(tbody):not(tr):not(th):not(td){
   white-space:normal!important;text-overflow:clip!important}
-/* the playbook's printing-only holder has to be the thing being measured, or
-   the sizes come from the tab that is on screen instead */
-body.prt-measure.prt-playbook .pb-video,body.prt-measure.prt-playbook .pb-head,
-body.prt-measure.prt-playbook .prt-target>.pb{display:none!important}
-body.prt-measure.prt-playbook .prt-pb{display:block!important}
 
 /* ---- the rotation on paper -------------------------------------------------------
    A printer is not a small screen. It drops background colours unless told not to, it
@@ -43068,14 +43127,6 @@ body.prt-measure.prt-playbook .prt-pb{display:block!important}
   body.prt .prt-target table{break-inside:auto;page-break-inside:auto}
   body.prt .prt-target thead{display:table-header-group}
 
-  /* ---- Playbook: offense on one sheet, defense on the next. The video is a
-          link, and a link does not print. */
-  body.prt-playbook .pb-video,body.prt-playbook .pb-head,
-  body.prt-playbook .prt-target>.pb{display:none!important}
-  body.prt-playbook .prt-pb{display:block!important}
-  body.prt-playbook .prt-pbsec+.prt-pbsec{break-before:page;page-break-before:always}
-  body.prt-playbook .prt-pbh{font:700 18px 'Oswald',sans-serif;text-transform:uppercase;
-    letter-spacing:.08em;margin:0 0 10px;padding-bottom:6px;border-bottom:2px solid var(--ink)}
   /* the stats block hides every category but the one on screen; on paper they
      all print, otherwise the numbers simply are not there */
   body.prt .sx-cat,body.prt .g2-view,body.prt .g2-grp{display:block!important}
