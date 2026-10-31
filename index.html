@@ -3262,11 +3262,60 @@ function _planDocLocal(){ const P=state.plan||{};
            playbookAto:state.playbookAto||null, playbookVideo:state.playbookVideo||null }; }
 function _planDocPick(d){ if(!d) return null; const o={ sessions:d.sessions||{} }; PLAN_DOC_FIELDS.forEach(k=>{ o[k]=d[k]==null? null : d[k]; }); return o; }
 function _planTouched(arr){ return (arr||[]).some(x=>x && (!x.fromSheet || (x.blocks||[]).length || x.goal || x.notes || x.start)); }
+/* A PLAYBOOK IS MERGED SET BY SET, AND THE FACTORY LIST NEVER BEATS ANYTHING (Oriol, 31/10/2026:
+   the sets typed in by 22/10 - 77, 72, 14, Off Automatics, Happy Meal, Vs Zone - were not there
+   after 28/10). The list was taken whole: a browser meeting the server for the first time took the
+   server's over its own, and the first copy on the server was the factory list. Now a list that is
+   still the factory's gives way to the server's, and two lists that really differ are put together:
+   what only one side has stays, unless the other had it and took it off */
+const PB_LISTS={ playbookOff:"off", playbookDef:"def", playbookAto:"ato" };
+const _pbN=s=>String(s||"").trim().toLowerCase();
+function _pbShape(L){ return _pJ((L||[]).map(s=>[_pbN(s.title), (s.entries||[]).map(e=>[_pbN(e.label), _pbN(e.detail)])])); }
+function _pbIsFactory(kind, L){
+  if(kind==="ato") return (L||[]).every(s=>(s.entries||[]).every(e=>!_pbN(e.label) && !_pbN(e.detail)));
+  return _pbShape(L)===_pbShape(defaultPlaybook(kind));
+}
+/* a line of the factory's says nothing about what a browser added - the first list too, from before
+   the sheet of 22/10 was written in */
+function _pbFactoryLine(kind, lab){ const n=_pbN(lab); if(!n) return true; if(kind==="ato") return false;
+  return n==="early / high pnr" || defaultPlaybook(kind).some(s=>s.entries.some(e=>_pbN(e.label)===n)); }
+function _pbMergeList(kind, B, L, S, hasBase){
+  const findS=(A,x)=>(A||[]).find(y=>x.id && y.id===x.id) || (A||[]).find(y=>_pbN(y.title)===_pbN(x.title));
+  const findE=(A,x)=>(A||[]).find(y=>x.id && y.id===x.id) || (_pbN(x.label)? (A||[]).find(y=>_pbN(y.label)===_pbN(x.label)) : null);
+  const same=(a,b)=>_pbN(a.label)===_pbN(b.label) && _pbN(a.detail)===_pbN(b.detail);
+  const out=JSON.parse(JSON.stringify(S||[]));
+  (L||[]).forEach(sL=>{ const sB=findS(B,sL), sO=findS(out,sL), eL=sL.entries||[];
+    if(!sO){
+      /* taken off on the other side and not touched here: it goes. New here: it stays, if it is
+         more than the factory's lines */
+      if(sB && _pJ(sL)===_pJ(sB)) return;
+      if(!sB && !hasBase && eL.every(e=>_pbFactoryLine(kind, e.label))) return;
+      out.push(JSON.parse(JSON.stringify(sL))); return; }
+    if(sB && _pbN(sL.title)!==_pbN(sB.title)) sO.title=sL.title;
+    if(sB && sL.color!==sB.color) sO.color=sL.color;
+    sO.entries=sO.entries||[];
+    eL.forEach(e=>{ const eB=sB? findE(sB.entries,e) : null, eO=findE(sO.entries,e);
+      if(!eO){ if(!_pbN(e.label) && !_pbN(e.detail)) return; if(eB && same(e,eB)) return; if(!eB && !hasBase && _pbFactoryLine(kind, e.label)) return; sO.entries.push(JSON.parse(JSON.stringify(e))); return; }
+      /* changed here since the two last agreed: this one; with no copy to compare, a detail fills an empty one */
+      if(eB? !same(e,eB) : (!hasBase && !_pbN(eO.detail) && _pbN(e.detail))){ eO.label=e.label; eO.detail=e.detail; } });
+    /* taken off here and untouched on the other side: it goes */
+    if(sB) sO.entries=sO.entries.filter(e=>{ if(findE(eL,e)) return true; const eB=findE(sB.entries,e); return !(eB && same(e,eB)); });
+  });
+  /* a section taken off here that the other side has not touched */
+  return out.filter(s=>{ if(findS(L,s)) return true; const sB=findS(B,s); return !(sB && _pJ(s)===_pJ(sB)); });
+}
 function _planMerge(base, loc, srv){
   if(!srv) return _planDocPick(loc);
   const out={ sessions:{} }, hasBase=!!base, B=base||{ sessions:{} };
   PLAN_DOC_FIELDS.forEach(k=>{
     const l=_pJ(loc[k]), b=_pJ(B[k]);
+    if(PB_LISTS[k] && Array.isArray(loc[k]) && Array.isArray(srv[k])){
+      const K=PB_LISTS[k], s=_pJ(srv[k]);
+      if(l===s || (hasBase && l===b) || _pbIsFactory(K, loc[k])) out[k]=srv[k];
+      else if((hasBase && s===b) || _pbIsFactory(K, srv[k])) out[k]=loc[k];
+      else out[k]=_pbMergeList(K, B[k]||[], loc[k], srv[k], hasBase);
+      return;
+    }
     if(!hasBase) out[k]=(srv[k]!=null)? srv[k] : loc[k];
     else out[k]=(l!==b)? loc[k] : srv[k];
   });
@@ -19626,7 +19675,7 @@ function _lgFourTrend(TB){
 function defaultPlaybook(kind){
   const S=(t,c,e)=>({id:uid(),title:t,color:c,entries:e.map(x=>({id:uid(),label:x[0],detail:x[1]||""}))});
   if(kind==="def") return [
-    S("PnR vs 5","dark",[["Black","switch"],["Red","hedge"],["Bite","trap + high last"],["Early / High PnR","under or over + flat"]]),
+    S("PnR vs 5","dark",[["Black","switch"],["Red","hedge"],["Bite","trap + high last"],["Under","Early or high pnr. Under or over + flat"],["Green","Hedge&plug"]]),
     S("PnR vs 4","dark",[["Red","hedge"],["Black","switch"]]),
     S("Post Up","dark",[["1-on-1","aggressive passing lane"],["Top","trap from the top (usually the big)"]]),
     S("Off Screens","dark",[["5 up",""],["STUNT","passer"],["Guard destroy","late switch"],["Top lock","if only one exit"]]),
@@ -19636,18 +19685,21 @@ function defaultPlaybook(kind){
   ];
   return [
     S("Fast Break","blue",[["Outlet",""],["Kick ahead",""],["Kick across",""],["Rim runner",""],["Early 1 on 1",""]]),
-    S("Secondary Break","navy",[["Punch","Step with PG, others split off-screen"],["7 / 7 Clear",""],["5 Side","Off screens"],["5 Zoom","DHO + PnR middle"],["5 Dribble","Cut + DHO"],["54","Flare"]]),
-    S("1 Series","green",[["1","ghost 1-2"],["15","ghost veer + ghost"]]),
-    S("2 Series","green",[["2 Low",""],["2 Flash","spain flare"],["2 Down",""],["2 C","twist with the 4 + double drag"],["2 Special","PnR last + off screen"],["2 Side","double exit"]]),
-    S("3 Series","green",[["3","side PnR / step up PnR"],["3 C","curl the 3 + flare · 4 + 1-5 middle PnR"],["3 Side","fake step + off screen / veer"],["3 Down","spain PnR"]]),
+    S("Secondary Break","navy",[["Punch","Step with PG, others split off-screen"],["7 / 7 Clear",""],["5 Side","Off screens"],["5 Zoom","DHO + PnR middle"],["5 Dribble","Cut + DHO"],["54","Flare"],["77","Double drag"],["72","DD + STG curl + hip"]]),
+    S("1 Series","green",[["1","ghost 1-2"],["15","ghost veer + ghost"],["14","ghost 1-2 + pnr 4"],["12","bp 2-4 + DHO"]]),
+    S("2 Series","green",[["2",""],["2 hip",""],["2 Low",""],["2 Flash","spain flare"],["2 Down",""],["2 C","twist with the 4 + double drag"],["2 Special","PnR last + off screen"],["2 Side","double exit"]]),
+    S("3 Series","green",[["3","side PnR / step up PnR"],["3 C","curl the 3 + flare · 4 + 1-5 middle PnR"],["3 Side","fake step + off screen / veer"],["3 Down","spain PnR"],["3 hip","pnr 1-5 with hip"]]),
     S("Elbow Series","green",[["Elbow 4","DH 1-4-5"],["Elbow Vueltas","back pick 1-3 + DHO PnR"],["Elbow Dribble","DHO + PnR 2-3"],["Elbow 5",""],["Elbow 2","DH 1-2-5"],["Elbow Side","veer"]]),
     S("Chest Series","green",[["Chest 24","ram screen + PnR / pin down"],["Chest 25","ram screen + PnR / pin down"],["Chest 45","4 to dunker or space"],["Chest 54",""]]),
     S("Baseline (BOB)","red",[["Pio Pio",""],["Last",""]]),
-    S("Sideline (SOB)","red",[["3 Series",""],["3 Special",""],["Last",""]]),
-    S("Finals","red",[["Thumb Up",""],["Thumbs flash","spain flare"],["Thumbs down","spain"],["Thumbs side","veer"]]),
+    S("Sideline (SOB)","red",[["3 Series",""],["3 Special",""],["Fist",""],["Fist C",""],["Fist Side",""],["Last",""]]),
+    S("Finals","red",[["Thumb Up",""],["Thumbs flash","spain flare + floppy"],["Thumbs down","spain"],["Thumbs side","veer"]]),
     S("Vs Switch","red",[["Guard mismatch","1-on-1 perimeter"],["Big mismatch","1-on-1 post"],["If 3/4 front","flash, create triangle, feed inside"],["Head","guards DHO, attack the big"]]),
-    S("PnR Guidelines","purple",[["Reads","flat, red, ice"],["Spacing","middle, side, step"]]),
-    S("Ball Inside","gold",[["Split off-screen",""],["Feet inside","1x1"],["Feet outside","dho"]])
+    S("PnR Automatics","purple",[["Reads","flat, red, ice"],["Spacing","middle, side, step"]]),
+    S("Off Automatics","blue",[["Top lock pop 5","backdoor + rescreen"],["Top lock ghost","ghost + rescreen"],["Thumbs flash o 2 flash + 2 side",""]]),
+    S("Ball Inside Automatics","gold",[["Split off-screen",""],["Feet inside","1x1"],["Feet outside","dho"],["top","flash cut"]]),
+    S("Happy Meal (End game or Q)","dark",[["1) Inbound quick + White (off/dho)","42-35\""],["2) Defense tag","Defense"],["3) Thumbs name or other",""]]),
+    S("Vs Zone","navy",[["Horns","double PNR middle vs 3-2"],["Any quick PNR middle set","vs 2-3"]])
   ];
 }
 let _pbDrag=null;
