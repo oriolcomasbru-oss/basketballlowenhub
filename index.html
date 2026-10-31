@@ -15508,6 +15508,23 @@ let _gpPlanHook=null;
    overtimes count as the 4th quarter; 2 timeouts in the first half and 3 in the second, not
    carried over, at most 2 in the last 2:00 of the 4th; 1 in each overtime. */
 const _gpAlertSeen={};
+/* EACH OF OURS, +/- UP TO A MOMENT OF THE GAME, and the score then: the play by play walked in its
+   own order, so a free throw after a substitution counts for whoever is on the floor to shoot it.
+   Read to the end of a game it gives the league's own +/- */
+function _gpPmAt(feed, uc, T){
+  const stq={}; (feed.starters||[]).forEach(s=>{ if(s.teamcode!==uc) return;
+    stq[_lgGameElapsed(s.quarter,0).qi]=[1,2,3,4,5].map(n=>String(s["player_id"+n]||"")).filter(v=>v && v!=="0"); });
+  const A=(feed.actions||[]).map((a,i)=>{ const e=_lgGameElapsed(a.quarter, a.time); return { a:a, t:e.t, qi:e.qi, i:i }; })
+    .filter(o=>o.t<=T).sort((p,q)=>(p.t-q.t)||(p.i-q.i));
+  const pm={}; let on=new Set(), q=-1, u=0, th=0;
+  A.forEach(o=>{ const a=o.a;
+    if(o.qi!==q){ q=o.qi; if(stq[q] && stq[q].length) on=new Set(stq[q]); }
+    if(a.action==="SUBST"){ if(a.teamcode===uc){ on.delete(String(a.player_id1)); const inn=String(a.player_id2||""); if(inn && inn!=="0") on.add(inn); } return; }
+    const p=_gpPts(a); if(!p) return;
+    const us=a.teamcode===uc; if(us) u+=p; else th+=p;
+    on.forEach(id=>{ pm[id]=(pm[id]||0)+(us? p : -p); }); });
+  return { pm:pm, u:u, t:th };
+}
 function _gpAlerts(L){
   if(!L || !L.live || !L.tm || !L.feed) return [];
   const qi=L.maxQ||0, t=L.lastT||0, base=qi<4? qi*600 : 2400+(qi-4)*300, len=qi<4? 600 : 300, left=Math.max(0, base+len-t);
@@ -15562,16 +15579,41 @@ function _gpAlerts(L){
         if(a.action==="REB"||a.action==="TREB") mine=us; else if(a.action==="TO"||a.action==="TTO") mine=!us;
         else if((a.action==="P2"||a.action==="P3"||a.action==="FT") && a.result==="+") mine=!us; else if(a.action==="P2"||a.action==="P3") break; }
       if(mine) out.push({ k:"happy|"+qi, tone:"good", big:"Happy meal", txt:_gpMmss(left)+" left in "+qn(qi)+" and the ball is ours — quick attack, one stop, the last possession ours" }); } }catch(e){_quiet(e)}
-  /* THEIR WORST FREE THROW SHOOTERS ON THE FLOOR, when fouling is on the table: in our bonus
-     trouble or the last two minutes - the season's FT% of each of theirs on the court */
-  try{ if(U.fouls>=4 || (qi>=3 && left<=120)){
+  /* THEIR BAD FREE THROW SHOOTERS (Oriol, 31/10/2026: "me lo recuerdas los últimos 2 minutos por si
+     tenemos que hacer faltas. Si entra alguno y no estaba me lo dices"): under 65% on five attempts or
+     more this season, of the men dressed tonight, whether they have played or not. The last 2:00 say
+     who they are, on the floor and on the bench, and one who comes in during those two minutes is said
+     at once, each time he does. Before that, with our team fouls up, the worst of them on the floor */
+  try{ const l2=qi>=3 && left<=120 && (qi>3 || left>0);
+    if(l2 || U.fouls>=4){
       const Lg=leagueState(), our=String(_lgOurTeamId(Lg)||""), G2=L.G||{}, oid=String(String(G2.homeId)===our? G2.awayId : G2.homeId);
       const ros=(((Lg.lead||{})[oid]||{}).players)||(((Lg.players||{})[oid]||{}).players)||[];
-      const ct=(L.court && L.court.t)||{};
-      const list=(L.them||[]).filter(p=>ct[String(p.id)] && ct[String(p.id)].on).map(p=>{ const r=ros.filter(x=>x && x.num!=null && String(parseInt(x.num,10))===String(parseInt(p.num,10)))[0], a=r && r.all;
-        return a && a.fta>=5? { p:p, pc:100*a.ftm/a.fta, fta:a.fta } : null; }).filter(Boolean).sort((x,y)=>x.pc-y.pc);
-      const bad=list.filter(x=>x.pc<70).slice(0,2);
-      if(bad.length) out.push({ k:"ftw|"+bad.map(x=>x.p.id).join("."), tone:"info", big:"Worst FT on the floor", txt:bad.map(x=>nmT(x.p.id)+" "+Math.round(x.pc)+"% ("+x.fta+" FTA)").join(" · ") }); } }catch(e){_quiet(e)}
+      const ct=(L.court && L.court.t)||{}, tc=usC==="A"? "B" : "A";
+      const bad=(L.feed.players||[]).filter(p=>p.teamcode===tc).map(p=>{
+        const r=ros.filter(x=>x && x.num!=null && parseInt(x.num,10)===parseInt(p.NUM,10))[0], a=r && r.all;
+        if(!a || !(a.fta>=5) || 100*a.ftm/a.fta>=65) return null;
+        const id=String(p.player_id), c=ct[id];
+        return { id:id, nm:"#"+p.NUM+" "+(_lgLastName(r.name||"")||""), pc:Math.round(100*a.ftm/a.fta), fta:a.fta, on:!!(c && c.on), since:(c && c.on)? t-(c.stint||0) : null }; })
+        .filter(Boolean).sort((x,y)=>x.pc-y.pc);
+      const say=x=>x.nm+" "+x.pc+"% ("+x.fta+" FTA)", onF=bad.filter(x=>x.on), off=bad.filter(x=>!x.on);
+      if(l2 && bad.length) out.push({ k:"ftl2m|"+qi, tone:"warn", big:"Bad free throw shooters",
+        txt:(onF.length? "On the floor: "+onF.map(say).join(" · ") : "None on the floor")+(off.length? " — bench: "+off.map(say).join(" · ") : "") });
+      if(l2) onF.filter(x=>x.since!=null && x.since>=base+len-120).forEach(x=>out.push({ k:"ftin|"+x.id+"|"+x.since, tone:"warn", urgent:true,
+        big:x.nm+" just came in", txt:"FT "+x.pc+"% ("+x.fta+" FTA) — foul him?" }));
+      if(!l2 && onF.length) out.push({ k:"ftw|"+onF.slice(0,2).map(x=>x.id).join("."), tone:"info", big:"Worst FT on the floor", txt:onF.slice(0,2).map(say).join(" · ") });
+    } }catch(e){_quiet(e)}
+  /* OUR +/- AT 12:00 (Oriol, 31/10/2026: after twelve minutes of the first half, to see whether to
+     adjust anybody, only when the trend is clear). Read at 12:00 exactly, so it does not move until
+     half time: whoever is at +8 or -8 or beyond with four minutes on the floor, in a group each way.
+     Nothing clear, nothing said */
+  try{ if(qi===1 && left<=480){
+      const R12=_gpPmAt(L.feed, usC, 720), ct12=_gpCourt(L.feed, usC, 720);
+      const men=(L.us||[]).map(p=>{ const c=ct12[String(p.id)]; return (c && c.sec>=240)? { nm:_lgLastName(p.name||"")||("#"+p.num), pm:R12.pm[String(p.id)]||0, min:Math.round(c.sec/60) } : null; }).filter(Boolean);
+      const dn=men.filter(m=>m.pm<=-8).sort((a,b)=>a.pm-b.pm), up=men.filter(m=>m.pm>=8).sort((a,b)=>b.pm-a.pm);
+      const f12=m=>m.nm+" "+(m.pm>0? "+" : "−")+Math.abs(m.pm)+" ("+m.min+"′)";
+      if(dn.length || up.length) out.push({ k:"pm12", tone:dn.length? "warn" : "good", big:"+/− at 12:00 · "+R12.u+"–"+R12.t,
+        txt:[dn.length? "Down: "+dn.map(f12).join(" · ") : "", up.length? "Up: "+up.map(f12).join(" · ") : ""].filter(Boolean).join(" — ") });
+    } }catch(e){_quiet(e)}
   /* FOULS AGAINST THE PLAN: one of ours in foul trouble for the quarter, with the minutes the plan
      still gives him tonight */
   if(_gpPlanHook && _gpPlanHook.plan===L.plan){
@@ -15622,7 +15664,7 @@ function _gpAlertBar(){
     list.sort((a,b)=>PRI[a.tone]-PRI[b.tone]);
     list.forEach(a=>{ const k=key0+a.k; if(!_gpAlertSeen[k]) _gpAlertSeen[k]={ first:0, ack:false }; a.s=_gpAlertSeen[k]; });
     let showing=list.filter(a=>!a.s.ack && a.s.first && now-a.s.first<90000).length;
-    list.forEach(a=>{ if(!a.s.ack && !a.s.first && showing<2){ a.s.first=now; showing++; } });
+    list.forEach(a=>{ if(!a.s.ack && !a.s.first && (showing<2 || a.urgent)){ a.s.first=now; showing++; } });
     /* the big line is in the signature too: "Fouls to give: 3" and "Their run 7–0" kept their
        first number, because only the small line was compared and theirs does not change */
     const sig=JSON.stringify(list.map(a=>[a.k, a.big, a.txt, a.tone, a.s.ack, a.s.first && now-a.s.first<90000]))+"|"+(L && L.live? _gpArrow(L.feed)===L.uc : "");
