@@ -22037,19 +22037,23 @@ function _postMinutes(sg, opt){
        measure - the spell, OER, DER, OREB%, DREB%, Paint, TAG, BACK - each cell in its colour */
     if(opt.compact){
       const f2c=v=>v.toFixed(2).replace(/^0\./,"."), pcs=v=>Math.round(v)+"";
-      const oerC=S=>{ const p=poss(S); return p<2? null : S.pts/p; };
+      /* A MINUTE WITH ONE PLAY SAYS ITS NUMBER, IN GREY (Oriol, 31/10/2026, Würzburg: "porque el rebote
+         sale tan poco? no hay tiros fallados? y el tag?"). The rule is colour from 2 plays, and these
+         rows hid the number too: a minute has one rebound or one TAG far more often than two, so 32
+         rebounds of our misses drew 9 cells and 11 TAG drew one. The fifth item is how many plays */
+      const oerC=S=>{ const p=poss(S); return p<0.5? null : S.pts/p; };
       /* THE MARGIN at the end of each minute: who is in front and by how much */
       const lead={}; { let u=0, t=0; for(let qi=0; qi<=maxQ; qi++) for(let mm=0; mm<minsOf(qi); mm++){ const b=B[qi+"|"+mm]; if(b){ u+=b.u.pts; t+=b.t.pts; } lead[qi+"|"+mm]={ u:u, t:t }; } }
       const R=[["Margin", null],
-        ["OER", b=>oerC(b.u), v=>v>=1.1? "g" : v<=0.85? "b" : "", f2c],
-        ["DER", b=>oerC(b.t), v=>v<=0.85? "g" : v>=1.1? "b" : "", f2c],
-        ["OREB%", b=>{ const d=b.u.or+b.t.dr; return d>=2? 100*b.u.or/d : null; }, v=>v>=35? "g" : v<=20? "b" : "", pcs],
-        ["DREB%", b=>{ const d=b.u.dr+b.t.or; return d>=2? 100*b.u.dr/d : null; }, v=>v>=80? "g" : v<65? "b" : "", pcs],
+        ["OER", b=>oerC(b.u), v=>v>=1.1? "g" : v<=0.85? "b" : "", f2c, b=>poss(b.u)],
+        ["DER", b=>oerC(b.t), v=>v<=0.85? "g" : v>=1.1? "b" : "", f2c, b=>poss(b.t)],
+        ["OREB%", b=>{ const d=b.u.or+b.t.dr; return d? 100*b.u.or/d : null; }, v=>v>=35? "g" : v<=20? "b" : "", pcs, b=>b.u.or+b.t.dr],
+        ["DREB%", b=>{ const d=b.u.dr+b.t.or; return d? 100*b.u.dr/d : null; }, v=>v>=80? "g" : v<65? "b" : "", pcs, b=>b.u.dr+b.t.or],
         /* theirs: the share of their misses they got back - low is good for us */
-        ["Opp OREB%", b=>{ const d=b.t.or+b.u.dr; return d>=2? 100*b.t.or/d : null; }, v=>v<=20? "g" : v>=35? "b" : "", pcs]];
-      if(m) R.push(["Paint", b=>b.pn>=2? 100*b.pt/b.pn : null, v=>v>=70? "g" : v<60? "b" : "", pcs],
-        ["TAG", b=>b.tag[0]>=2? b.tag[1]/b.tag[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", f2c],
-        ["BACK", b=>b.back[0]>=2? b.back[1]/b.back[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", f2c]);
+        ["Opp OREB%", b=>{ const d=b.t.or+b.u.dr; return d? 100*b.t.or/d : null; }, v=>v<=20? "g" : v>=35? "b" : "", pcs, b=>b.t.or+b.u.dr]];
+      if(m) R.push(["Paint", b=>b.pn? 100*b.pt/b.pn : null, v=>v>=70? "g" : v<60? "b" : "", pcs, b=>b.pn],
+        ["TAG", b=>b.tag[0]? b.tag[1]/b.tag[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", f2c, b=>b.tag[0]],
+        ["BACK", b=>b.back[0]? b.back[1]/b.back[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", f2c, b=>b.back[0]]);
       const qs=[]; for(let qi=0; qi<=maxQ; qi++) qs.push(qi);
       const tot=qs.reduce((a,qi)=>a+minsOf(qi),0);
       const grid=h("div",{class:"pgmc", style:"grid-template-columns:62px repeat("+tot+",minmax(0,1fr))"});
@@ -22063,8 +22067,8 @@ function _postMinutes(sg, opt){
             /* the number is the margin; the colour, whether this minute made it better or worse */
             const ch=u-t;
             put(h("span",{class:"pgmc-c st "+(ch>0? "up" : ch<0? "dn" : "av"), title:when+" · score "+L2.u+"–"+L2.t+" · this minute "+u+"–"+t}, d>0? "+"+d : d<0? "−"+(-d) : "0"), mm===0); continue; }
-          const v=b? r[1](b) : null;
-          put(v==null? h("span",{class:"pgmc-c mu", title:when},"") : h("span",{class:"pgmc-c "+r[2](v), title:when+" · "+r[0]+" "+r[3](v)}, r[3](v)), mm===0); } }); });
+          const v=b? r[1](b) : null, thin=v!=null && r[4](b)<2;
+          put(v==null? h("span",{class:"pgmc-c mu", title:when},"") : h("span",{class:"pgmc-c "+(thin? "" : r[2](v)), title:when+" · "+r[0]+" "+r[3](v)+(thin? " · under 2 plays: no colour" : "")}, r[3](v)), mm===0); } }); });
       /* OUR FIVE ON THE FLOOR, under each minute: the men who played most of it, a face each */
       { const Lf=leagueState(), roster=((Lf.players||{})[our]||{}).players||[], faceKeep={};
         const face=p=>{ const r=roster.filter(x=>x && x.num!=null && String(parseInt(x.num,10))===String(parseInt(p.num,10)))[0];
@@ -22084,7 +22088,7 @@ function _postMinutes(sg, opt){
       box.appendChild(h("div",{class:"pgmc-w"}, grid));
       box.appendChild(h("div",{class:"pgm-leg"}, h("span",{}, "margin: + we are in front, − behind ·"), h("span",{}, h("i",{class:"up"}), "the minute made it better"), h("span",{}, h("i",{class:"dn"}), "worse"),
         h("span",{}, "· on court: a face where a man comes in, the bar while he stays"),
-        h("span",{}, "· a column a minute, the clock running down · OER/DER/OREB/DREB: play by play"+(m? " · Paint/TAG/BACK: our tagging" : ""))));
+        h("span",{}, "· a column a minute, the clock running down · colour from 2 plays, one play in grey · OER/DER/OREB/DREB: play by play"+(m? " · Paint/TAG/BACK: our tagging" : ""))));
       return;
     }
     box.appendChild(h("div",{class:"pgm-runs"},
@@ -22102,17 +22106,18 @@ function _postMinutes(sg, opt){
       card.appendChild(row("", st.map((s,mm)=>h("span",{class:"pgm-m"}, (n-mm)+"′"))), "hd");
       card.appendChild(row("Spell", st.map((s,mm)=>{ const b=B[qi+"|"+mm], u=b? b.u.pts : 0, t=b? b.t.pts : 0;
         const rv=roll(qi,mm); return h("span",{class:"pgm-st "+s, title:(n-mm)+"′ · "+u+"–"+t+" this minute · "+(rv>0? "+" : "")+rv+" with the minute either side"}, h("b",{}, rv>0? "+"+rv : rv<0? "−"+(-rv) : "0"), h("small",{}, u+"–"+t)); }), "st"));
-      const val=(get, good, lab, fm)=>row(lab, st.map((s,mm)=>{ const b=B[qi+"|"+mm]; const v=b? get(b) : null; if(v==null) return h("span",{class:"pgm-v mu"},"·");
-        const c=good(v); return h("span",{class:"pgm-v "+c}, (fm||f2n)(v)); }), "vr");
-      const oer=S=>{ const p=poss(S); return p<2? null : S.pts/p; };
-      card.appendChild(val(b=>oer(b.u), v=>v>=1.1? "g" : v<=0.85? "b" : "", "OER"));
-      card.appendChild(val(b=>oer(b.t), v=>v<=0.85? "g" : v>=1.1? "b" : "", "DER"));
+      /* the number from one play, its colour from two */
+      const val=(get, good, lab, fm, n)=>row(lab, st.map((s,mm)=>{ const b=B[qi+"|"+mm]; const v=b? get(b) : null; if(v==null) return h("span",{class:"pgm-v mu"},"·");
+        const c=n(b)>=2? good(v) : ""; return h("span",{class:"pgm-v "+c}, (fm||f2n)(v)); }), "vr");
+      const oer=S=>{ const p=poss(S); return p<0.5? null : S.pts/p; };
+      card.appendChild(val(b=>oer(b.u), v=>v>=1.1? "g" : v<=0.85? "b" : "", "OER", null, b=>poss(b.u)));
+      card.appendChild(val(b=>oer(b.t), v=>v<=0.85? "g" : v>=1.1? "b" : "", "DER", null, b=>poss(b.t)));
       /* the rebounds of the minute: ours of our misses, ours of theirs */
-      card.appendChild(val(b=>{ const d=b.u.or+b.t.dr; return d>=2? 100*b.u.or/d : null; }, v=>v>=35? "g" : v<=20? "b" : "", "OREB%", v=>Math.round(v)+"%"));
-      card.appendChild(val(b=>{ const d=b.u.dr+b.t.or; return d>=2? 100*b.u.dr/d : null; }, v=>v>=80? "g" : v<65? "b" : "", "DREB%", v=>Math.round(v)+"%"));
-      if(m){ card.appendChild(val(b=>b.pn>=2? 100*b.pt/b.pn : null, v=>v>=70? "g" : v<60? "b" : "", "Paint", v=>Math.round(v)+"%"));
-        card.appendChild(val(b=>b.tag[0]>=2? b.tag[1]/b.tag[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", "TAG"));
-        card.appendChild(val(b=>b.back[0]>=2? b.back[1]/b.back[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", "BACK")); }
+      card.appendChild(val(b=>{ const d=b.u.or+b.t.dr; return d? 100*b.u.or/d : null; }, v=>v>=35? "g" : v<=20? "b" : "", "OREB%", v=>Math.round(v)+"%", b=>b.u.or+b.t.dr));
+      card.appendChild(val(b=>{ const d=b.u.dr+b.t.or; return d? 100*b.u.dr/d : null; }, v=>v>=80? "g" : v<65? "b" : "", "DREB%", v=>Math.round(v)+"%", b=>b.u.dr+b.t.or));
+      if(m){ card.appendChild(val(b=>b.pn? 100*b.pt/b.pn : null, v=>v>=70? "g" : v<60? "b" : "", "Paint", v=>Math.round(v)+"%", b=>b.pn));
+        card.appendChild(val(b=>b.tag[0]? b.tag[1]/b.tag[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", "TAG", null, b=>b.tag[0]));
+        card.appendChild(val(b=>b.back[0]? b.back[1]/b.back[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", "BACK", null, b=>b.back[0])); }
       /* our men on the floor: a bar where he was on, the minute's colour behind */
       const q0=qBase(qi), q1=q0+qLen(qi);
       const men=ours.map(p=>({ p:p, s:onIn(p.id, q0, q1) })).filter(x=>x.s>0).sort((x,y)=>(String(y.p.st)==="true")-(String(x.p.st)==="true") || y.s-x.s);
@@ -22127,7 +22132,7 @@ function _postMinutes(sg, opt){
     }
     box.appendChild(grid);
     box.appendChild(h("div",{class:"pgm-leg"}, h("span",{}, h("i",{class:"up"}), "good: +4 or better over the minute and the one either side (the big number)"), h("span",{}, h("i",{class:"av"}), "average"), h("span",{}, h("i",{class:"dn"}), "slump: −4 or worse"),
-      h("span",{}, "· the bar: on the floor · OER, DER, OREB%, DREB%: play by play"+(m? " · Paint, TAG, BACK: our tagging, put on the clock by its baskets (a possession can land a minute out)" : " · no tagging of this game in the Drive yet"))));
+      h("span",{}, "· colour from 2 plays, one play in grey · the bar: on the floor · OER, DER, OREB%, DREB%: play by play"+(m? " · Paint, TAG, BACK: our tagging, put on the clock by its baskets (a possession can land a minute out)" : " · no tagging of this game in the Drive yet"))));
   }).catch(e=>{ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"},"This table could not be built: "+((e&&e.message)||e))); });
   return box;
 }
