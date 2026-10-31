@@ -3343,7 +3343,12 @@ async function _planSync(){
     const r=JSON.parse(await _sbRaw("get_report",{ p_token:SB_TOKEN, p_key:PLAN_DOC_KEY }));
     if(!r || r.ok===false) throw new Error((r && r.error) || "the server did not answer");
     const srv=(r.report && r.report.data && r.report.data.v)? _planDocPick(r.report.data) : null;
-    const loc=_planDocPick(_planDocLocal()), merged=_planMerge(_planBase, loc, srv);
+    /* A COPY, NOT THE SCREEN'S OWN OBJECTS (Oriol, 31/10/2026: "estoy cambiando los colores y no me
+       deja"). The copy agreed with the server and the state were one and the same object: an edit
+       changed both, so nothing looked changed since the agreement, the server's older copy won, and
+       the edit went back 2.5 s later - every edit after the first in Planning and in the Playbook.
+       What is agreed and what is on the screen never share anything now */
+    const loc=JSON.parse(_pJ(_planDocPick(_planDocLocal()))), merged=_planMerge(_planBase, loc, srv);
     const mJ=_pJ(merged);
     let agreed=srv;
     if(mJ!==_pJ(srv) && (canEdit("planification") || canEdit("playbook"))){
@@ -3358,14 +3363,21 @@ async function _planSync(){
       if(!w || !w.ok) throw new Error((w && w.error) || "the server did not keep it");
       agreed=merged;
     }
-    if(mJ!==_pJ(loc)){
-      state.plan.sessions=merged.sessions;
-      if(merged.plays!=null) state.plan.plays=merged.plays;
-      ["playbookOff","playbookDef","playbookAto","playbookVideo"].forEach(k=>{ if(merged[k]!=null) state[k]=merged[k]; });
+    /* somebody who edited while this was on its way keeps the edit: nothing is put on the screen over
+       it, and the sync runs again at once with both in hand */
+    const moved=_pJ(_planDocPick(_planDocLocal()))!==_pJ(loc), brought=mJ!==_pJ(loc);
+    if(brought && !moved){
+      const c=JSON.parse(mJ);
+      state.plan.sessions=c.sessions;
+      if(c.plays!=null) state.plan.plays=c.plays;
+      ["playbookOff","playbookDef","playbookAto","playbookVideo"].forEach(k=>{ if(c[k]!=null) state[k]=c[k]; });
       try{ await Store.set("kv","appState", state); }catch(e){_quiet(e)}
       try{ if(state.ui.view==="planification") renderPlan(); if(state.ui.view==="playbook") renderPlaybook(); }catch(e){_quiet(e)}
     }
-    if(agreed){ _planBase=agreed; _planBaseJ=_pJ(agreed); try{ await Store.set("kv","planBase", agreed); }catch(e){_quiet(e)} }
+    if(moved) _planSyncAgain=true;
+    /* with an edit waiting and something new from the server, the last agreement still stands: the
+       next run has to see both as changes */
+    if(agreed && !(moved && brought)){ _planBaseJ=_pJ(agreed); _planBase=JSON.parse(_planBaseJ); try{ await Store.set("kv","planBase", _planBase); }catch(e){_quiet(e)} }
     _planSrv.at=Date.now(); _planSrv.err="";
   }catch(e){ _planSrv.err=(e && e.message) || String(e); }
   finally{
