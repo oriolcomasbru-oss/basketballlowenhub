@@ -310,7 +310,13 @@
     "DUCK IN", "POST UP", "DOUBLE HANDS", "ZONE", "DEFENSIVE REBOUND", "HELPS", "OTHER DEF",
     "Drag PnR defense", "Middle PnR (1) defense", "Middle PnR (2) defense", "Step Up defense",
     "PnR Side defense", "PnR Empty defense", "Baseline PnR defense", "PnR 4 defense",
-    "Spain PnR defense", "PnR Guards Defense", "Last seconds defense"];
+    "Spain PnR defense", "PnR Guards Defense", "Last seconds defense", "REGULAR PRESS"];
+  /* A NEW NAME FOR A DEFENSE IS STILL THE DEFENSE. Which side a clip belongs to was read off this
+     list and nothing else, so a category it did not know went to our offense: "Middle PnR defense"
+     and "PnR Clear defense" read 88-80 on a game that ended 72-96 (Würzburg, 1/11/2026), and moved
+     its TAG and BACK with them. Any name that says defense is the defense now. REGULAR PRESS is our
+     press: with it on this list Ludwigsburg, Chemnitz and Vechta add up to their official scores. */
+  function isDefCat(cat) { return DEF_CATS.indexOf(cat) >= 0 || /\bdefen[sc]e\b/i.test(String(cat || "")); }
   var FB_CATS = ["FASTBREAK", "RIM RUNNER", "TRAILER"];
   var SEC_CATS = ["7", "7 CLEAR", "1n1 EARLY OFFENSE", "POST UP TRANSITION", "PRESS BREAK", "DRAG PnR"];
   /* The staff writes the inbounds two ways: SLOB/BLOB and the shorter SOB/BOB. Both
@@ -401,7 +407,7 @@
          we gave away. Without this the OREB column read zero on every row. */
       q.oreb = count(q.tags, "Offensive Rebound");
       q.q = periodOf(q.tags);
-      q.pnr = PNR_DEF.indexOf(q.first) >= 0;
+      q.pnr = PNR_DEF.indexOf(q.first) >= 0 || (isDefCat(q.first) && /\bpnr\b/i.test(String(q.first || "")));
       /* the block is the defense, so every row does not need to say so */
       q.label = String(q.first || "\u2014").replace(/\s*defense\s*$/i, "");
     });
@@ -645,7 +651,7 @@
 
   function buildGame(rows) {
     rows = rows.slice().sort(function (x, y) { return x.a - y.a || x.b - y.b; });
-    rows.forEach(function (r) { r.def = DEF_CATS.indexOf(r.cat) >= 0; });
+    rows.forEach(function (r) { r.def = isDefCat(r.cat); });
 
     var off = rows.filter(function (r) { return !r.def; });
     var poss = [], cur = null;
@@ -787,7 +793,7 @@
        defensive clip that opens within ten seconds, which only happens in live play, so
        the 5x5 selects itself and the drills never pair. */
     rows = rows.slice().sort(function (x, y) { return (x.a - y.a) || (x.b - y.b); });
-    rows.forEach(function (r) { r.def = DEF_CATS.indexOf(r.cat) >= 0; });
+    rows.forEach(function (r) { r.def = isDefCat(r.cat); });
     var offRows = rows.filter(function (r) { return !r.def; });
     var defN = rows.length - offRows.length;
 
@@ -4837,7 +4843,7 @@
           var g = datedPractice(f, rows);
           if (!g.d) return null;
           return { d: g.d, name: f.name,
-                   reb: rebPractice(rows.filter(function (r) { return DEF_CATS.indexOf(r.cat) < 0; })) };
+                   reb: rebPractice(rows.filter(function (r) { return !isDefCat(r.cat); })) };
         }, function () { return null; });
       }));
     }).then(function (list) {
