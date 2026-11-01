@@ -22037,7 +22037,7 @@ function _postMinutes(sg, opt){
        measure - the spell, OER, DER, OREB%, DREB%, Paint, TAG, BACK - each cell in its colour */
     if(opt.compact){
       const f2c=v=>v.toFixed(2).replace(/^0\./,"."), pcs=v=>Math.round(v)+"";
-      /* A MINUTE WITH ONE PLAY SAYS ITS NUMBER, IN GREY (Oriol, 31/10/2026, Würzburg: "porque el rebote
+      /* A MINUTE WITH ONE PLAY SAYS ITS NUMBER, IN GREY (Oriol, 1/11/2026, Würzburg: "porque el rebote
          sale tan poco? no hay tiros fallados? y el tag?"). The rule is colour from 2 plays, and these
          rows hid the number too: a minute has one rebound or one TAG far more often than two, so 32
          rebounds of our misses drew 9 cells and 11 TAG drew one. The fifth item is how many plays */
@@ -29077,8 +29077,10 @@ function renderDashboard(){
           /* UNDER THE LEAGUE'S AVERAGE IS RED (Oriol, 30/10/2026): every figure of a half - the last
              game, the last three, the season, the trainings' last seven days and their average - is
              read against the league's average of that half: red under it, green five points or more
-             over it. Compared as they are printed, so a 35% is never red beside a league of 35% */
-          const vsLg=(v, lg)=>(v==null||lg==null)? "" : Math.round(v)<Math.round(lg)? "bad" : v-lg>=5? "good" : "";
+             over it. Under means a whole point under (Oriol, 1/11/2026, Würzburg: 64.5 against 65.5
+             came out red with the bar reaching the league's tick, and the same training read 35 grey
+             on one side and 65 red on the other) */
+          const vsLg=(v, lg)=>(v==null||lg==null)? "" : lg-v>=1? "bad" : v-lg>=5? "good" : "";
           /* REBOUNDING: the share of our misses we got back and of theirs we kept, the last game big,
              the last three and the season under each */
           const drb=l=>{ const o=l.reduce((a,x)=>a+(+x.us.dreb||0),0), d=l.reduce((a,x)=>a+(+x.them.oreb||0),0); return (o+d)? 100*o/(o+d) : null; };
