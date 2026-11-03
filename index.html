@@ -17293,7 +17293,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
     return wrap;
   }
   function playerStatusBlock(){
-    const wrap=h("div",{class:"gp5-ps"});
+    const wrap=h("div",{class:"gp5-ps"}), noRot=gpHalfFill(plan)===0;
     const perQ={}; GP_HALF.forEach(q=>{ perQ[q]={}; (plan.grid[q]||[]).forEach(row=>row.forEach(id=>{ if(id) perQ[q][id]=(perQ[q][id]||0)+1; })); });
     const paint=()=>{
       { const hh=wrap.offsetHeight; if(hh){ wrap.style.minHeight=hh+"px"; requestAnimationFrame(()=>{ wrap.style.minHeight=""; }); } }
@@ -17304,10 +17304,16 @@ function renderPlanSection(sec, canEd, save, allSecs){
       const rows=[]; const used={};
       /* one man for one name: who played tonight first, then the season's squad for the rest */
       const nicks=plan.pool.map(pl=>pl.name);
-      const M1=_gpMatchAll(nicks, lmen.length? lmen : men);
+      /* NO ROTATION ON THE PLAN: our squad, each man once, by the bench's name when he has one -
+         and no Plan column, which would be a column of dashes */
+      if(noRot){ const all=[], seen={};
+        lmen.concat(men||[]).forEach(p=>{ const id=String(p.id||""); if(!id || seen[id]) return; seen[id]=1; all.push(p); });
+        const NK=_gpMatchAll(nicks, all), nk={}; Object.keys(NK).forEach(k=>{ nk[String(NK[k].id)]=k; });
+        all.forEach(p=>{ const id=String(p.id); used[id]=1; rows.push({ name:nk[id]||_lgLastName(p.name||"")||("#"+p.num), plan:0, id:id, num:p.num||"" }); }); }
+      const M1=noRot? {} : _gpMatchAll(nicks, lmen.length? lmen : men);
       const left=nicks.filter(nk=>!M1[nk]), taken={}; Object.values(M1).forEach(p=>{ taken[String(p.id)]=1; });
-      const M2=_gpMatchAll(left, (men||[]).filter(p=>!taken[String(p.id)]));
-      plan.pool.forEach(pl=>{ const m=(perQ.Q1[pl.id]||0)+(perQ.Q2[pl.id]||0);
+      const M2=noRot? {} : _gpMatchAll(left, (men||[]).filter(p=>!taken[String(p.id)]));
+      if(!noRot) plan.pool.forEach(pl=>{ const m=(perQ.Q1[pl.id]||0)+(perQ.Q2[pl.id]||0);
         const man=M1[pl.name] || M2[pl.name] || null;
         const id=man? String(man.id) : "";
         if(id) used[id]=1;
@@ -17317,8 +17323,8 @@ function renderPlanSection(sec, canEd, save, allSecs){
         rows.push({ name:_lgLastName(p.name||"")||("#"+p.num), plan:0, id:id, num:p.num||"" }); });
       rows.forEach(r=>{ const c=court[r.id]||null, p=byId[r.id]||null;
         r.sec=c? c.sec : 0; r.on=!!(c && c.on && live); r.stint=c && c.on? c.stint : 0; r.rest=c && !c.on? c.rest : null; r.pf=p? (p.pf||0) : 0; });
-      const show=rows.filter(r=>r.plan>0 || r.sec>0 || r.pf>0);
-      show.sort((a,b)=>(b.on?1:0)-(a.on?1:0) || (b.plan-a.plan) || (b.sec-a.sec));
+      const show=rows.filter(r=>noRot || r.plan>0 || r.sec>0 || r.pf>0);
+      show.sort((a,b)=>(b.on?1:0)-(a.on?1:0) || (b.plan-a.plan) || (b.sec-a.sec) || ((a.num===""? 99 : +a.num)-(b.num===""? 99 : +b.num)));
       /* ONE DRAW WHEN THE TABLE CHANGES. The table is drawn again only when what it shows changed - it
          was drawn for every answer while the squad, the game and the matching landed, and flickered for
          ten seconds. Until our squad has been read, a loading line rather than a table that will change. */
@@ -17331,14 +17337,14 @@ function renderPlanSection(sec, canEd, save, allSecs){
       /* what deserves a look among ours, right now */
       if(hlU.length) wrap.appendChild(h("div",{class:"gp5-hl"}, hlU.map(x=>h("span",{class:"gp5-hl-i "+x.tone}, h("i",{}, x.tag), x.txt))));
       const t=h("table",{class:"gp5-t"});
-      t.appendChild(h("tr",{}, h("th",{},"#"), h("th",{class:"l"},"Player"), h("th",{title:"minutes the plan gives him for the game (the half on the boards, doubled)"},"Plan"),
+      t.appendChild(h("tr",{}, h("th",{},"#"), h("th",{class:"l"},"Player"), noRot? null : h("th",{title:"minutes the plan gives him for the game (the half on the boards, doubled)"},"Plan"),
         h("th",{title:"minutes really played, from the league's play by play"},"Real"), h("th",{title:"on the floor: time in this stint"},"Stint"), h("th",{},"PF"), ..._gpBoxTh()));
       show.forEach(r=>{ const fl=_gpFoulLv(r.pf, qi);
         const over=r.plan && r.sec/60>r.plan+2;
         t.appendChild(h("tr",{class:(r.on? "on " : "")+(fl==="out"? "fout" : "")},
           h("td",{class:"n"}, r.num? String(r.num) : ""),
           h("td",{class:"l nm"}, _gpFace(r.id, r.num, r.name, true), r.name, fl==="out"? h("em",{class:"out"},"OUT") : null),
-          h("td",{class:"pl"}, r.plan? r.plan+"′" : "—"),
+          noRot? null : h("td",{class:"pl"}, r.plan? r.plan+"′" : "—"),
           h("td",{class:"rl"+(over? " over" : ""), title:over? "past his planned minutes" : ""}, r.sec? _gpMmss(r.sec) : (L && L.feed? "0:00" : "—")),
           h("td",{class:"st"+(r.on && r.stint>=480? " long" : "")+(r.on && r.stint>=270? " blink" : ""), title:(r.on && r.stint>=270)? "more than 4:30 on the floor in a row" : ""}, r.on? _gpMmss(r.stint) : ""),
           h("td",{class:"pf "+fl}, r.pf? String(r.pf) : (L && L.feed? "0" : "—")),
@@ -17347,6 +17353,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
       _gpMarkFouls(t);
       wrap.appendChild(t);
       wrap.appendChild(h("div",{class:"gp5-note"}, L && L.feed? (live? "Live from the league's play by play · green = on the floor · amber stint = 8 minutes or more" : "From the league's play by play of this game")
+        : noRot? "Our squad · no rotation on the plan · the minutes, the five on the floor and the fouls fill in from the tip-off"
         : "Plan only until the game starts · the real minutes, the five on the floor and the fouls fill in from the tip-off"));
     };
     paint();
@@ -17691,9 +17698,14 @@ function renderPlanSection(sec, canEd, save, allSecs){
       if(!canEd){
         const wrap5=h("div",{class:"gp4 dash gp5"});
         try{ _wipArea(wrap5, "gameplan"); }catch(e){_quiet(e)}
+        /* NO GAME PLAN, THE SAME CONTROL (Oriol, 3/11/2026). With no rotation on the plan the board
+           is drawn by the game itself (see playedBoard); with nothing on the plan at all, what only
+           a plan has - its quarter beside the board, its ideas measured, its sheet to print - is
+           left out instead of standing there empty. */
+        const noRot=gpHalfFill(plan)===0, noPlan=gpPlanEmpty(plan);
         /* what the reminders ask the plan: the minutes each of ours still has on it tonight, from
            the minute being played on (Q1 and Q3 on the Q1 board, Q2 and Q4 on the Q2 board) */
-        _gpPlanHook={ plan:(_scoutOpponent||"")+"|"+(_scoutDate||""), left:L=>{
+        _gpPlanHook=noRot? null : { plan:(_scoutOpponent||"")+"|"+(_scoutDate||""), left:L=>{
           const out={}, qi=L.maxQ||0; if(qi>3) return out;
           const cur=Math.floor(((L.lastT||0)-qi*600)/60), M=_gpMatchAll(plan.pool.map(p=>p.name), L.us||[]);
           plan.pool.forEach(p=>{ const man=M[p.name]; if(!man) return; let m=0;
@@ -17711,7 +17723,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
         const rotHost=h("div",{});
         /* the plan beside the board folds from the section's heading */
         const planBtn=h("button",{type:"button", class:"gp5-planbtn", title:"show or hide the quarter's plan beside the board",
-          onclick:()=>{ UI.q5side=!UI.q5side; _gpUISave(); shownMode=""; paintRot(); }}, UI.q5side? "Show plan ▸" : "◂ Hide plan");
+          onclick:()=>{ UI.q5side=!UI.q5side; _gpUISave(); shownMode=""; shownQ=""; paintRot(); }}, UI.q5side? "Show plan ▸" : "◂ Hide plan");
         const qbox=h("div",{class:"gp5-qcard"});
         const paintQ=(pick)=>{ qbox.innerHTML="";
           const c=safe(()=>quarterCard(pick)); if(c) qbox.appendChild(c); else qbox.appendChild(h("div",{class:"gp3-ksn"},"Nothing written for "+pick+".")); };
@@ -17727,6 +17739,54 @@ function renderPlanSection(sec, canEd, save, allSecs){
           men.sort((a,b)=>(b.c.stint||0)-(a.c.stint||0)).forEach(p=>onNow.appendChild(h("span",{class:"gp5-onp"+((p.c.stint||0)>=480? " long" : "")+((p.c.stint||0)>=270? " blink" : ""), title:"in since "+_lgGameClock(lv.lastT-(p.c.stint||0))+" · "+_gpMmss(p.c.sec)+" in the game"},
             (p.num? "#"+p.num+" " : "")+(_lgLastName(p.name||"")||""), h("em",{}, _gpMmss(p.c.stint)), h("i",{}, "in "+_lgGameClock(lv.lastT-(p.c.stint||0))))));
         };
+        /* THE BOARD THE GAME DRAWS, when the plan has no rotation: each minute the five that played
+           most of it (the minute being played: the five on the floor now), seated on the rows of
+           the positions they play and kept in their row from one minute to the next, with the gold
+           edge where a man came in. The quarter being played, or any quarter already played. */
+        let pickQ="auto", shownQi=0;
+        const playNote=h("div",{class:"gp3-ksn"});
+        const pickBar=h("span",{class:"gp4-seg"});
+        const paintPick=(maxQ)=>{ pickBar.innerHTML="";
+          const b=(k, lab, off)=>pickBar.appendChild(h("button",{type:"button", class:pickQ===k? "on" : "", disabled:off? "disabled" : null, onclick:()=>{ pickQ=k; paintRot(); }}, lab));
+          b("auto","Now"); for(let q=0;q<=Math.max(3,maxQ);q++) b(q, q<4? "Q"+(q+1) : "OT"+(q-3), q>maxQ); };
+        const playedBoard=qi=>{
+          const wrap=h("div",{class:"gp2-q"});
+          wrap.appendChild(h("div",{class:"gp2-qh"}, h("span",{class:"gp2-qn"}, qi<4? "Q"+(qi+1) : "OT"+(qi-3)), h("span",{class:"gp2-qs"},"as played"), h("span",{class:"gp2-qs right"},"")));
+          const tbl=h("table",{class:"gp2-tbl"}), hr=h("tr",{}, h("td",{class:"gp2-lbl"},""));
+          for(let c=0;c<GP_COLS;c++) hr.appendChild(h("td",{class:"gp2-tick"}, qi<4? (GP_COLS-c)+"'" : c<5? (5-c)+"'" : ""));
+          tbl.appendChild(hr);
+          GP_ROWS.forEach((pos,r)=>{ const tr=h("tr",{}, h("td",{class:"gp2-pos"}, pos));
+            for(let c=0;c<GP_COLS;c++){ const td=h("td",{class:"gp2-st"}, h("span",{class:"gp2-nm"},"")); td.dataset.c=String(c); td.dataset.r=String(r); tr.appendChild(td); }
+            tbl.appendChild(tr); });
+          const mins=h("div",{class:"gp2-mins"});
+          for(let i=0;i<GP_COLS;i++) mins.appendChild(h("i",{class:"gp2-mi"+(i===GP_COLS/2?" h":"")}));
+          wrap.appendChild(h("div",{class:"gp2-wrap"}, tbl, mins));
+          return wrap; };
+        const fillPlayed=(w, lv, qi)=>{
+          w.querySelectorAll("td.gp2-st").forEach(td=>{ td.className="gp2-st"; td.title=""; td.firstChild.textContent=""; });
+          const cnt=w.parentNode.querySelector(".gp2-qs.right"); if(cnt) cnt.textContent="";
+          if(!lv || !lv.feed || !lv.court) return;
+          const court=lv.court.u||{}, men=lv.us||[], posOf=_gpPosOf(men), base=qi<4? qi*600 : 2400+(qi-4)*300, len=qi<4? 600 : 300;
+          /* the bench's names for our men, as the plan writes them; anybody else by his surname */
+          const nick={}, M=_gpMatchAll(plan.pool.map(p=>p.name), men); Object.keys(M).forEach(k=>{ nick[String(M[k].id)]=k; });
+          const man={}; men.forEach(p=>{ man[String(p.id)]=p; });
+          let prev=null, n=0;
+          for(let c=0;c*60<len;c++){
+            const t0=base+c*60, t1=base+(c+1)*60, end=Math.min(t1, lv.lastT); if(end<=t0) break;
+            let five;
+            if(lv.live && lv.lastT<t1) five=Object.keys(court).filter(id=>court[id].on);
+            else { const ov={}; Object.keys(court).forEach(id=>{ let s=0; (court[id].segs||[]).forEach(g=>{ s+=Math.max(0, Math.min(g[1],end)-Math.max(g[0],t0)); }); if(s>0) ov[id]=s; });
+              five=Object.keys(ov).sort((a,b)=>ov[b]-ov[a]).slice(0,5); }
+            if(!five.length) continue;
+            const pad=five.slice(); while(pad.length<5) pad.push("~"+pad.length);
+            const seat=_gpSeat(prev? prev.seat : ["","","","",""], pad, posOf).map(id=>/^~/.test(id)? "" : id);
+            if(prev && five.some(id=>prev.ids.indexOf(id)<0)) n++;
+            seat.forEach((id,r)=>{ const td=id? w.querySelector('td.gp2-st[data-c="'+c+'"][data-r="'+r+'"]') : null; if(!td) return;
+              const p=man[id]; td.classList.add("f"); if(prev && prev.ids.indexOf(id)<0) td.classList.add("in");
+              td.firstChild.textContent=nick[id] || (p? (_lgLastName(p.name||"")||("#"+p.num)) : "?"); td.title=p? (p.num? "#"+p.num+" " : "")+(p.name||"") : ""; });
+            prev={ seat:seat, ids:five };
+          }
+          if(cnt && n) cnt.textContent=n+(n===1? " change" : " changes"); };
         /* THE BOARD, LIVE. The line at the minute being played, measured on the cells
            themselves; thirty seconds before a change the plan has, the man coming in blinks
            yellow; and every minute already played whose five was not the plan's is marked
@@ -17787,7 +17847,19 @@ function renderPlanSection(sec, canEd, save, allSecs){
         const marker=()=>{ rotHost.querySelectorAll(".gp5-now,.gp5-real,.gp5-rt").forEach(n=>n.remove());
           rotHost.querySelectorAll(".gp2-st.soon,.gp2-st.diff").forEach(n=>n.classList.remove("soon","diff"));
           paintOn();
-          const Q=qOf(); if(!Q.live || !Q.lv){ paintNext(null); return; }
+          const Q=qOf();
+          if(noRot){ const w=rotHost.querySelector(".gp5-board .gp2-wrap"); if(!w) return;
+            const lv=Q.lv, has=!!(lv && lv.feed && lv.court);
+            playNote.textContent=has? "" : "No rotation on the plan for this game: from the tip-off the board draws itself, each minute with the five on the floor.";
+            playNote.style.display=has? "none" : "";
+            fillPlayed(w, lv, shownQi); if(!has) return;
+            const base=shownQi<4? shownQi*600 : 2400+(shownQi-4)*300, el=lv.lastT-base;
+            if(Q.live && shownQi===Q.qi && el>=0){ const row=w.querySelector("tr td.gp2-st").parentNode, cs=row.querySelectorAll("td.gp2-st");
+              const x0=cs[0].offsetLeft, x1=cs[cs.length-1].offsetLeft+cs[cs.length-1].offsetWidth;
+              w.appendChild(h("i",{class:"gp5-now", style:"left:"+Math.round(x0+(x1-x0)*Math.min(1, el/600))+"px", title:"now: "+_lgGameClock(lv.lastT)}, h("b",{}, _lgGameClock(lv.lastT).replace(/^(Q|OT)\d*\s*/,"")))); }
+            const tb=w.querySelector("table.gp2-tbl"); if(tb && el>0) rateRows({ qi:shownQi, lv:lv }, base).forEach(tr=>tb.appendChild(tr));
+            return; }
+          if(!Q.live || !Q.lv){ paintNext(null); return; }
           const base=Q.qi<4? Q.qi*600 : 2400+(Q.qi-4)*300, len=Q.qi<4? 600 : 300;
           const el=Q.lv.lastT-base; if(el<0 || el>len){ paintNext(Q); return; }
           const f=Math.max(0, Math.min(1, el/len));
@@ -17886,6 +17958,16 @@ function renderPlanSection(sec, canEd, save, allSecs){
         };
         const paintRot=()=>{
           const Q=qOf();
+          if(noRot){ const maxQ=(Q.lv && Q.lv.feed)? (Q.lv.maxQ||0) : 0, qi=(pickQ==="auto" || pickQ>maxQ)? Q.qi : pickQ;
+            paintPick(maxQ); shownQi=qi;
+            if(shownQ!=="P"+qi){ shownQ="P"+qi; rotHost.innerHTML="";
+              const b=h("div",{class:"gp5-board"}, playedBoard(qi)); b.dataset.q="P"+qi;
+              /* a plan with words but no rotation keeps its quarter beside the board */
+              const pq=(qi%2===1)? "Q2" : "Q1";
+              if(noPlan || UI.q5side) rotHost.appendChild(h("div",{class:"gp5-rot1 folded"}, b));
+              else { paintQ(pq); rotHost.appendChild(h("div",{class:"gp5-rot1"}, b, h("div",{class:"gp5-side"}, h("div",{class:"gp5-side-h"}, h("span",{}, qName(pq)+" plan")), qbox))); }
+              rotHost.appendChild(playNote); rotHost.appendChild(onNow); requestAnimationFrame(marker); return; }
+            marker(); return; }
           const mode=(rq==="both"||rq==="Q1"||rq==="Q2")? rq : "auto";
           const q=mode==="Q1"||mode==="Q2"? mode : Q.board;
           if(mode===shownMode && q+qName(q)===shownQ){ marker(); return; }
@@ -17912,7 +17994,8 @@ function renderPlanSection(sec, canEd, save, allSecs){
         addEventListener("resize", ()=>{ if(rotHost.isConnected) marker(); });
         /* the reminders ride at the top of the screen, whatever is scrolled */
         { const ab=safe(()=>_gpAlertBar()); wrap5.appendChild(ab); if(ab.__rules) wrap5.appendChild(ab.__rules); }
-        wrap5.appendChild(sect("us rot", "Our rotation", "the quarter being played · its plan on the right", [planBtn, _wipTag()], rotHost));
+        wrap5.appendChild(noRot? sect("us rot", "Our rotation", "drawn from the game, minute by minute", [pickBar, noPlan? null : planBtn, _wipTag()], rotHost)
+          : sect("us rot", "Our rotation", "the quarter being played · its plan on the right", [planBtn, _wipTag()], rotHost));
 
         /* IN THE GAME, ON TOP: what the bench reads all the time - both teams right under the
            rotation, then the game, then their sets */
@@ -17931,10 +18014,10 @@ function renderPlanSection(sec, canEd, save, allSecs){
            opens by itself when the first half ends, with the half in five lines on top */
         const review=h("details",{class:"gp5-review"});
         const sumHost=h("div",{class:"gp5-sum"});
-        review.appendChild(h("summary",{}, h("b",{},"Half time & review"), h("span",{},"the half in five lines · game stats · our plan · positions · fives")));
+        review.appendChild(h("summary",{}, h("b",{},"Half time & review"), h("span",{}, noPlan? "the half in five lines · game stats · positions · fives" : "the half in five lines · game stats · our plan · positions · fives")));
         review.appendChild(sumHost);
         review.appendChild(sect("live stats", "Game stats", "all the numbers of the tab chosen in The game", null, lv.__statsHost||h("div",{})));
-        review.appendChild(sect("us ideas", "Our plan, idea by idea", "each offense idea seen from both ends · the defense apart only when it changes", null, safe(()=>conceptBlock())));
+        if(!noPlan) review.appendChild(sect("us ideas", "Our plan, idea by idea", "each offense idea seen from both ends · the defense apart only when it changes", null, safe(()=>conceptBlock())));
         review.appendChild(sect("us posn", "By position", "points, shooting and assists of each group, ours and theirs", null, safe(()=>positionsBlock())));
         review.appendChild(sect("us fives", "Our fives tonight", "the three with most minutes · all on a tap", null, safe(()=>fivesBlock())));
         wrap5.appendChild(review);
@@ -17946,7 +18029,9 @@ function renderPlanSection(sec, canEd, save, allSecs){
             if(L && L.live && key && !opened[key] && (L.maxQ||0)===1 && (L.lastT||0)>=1199){ opened[key]=1; review.open=true; } };
           window.addEventListener("gp-live", onRv); onRv(); }
         box.appendChild(wrap5);
-        const foot5=h("div",{class:"gp2-foot"}, h("span",{}, h("i",{class:"gp2-mark"}), "Yellow = the minute a sub comes in"));
+        const foot5=h("div",{class:"gp2-foot"}, h("span",{}, h("i",{class:"gp2-mark"}), noRot? "Yellow = the minute a man came in" : "Yellow = the minute a sub comes in"));
+        /* nothing on the plan, nothing to print */
+        if(noPlan){ box.appendChild(foot5); return; }
         const pr5=h("button",{class:"btn sm gp2-print"},"🖨 Print A4");
         pr5.addEventListener("click",()=>{ let ro=null; _gpClassic=true;
           try{ ro=renderPlanSection(sec, false, ()=>{}, allSecs).querySelector(".gp2-sheet"); }catch(e){ ro=null; }
