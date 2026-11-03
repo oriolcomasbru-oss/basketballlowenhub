@@ -16432,7 +16432,13 @@ function _gpLiveBlock(){
     if(al.length) body.appendChild(h("div",{class:"gp-lv-al"}, al.map(x=>h("span",{class:"gp-lv-a "+x[0]}, h("i",{}, x[1]), x[2]))));
     /* our minutes, who is on the floor and the fouls are the plan's Player Status and their
        roster's now: they are handed the game as it stands, from this one reading */
-    try{ _gpLivePublish({ feed:feed, uc:uc, lastT:lastT, live:live, us:UG.pl, them:TG.pl, maxQ:maxQ, G:G, home:home, rp:_gpRP? { opp:home? G.away : G.home, date:G.date } : null, plan:opp+"|"+date }); }catch(e){_quiet(e)}
+    /* TONIGHT'S LIST: every line of ours in the league's box - a man who has not got on the floor
+       (0 seconds) and a double licence up from the ProB included - with the position his club's
+       roster gives him. The players above (us) are only the ones who have played. */
+    const shT=(home? (M.sheet||{}).homeTeam : (M.sheet||{}).guestTeam)||{}, posR={};
+    (shT.roster||[]).forEach(p=>{ posR[String(p.id)]=String(p.position||""); });
+    const dressed=((feed && feed.players)||[]).filter(p=>p.teamcode===uc).map(p=>({ id:String(p.player_id), num:String(p.NUM||""), name:(M.names||{})[String(p.player_id)]||("#"+p.NUM), lpos:posR[String(p.player_id)]||"" }));
+    try{ _gpLivePublish({ feed:feed, uc:uc, lastT:lastT, live:live, us:UG.pl, them:TG.pl, dressed:dressed, maxQ:maxQ, G:G, home:home, rp:_gpRP? { opp:home? G.away : G.home, date:G.date } : null, plan:opp+"|"+date }); }catch(e){_quiet(e)}
     /* WHAT IS DECIDING THIS STRETCH. Every measure is turned into the points it is worth to
        one side or the other in the stretch shown - threes made, twos made, free throws, and
        the points that came off turnovers, second chances and the break - and the ones worth
@@ -17307,7 +17313,10 @@ function renderPlanSection(sec, canEd, save, allSecs){
       /* NO ROTATION ON THE PLAN: our squad, each man once, by the bench's name when he has one -
          and no Plan column, which would be a column of dashes */
       if(noRot){ const all=[], seen={};
-        lmen.concat(men||[]).forEach(p=>{ const id=String(p.id||""); if(!id || seen[id]) return; seen[id]=1; all.push(p); });
+        /* once the league has tonight's list, that list - who is dressed, whether he plays or not;
+           before it, the season's squad */
+        const dressed=(L && L.dressed)||[];
+        lmen.concat(dressed.length? dressed : (men||[])).forEach(p=>{ const id=String(p.id||""); if(!id || seen[id]) return; seen[id]=1; all.push(p); });
         const NK=_gpMatchAll(nicks, all), nk={}; Object.keys(NK).forEach(k=>{ nk[String(NK[k].id)]=k; });
         all.forEach(p=>{ const id=String(p.id); used[id]=1; rows.push({ name:nk[id]||_lgLastName(p.name||"")||("#"+p.num), plan:0, id:id, num:p.num||"" }); }); }
       const M1=noRot? {} : _gpMatchAll(nicks, lmen.length? lmen : men);
@@ -17767,6 +17776,10 @@ function renderPlanSection(sec, canEd, save, allSecs){
           const cnt=w.parentNode.querySelector(".gp2-qs.right"); if(cnt) cnt.textContent="";
           if(!lv || !lv.feed || !lv.court) return;
           const court=lv.court.u||{}, men=lv.us||[], posOf=_gpPosOf(men), base=qi<4? qi*600 : 2400+(qi-4)*300, len=qi<4? 600 : 300;
+          /* a man not on the bench's list of positions (a double licence from the ProB, a new
+             signing) is seated by the position his club's roster gives him */
+          const LP={ POINT_GUARD:[1,2], SHOOTING_GUARD:[2,3], SMALL_FORWARD:[3,2], POWER_FORWARD:[4,5], CENTER:[5,4] };
+          (lv.dressed||[]).forEach(d=>{ if(!posOf[d.id] && LP[d.lpos]) posOf[d.id]=LP[d.lpos]; });
           /* the bench's names for our men, as the plan writes them; anybody else by his surname */
           const nick={}, M=_gpMatchAll(plan.pool.map(p=>p.name), men); Object.keys(M).forEach(k=>{ nick[String(M[k].id)]=k; });
           const man={}; men.forEach(p=>{ man[String(p.id)]=p; });
