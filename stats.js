@@ -3258,11 +3258,29 @@
       .map(function (g, i) { return { date: g.date, opponent: g.opponent,
         competition: g.competition, result: g.result, idx: i }; });
   }
+  /* ONE CLUB, SEVERAL NAMES (4/11/2026). The calendar says "München" and the video staff
+     write "BAYERN": "G14 BBL BAYERN.csv" matched no fixture, so it had no date, and a file
+     with no date is left out of every trend - the dashboard kept Würzburg as the last game.
+     The page's list of each club's names (LG_CLUBS, the one the pre-game reads for the same
+     slip) ties the two. Our own name in a file name is never the opponent. */
+  function clubKeys(s) {
+    var out = [];
+    try {
+      if (typeof _lgClubKey !== "function") return out;
+      String(s || "").replace(/\.csv$/i, "").split(/[^A-Za-zÀ-ÿ]+/).forEach(function (w) {
+        var k = w ? _lgClubKey(w) : "";
+        if (k && k !== "braunschweig" && out.indexOf(k) < 0) out.push(k);
+      });
+    } catch (e) { /* the page's list is a help, never a need */ }
+    return out;
+  }
   function fixtureHits(name) {
     var G = fixtureList();
     if (!G.length) return [];
     var n = slugWord(name), tail = slugWord((String(name).match(/[A-Za-z]{4,}/g) || []).slice(-1)[0] || "");
+    var keys = clubKeys(name);
     var exact = G.filter(function (g) {
+      if (keys.length && keys.indexOf(clubKeys(g.opponent)[0]) >= 0) return true;
       var op = slugWord(g.opponent);
       if (op.length < 4) return false;
       /* the file says ROSTOCK and the fixture says "Rostock Seawolves" — either way round */
