@@ -14301,20 +14301,55 @@ function _pbbRename(nm, r, itemFor, areas, save, after){
    from that competition, and the labels that say one are placed first, so a bare label takes the
    meeting that is left. A game outside our league's schedule (a EuroLeague game) still goes last */
 const _PB_COMP={ bbl:"main", liga:"main", league:"main", pokal:"cup", cup:"cup" };
+/* two neighbouring letters swapped, or one letter wrong, missing or extra (the same slip the
+   pre game and Trends let through for a word of six letters or more) */
+function _lgOneSlip(a, b){
+  const la=a.length, lb=b.length; let i=0;
+  if(Math.abs(la-lb)>1) return false;
+  while(i<la && i<lb && a.charAt(i)===b.charAt(i)) i++;
+  if(i===la && i===lb) return true;
+  if(la===lb) return a.slice(i+1)===b.slice(i+1) || (a.charAt(i)===b.charAt(i+1) && a.charAt(i+1)===b.charAt(i) && a.slice(i+2)===b.slice(i+2));
+  const lg=la>lb? a : b, sh=la>lb? b : a;
+  return lg.slice(i+1)===sh.slice(i);
+}
+/* A DATE WRITTEN IN THE LABEL: "JOVENTUT 21/10" (the pre game takes it from a file name such as
+   "G15 SEASON BONN (JOVENTUT 21-10)"), or a whole date. The year is the season's: August to
+   December the year it starts, January to July the next. -> "YYYY-MM-DD" or "" */
+function _pbLabelDate(g){
+  const s=String(g||""), pad=n=>String(n).padStart(2,"0");
+  let m=/(20\d\d)[-\/.](\d{1,2})[-\/.](\d{1,2})/.exec(s);
+  if(m) return m[1]+"-"+pad(m[2])+"-"+pad(m[3]);
+  m=/(?:^|[^\dA-Za-z])(\d{1,2})[\/.\-](\d{1,2})(?:[\/.\-](\d{2,4}))?(?!\d)/.exec(s);
+  if(!m) return "";
+  const d=+m[1], mo=+m[2]; if(d<1 || d>31 || mo<1 || mo>12) return "";
+  let y=m[3]? (+m[3]<100? 2000+(+m[3]) : +m[3]) : 0;
+  if(!y){ const t=todayISO(), ty=+t.slice(0,4), tm=+t.slice(5,7), start=tm>=8? ty : ty-1; y=mo>=8? start : start+1; }
+  return y+"-"+pad(mo)+"-"+pad(d);
+}
 function _pbGameOrder(list, tid, dates){
     try{
       const L=leagueState(), T=todayISO(); tid=String(tid||"");
       if(!tid) return list;
-      const mine=(L.games||[]).filter(x=>(String(x.homeId)===tid || String(x.awayId)===tid) && x.date && x.date<=T && (x.status==="final" || x.hs!=null));
+      /* the club's played games in our league and the Pokal, and in the EuroLeague and the EuroCup
+         when it plays there (the BCL and the FIBA Europe Cup have no open calendar: a game there
+         needs its date in the file name) */
+      const mine=(L.games||[]).concat(L.euro||[]).filter(x=>(String(x.homeId)===tid || String(x.awayId)===tid) && x.date && x.date<=T && (x.status==="final" || x.hs!=null));
       const used={}; const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]+/g," ");
-      const isCup=x=>x.phase==="cup" || /pokal|cup/i.test(String(x.competition||""));
-      list.map((g,i)=>{ const all=norm(g).split(" ").filter(t=>t.length>=3);
-          return { g:g, i:i, comp:all.map(t=>_PB_COMP[t]).filter(Boolean)[0]||"", toks:all.filter(t=>!_PB_COMP[t]) }; })
+      const isCup=x=>x.phase==="cup" || /pokal/i.test(String(x.competition||"")) || (/cup/i.test(String(x.competition||"")) && !/euro/i.test(String(x.competition||"")));
+      const ckey=s=>{ try{ return _lgClubKey(s); }catch(e){ return ""; } };
+      list.map((g,i)=>{ const all=norm(g).split(" ").filter(t=>t.length>=3 && !/^\d+$/.test(t));
+          return { g:g, i:i, comp:all.map(t=>_PB_COMP[t]).filter(Boolean)[0]||"", toks:all.filter(t=>!_PB_COMP[t]), d:_pbLabelDate(g) }; })
         .sort((a,b)=>(b.comp? 1 : 0)-(a.comp? 1 : 0) || a.i-b.i)
         .forEach(w=>{ const g=w.g, toks=w.toks;
+        /* a date in the label is the staff's word: it is used as it is */
+        if(w.d){ dates[g]=w.d; const same=mine.filter(x=>x.date===w.d && !used[x.id])[0]; if(same) used[same.id]=1; return; }
+        /* A NAME TYPED WITH ONE SLIP IS STILL THAT CLUB (Oriol, 4/11/2026: Bonn's "LUDWISGBURG" met no
+           game and went last), and a club written by another of its names is that club */
+        const lk=ckey(toks.join(" "));
         const hit=mine.filter(x=>{ if(w.comp && (w.comp==="cup")!==isCup(x)) return false;
           const home=String(x.homeId)===tid, oid=String(home? x.awayId : x.homeId), tm=(L.teams||[]).filter(t=>String(t.id)===oid)[0]||{}, nm=norm((home? x.away : x.home)+" "+(tm.name||"")+" "+(tm.short||"")), tlc=norm(home? x.awayTlc : x.homeTlc).trim();
-          return !used[x.id] && toks.length && (toks.every(t=>nm.indexOf(t)>=0) || toks.indexOf(tlc)>=0); }).sort((a,b)=>a.date<b.date? 1 : -1)[0];
+          const words=nm.split(" ").filter(t=>t.length>=6), near=t=>t.length>=6 && words.some(x2=>_lgOneSlip(t, x2));
+          return !used[x.id] && toks.length && (toks.every(t=>nm.indexOf(t)>=0 || near(t)) || toks.indexOf(tlc)>=0 || (!!lk && lk===ckey(nm))); }).sort((a,b)=>a.date<b.date? 1 : -1)[0];
         if(hit){ dates[g]=hit.date; used[hit.id]=1; } });
     }catch(e){_quiet(e)}
     return list.map((g,i)=>({ g:g, i:i })).sort((a,b)=>{ const A=dates[a.g], B=dates[b.g]; if(A && B) return A<B? -1 : A>B? 1 : a.i-b.i; if(A) return -1; if(B) return 1; return a.i-b.i; }).map(x=>x.g);
@@ -14412,7 +14447,10 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
      so a split set counts its own. */
   const gmShort=g=>String(g||"").replace(/^(VS|AT|@)\s+/i,"").slice(0,3).toUpperCase();
   const perGame=r=>{ const src=r._src||r, o={}; ((src && src._chs)||[]).forEach(c=>{ const g=(c && c[0] && c[0].game)||""; o[g]=(o[g]||0)+1; }); return o; };
-  const gmHead=()=>h("span",{class:"pbb-c-gm hd", title:"Times run in each tagged game, oldest first"}, GAMES.map(g=>h("i",{title:g+(GDATE[g]? " · "+GDATE[g].split("-").reverse().join("/") : "")}, gmShort(g), GDATE[g]? h("u",{}, GDATE[g].slice(8,10)+"/"+GDATE[g].slice(5,7)) : null)));
+  /* a game no calendar places says so, and how to give it its date */
+  const gmHead=()=>h("span",{class:"pbb-c-gm hd", title:"Times run in each tagged game, oldest first"}, GAMES.map(g=>h("i",{title:g+(GDATE[g]? " · "+GDATE[g].split("-").reverse().join("/")
+      : " · no date: this game is not in the league's, the Pokal's or the EuroCup's calendar, so it goes last. Write its date in the file name, e.g. (JOVENTUT 21-10)")},
+    gmShort(g), h("u",{class:GDATE[g]? "" : "nd"}, GDATE[g]? GDATE[g].slice(8,10)+"/"+GDATE[g].slice(5,7) : "?"))));
   /* THE GAMES IN THE ORDER THEY WERE PLAYED. A tagged file is named after the two clubs and
      carries no date, so the date comes from the league's schedule: the scouted club's played
      game against that rival (the latest, when they met twice). A game the schedule does not
@@ -20381,10 +20419,12 @@ function _lgAgo(iso){
 function _lgOurs(n){ const s=(n||"").toLowerCase(); return s.indexOf("braunschweig")>=0 || s.indexOf("owen")>=0 || s.indexOf("\u00f6wen")>=0; }
 /* One club, many names: the BBL calls it "FC Bayern München Basketball", the EuroLeague
    feed "FC BAYERN MUNICH". Each club gets a key, and every spelling that competition
-   feeds use maps onto it, so a European game can be attached to the right BBL team. */
+   feeds use maps onto it, so a European game can be attached to the right BBL team.
+   A word another club also carries is not a name (4/11/2026: "telekom" made Türk Telekom
+   Ankara's EuroCup games Bonn's - Bonn's fixtures showed a "next" against Skyliners). */
 const LG_CLUBS=[["braunschweig","braunschweig loewen lowen"],["muenchen","muenchen munchen munich bayern fcb"],
   ["chemnitz","chemnitz niners"],["ulm","ulm ratiopharm"],["frankfurt","frankfurt skyliners"],
-  ["berlin","berlin alba"],["bamberg","bamberg"],["bonn","bonn telekom"],["wuerzburg","wuerzburg wurzburg"],
+  ["berlin","berlin alba"],["bamberg","bamberg"],["bonn","bonn"],["wuerzburg","wuerzburg wurzburg"],
   ["vechta","vechta rasta"],["hamburg","hamburg towers veolia"],["ludwigsburg","ludwigsburg riesen mhp"],
   ["oldenburg","oldenburg"],["rostock","rostock seawolves"],["jena","jena"],["hagen","hagen"],
   ["weissenfels","weissenfels mbc syntainics"],["trier","trier"],["heidelberg","heidelberg"],
@@ -36076,6 +36116,7 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pbb-c-gm i.z{opacity:.55}
 .pbb-c-gm.hd i{background:none;height:auto;flex-direction:column;line-height:1.05;font:700 9.5px 'Oswald',sans-serif;letter-spacing:.04em;color:var(--ink-soft,#5b6472);cursor:help}
 .pbb-c-gm.hd i u{text-decoration:none;font:600 7.5px 'IBM Plex Mono',monospace;letter-spacing:0;color:var(--ink-faint,#8a93a2)}
+.pbb-c-gm.hd i u.nd{color:#c0403c;font-weight:800}
 @media (max-width:1100px){ .pbb .pbb-c-n{min-width:0} .pbb .pbb-c-n i{max-width:26px} }
 @media (max-width:560px){ .pbb .pbb-r{grid-template-columns:22px 62px minmax(70px,1fr) 44px 42px 46px;gap:6px} .pbb .pbb-c-vol i{max-width:14px} .pbb .pbb-c-gm{grid-column:2 / -1} }
 .pbb-c-adj{display:flex;align-items:flex-start;gap:6px;min-width:0}

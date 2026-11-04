@@ -1411,6 +1411,22 @@
     return [];
   }
 
+  /* A DATE IN THE NAME (Oriol, 4/11/2026). A game outside every calendar the page reads - the BCL,
+     the FIBA Europe Cup, a friendly - has nothing to be ordered by unless the file says when it was:
+     "G15 SEASON BONN (JOVENTUT 21-10)". The date goes on the game's label as "21/10" (the playbook
+     orders by it); without this the digits went the way of the game number. -> "DD/MM" or "" */
+  function nameDate(name) {
+    var t = String(name).replace(/\.(csv|xlsx)$/i, "").replace(/^[0-9a-f]{6,}-/i, "");
+    var p = function (n) { n = String(+n); return n.length < 2 ? "0" + n : n; };
+    var m = /(20\d\d)[-\/.](\d{1,2})[-\/.](\d{1,2})/.exec(t);
+    if (m) return p(m[3]) + "/" + p(m[2]) + "/" + m[1];
+    m = /(?:^|[^\dA-Za-z])(\d{1,2})[\/.\-](\d{1,2})(?:[\/.\-](\d{2,4}))?(?!\d)/.exec(t);
+    if (!m) return "";
+    var d = +m[1], mo = +m[2];
+    if (d < 1 || d > 31 || mo < 1 || mo > 12) return "";
+    return p(d) + "/" + p(mo) + (m[3] ? "/" + m[3] : "");
+  }
+
   /* -> {match:bool, rival:string} */
   function classify(name, opponent) {
     var toks = nameTokens(name), want = slug(opponent), i = 0;
@@ -1426,7 +1442,8 @@
       var k = slug(x);
       return k.length < 3 ? true : want.indexOf(k) < 0;   /* drop echoes of the scouted team */
     });
-    return { match: true, rival: (rest.join(" ") || toks.slice(i).join(" ") || "GAME").toUpperCase().slice(0, 22) };
+    var dt = nameDate(name), base = (rest.join(" ") || toks.slice(i).join(" ") || "GAME").toUpperCase();
+    return { match: true, rival: (dt ? base.slice(0, 21 - dt.length) + " " + dt : base.slice(0, 22)) };
   }
 
   /* The folder holds two kinds of file now. A call sheet — "G8 ROSTOCK CALLS"
