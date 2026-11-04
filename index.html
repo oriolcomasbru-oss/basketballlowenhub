@@ -14326,17 +14326,26 @@ function _pbLabelDate(g){
   if(!y){ const t=todayISO(), ty=+t.slice(0,4), tm=+t.slice(5,7), start=tm>=8? ty : ty-1; y=mo>=8? start : start+1; }
   return y+"-"+pad(mo)+"-"+pad(d);
 }
+/* GAMES NO CALENDAR OF THE PAGE HAS - the BCL, the FIBA Europe Cup, friendlies - with the date the
+   staff gave, so a tagged file of one of them takes its place in the order without renaming it.
+   A club is found by its names (LG_CLUBS); the other side only has to be written as its file is. */
+const LG_EXTRA_GAMES=[
+  { date:"2026-10-21", home:"Asisa Joventut Badalona", away:"Telekom Baskets Bonn", competition:"BCL" }   /* Oriol, 4/11/2026 */
+];
 function _pbGameOrder(list, tid, dates){
     try{
       const L=leagueState(), T=todayISO(); tid=String(tid||"");
       if(!tid) return list;
-      /* the club's played games in our league and the Pokal, and in the EuroLeague and the EuroCup
-         when it plays there (the BCL and the FIBA Europe Cup have no open calendar: a game there
-         needs its date in the file name) */
-      const mine=(L.games||[]).concat(L.euro||[]).filter(x=>(String(x.homeId)===tid || String(x.awayId)===tid) && x.date && x.date<=T && (x.status==="final" || x.hs!=null));
+      const ckey=s=>{ try{ return _lgClubKey(s); }catch(e){ return ""; } };
+      /* the club's played games in our league and the Pokal, in the EuroLeague and the EuroCup when it
+         plays there, and the ones the staff dated by hand (LG_EXTRA_GAMES); any other game needs its
+         date in the file name */
+      const club=ckey(((L.teams||[]).filter(t=>String(t.id)===tid)[0]||{}).name||"");
+      const extra=club? LG_EXTRA_GAMES.map((x,i)=>Object.assign({ id:"extra"+i, status:"final" }, x,
+        { homeId:ckey(x.home)===club? tid : "x"+i, awayId:ckey(x.away)===club? tid : "x"+i })) : [];
+      const mine=(L.games||[]).concat(L.euro||[], extra).filter(x=>(String(x.homeId)===tid || String(x.awayId)===tid) && x.date && x.date<=T && (x.status==="final" || x.hs!=null));
       const used={}; const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]+/g," ");
       const isCup=x=>x.phase==="cup" || /pokal/i.test(String(x.competition||"")) || (/cup/i.test(String(x.competition||"")) && !/euro/i.test(String(x.competition||"")));
-      const ckey=s=>{ try{ return _lgClubKey(s); }catch(e){ return ""; } };
       list.map((g,i)=>{ const all=norm(g).split(" ").filter(t=>t.length>=3 && !/^\d+$/.test(t));
           return { g:g, i:i, comp:all.map(t=>_PB_COMP[t]).filter(Boolean)[0]||"", toks:all.filter(t=>!_PB_COMP[t]), d:_pbLabelDate(g) }; })
         .sort((a,b)=>(b.comp? 1 : 0)-(a.comp? 1 : 0) || a.i-b.i)
