@@ -28568,7 +28568,7 @@ function _dashTopSetsInto(box, g){
       h("span",{class:"hd gm"}, games.map(x=>h("i",{ title:x+(dates[x]? " · "+dates[x].split("-").reverse().join("/") : "") }, short(x), dates[x]? h("u",{}, dates[x].slice(8,10)+"/"+dates[x].slice(5,7)) : null))));
     top.forEach((r,i)=>{ let kind=""; try{ kind=_pbClass(r).kind||""; }catch(e){_quiet(e)}
       t.appendChild(h("span",{class:"rk"}, String(i+1)));
-      t.appendChild(h("span",{class:"nm"}, h("b",{}, edits[r.label]||r.label), kind? h("i",{class:"kd"}, kind) : null));
+      t.appendChild(h("span",{class:"nm"}, h("b",{}, edits[r.label]||r.label), kind? h("i",{class:"kd"}, " "+kind) : null));
       t.appendChild(r.call? h("q",{}, r.call) : h("span",{class:"nc"},"—"));
       t.appendChild(h("span",{class:"use", title:r.n+" runs · "+Math.round(100*r.n/tot)+"% of their possessions"}, h("span",{class:"vol"}, h("i",{style:"width:"+Math.max(8,Math.round(100*(r.n||0)/mx))+"%"})), h("u",{}, String(r.n||0)), h("small",{}, Math.round(100*r.n/tot)+"%")));
       t.appendChild(r.ppp!=null? h("em",{class:(r.n||0)<MS_POSS? "" : r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : h("em",{},"—"));
@@ -28680,14 +28680,34 @@ function _dashFormInto(box, opp){
    is open at a time, so the card never has to scroll inside itself. */
 const DASH_AREAS=[["Transition",/transition/i],["Early offense",/early/i],["PNR",/\bpnr\b|pick ?(and|&|n) ?roll/i],["Offscreens",/off ?screen/i],
   ["Postup · backpicks",/post|back ?pick/i],["Special defense",/special/i],["Players to attack",/players to attack/i],["Out of set",/out of set/i],["ATO's",/\bato/i],["Entries",/entr/i],["1x1",/1x1|1v1|\biso\b/i]];
-function _dashArea(t){ const c=DASH_AREAS.filter(x=>x[1].test(String(t||"")))[0]; return c? c[0] : String(t||"").trim(); }
+function _dashArea(t){ const c=DASH_AREAS.filter(x=>x[1].test(String(t||"")))[0]; if(c) return c[0];
+  /* a title written in capitals reads as the others: "LEVEL OF PHYSICALITY" is "Level of physicality" */
+  const s=String(t||"").trim();
+  return (/\s/.test(s) && !/[a-z]/.test(s))? s.charAt(0)+s.slice(1).toLowerCase() : s; }
 /* A CELL'S MARKED TEXT IN THE REPORT'S OWN SHAPE (Oriol, 1/11/2026: flattened into one level of
    bullets it could not be followed). Only what is marked stays, and around it everything the
    report has: its lines, its blank lines, its lists with their levels and numbers, its bold and
    its colours. A line right above a list is that list's title. Each group is a .g (a title and
    its list) or a .solo (a paragraph): { cls, html, n:the ideas it holds, gap:a blank line before it } */
+/* black, white and the greys - a colour no one picks, it comes with a paste */
+function _dashNeutral(c){
+  c=String(c||"").trim().toLowerCase(); if(!c) return false;
+  if(/^(transparent|black|white|gr[ae]y|silver|dimgr[ae]y|darkgr[ae]y|lightgr[ae]y|gainsboro|whitesmoke|inherit|initial|currentcolor|windowtext|canvastext|canvas)$/.test(c)) return true;
+  let v=null, a=1, m=/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,\/]+([\d.]+)(%?))?\s*\)$/.exec(c);
+  if(m){ v=[+m[1],+m[2],+m[3]]; if(m[4]!=null) a=m[5]? +m[4]/100 : +m[4]; }
+  else if((m=/^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(c))){ const x=m[1].length===3? m[1].replace(/./g,"$&$&") : m[1]; v=[0,2,4].map(i=>parseInt(x.substr(i,2),16)); }
+  if(!v) return false;
+  return a<0.15 || Math.max(...v)-Math.min(...v)<=24;
+}
 function _dashMarkedGroups(html){
   const d=document.createElement("div"); d.innerHTML=_rtNorm(html);
+  /* A PASTE BRINGS ITS OWN COLOURS (Oriol, 4/11/2026: Bonn's entries came out grey, on white boxes,
+     on the THEY side, beside lines in its own colour). Black, white and the greys go, so every line
+     is in its side's colour; a red, a blue or a highlight the staff put on stays. */
+  d.querySelectorAll("[style]").forEach(e=>{
+    if(_dashNeutral(e.style.color)) e.style.color="";
+    if(_dashNeutral(e.style.backgroundColor)) e.style.backgroundColor="";
+    if(!String(e.getAttribute("style")||"").trim()) e.removeAttribute("style"); });
   /* a break or a list inside a bold or a colour splits it, so every line sits directly in its box or its bullet */
   d.querySelectorAll("br,ul,ol").forEach(x=>{ for(let p=x.parentNode; p!==d && !/^(LI|UL|OL)$/.test(p.nodeName); p=x.parentNode){
     const rest=p.cloneNode(false); while(x.nextSibling) rest.appendChild(x.nextSibling);
@@ -28702,11 +28722,13 @@ function _dashMarkedGroups(html){
     [...b.querySelectorAll("*")].reverse().forEach(e=>{ if(!e.textContent.trim()) e.replaceWith(" "); });
     b.normalize();
     while(b.firstChild && b.firstChild.nodeType===3 && !b.firstChild.nodeValue.trim()) b.firstChild.remove();
-    /* a "LABEL:" in bold, as it reads in the report */
+    /* a "LABEL:" in bold, as it reads in the report - "STAGGER (our 2):" as "IVERSON:" */
     let n=b; while(n && n.nodeType===1) n=n.firstChild;
-    const m=n? /^\s*([A-Z0-9#&\/+\-–—. ]{3,}?\s*:)([\s\S]*)$/.exec(n.nodeValue) : null;
+    const m=n? /^\s*([A-Z0-9#&\/+\-–—.' ]{3,}?(?:\s*\([^()]{1,40}\))?\s*:)([\s\S]*)$/.exec(n.nodeValue) : null;
     if(m){ n.before(h("b",{}, m[1])); n.nodeValue=m[2]; }
-    return { html:b.innerHTML }; };
+    const tx=b.textContent.replace(/\s+/g," ").trim();
+    return { html:b.innerHTML, tx:tx, lab:!!m, more:!!m && tx.length>m[1].trim().length+1,
+      cap:tx.length<=48 && /^[A-Z][A-Z0-9&\/+\-–—.' ]{2,}(?:\s*\([^()]{1,40}\))?\s*:?$/.test(tx) }; };
   const blocks=box=>{ const out=[]; let cur=[], gap=false;
     const put=b=>{ if(b.blank){ if(out.length) gap=true; } else if(!b.off){ b.gap=gap; gap=false; out.push(b); } };
     const end=()=>{ if(cur.length){ const b=line(cur); if(!b.blank) put(b); } cur=[]; };
@@ -28731,11 +28753,19 @@ function _dashMarkedGroups(html){
   blocks(d).forEach(b=>{
     if(b.el){ let title=null, gap=b.gap;
       if(!b.gap && para){ title=para.lines.pop(); if(!para.lines.length){ gap=para.gap; out.pop(); } }
-      out.push({ cls:"g", html:(title!=null? '<div class="gh">'+title+'</div>' : "")+b.el.outerHTML, n:b.el.querySelectorAll("li").length, gap:gap });
+      /* the line over a list is its title, in bold; a "LABEL:" with a sentence after it keeps the
+         label in bold and the sentence as it is (Oriol, 4/11/2026: Early offense opened on three
+         lines of bold) */
+      const th=title? '<div class="gh'+(title.more || title.tx.length>90? " long" : "")+'">'+title.html+'</div>' : "";
+      out.push({ cls:"g", html:th+b.el.outerHTML, n:b.el.querySelectorAll("li").length, gap:gap });
       para=null; return; }
     if(!para || b.gap){ para={ cls:"solo", lines:[], gap:b.gap }; out.push(para); }
-    para.lines.push(b.html); });
-  out.forEach(g=>{ if(g.lines){ g.html=g.lines.join("<br>"); g.n=g.lines.length; } });
+    para.lines.push(b); });
+  out.forEach(g=>{ if(!g.lines) return; const L=g.lines;
+    /* a heading in capitals over its lines is in bold, as "IVERSON:" is: "DRAG (our 7 or 77)" over "#T1 ..." */
+    g.html=L.map((x,i)=>{ const nx=L[i+1];
+      return (x.cap && !x.lab && nx && (/^#/.test(nx.tx) || (i===0 && !nx.cap)))? "<b>"+x.html+"</b>" : x.html; }).join("<br>");
+    g.n=L.length; });
   return out;
 }
 /* two cells that land in one place stay two paragraphs */
@@ -28763,7 +28793,13 @@ function _dashNotesInto(box, g){
     /* the concept with most marked opens first */
     let A=areas.reduce((b,x,i)=>(cnt(x.d)+cnt(x.a))>(cnt(areas[b].d)+cnt(areas[b].a))? i : b, 0);
     const wrap=h("div",{class:"dash-nt"}); box.appendChild(wrap);
-    const blk=(r, cls, lbl)=>r? h("div",{class:"blk "+cls}, h("div",{class:"vl"}, lbl), side(r.th, "t", "They"), side(r.we, "w", "We")) : null;
+    /* WITH ONE SIDE EMPTY THE OTHER TAKES THE WIDTH (Oriol, 4/11/2026: Entries was a column of
+       fourteen lines beside half a card saying "—"), and runs in two columns when it is long */
+    const blk=(r, cls, lbl)=>{ if(!r) return null;
+      if(r.th.length && r.we.length) return h("div",{class:"blk "+cls}, h("div",{class:"vl"}, lbl), side(r.th, "t", "They"), side(r.we, "w", "We"));
+      const gs=r.th.length? r.th : r.we, one=r.th.length? side(r.th, "t", "They") : side(r.we, "w", "We");
+      one.classList.add("full"); if(gs.reduce((m,gp)=>m+gp.n,0)>=8) one.classList.add("cols");
+      return h("div",{class:"blk "+cls}, h("div",{class:"vl"}, lbl), one); };
     const paint=()=>{ wrap.innerHTML=""; const a=areas[A];
       const tabs=h("div",{class:"tabs"}, areas.map((x,i)=>{ const nd=cnt(x.d), na=cnt(x.a);
         const b=h("button",{type:"button", class:i===A? "on" : ""}, x.n, nd? h("u",{class:"cd", title:"How to defend"}, "D "+nd) : null, na? h("u",{class:"ca", title:"How to attack"}, "A "+na) : null);
@@ -29404,7 +29440,7 @@ function renderDashboard(){
       const sub=(title)=>{ const b=h("div",{class:"dash-sub"}, h("h4",{}, title)); const body=h("div",{}); b.appendChild(body); b.__b=body; return b; };
       const cT=sub("Team stats · what sets them apart"), cR=sub("Roster summary"),
         cV=sub("Pick & roll · their 4 and their 5 on the ball screen"), cN=sub("Scouting notes · key ideas"),
-        cS=sub("Playbook summary · their 10 key sets"), cF=sub("Recent form"), cP=sub("Key players · play by play and our tagging");
+        cS=sub("Playbook summary · their key sets"), cF=sub("Recent form"), cP=sub("Key players · play by play and our tagging");
       c.__b.appendChild(h("div",{class:"dash-blk"}, cT));
       c.__b.appendChild(h("div",{class:"dash-blk"}, cR));
       /* the notes take the whole width, a concept at a time; the ball screen, their sets and
@@ -38847,6 +38883,7 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-pk .g{margin-bottom:7px}
 /* a list's title reads as it was written, in bold, as it does in the report */
 .dash-pk .gh{font:800 12.5px/1.38 Inter,system-ui,sans-serif;color:#141821;margin:1px 0}
+.dash-pk .gh.long{font-weight:400}.dash-pk .gh b{font-weight:800}
 .dash-pk ul,.dash-pk ol{margin:0;padding-left:16px}.dash-pk li,.dash-pk .solo{font-size:12.5px;line-height:1.38;margin:1px 0;color:#1f2430}
 .dash-pk li b,.dash-pk .solo b{font-weight:800}
 .dash-pk ul,.dash-nt ul{list-style:disc}.dash-pk ul ul,.dash-nt ul ul{list-style:circle}.dash-pk ul ul ul,.dash-nt ul ul ul{list-style:square}
@@ -38869,13 +38906,22 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-nt .side.t .sl{color:#b6472e}.dash-nt .side.w .sl{color:#2f5c8f}
 .dash-nt .g{margin-bottom:7px}
 .dash-nt .gh{font:800 12.5px/1.38 Inter,system-ui,sans-serif;color:#141821;margin:1px 0}
+/* one look a side: the title of a list in the side's colour, a long one in bold only up to its colon */
+.dash-nt .side.t .gh{color:#5c2417}.dash-nt .side.w .gh{color:#16304f}
+.dash-nt .gh.long{font-weight:400}.dash-nt .gh b{font-weight:800}
+/* a side alone takes the width, in two columns when long */
+.dash-nt .side.full{grid-column:2 / -1;border-left:0}
+.dash-nt .side.cols{column-count:2;column-gap:32px}
+.dash-nt .side.cols > .sl{column-span:all}
+.dash-nt .side.cols > .g,.dash-nt .side.cols > .solo{break-inside:avoid;margin:0 0 12px}
+.dash-nt .side.cols > .gap{margin-top:0}
 .dash-nt ul,.dash-nt ol{margin:0;padding-left:16px}.dash-nt li{font-size:12.5px;line-height:1.38;margin:1px 0}
 .dash-nt .side.t li,.dash-nt .side.t .solo{color:#5c2417}.dash-nt .side.w li,.dash-nt .side.w .solo{color:#16304f}
 .dash-nt li b,.dash-nt .solo b{font-weight:800}
 .dash-nt .solo{font-size:12.5px;line-height:1.38;margin:0 0 4px}
 .dash-nt .gap{margin-top:14px}
 .dash-nt .none{font-size:12px;color:var(--ink-faint,#8a93a2)}
-@media (max-width:700px){ .dash-nt .blk{grid-template-columns:24px minmax(0,1fr)} .dash-nt .side.w{grid-column:2;border-left:0;border-top:1px solid #e6ebf2} .dash-nt .vl{grid-row:span 2} }
+@media (max-width:700px){ .dash-nt .blk{grid-template-columns:24px minmax(0,1fr)} .dash-nt .side.w{grid-column:2;border-left:0;border-top:1px solid #e6ebf2} .dash-nt .vl{grid-row:span 2} .dash-nt .side.full{grid-column:2;border-top:0} .dash-nt .side.cols{column-count:1} }
 /* the ball screen, their sets and their form on one line */
 .dash-3c{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.45fr) minmax(0,1fr);gap:14px;margin-top:12px}
 .dash-3c > .dash-sub + .dash-sub{border-left:1px solid var(--line,#e4e7ec);padding-left:14px}
@@ -38954,10 +39000,12 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-ks .hd{font:600 10px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-faint,#8a93a2);text-align:center}
 .dash-ks .hd.l{text-align:left}
 .dash-ks .rk{font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);text-align:center}
-.dash-ks .nm{display:flex;align-items:baseline;gap:5px;min-width:0}
-.dash-ks .nm b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+/* the whole name and the whole call, on a second line when the column is narrow (Oriol, 4/11/2026:
+   "H3A Stagge…" could not be read) */
+.dash-ks .nm{display:block;min-width:0;line-height:1.25;overflow-wrap:anywhere}
+.dash-ks .nm b{font-weight:700}
 .dash-ks .nm .kd{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);white-space:nowrap}
-.dash-ks q{quotes:"\201C" "\201D";font-style:italic;font-weight:600;color:#8a6829;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.dash-ks q{quotes:"\201C" "\201D";font-style:italic;font-weight:600;color:#8a6829;line-height:1.25;min-width:0;overflow-wrap:anywhere}
 .dash-ks .nc{color:var(--ink-faint,#8a93a2)}
 .dash-ks .use{display:flex;align-items:center;gap:5px}
 .dash-ks .vol{flex:none;width:28px;height:5px;border-radius:3px;background:rgba(20,24,33,.1);overflow:hidden}.dash-ks .vol i{display:block;height:100%;background:#4a86d8}
@@ -39020,8 +39068,8 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-nt.all.flat .pt{padding:2px 6px 3px 8px;border-left:3px solid #d8524e;background:#fdf6f4;margin-top:2px}
 .dash-nt.all.flat .pt.w{border-left-color:#4a86d8;background:#f5f8fc}
 .dash-nt.all.flat .pt > i{display:block;font:700 9.5px Oswald,sans-serif;font-style:normal;letter-spacing:.12em;text-transform:uppercase;color:#6c7583;break-after:avoid;page-break-after:avoid}
-.dash-nt.all.flat .pt.t li,.dash-nt.all.flat .pt.t .solo{color:#5c2417}
-.dash-nt.all.flat .pt.w li,.dash-nt.all.flat .pt.w .solo{color:#16304f}
+.dash-nt.all.flat .pt.t li,.dash-nt.all.flat .pt.t .solo,.dash-nt.all.flat .pt.t .gh{color:#5c2417}
+.dash-nt.all.flat .pt.w li,.dash-nt.all.flat .pt.w .solo,.dash-nt.all.flat .pt.w .gh{color:#16304f}
 /* the post game's boxes that are neither offense nor defense, on grey */
 .dash-nt.all.flat .pt.n{border-left-color:#8a93a2;background:#f4f5f7}
 /* the trends on two sheets */
