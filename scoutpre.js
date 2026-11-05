@@ -874,6 +874,24 @@
     });
     return out;
   }
+  /* A PRE GAME COUNTS THE GAMES IT HAD. Every row counted again from the possessions of the
+     games keep() lets through (Oriol, 5/11/2026: the cup pre game against Chemnitz kept growing
+     with the league games tagged after it). A row none of whose possessions is left goes; what
+     the row carried besides its counts - the call, the flags - goes with it unchanged. */
+  function pbKeep(rows, keep) {
+    if (typeof keep !== "function") return rows;
+    var out = [];
+    rows.forEach(function (r) {
+      if (!r || !r._chs) { out.push(r); return; }
+      var chs = r._chs.filter(function (c) { return keep((c && c[0] && c[0].game) || ""); });
+      if (chs.length === r._chs.length) { out.push(r); return; }
+      if (!chs.length) return;
+      var nr = pbRow(r.origin, r.label, chs);
+      Object.keys(r).forEach(function (k) { if (!(k in nr)) nr[k] = r[k]; });
+      out.push(nr);
+    });
+    return out;
+  }
   function buildReport(teamName, games, refGames) {
     var evs = [], refEvs = [];
     games.forEach(function (g) { evs = evs.concat(g.evs); });
@@ -2656,7 +2674,10 @@
           return { why: D ? null : "nodata", files: names, D: D,
                    callFiles: calls.map(function (f) { return f.name; }),
                    callLog: CALLS_LOG.slice(), callHit: hit, callCodes: codes,
-                   used: ours.map(function (g) { return g.file.name; }) };
+                   used: ours.map(function (g) { return g.file.name; }),
+                   /* the file each game came from: its game number says which of our games it
+                      was tagged for ("G11 CUP CHEMNITZ (NEPTUNAS)" for the cup game) */
+                   gameFiles: (function () { var o = {}; ours.forEach(function (g) { o[g.game] = g.file.name; }); return o; })() };
         });
       }).catch(function (e) { delete cacheRep[key]; throw e; });
     }
@@ -2985,7 +3006,8 @@
       return { why: null, files: R.files, used: R.used, rows: rows, calls: R.D.calls,
                callFiles: R.callFiles, callLog: R.callLog,
                callHit: R.callHit, callCodes: R.callCodes,
-               avg: R.D.say.selfPpp, games: R.D.meta.games, flags: R.D.playbookFlags };
+               avg: R.D.say.selfPpp, games: R.D.meta.games, flags: R.D.playbookFlags,
+               gameFiles: R.gameFiles || {} };
     });
   };
   /* the tagged games of an opponent as files, without reading them: the name, the game it
@@ -2999,6 +3021,7 @@
   };
   API.pbPoss = pbPoss;
   API.pbSplit = pbSplit;
+  API.pbKeep = pbKeep;
   API.refresh = function () {
     dropCache();
     var n = document.querySelectorAll(".scoutpre-slot, .scoutpre-players-slot");

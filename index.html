@@ -6076,6 +6076,7 @@ const PLAYER_BLOCKS=[
   ["positions","Roster positions"],
   ["roles","Roster roles in the team"],
   ["season","Their season"],
+  ["lastgame","Our last game against them (its post game)"],
   ["shotchart","Shot chart \u00b7 rotations \u00b7 clutch"],
   ["fourfactors","Four factors"],
   ["tagging","Opponent tagging"],
@@ -10582,6 +10583,47 @@ function softRender(fn){
 try{ window.softRender = softRender; }catch(e){_quiet(e)}
 
 let _preRendering=0, _prePending=false;
+/* THE POST GAME'S TEAM STATS, ONE BLOCK FOR THE GAME, READ THE WAY THE PRE GAME IS READ. The
+   overview of both sources first, then one tab per question: the game from the play by play, and
+   each part of our own tagging. In the post game the team stats section is drawn where it always
+   was and moved into the block (uni.__ts), so what is stored and how it is built do not change;
+   the pre game of a club we have played draws the same block for that game and mounts the
+   tagging in it itself. opts: title, cls, top (what goes over the overview), cat (the name the
+   tab chosen is remembered under). */
+function _postUniBlock(g, opts){
+  opts=opts||{};
+  const cat=opts.cat||"__postCat";
+  const uni=h("div",{class:"rs-block rs-block-auto pg-uni"+(opts.cls? " "+opts.cls : "")},
+    h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"}, opts.title||"TEAM STATS")));
+  const PT=[["ov","Overview"],["pbp","Game stats"],["min","Minute by minute"],["pace","Pace"],["reb","Rebounds"],["pt","Paint touches"],["br","Ball reversals"],["eff","Efficiency"],["td","Transition D"],["def","What we concede"],["all","Everything"]];
+  const bar=h("div",{class:"sxp-tabs pg-tabs"});
+  const pane=(k, build)=>{ const p=h("div",{class:"pg-pane", "data-pane":k});
+    try{ p.appendChild(build()); }catch(e){ p.appendChild(h("div",{class:"lg-empty"}, "This block could not be drawn: "+((e&&e.message)||e))); }
+    return p; };
+  const pOv=pane("ov", ()=>{ const w=h("div",{}); const mp=opts.top? opts.top() : null; if(mp) w.appendChild(mp); w.appendChild(_postOverview(g)); return w; }),
+    pPbp=pane("pbp", ()=>_lgGameInline(g)), pMin=pane("min", ()=>_postMinutes(g)), pReb=pane("reb", ()=>_postRebounds(g)), pTs=h("div",{class:"pg-pane", "data-pane":"ts"}),
+    pQ=h("div",{class:"pg-pane", "data-pane":"q"}), pPace=h("div",{class:"pg-pane", "data-pane":"pace"});
+  /* the quarter-by-quarter table of the overview, drawn when the overview is, shown in Efficiency */
+  if(_postOvKeep.q && _postOvKeep.key===g.date+"|"+(g.opponent||"")) pQ.appendChild(_postOvKeep.q);
+  if(_postOvKeep.pace && _postOvKeep.key===g.date+"|"+(g.opponent||"")) pPace.appendChild(_postOvKeep.pace);
+  const show=k=>{
+    window[cat]=k; uni.dataset.tab=k;
+    bar.querySelectorAll(".sxp-tab").forEach(b=>b.classList.toggle("on", b.dataset.t===k));
+    const tsOn=(k!=="ov" && k!=="pbp" && k!=="min" && k!=="reb" && k!=="pace");
+    pOv.classList.toggle("on", k==="ov"||k==="all"); pPbp.classList.toggle("on", k==="pbp"||k==="all"); pMin.classList.toggle("on", k==="min"||k==="all"); pReb.classList.toggle("on", k==="reb"||k==="all"); pPace.classList.toggle("on", k==="pace"||k==="all"); pQ.classList.toggle("on", k==="eff"||k==="all"); pTs.classList.toggle("on", tsOn);
+    const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && tsOn) sp.__setCat(k);
+    try{ window.dispatchEvent(new Event("resize")); }catch(e){_quiet(e)}
+  };
+  PT.forEach(t=>{ const b=h("button",{class:"sxp-tab", type:"button", onclick:()=>show(t[0])}, t[1]); b.dataset.t=t[0]; bar.appendChild(b); });
+  uni.appendChild(bar); uni.appendChild(pOv); uni.appendChild(pPbp); uni.appendChild(pMin); uni.appendChild(pPace); uni.appendChild(pReb); uni.appendChild(pQ); uni.appendChild(pTs);
+  uni.__ts=pTs;
+  /* the team stats arrive later, from the Drive: when they land, they open on the tab chosen */
+  try{ new MutationObserver(()=>{ const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && !sp.__synced){ sp.__synced=1; const k=uni.dataset.tab; if(k!=="ov" && k!=="pbp" && k!=="min" && k!=="reb" && k!=="pace") sp.__setCat(k); } })
+    .observe(pTs, { childList:true, subtree:true }); }catch(e){_quiet(e)}
+  const k0=window[cat] && PT.some(t=>t[0]===window[cat])? window[cat] : "ov";
+  show(k0);
+  return uni;
+}
 function renderReportSections(body, rep, key, g, canEd, kind, opts){
   _preRendering++;
   try{ return _rrsBuild(body, rep, key, g, canEd, kind, opts); }
@@ -10768,6 +10810,8 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
       wrap.appendChild(_preClubLine(reRender));
       if(playerBlockOk("colourkey")) wrap.appendChild(_preSafe("COLOUR KEY", ()=>_preColourKey()));
     }
+    /* an earlier game against the same club: its pre game copied a part at a time */
+    if(canEd && !PV){ try{ const cb=_preCopyBar(rep, secs, g, key, save, reRender); if(cb) wrap.appendChild(cb); }catch(e){_quiet(e)} }
     const tid0=_preClub();
     /* the staff's roster table carries the tagging, so the tagging's own players table is
        not drawn a second time further down */
@@ -10804,6 +10848,9 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
          four blocks a player is given. */
       /* their last games from the play by play now open the TEAM STATS overview (see _preInj) */
     }
+    /* we have played them already: that game's post game - the Game Summary and its team stats */
+    if(playerBlockOk("lastgame") && _preMeetings(g && g.opponent, g && g.date).some(m=>m.date<=todayISO()))
+      wrap.appendChild(_preSafe("OUR LAST GAME AGAINST THEM", ()=>_preLastBlock(g, key)));
   }
   /* A report on disk was written by whichever build was live the day it was written, and
      some of them are a year old. One section whose stored shape this code does not expect
@@ -10824,17 +10871,6 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
         h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"}, title)));
       try{ b.appendChild(build()); }catch(e){ b.appendChild(h("div",{class:"lg-empty"}, "This block could not be drawn: "+((e&&e.message)||e))); }
       wrap.appendChild(b); };
-    /* ONE BLOCK FOR THE GAME, READ THE WAY THE PRE GAME IS READ. The overview of both
-       sources first, then one tab per question: the game from the play by play, and each
-       part of our own tagging. The team stats section is drawn where it always was and
-       moved into this block, so what is stored and how it is built do not change. */
-    const uni=h("div",{class:"rs-block rs-block-auto pg-uni"},
-      h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"}, "TEAM STATS")));
-    const PT=[["ov","Overview"],["pbp","Game stats"],["min","Minute by minute"],["pace","Pace"],["reb","Rebounds"],["pt","Paint touches"],["br","Ball reversals"],["eff","Efficiency"],["td","Transition D"],["def","What we concede"],["all","Everything"]];
-    const bar=h("div",{class:"sxp-tabs pg-tabs"});
-    const pane=(k, build)=>{ const p=h("div",{class:"pg-pane", "data-pane":k});
-      try{ p.appendChild(build()); }catch(e){ p.appendChild(h("div",{class:"lg-empty"}, "This block could not be drawn: "+((e&&e.message)||e))); }
-      return p; };
     /* the staff's own reading of the game, above the automatic one: a few lines, written
        by whoever closes the report, kept in the report like everything else in it */
     const mainPoints=()=>{ rep.data=rep.data||{};
@@ -10842,30 +10878,9 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
       if(!canEd && !has) return null;
       return h("div",{class:"pg-main"}, h("div",{class:"pg-main-h"},"Main points of the game"),
         makeRichBox(canEd, rep.data.postMain||"", html=>{ rep.data.postMain=html; save(); }, "The three or four things this game was about…", 3)); };
-    const pOv=pane("ov", ()=>{ const w=h("div",{}); const mp=mainPoints(); if(mp) w.appendChild(mp); w.appendChild(_postOverview(g)); return w; }),
-      pPbp=pane("pbp", ()=>_lgGameInline(g)), pMin=pane("min", ()=>_postMinutes(g)), pReb=pane("reb", ()=>_postRebounds(g)), pTs=h("div",{class:"pg-pane", "data-pane":"ts"}),
-      pQ=h("div",{class:"pg-pane", "data-pane":"q"}), pPace=h("div",{class:"pg-pane", "data-pane":"pace"});
-    /* the quarter-by-quarter table of the overview, drawn when the overview is, shown in Efficiency */
-    if(_postOvKeep.q && _postOvKeep.key===g.date+"|"+(g.opponent||"")) pQ.appendChild(_postOvKeep.q);
-    if(_postOvKeep.pace && _postOvKeep.key===g.date+"|"+(g.opponent||"")) pPace.appendChild(_postOvKeep.pace);
-    const show=k=>{
-      window.__postCat=k; uni.dataset.tab=k;
-      bar.querySelectorAll(".sxp-tab").forEach(b=>b.classList.toggle("on", b.dataset.t===k));
-      const tsOn=(k!=="ov" && k!=="pbp" && k!=="min" && k!=="reb" && k!=="pace");
-      pOv.classList.toggle("on", k==="ov"||k==="all"); pPbp.classList.toggle("on", k==="pbp"||k==="all"); pMin.classList.toggle("on", k==="min"||k==="all"); pReb.classList.toggle("on", k==="reb"||k==="all"); pPace.classList.toggle("on", k==="pace"||k==="all"); pQ.classList.toggle("on", k==="eff"||k==="all"); pTs.classList.toggle("on", tsOn);
-      const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && tsOn) sp.__setCat(k);
-      try{ window.dispatchEvent(new Event("resize")); }catch(e){_quiet(e)}
-    };
-    PT.forEach(t=>{ const b=h("button",{class:"sxp-tab", type:"button", onclick:()=>show(t[0])}, t[1]); b.dataset.t=t[0]; bar.appendChild(b); });
-    uni.appendChild(bar); uni.appendChild(pOv); uni.appendChild(pPbp); uni.appendChild(pMin); uni.appendChild(pPace); uni.appendChild(pReb); uni.appendChild(pQ); uni.appendChild(pTs);
-    uni.__ts=pTs;
-    /* the team stats arrive later, from the Drive: when they land, they open on the tab chosen */
-    try{ new MutationObserver(()=>{ const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && !sp.__synced){ sp.__synced=1; const k=uni.dataset.tab; if(k!=="ov" && k!=="pbp" && k!=="min" && k!=="reb" && k!=="pace") sp.__setCat(k); } })
-      .observe(pTs, { childList:true, subtree:true }); }catch(e){_quiet(e)}
+    const uni=_postUniBlock(g, { top:mainPoints });
     wrap.appendChild(uni);
     _postUni=uni;
-    const k0=window.__postCat && PT.some(t=>t[0]===window.__postCat)? window.__postCat : "ov";
-    show(k0);
   };
   let _postUni=null;
   (playerBlockOk("written") ? secs : []).forEach((sec,si)=>{
@@ -14363,7 +14378,240 @@ function _pbGameOrder(list, tid, dates){
     }catch(e){_quiet(e)}
     return list.map((g,i)=>({ g:g, i:i })).sort((a,b)=>{ const A=dates[a.g], B=dates[b.g]; if(A && B) return A<B? -1 : A>B? 1 : a.i-b.i; if(A) return -1; if(B) return 1; return a.i-b.i; }).map(x=>x.g);
 }
+/* OUR EARLIER GAMES AGAINST THE SAME CLUB, the latest first: the calendar's games before this one
+   whose opponent is the same club (by its names, so "NINERS Chemnitz" in the Pokal and
+   "Chemnitz" in the league are one club). The second round and the playoffs have one or more. */
+function _preMeetings(opp, date){
+  if(!opp || !date) return [];
+  const ck=s=>{ try{ return _lgClubKey(s)||""; }catch(e){ return ""; } };
+  const k=ck(opp), sl=scoutSlug(opp);
+  return (state.games||[]).filter(x=>x && x.date && x.date<date && x.opponent && (k? ck(x.opponent)===k : scoutSlug(x.opponent)===sl))
+    .slice().sort((a,b)=>a.date<b.date? 1 : a.date>b.date? -1 : 0);
+}
+/* "Pokal · 18/10" */
+function _preMeetLab(m){ return (m && m.date)? ((m.competition? m.competition+" · " : "")+m.date.slice(8,10)+"/"+m.date.slice(5,7)) : ""; }
+/* the report of an earlier game, read once a minute at the most - the page is drawn again on every
+   edit and the report it copies from does not change under it */
+const _prePrevMemo={};
+function _prePrevRep(m){
+  const key=gameKey(m), now=Date.now(), o=_prePrevMemo[key];
+  if(o && now-o.t<60000) return o.p;
+  const p=(async ()=>{ if(!SB_TOKEN) return null;
+    const r=await sbrpc("get_report",{p_token:SB_TOKEN,p_key:key});
+    return (r && r.ok)? (r.report||null) : null; })();
+  _prePrevMemo[key]={ t:now, p:p };
+  p.catch(()=>{ delete _prePrevMemo[key]; });
+  return p;
+}
+const _preTxt=s=>String(s||"").replace(/<[^>]*>/g," ").replace(/&nbsp;/g," ").trim();
+function _preSecHas(sec){
+  return !!sec && (sec.items||[]).some(it=>!it? false : it.kind==="table"
+    ? (((it.table||{}).rows)||[]).some(r=>(r||[]).some(c=>String(c==null? "" : c).trim()))
+    : !!(_preTxt(it.them)+_preTxt(it.us)+_preTxt(it.v)));
+}
+/* the pre game's sections of an earlier report, in today's shape (a report a year old is
+   migrated on a copy, never on the server) */
+function _preSecsOf(src){
+  let S=[]; try{ S=JSON.parse(JSON.stringify((src && src.data && src.data.sections)||[])); }catch(e){ S=[]; }
+  try{ ensureCanonical(S, "pregame"); }catch(e){_quiet(e)}
+  return S;
+}
+const _prePbSec=S=>(S||[]).filter(s=>s && s.dualLbl==="sets")[0] || _secBy(S||[], /^playbook$/i) || null;
+function _prePbAdjN(sec){ let n=0; ((sec && sec.items)||[]).forEach(it=>{ if(it && it.kind!=="table") (it.pbSets||[]).forEach(p=>{ if(p && p.k && _preTxt(p.rule)) n++; }); }); return n; }
+/* DUPLICATING A PRE GAME, A PART AT A TIME (Oriol, 5/11/2026: Chemnitz again after the cup).
+   One line at the top of the pre game, in edit mode, when there is an earlier game against the
+   same club: the parts that carry over, one click each, from the pre game chosen.
+   - Roster positions and roles: the cards with everything typed on them. A man who has signed
+     since keeps the card this pre game has for him; a man the roster no longer lists goes to
+     Taken off. The roles board is the club's, the same in every pre game against them.
+   - How to attack, How to defend: the section as it was written.
+   - Playbook: our adjustments, the names given to sets, the calls written by hand, the splits
+     and the notes by area - added beside what this pre game has; nothing written here is
+     replaced.
+   A part that already has something written asks first; Undo and Versions bring it back. */
+const _preCopyPick={};
+function _preCopyBar(rep, secs, g, key, save, reRender){
+  const M=_preMeetings(g && g.opponent, g && g.date);
+  if(!M.length || !SB_TOKEN) return null;
+  const bar=h("div",{class:"pre-copy"});
+  const pick=()=>M.filter(m=>m.id===_preCopyPick[key])[0] || M[0];
+  const paint=()=>{
+    bar.innerHTML="";
+    const m=pick(), lab=_preMeetLab(m);
+    bar.appendChild(h("span",{class:"pre-copy-t"}, "⧉ Copy from the pre game of"));
+    if(M.length>1){
+      const sel=h("select",{class:"pre-copy-sel"}, M.map(x=>{ const o=h("option",{value:x.id}, _preMeetLab(x)); if(x===m) o.selected=true; return o; }));
+      sel.addEventListener("change",()=>{ _preCopyPick[key]=sel.value; paint(); });
+      bar.appendChild(sel);
+    } else bar.appendChild(h("b",{class:"pre-copy-g"}, lab));
+    const btns=h("span",{class:"pre-copy-b"}, h("span",{class:"ld"},"Reading it…"));
+    bar.appendChild(btns);
+    _prePrevRep(m).then(src=>{
+      btns.innerHTML="";
+      if(!src || !src.data){ btns.appendChild(h("span",{class:"pre-copy-n"},"Nothing was written in that pre game.")); return; }
+      const S=_preSecsOf(src);
+      const nCards=(()=>{ const C=src.data.cards; return (C && C.pos)? PRE_CARD_POS.reduce((a,k)=>a+((C.pos[k]||[]).length),0) : 0; })();
+      const off=_secBy(S, RE_PRE_OFF), def=_secBy(S, RE_PRE_DEF), pb=_prePbSec(S), nAdj=_prePbAdjN(pb);
+      const pbNotes=!!pb && (pb.items||[]).some(it=>it && it.kind!=="table" && (_preTxt(it.them) || _preTxt(it.us!==undefined? it.us : it.v)));
+      const b=(txt, n, on, why, fn)=>{ const x=h("button",{class:"pre-copy-btn", type:"button", title:why}, txt, n!=null? h("i",{}, String(n)) : null);
+        if(!on){ x.disabled=true; x.title="Nothing written there in the pre game of "+lab; } else x.addEventListener("click", ()=>fn(src, m, x));
+        btns.appendChild(x); };
+      b("Roster positions & roles", nCards||null, nCards>0, "The cards of that pre game, with everything typed on them. A man who has signed since keeps his card here; one who has left goes to Taken off. The roles board is the club's: it is already the same in every pre game against them.", _preCopyCards);
+      b("How to attack", null, _preSecHas(off), "That pre game's How to attack, as it was written", (s,mm,x)=>_preCopySec(s, mm, x, RE_PRE_OFF, "How to attack"));
+      b("How to defend", null, _preSecHas(def), "That pre game's How to defend, as it was written", (s,mm,x)=>_preCopySec(s, mm, x, RE_PRE_DEF, "How to defend"));
+      b("Playbook · our adjustments", nAdj||null, nAdj>0 || pbNotes, "Our adjustments to their sets, the names given to sets, the calls written by hand and the notes by area - added beside what is here; nothing written here is replaced", _preCopyPb);
+    }).catch(()=>{ btns.innerHTML=""; btns.appendChild(h("span",{class:"pre-copy-n"},"That pre game could not be read.")); });
+  };
+  /* before any copy, a copy of this report; then the part, saved and drawn */
+  const done=(why, msg)=>{ save(); reRender(); toast(msg); };
+  const keep=lab=>{ try{ _vault.put(key, rep, "before copying from "+lab, true); }catch(e){_quiet(e)} };
+  function _preCopyCards(src, m){
+    const lab=_preMeetLab(m), C0=rep.data.cards;
+    let S=null; try{ S=JSON.parse(JSON.stringify(src.data.cards)); }catch(e){ S=null; }
+    if(!S || !S.pos){ toast("No cards in the pre game of "+lab); return; }
+    if(!confirm("Replace the cards of this pre game with the ones of "+lab+"?\n\nA man who has signed since keeps the card he has here; one who has left goes to Taken off. Undo or Versions bring this back.")) return;
+    keep(lab);
+    PRE_CARD_POS.forEach(k=>{ S.pos[k]=Array.isArray(S.pos[k])? S.pos[k] : []; });
+    const last=c=>_lgNorm(String((c && c.name)||"").trim().split(/\s+/).pop()||"");
+    const same=(a,b)=>{ const pa=String(a.pid||"").trim(), pb2=String(b.pid||"").trim();
+      if(pa && pb2) return pa===pb2;
+      const na=String(a.name||"").trim().toLowerCase(), nb=String(b.name||"").trim().toLowerCase();
+      return (!!na && na===nb) || (!!last(a) && last(a)===last(b) && String(a.num||"").trim()===String(b.num||"").trim()); };
+    const all=()=>[].concat(...PRE_CARD_POS.map(k=>S.pos[k]));
+    let added=0, gone=0;
+    if(C0 && C0.pos) PRE_CARD_POS.forEach(k=>(C0.pos[k]||[]).forEach(c=>{ if(c && !all().some(o=>same(o,c))){ S.pos[k].push(JSON.parse(JSON.stringify(c))); added++; } }));
+    S.bin=(C0 && Array.isArray(C0.bin))? JSON.parse(JSON.stringify(C0.bin)) : [];
+    /* the roster as the league has it now: a card none of whose men is on it is taken off */
+    let rows=[]; try{ const tid=_preClub(); rows=tid? _preRosterRows(leagueState(), tid).filter(p=>p && (p.name || p.num)) : []; }catch(e){ rows=[]; }
+    if(rows.length){
+      const R=rows.map(p=>({ pid:String(p.pid||p.id||""), name:(p.name||((p.first||"")+" "+(p.last||""))).trim(), num:String(p.num==null? "" : p.num) }));
+      PRE_CARD_POS.forEach(k=>{ for(let i=S.pos[k].length-1;i>=0;i--){ const c=S.pos[k][i];
+        if(c && !c.from && !R.some(r=>same(r,c))){ _preBinCard(S, k, i); gone++; } } });
+    }
+    rep.data.cards=S;
+    done("cards", "Cards copied from "+lab+(added? " · "+added+" signed since kept" : "")+(gone? " · "+gone+" no longer on the roster, in Taken off" : ""));
+  }
+  function _preCopySec(src, m, x, re, title){
+    const lab=_preMeetLab(m), from=_secBy(_preSecsOf(src), re);
+    if(!from){ toast("No "+title+" in the pre game of "+lab); return; }
+    let to=_secBy(secs, re);
+    if(to && _preSecHas(to) && !confirm("Replace what is written in "+title+" with the pre game of "+lab+"?\n\nUndo or Versions bring it back.")) return;
+    keep(lab);
+    if(!to){ to={ id:uid(), title:title, dual:true, items:[] };
+      const at=secs.findIndex(s=>s && (s.dualLbl==="sets" || /^playbook$/i.test(String(s.title||"").trim())));
+      if(at<0) secs.push(to); else secs.splice(at, 0, to); }
+    to.items=JSON.parse(JSON.stringify(from.items||[])); to.dual=true;
+    done(title, title+" copied from "+lab);
+  }
+  function _preCopyPb(src, m){
+    const lab=_preMeetLab(m), from=_prePbSec(_preSecsOf(src));
+    if(!from){ toast("No playbook in the pre game of "+lab); return; }
+    keep(lab);
+    let to=_prePbSec(secs);
+    if(!to){ to=playbookSection(); const at=secs.findIndex(s=>s && s.kind==="stats" && s.own); if(at<0) secs.push(to); else secs.splice(at, 0, to); }
+    to.items=to.items||[];
+    if(!to.items.some(it=>it && it.kind!=="table")) PB_POINTS.forEach(t=>to.items.push({ t:t, them:"", us:"" }));
+    const A=(from.items||[]).filter(it=>it && it.kind!=="table"), B=to.items.filter(it=>it && it.kind!=="table");
+    B.forEach(b=>{ if(b.us===undefined && b.v!==undefined) b.us=b.v;
+      b.pbSets=Array.isArray(b.pbSets)? b.pbSets : []; b.pbEdit=(b.pbEdit && typeof b.pbEdit==="object")? b.pbEdit : {}; });
+    const home=B[0]; home.pbCall=(home.pbCall && typeof home.pbCall==="object")? home.pbCall : {}; home.pbSplit=(home.pbSplit && typeof home.pbSplit==="object")? home.pbSplit : {};
+    const areaFor=t=>B.filter(b=>String(b.t||"").trim().toLowerCase()===String(t||"").trim().toLowerCase())[0] || home;
+    const cp=o=>JSON.parse(JSON.stringify(o));
+    let nAdj=0, nOther=0;
+    A.forEach(a=>{ const b=areaFor(a.t);
+      (a.pbSets||[]).forEach(p=>{ if(!p || !p.k || !_preTxt(p.rule)) return;
+        let hit=null; B.forEach(x=>{ (x.pbSets||[]).forEach(q=>{ if(!hit && q && q.k===p.k) hit=q; }); });
+        if(hit){ if(!_preTxt(hit.rule)){ hit.rule=p.rule; nAdj++; } return; }
+        b.pbSets.push({ k:p.k, rule:p.rule }); nAdj++; });
+      Object.keys(a.pbEdit||{}).forEach(k=>{ if(a.pbEdit[k] && !B.some(x=>x.pbEdit && x.pbEdit[k])){ b.pbEdit[k]=a.pbEdit[k]; nOther++; } });
+      Object.keys(a.pbCall||{}).forEach(k=>{ if(a.pbCall[k] && !B.some(x=>x.pbCall && x.pbCall[k])){ home.pbCall[k]=a.pbCall[k]; nOther++; } });
+      Object.keys(a.pbSplit||{}).forEach(k=>{ if((a.pbSplit[k]||[]).length && !B.some(x=>x.pbSplit && (x.pbSplit[k]||[]).length)){ home.pbSplit[k]=cp(a.pbSplit[k]); nOther++; } });
+      [["them", a.them], ["us", a.us!==undefined? a.us : a.v]].forEach(([s, v])=>{ if(_preTxt(v) && !_preTxt(b[s])){ b[s]=v; nOther++; } });
+    });
+    if(!nAdj && !nOther){ toast("Everything in the playbook of "+lab+" is here already"); return; }
+    done("pb", "Playbook: "+nAdj+" adjustment"+(nAdj===1? "" : "s")+(nOther? " and "+nOther+" names, calls and notes" : "")+" copied from "+lab+" · nothing written here was replaced");
+  }
+  paint();
+  return bar;
+}
+/* OUR LAST GAME AGAINST THEM, FROM ITS POST GAME (Oriol, 5/11/2026). Once we have played a club,
+   its pre game carries that game's post game: the main points and the Game Summary the staff
+   wrote, and the post game's TEAM STATS - the same block, the same tabs - under a banner that
+   says whose they are. With more than one game against them (a second round, a playoff
+   series) the latest opens and the others are a click away. */
+const _preLastPick={};
+function _preLastBlock(g, key){
+  const T=todayISO();
+  const M=_preMeetings(g && g.opponent, g && g.date).filter(m=>m.date<=T);
+  if(!M.length) return null;
+  const m=M.filter(x=>x.id===_preLastPick[key])[0] || M[0];
+  const dd=m.date.slice(8,10)+"/"+m.date.slice(5,7);
+  const blk=h("div",{class:"rs-block rs-block-lg pre-last"});
+  /* the score, from the league's sheet of the game */
+  let sc="";
+  try{ const L=leagueState(), G=_postLeagueGame({ date:m.date, opponent:m.opponent }, (L.games||[]).concat(L.cup||[], L.euro||[]));
+    if(G && _lgDone(G)){ const home=_lgOurs(G.home), us=home? G.hs : G.as, th=home? G.as : G.hs; sc=(us>th? "W " : us<th? "L " : "")+us+"–"+th; } }catch(e){_quiet(e)}
+  const open=h("button",{class:"pc-rebuild pre-last-go", type:"button", title:"Open the whole post game of this game"},"Open the post game ›");
+  open.addEventListener("click",()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:m.id } }));
+  const ban=h("div",{class:"rs-banner rs-banner-sec pre-last-ban"},
+    h("span",{class:"pre-last-tag"},"POST GAME"),
+    h("span",{class:"rs-banner-t"}, M.length>1? "Our games against them" : "Our last game against them"), open);
+  blk.appendChild(ban);
+  /* which game: the latest, or another of them */
+  const who=h("div",{class:"pre-last-who"},
+    h("b",{}, (m.venue==="Away"? "@ " : "vs ")+(m.opponent||"")),
+    h("span",{}, _preMeetLab(m)),
+    sc? h("span",{class:"pre-last-sc "+(/^W/.test(sc)? "w" : /^L/.test(sc)? "l" : "")}, sc) : null);
+  if(M.length>1) who.appendChild(h("span",{class:"pre-last-pick"}, M.map(x=>{ const b=h("button",{type:"button", class:"pbb-chip"+(x===m? " on" : "")}, _preMeetLab(x));
+    b.addEventListener("click",()=>{ _preLastPick[key]=x.id; const n=_preLastBlock(g, key); if(n && blk.parentNode) blk.parentNode.replaceChild(n, blk); }); return b; })));
+  blk.appendChild(who);
+  /* what the staff wrote after it */
+  const notes=h("div",{class:"pre-last-notes"}, h("div",{class:"ld"},"Reading the post game…", h("span",{class:"ld-bar"})));
+  blk.appendChild(notes);
+  _prePrevRep(m).then(rep=>{
+    notes.innerHTML="";
+    const d=(rep && rep.data)||{}, P=Array.isArray(d.postSections)? d.postSections : [];
+    if(_preTxt(d.postMain)) notes.appendChild(h("div",{class:"pg-main"}, h("div",{class:"pg-main-h"},"Main points of the game"), makeRichBox(false, d.postMain, null, "", null)));
+    const sum=P.filter(s=>s && (s.role==="summary" || String(s.title||"").trim()==="Game Summary"))[0];
+    if(sum && (sum.items||[]).some(it=>it && _preTxt(it.v))){
+      notes.appendChild(h("div",{class:"pre-last-h"}, "Game Summary · post game "+dd));
+      notes.appendChild(renderSummarySection(sum, false, ()=>{}));
+    } else notes.appendChild(h("div",{class:"lg-empty"}, "The Game Summary of the post game of "+dd+" has not been written."));
+  }).catch(()=>{ notes.innerHTML=""; notes.appendChild(h("div",{class:"lg-empty"},"The post game of "+dd+" could not be read.")); });
+  /* and the numbers of that game: the post game's own TEAM STATS */
+  const sg={ id:m.id, date:m.date, opponent:m.opponent||"", venue:m.venue, competition:m.competition||"" };
+  const uni=_postUniBlock(sg, { title:"TEAM STATS · POST GAME "+dd, cls:"pre-last-ts", cat:"__preLastCat" });
+  { const host=h("div",{class:"rst-scope"}); uni.__ts.appendChild(host); mountGameTagging(host, sg.opponent, sg.date); }
+  blk.appendChild(uni);
+  return blk;
+}
+/* WHICH PRE GAME A TAGGED GAME BELONGS TO. With earlier games against the club, the games tagged
+   before the last of them were that pre game's; the ones since are this one's; and the games
+   played on or after this report's own day are no part of it - an old pre game stays as it was
+   (Oriol, 5/11/2026: "no añadas más en el antiguo"). A game no calendar dates goes with the
+   games tagged for the same game of ours: the number in its file name ("G11 CUP CHEMNITZ
+   (NEPTUNAS)" was tagged with the cup game's). -> { era, cur, out, later, games } */
+function _pbEras(list, dates, files, date, meet){
+  const cuts=(meet||[]).map(m=>m.date).filter(d=>d && (!date || d<date)).sort();
+  const cur=cuts.length;
+  const gnum=g=>{ const m=/(?:^|[^A-Za-z0-9])G ?(\d{1,2})(?![0-9])/i.exec(String((files||{})[g]||"")); return m? +m[1] : null; };
+  const eraOf=d=>{ if(date && d>=date) return Infinity; let e=0; cuts.forEach(c=>{ if(d>=c) e++; }); return e; };
+  const era={};
+  list.forEach(g=>{ if(dates[g]) era[g]=eraOf(dates[g]); });
+  list.forEach(g=>{ if(era[g]!=null) return; const n=gnum(g);
+    const mates=n==null? [] : list.filter(x=>x!==g && dates[x] && gnum(x)===n);
+    era[g]=mates.length? Math.max.apply(null, mates.map(x=>era[x])) : cur; });
+  const out={}, later=list.filter(g=>era[g]===Infinity);
+  later.forEach(g=>{ out[g]=1; });
+  const games=list.map((g,i)=>({ g:g, i:i })).filter(x=>!out[x.g]).sort((a,b)=>(era[a.g]-era[b.g]) || (a.i-b.i)).map(x=>x.g);
+  return { era:era, cur:cur, out:out, later:later, games:games };
+}
 function renderPlaybookBoard(sec, canEd, save, reRender){
+  /* the day of this report and its opponent, taken now: the tagging answers later, when another
+     page may have set them to something else */
+  const P_DATE=_scoutDate, P_OPP=_scoutOpponent, MEET=_preMeetings(P_OPP, P_DATE);
+  let ERA={}, CUR=0, LATER=[];
+  const isOld=g=>CUR>0 && ERA[g]!=null && ERA[g]<CUR;
   const areas=(sec.items||[]).filter(it=>it && it.kind!=="table");
   areas.forEach(it=>{ if(it.us===undefined && it.v!==undefined) it.us=it.v;
     it.pbSets=Array.isArray(it.pbSets)? it.pbSets : []; it.pbEdit=(it.pbEdit && typeof it.pbEdit==="object")? it.pbEdit : {}; });
@@ -14457,8 +14705,13 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
   const gmShort=g=>String(g||"").replace(/^(VS|AT|@)\s+/i,"").slice(0,3).toUpperCase();
   const perGame=r=>{ const src=r._src||r, o={}; ((src && src._chs)||[]).forEach(c=>{ const g=(c && c[0] && c[0].game)||""; o[g]=(o[g]||0)+1; }); return o; };
   /* a game no calendar places says so, and how to give it its date */
-  const gmHead=()=>h("span",{class:"pbb-c-gm hd", title:"Times run in each tagged game, oldest first"}, GAMES.map(g=>h("i",{title:g+(GDATE[g]? " · "+GDATE[g].split("-").reverse().join("/")
-      : " · no date: this game is not in the league's, the Pokal's or the EuroCup's calendar, so it goes last. Write its date in the file name, e.g. (JOVENTUT 21-10)")},
+  /* the games of an earlier pre game against the club are sand, the ones since are blue, and a
+     line stands between the two */
+  const gmCls=(g,i)=>(isOld(g)? "old" : "")+(i>0 && isOld(GAMES[i-1]) && !isOld(g)? " sep" : "");
+  const meetTxt=()=>MEET[0]? "the "+(MEET[0].competition? MEET[0].competition+" " : "")+"game of "+MEET[0].date.slice(8,10)+"/"+MEET[0].date.slice(5,7) : "";
+  const gmHead=()=>h("span",{class:"pbb-c-gm hd", title:"Times run in each tagged game, oldest first"}, GAMES.map((g,i)=>h("i",{class:gmCls(g,i), title:g+(GDATE[g]? " · "+GDATE[g].split("-").reverse().join("/")
+      : " · no date: this game is not in the league's, the Pokal's or the EuroCup's calendar, so it goes after the dated games tagged for the same game of ours. Write its date in the file name, e.g. (JOVENTUT 21-10)")
+      +(isOld(g)? " · tagged before "+meetTxt()+", in that pre game" : CUR>0? " · tagged since "+meetTxt() : "")},
     gmShort(g), h("u",{class:GDATE[g]? "" : "nd"}, GDATE[g]? GDATE[g].slice(8,10)+"/"+GDATE[g].slice(5,7) : "?"))));
   /* THE GAMES IN THE ORDER THEY WERE PLAYED. A tagged file is named after the two clubs and
      carries no date, so the date comes from the league's schedule: the scouted club's played
@@ -14466,8 +14719,10 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
      place keeps its place at the end. */
   const GDATE={};
   const orderGames=list=>_pbGameOrder(list, String(_preClub()||""), GDATE);
+  /* a set none of whose runs is in the earlier pre game's games: new since that game */
+  const newSet=r=>CUR>0 && GAMES.some(isOld) && Object.keys(perGame(r)).every(g=>!isOld(g));
   const inFilter=r=>(FILTER==="All" || (FILTER==="ATO"? r.c.ato : r.c.kind===FILTER))
-    && (ONLY!=="adj" || hasAdj(r.label)) && (ONLY!=="key" || keyOn(r.label));
+    && (ONLY!=="adj" || hasAdj(r.label)) && (ONLY!=="key" || keyOn(r.label)) && (ONLY!=="new" || newSet(r));
   function draw(){
     /* ---- the filters */
     bar.innerHTML="";
@@ -14480,6 +14735,17 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
     bar.appendChild(h("span",{class:"pbb-sep"}));
     bar.appendChild(chip("With an adjustment", ONLY==="adj", ()=>{ ONLY=(ONLY==="adj")? "" : "adj"; draw(); }, ROWS.filter(r=>hasAdj(r.label)).length));
     bar.appendChild(chip("★ Key sets", ONLY==="key", ()=>{ ONLY=(ONLY==="key")? "" : "key"; draw(); }, ROWS.filter(r=>keyOn(r.label)).length));
+    /* THE EARLIER PRE GAME'S GAMES AND THE NEW ONES. The counts are one (every game here), the
+       games are two colours, and a set first seen since that game says so */
+    if(GAMES.some(isOld)){
+      const nNew=ROWS.filter(newSet).length;
+      if(nNew) bar.appendChild(chip("New since "+MEET[0].date.slice(8,10)+"/"+MEET[0].date.slice(5,7), ONLY==="new", ()=>{ ONLY=(ONLY==="new")? "" : "new"; draw(); }, nNew));
+      bar.appendChild(h("span",{class:"pbb-era", title:"Use, PPP and Vol count every game; the colour says which pre game a game was tagged for"},
+        h("i",{class:"o"}), "Tagged before "+meetTxt()+" · in that pre game", h("i",{class:"n"}), "Tagged since"));
+    }
+    /* an older pre game says what it leaves out, and where it is */
+    if(LATER.length) bar.appendChild(h("span",{class:"pbb-later", title:LATER.join(" · ")},
+      LATER.length+(LATER.length===1? " game" : " games")+" played after this game "+(LATER.length===1? "is" : "are")+" not counted here ("+LATER.join(", ")+") — "+(LATER.length===1? "it is" : "they are")+" in the next pre game against them"));
     /* ---- the table */
     tableBox.innerHTML="";
     if(!ROWS.length){ tableBox.appendChild(h("div",{class:"pbx-none"}, "Nothing tagged for this opponent yet.")); }
@@ -14500,6 +14766,8 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
     let lastKind=null;
     const gmMax=Math.max.apply(null, [1].concat(ROWS.map(r=>{ const pg=perGame(r); return Math.max.apply(null, [0].concat(Object.keys(pg).map(k=>pg[k]))); })));
     wrap.style.setProperty("--ng", String(Math.max(1, GAMES.length)));
+    /* room for the line between an earlier pre game's games and the new ones */
+    wrap.style.setProperty("--gsep", GAMES.some((g,i)=>/sep/.test(gmCls(g,i)))? "7px" : "0px");
     if(ROWS.length && !shown.length) tableBox.appendChild(h("div",{class:"pbx-none"},"No set under this filter."));
     let lastFam=null;
     shown.forEach(r=>{
@@ -14532,6 +14800,7 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
         cellN.appendChild(tools);
       }
       if(r.split) cellN.appendChild(h("i",{class:"pbb-from", title:"Split from "+r.split}, " ⑂ "+r.split));
+      if(newSet(r)) cellN.appendChild(h("i",{class:"pbb-new", title:"Not run in the games tagged before "+meetTxt()+": new since"},"new"));
       row.appendChild(cellN);
       /* the call: from the call sheet, or written here when the sheet does not have it */
       const callEl=r.call? h("span",{class:"pbb-c-call pbx-call"+(r.callMan? " man" : ""), title:r.callMan? "Written by the staff" : "From the call sheet"}, r.call) : h("span",{class:"pbb-c-call pbx-nocall"},"—");
@@ -14556,8 +14825,9 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
         row.appendChild(h("span",{class:"pbb-c-vol", title:"≈"+Math.round(v)+"% of their tagged possessions ("+r.n+" of "+tot+")"},
           h("i",{style:"width:"+Math.max(4,Math.round(100*v/mxV))+"%"}), h("b",{}, (v<1 && v>0? "<1" : String(Math.round(v)))+"%"))); }
       { const pg=perGame(r);
-        row.appendChild(h("span",{class:"pbb-c-gm"}, GAMES.map(g=>{ const k=pg[g]||0, a=k? 0.18+0.72*Math.min(1, k/gmMax) : 0;
-          return h("i",{class:k? "" : "z", title:g+": "+k+(k===1? " time" : " times"), style:k? "background:rgba(74,134,216,"+a.toFixed(2)+");color:"+(a>0.55? "#fff" : "#1d3a66") : ""}, k? String(k) : "·"); }))); }
+        row.appendChild(h("span",{class:"pbb-c-gm"}, GAMES.map((g,i)=>{ const k=pg[g]||0, a=k? 0.18+0.72*Math.min(1, k/gmMax) : 0, old=isOld(g);
+          return h("i",{class:(k? "" : "z")+" "+gmCls(g,i), title:g+": "+k+(k===1? " time" : " times")+(old? " · in the pre game of "+MEET[0].date.slice(8,10)+"/"+MEET[0].date.slice(5,7) : ""),
+            style:k? "background:rgba("+(old? "184,134,46" : "74,134,216")+","+a.toFixed(2)+");color:"+(a>0.55? "#fff" : old? "#5a3d0c" : "#1d3a66") : ""}, k? String(k) : "·"); }))); }
       /* the adjustment, and only the adjustment */
       const cell=h("span",{class:"pbb-c-adj"});
       if(pk && (canEd || hasAdj(r.label))){
@@ -14625,7 +14895,12 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
   try{ _clubPull(_preClub(), ()=>{ try{ if(ROWS.length) draw(); }catch(e){_quiet(e)} }); }catch(e){_quiet(e)}
   if(_scoutOpponent && window.ScoutPre && window.ScoutPre.sets){
     window.ScoutPre.sets(_scoutOpponent, null).then(res=>{
-      BASE=res.rows||[]; GAMES=orderGames((res.games||[]).filter((g,i,a)=>a.indexOf(g)===i)); derive();  /* concepts are not sets: the staff keeps them out of the playbook */ AVG=(res.avg!=null)? res.avg : null;
+      /* the games this pre game had: none played on or after its day, the ones of an earlier pre
+         game against the club first, and the rows counted again from what is left */
+      const E=_pbEras(orderGames((res.games||[]).filter((g,i,a)=>a.indexOf(g)===i)), GDATE, res.gameFiles||{}, P_DATE, MEET);
+      ERA=E.era; CUR=E.cur; LATER=E.later; GAMES=E.games;
+      BASE=(LATER.length && window.ScoutPre.pbKeep)? window.ScoutPre.pbKeep(res.rows||[], g=>!E.out[g]) : (res.rows||[]);
+      derive();  /* concepts are not sets: the staff keeps them out of the playbook */ AVG=(res.avg!=null)? res.avg : null;
       if(!ROWS.length){ tableBox.innerHTML=""; tableBox.appendChild(h("div",{class:"pbx-none"},
         res.why==="nomatch"? "The tagging holds no games against this opponent." : res.why==="empty"? "No files in the pregame folder." : "Nothing tagged for this opponent yet."));
         /* what the staff wrote is still shown, with nothing to hang it on */
@@ -15015,12 +15290,13 @@ function fillTagCounts(root){
    up the same report, so it is gone along with its parser and its cards. */
 /* The post-game team block is drawn by stats.js off the Sportscode export, so
    it waits for that file rather than assuming it is already parsed. */
-function mountGameTagging(host){
+/* the game of the report on screen, or the one given (the pre game reads an earlier game's) */
+function mountGameTagging(host, opp, date){
   const slot=h("div",{class:"rst-tagged"});
   host.appendChild(slot);
   const go=(n)=>{
     const api=window.LowenPostStats;
-    if(api&&api.mount){ try{ api.mount(slot,_scoutOpponent,_scoutDate); }catch(e){ slot.textContent="Could not read the tagging: "+(e&&e.message||e); } return; }
+    if(api&&api.mount){ try{ api.mount(slot, opp!=null? opp : _scoutOpponent, date!=null? date : _scoutDate); }catch(e){ slot.textContent="Could not read the tagging: "+(e&&e.message||e); } return; }
     if(n>40){ slot.appendChild(h("div",{class:"rst-empty"},"The tagging engine (stats.js) is not on this deploy, so the game numbers cannot be read.")); return; }
     setTimeout(()=>go(n+1),150);
   };
@@ -36127,7 +36403,7 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pbb-chip.on{background:var(--ink,#141821);color:#fff;border-color:var(--ink,#141821)}.pbb-chip.on i{color:rgba(255,255,255,.7)}
 .pbb-sep{width:1px;height:18px;background:var(--line-strong,#cfd4dc);margin:0 4px}
 .pbb-main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
-.pbb-r{display:grid;grid-template-columns:26px 92px minmax(120px,1.1fr) minmax(56px,auto) 96px 52px 64px calc(var(--ng,4)*27px) minmax(180px,1.3fr);gap:8px;align-items:center;
+.pbb-r{display:grid;grid-template-columns:26px 92px minmax(120px,1.1fr) minmax(56px,124px) 96px 52px 64px calc(var(--ng,4)*27px + var(--gsep,0px)) minmax(180px,1.3fr);gap:8px;align-items:center;
   padding:5px 8px;border-bottom:1px solid var(--line,#eef0f3);font-size:12.5px;border-left:4px solid transparent}
 .pbb-h{position:-webkit-sticky;position:sticky;top:0;z-index:2;background:var(--panel,#fff);border-bottom:2px solid var(--ink,#141821);
   font:700 10.5px 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
@@ -36162,6 +36438,52 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pbb-c-gm.hd i{background:none;height:auto;flex-direction:column;line-height:1.05;font:700 9.5px 'Oswald',sans-serif;letter-spacing:.04em;color:var(--ink-soft,#5b6472);cursor:help}
 .pbb-c-gm.hd i u{text-decoration:none;font:600 7.5px 'IBM Plex Mono',monospace;letter-spacing:0;color:var(--ink-faint,#8a93a2)}
 .pbb-c-gm.hd i u.nd{color:#c0403c;font-weight:800}
+/* the games of an earlier pre game against the club (sand) and the ones since (blue) */
+.pbb-c-gm i.sep{margin-left:7px;position:relative}
+.pbb-c-gm i.sep::before{content:"";position:absolute;left:-6px;top:-3px;bottom:-3px;width:2px;border-radius:1px;background:#b8862e}
+.pbb-c-gm i.old.z{background:rgba(184,134,46,.12)}
+.pbb-c-gm.hd i.old{color:#8a6420;background:rgba(184,134,46,.16);border-radius:4px}
+.pbb-c-gm.hd i.old u{color:#a07a36}
+.pbb-era{display:inline-flex;align-items:center;gap:5px;font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);margin-left:6px}
+.pbb-era i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.pbb-era i.o{background:rgba(184,134,46,.8)}
+.pbb-era i.n{background:rgba(74,134,216,.8);margin-left:8px}
+.pbb-later{flex-basis:100%;font:600 10.5px 'IBM Plex Mono',monospace;color:#8a6420;background:rgba(184,134,46,.10);border-radius:6px;padding:4px 8px}
+/* the earlier pre game against the club, copied a part at a time */
+.pre-copy{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 12px;padding:8px 12px;border:1px dashed rgba(184,134,46,.6);background:rgba(184,134,46,.07);border-radius:10px;font-size:12.5px}
+.pre-copy-t{font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#7a5c12}
+.pre-copy-g{font:700 12px 'IBM Plex Mono',monospace;color:#5a3d0c}
+.pre-copy-sel{font:600 12px 'IBM Plex Mono',monospace;padding:3px 6px;border-radius:6px;border:1px solid rgba(184,134,46,.6);background:var(--panel,#fff);color:var(--ink,#141821)}
+.pre-copy-b{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-left:4px}
+.pre-copy-btn{border:1px solid rgba(184,134,46,.7);background:var(--panel,#fff);color:#5a3d0c;border-radius:999px;padding:4px 11px;font:600 12px 'IBM Plex Sans',sans-serif;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.pre-copy-btn:hover:not(:disabled){background:#b8862e;color:#fff;border-color:#b8862e}
+.pre-copy-btn:disabled{opacity:.45;cursor:default}
+.pre-copy-btn i{font:600 10.5px 'IBM Plex Mono',monospace;font-style:normal;opacity:.75}
+.pre-copy-n{color:var(--ink-faint,#8a93a2);font-style:italic}
+body.dark .pre-copy-t,body.dark .pre-copy-g,body.dark .pre-copy-btn{color:#e2c48a}
+/* our last game against them, from its post game: navy, so it never reads as this pre game */
+.pre-last{border-left:4px solid #16304f}
+.pre-last-ban{background:#16304f!important}
+.pre-last-tag{font:700 10px 'IBM Plex Mono',monospace;letter-spacing:.1em;background:#c6a15b;color:#16304f;border-radius:4px;padding:2px 6px}
+.pre-last-go{margin-left:14px}
+.pre-last-who{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:10px 12px 4px}
+.pre-last-who b{font:700 15px 'Oswald',sans-serif;letter-spacing:.04em;text-transform:uppercase}
+.pre-last-who > span{font:600 12px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.pre-last-who > .pre-last-sc{font:700 14px 'IBM Plex Mono',monospace;padding:1px 8px;border-radius:6px}
+.pre-last-who > .pre-last-sc.w{background:rgba(46,158,107,.14);color:#1f7a50}
+.pre-last-who > .pre-last-sc.l{background:rgba(192,64,60,.12);color:#a3332f}
+.pre-last-pick{display:inline-flex;gap:4px;flex-wrap:wrap}
+.pre-last-notes{padding:6px 12px 2px}
+.pre-last-h{font:700 11.5px 'Oswald',sans-serif;letter-spacing:.15em;text-transform:uppercase;color:#16304f;margin:6px 0 4px}
+body.dark .pre-last-h{color:#9fb8dc}
+.pre-last .pre-last-ts{margin:10px 12px 12px}
+.pre-last-ts > .rs-banner{background:#16304f!important}
+/* printed, the earlier game keeps the tab that is open, and the copy line is not printed */
+@media print{.pre-last-ts .pg-pane:not(.on){display:none!important}.pre-copy{display:none!important}}
+body.prt .pre-last-ts .pg-pane:not(.on){display:none!important}
+body.prt .pre-copy{display:none!important}
+.pbb-r > .pbb-c-call{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;justify-self:start;line-height:1.25}
+.pbb-new{font:700 9px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:#fff;background:#4a86d8;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:1px}
 @media (max-width:1100px){ .pbb .pbb-c-n{min-width:0} .pbb .pbb-c-n i{max-width:26px} }
 @media (max-width:560px){ .pbb .pbb-r{grid-template-columns:22px 62px minmax(70px,1fr) 44px 42px 46px;gap:6px} .pbb .pbb-c-vol i{max-width:14px} .pbb .pbb-c-gm{grid-column:2 / -1} }
 .pbb-c-adj{display:flex;align-items:flex-start;gap:6px;min-width:0}
@@ -36195,7 +36517,7 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pbb-note-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px}
 .pbb-note-2 i{font-style:normal;font-size:11px;color:var(--ink-faint,#8a93a2);text-transform:uppercase;letter-spacing:.06em}
 @media (max-width:1100px){ .pbb-main{grid-template-columns:minmax(0,1fr)} .pbb-key{position:static}
-  .pbb-r{grid-template-columns:24px 70px minmax(90px,1fr) 56px 46px 52px calc(var(--ng,4)*27px);row-gap:3px} .pbb-c-call{display:none} .pbb-c-adj{grid-column:2 / -1} .pbb-h .pbb-c-adj{display:none} }
+  .pbb-r{grid-template-columns:24px 70px minmax(90px,1fr) 56px 46px 52px calc(var(--ng,4)*27px + var(--gsep,0px));row-gap:3px} .pbb-c-call{display:none} .pbb-c-adj{grid-column:2 / -1} .pbb-h .pbb-c-adj{display:none} }
 
 /* post game / practice: the trainings between two games, folded */
 .ym-trg{margin:3px 0}
