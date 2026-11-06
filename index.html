@@ -20962,8 +20962,30 @@ function _lgSetHelp(box, text){
   if(!t.querySelector(".lg-help-i")) t.appendChild(h("i",{class:"lg-help-i"},"?"));
   return box;
 }
+/* BY KEYBOARD (audit of 7/11/2026). A heading that sorts, a row that picks a club and a game
+   that opens its sheet answered the mouse only. Whatever in the league shows the hand takes
+   the focus now, and Enter or Space does what the click does. Marked once (data-kb); the
+   panels draw themselves again as their feeds land, so the screen is watched and marked anew. */
+function _lgKb(root){
+  if(!root) return;
+  root.querySelectorAll("th, tr, .lg-g, .lg-euro-row").forEach(x=>{
+    if(x.hasAttribute("data-kb") || x.hasAttribute("tabindex")) return;
+    let cur=""; try{ cur=getComputedStyle(x).cursor; }catch(e){ return; }
+    if(cur!=="pointer") return;
+    x.setAttribute("tabindex","0"); x.setAttribute("data-kb","1");
+  });
+}
+function _lgKbWatch(root){
+  if(!root || root.__kbMo) return;
+  try{ root.__kbMo=new MutationObserver(()=>{ clearTimeout(root.__kbT); root.__kbT=setTimeout(()=>_lgKb(root), 250); });
+    root.__kbMo.observe(root, { childList:true, subtree:true }); }catch(e){_quiet(e)}
+}
+try{ document.addEventListener("keydown", e=>{
+  if(e.key!=="Enter" && e.key!==" ") return;
+  const t=e.target; if(!t || !t.hasAttribute || !t.hasAttribute("data-kb")) return;
+  e.preventDefault(); t.click(); }); }catch(e){_quiet(e)}
 function _lgPanel(title, right, help){
-  const t=h("span",{class:help?"lg-help":"", title:help||""}, title);
+  const t=h("span",{class:help?"lg-help":"", title:help||"", role:"heading", "aria-level":"4"}, title);
   if(help) t.appendChild(h("i",{class:"lg-help-i"},"?"));
   const head=h("div",{class:"lg-h"}, t);
   if(right) head.appendChild(right);
@@ -24255,6 +24277,7 @@ function _lgEuro(L){
         h("span",{class:"lg-md-sc"}, done? (g.hs+" : "+g.as) : (g.time||"–")),
         h("span",{class:"lg-md-t"+(done&&g.as>g.hs?" win":"")}, g.away||"")));
     });
+    if(week.length && !(byComp[c]||[]).length) col.appendChild(h("div",{class:"lg-euro-none"},"No game this week"));
     wrap.appendChild(col);
   });
   box.appendChild(wrap);
@@ -31046,8 +31069,8 @@ function renderLeague(){
     return;
   }
   /* THE LEAGUE ANALYSIS, cut into the questions it answers, each under its own heading. */
-  const L1=(title, sub, tools)=>h("div",{class:"lg-l1"}, h("b",{}, title), sub? h("span",{}, sub) : null, tools? h("span",{class:"lg-l1-t"}, tools) : null);
-  const L2=title=>h("div",{class:"lg-l2"}, title);
+  const L1=(title, sub, tools)=>h("div",{class:"lg-l1", role:"heading", "aria-level":"2"},h("b",{}, title), sub? h("span",{}, sub) : null, tools? h("span",{class:"lg-l1-t"}, tools) : null);
+  const L2=title=>h("div",{class:"lg-l2", role:"heading", "aria-level":"3"}, title);
   const add=(el, top)=>{ try{ root.appendChild(top===false? el : h("div",{style:"margin-top:12px"}, el)); }catch(e){_quiet(e)} };
   root.appendChild(L1("League analysis", "every club, from the league's feed"));
   root.appendChild(L2("Results and the table"));
@@ -31070,6 +31093,8 @@ function renderLeague(){
   root.appendChild(L2("Rebounding"));
   add(_lgReb(L));
   add(_lgFold(L,"diag","the reader \u2014 what loaded and what did not",()=>_lgDiag(L)));
+  /* by keyboard: what answers a click answers Enter and Space */
+  _lgKbWatch(root); _lgKb(root);
   if(!(L.four||[]).length && !_lgFourTried && !_lgFourBusy && !L.demo) syncFour(false);
   else _lgFourFresh(L);
 }
@@ -44355,6 +44380,61 @@ body.edit-mode .phx.phx .roster-columns .card .rm-x:hover{opacity:1}
 /* where the fixtures come from, said out loud */
 /* the Games-sheet panel and the Fixtures line these dressed are gone: DB_Games is
    the schedule and there is nothing to say about where it came from. */
+
+/* ==== LEAGUE · READABLE IN BOTH THEMES, BY KEYBOARD AND BY FINGER (audit of 7/11/2026) ====
+   The light theme keeps its look; what changes is what did not reach the contrast a figure
+   needs (WCAG AA: 4.5 to 1 for text, 3 to 1 for large text). In the dark theme the panels
+   that used --panel-2 fell back to the light grey written beside it - the token only exists
+   inside the player cards - so League · average in Game pace and the calendar's days were
+   light text on near white; and the greens and reds were the light theme's, too dark for a
+   dark panel. */
+:root{--gold-ink:#7a5c12}
+body.dark{--perf-hi:#4fc08d;--perf-lo:#ff8a7e;--gold-ink:var(--accent)}
+body.dark #viewLeague,body.dark .lg-emb,body.dark .lgg-back{--panel-2:#1c222c}
+/* the rank beside a figure, and the three big ranks of the team analysis */
+.lg-rk{color:var(--gold-ink)}
+.lg-4f-r{color:var(--gold-3,#a9812f)}
+body.dark .lg-4f-r{color:var(--accent)}
+body.dark .lg-4f-c.bad .lg-4f-r{color:var(--perf-lo)}
+body.dark .lg-4f-c.good .lg-4f-r{color:var(--perf-hi)}
+/* a player under the minimum sample: muted in one grey, not faded to half */
+.lg-rost tr.thin td{opacity:1}
+.lg-rost tr.thin td,.lg-rost tr.thin td *{color:var(--ink-faint)}
+/* our row: the position in a grey that holds on the gold */
+.lg-tbl tr.ours td.lg-pos{color:var(--ink-soft)}
+/* results in the calendar and the availability marks: white on a deeper green and red */
+.lg-g.w{background:#23806b}
+.lg-g.l{background:#c4413d}
+.avl-t th.avl-gh i.w{background:#23806b}
+.avl-t th.avl-gh i.l{background:#c4413d}
+.avl-t td.avl-g span.x,.avl-t td.avl-g.n{color:#b3302a}
+body.dark .avl-t td.avl-g span.x,body.dark .avl-t td.avl-g.n{color:var(--perf-lo)}
+.rt-pk-g{opacity:.92}
+.lg-key-t{opacity:1}
+/* the greens and reds written straight into the tables, in the dark theme */
+body.dark :is(.tpt-n b.up,.tpt-t td.up,.reb-fig b.up,.reb-t td.up,.reb-lg td.up,.pace-v .pbd-n b.up,.pace-v td.pnum.fast,.pace-vleg em.up,.pace-kv .fast em,.pace-post-t small.fast,.pace-post-t td.pace-sc2.up b){color:var(--perf-hi)}
+body.dark :is(.tpt-n b.dn,.tpt-t td.dn,.reb-fig b.dn,.reb-t td.dn,.reb-lg td.dn,.pace-v .pbd-n b.dn,.pace-v td.pnum.slow,.pace-vleg em.dn,.pace-kv .slow em,.pace-post-t small.slow,.pace-post-t td.pace-sc2.dn b){color:var(--perf-lo)}
+body.dark .reb-edge.up{color:var(--perf-hi)}
+body.dark .reb-edge.dn{color:var(--perf-lo)}
+body.dark .rx-ex.g b{color:var(--perf-hi)}
+body.dark .rx-ex.r b{color:var(--perf-lo)}
+.lg-tbl tr.ours td.neg{color:#b3302a}
+body.dark .lg-tbl tr.ours td.neg{color:var(--perf-lo)}
+/* the game picked in the rotation: in the dark theme the pill is light, so its words are dark */
+body.dark .rt-pk.on{color:#14181f}
+body.dark .rt-pk.on .rt-pk-g{color:#14181f;opacity:.75}
+body.dark .pace-tbl th.pace-go{color:#7dbbe2}
+body.dark .pace-tbl th.pace-gd{color:#e2a466}
+/* a competition with no game in the week says so */
+.lg-euro-none{font:500 11.5px 'IBM Plex Mono',monospace;color:var(--ink-faint);padding:6px 0}
+/* by keyboard: a sortable heading and a row that opens something take the focus and show it */
+#viewLeague [data-kb]:focus-visible,.lg-emb [data-kb]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+/* by finger: the toggles, chips and game picks are at least 32 px high on a touch screen */
+@media (pointer:coarse){
+  #viewLeague .lg-seg-b,.lg-emb .lg-seg-b{min-height:32px;padding-inline:11px}
+  #viewLeague .sc-chip,.lg-emb .sc-chip,#viewLeague .rt-pk,.lg-emb .rt-pk{min-height:32px}
+  #viewLeague .lg-tbl th,.lg-emb .lg-tbl th{padding-block:9px}
+}
 </style>
 
 <style id="phoneLast">
