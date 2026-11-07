@@ -5051,7 +5051,7 @@
       ".sx-cell.sx-tot{background:var(--accent-soft);color:var(--ink)}",
       ".sx-vol{font-weight:700;color:#12161d}",
       ".sx-vol.b0{background:var(--b0)}.sx-vol.b1{background:var(--b1)}.sx-vol.b2{background:var(--b2)}",
-      ".sx-vol.b3{background:var(--b3)}.sx-vol.b4{background:var(--b4);color:#fff}.sx-vol.b5{background:var(--b5);color:#fff}",
+      ".sx-vol.b3{background:var(--b3)}.sx-vol.b4{background:var(--b4)}.sx-vol.b5{background:var(--b5);color:#fff}",
       ".sx-gauge{margin:14px 0 18px}",
       ".sx-gtop{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:6px;flex-wrap:wrap}",
       ".sx-gname{font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}",

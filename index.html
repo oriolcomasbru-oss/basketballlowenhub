@@ -20962,28 +20962,46 @@ function _lgSetHelp(box, text){
   if(!t.querySelector(".lg-help-i")) t.appendChild(h("i",{class:"lg-help-i"},"?"));
   return box;
 }
-/* BY KEYBOARD (audit of 7/11/2026). A heading that sorts, a row that picks a club and a game
-   that opens its sheet answered the mouse only. Whatever in the league shows the hand takes
-   the focus now, and Enter or Space does what the click does. Marked once (data-kb); the
-   panels draw themselves again as their feeds land, so the screen is watched and marked anew. */
-function _lgKb(root){
-  if(!root) return;
-  root.querySelectorAll("th, tr, .lg-g, .lg-euro-row").forEach(x=>{
-    if(x.hasAttribute("data-kb") || x.hasAttribute("tabindex")) return;
-    let cur=""; try{ cur=getComputedStyle(x).cursor; }catch(e){ return; }
-    if(cur!=="pointer") return;
+/* BY KEYBOARD, EVERYWHERE (audit of 7/11/2026). A heading that sorts, a row that opens a game,
+   a folded banner, a card that opens its video answered the mouse only - the lists of Pre game,
+   Post game and Game plan could not be opened without one. Whatever shows the hand takes the
+   focus now, and Enter or Space does what the click does. An element inside another that shows
+   the hand is left to its parent, buttons and links already have it, and nothing being written
+   in is touched. The page is watched: what is drawn later is marked as it arrives, only what
+   was added, so typing in a report costs nothing. */
+const _KB_NATIVE=/^(BUTTON|A|SELECT|INPUT|TEXTAREA|SUMMARY|LABEL|OPTION|IFRAME|VIDEO|AUDIO)$/;
+function _kbMark(root){
+  if(!root || root.nodeType!==1 || !root.isConnected) return;
+  try{ if(root.closest('[contenteditable="true"]')) return; }catch(e){ return; }
+  const cur=new Map(), curOf=el=>{ if(!el || el.nodeType!==1) return ""; if(cur.has(el)) return cur.get(el);
+    let c=""; try{ c=getComputedStyle(el).cursor; }catch(e){_quiet(e)} cur.set(el, c); return c; };
+  const list=[root].concat(Array.prototype.slice.call(root.querySelectorAll("*")));
+  list.forEach(x=>{
+    if(x.hasAttribute("data-kb") || x.hasAttribute("tabindex") || _KB_NATIVE.test(x.tagName) || x.isContentEditable) return;
+    if(curOf(x)!=="pointer" || curOf(x.parentElement)==="pointer") return;
+    if(x.parentElement && x.parentElement.closest('button,a,summary,label,[contenteditable="true"]')) return;
     x.setAttribute("tabindex","0"); x.setAttribute("data-kb","1");
   });
 }
-function _lgKbWatch(root){
-  if(!root || root.__kbMo) return;
-  try{ root.__kbMo=new MutationObserver(()=>{ clearTimeout(root.__kbT); root.__kbT=setTimeout(()=>_lgKb(root), 250); });
-    root.__kbMo.observe(root, { childList:true, subtree:true }); }catch(e){_quiet(e)}
-}
-try{ document.addEventListener("keydown", e=>{
-  if(e.key!=="Enter" && e.key!==" ") return;
-  const t=e.target; if(!t || !t.hasAttribute || !t.hasAttribute("data-kb")) return;
-  e.preventDefault(); t.click(); }); }catch(e){_quiet(e)}
+(function(){
+  const pend=new Set(); let t=0;
+  const run=()=>{ t=0; const all=Array.from(pend); pend.clear();
+    all.forEach(n=>{ try{ if(!all.some(o=>o!==n && o.contains(n))) _kbMark(n); }catch(e){_quiet(e)} }); };
+  const start=()=>{
+    try{ new MutationObserver(recs=>{ recs.forEach(r=>r.addedNodes.forEach(n=>{ if(n.nodeType===1) pend.add(n); }));
+        if(pend.size && !t) t=setTimeout(run, 300); })
+      .observe(document.body, { childList:true, subtree:true }); }catch(e){_quiet(e)}
+    const ws=document.getElementById("workspace")||document.body;
+    (window.requestIdleCallback||function(f){ return setTimeout(f, 600); })(()=>_kbMark(ws));
+  };
+  if(document.body) start(); else document.addEventListener("DOMContentLoaded", start);
+  document.addEventListener("keydown", e=>{
+    if(e.key!=="Enter" && e.key!==" ") return;
+    const el=e.target; if(!el || !el.hasAttribute || !el.hasAttribute("data-kb")) return;
+    e.preventDefault();
+    el.dispatchEvent(new MouseEvent("click", { bubbles:true, cancelable:true, view:window }));
+  });
+})();
 function _lgPanel(title, right, help){
   const t=h("span",{class:help?"lg-help":"", title:help||"", role:"heading", "aria-level":"4"}, title);
   if(help) t.appendChild(h("i",{class:"lg-help-i"},"?"));
@@ -31093,8 +31111,6 @@ function renderLeague(){
   root.appendChild(L2("Rebounding"));
   add(_lgReb(L));
   add(_lgFold(L,"diag","the reader \u2014 what loaded and what did not",()=>_lgDiag(L)));
-  /* by keyboard: what answers a click answers Enter and Space */
-  _lgKbWatch(root); _lgKb(root);
   if(!(L.four||[]).length && !_lgFourTried && !_lgFourBusy && !L.demo) syncFour(false);
   else _lgFourFresh(L);
 }
@@ -36157,8 +36173,8 @@ body.dark .lg-g.c-lg{--c-fill:#39414f}
 body.dark .lg-g.c-pk{--c-hue:#4a9fd4;--c-fill:#2b6f9e}
 body.dark .lg-g.c-po{--c-hue:#d99a3c;--c-fill:#9a5a16}
 body.dark .lg-g.c-eu{--c-hue:#9b85e8;--c-fill:#6a51c0}
-.lg-g.w{background:#2f9e86;color:#fff}
-.lg-g.l{background:#d8524e;color:#fff}
+.lg-g.w{background:#23806b;color:#fff}
+.lg-g.l{background:#c4413d;color:#fff}
 .lg-g.next{background:var(--c-fill,#1c1c1c);color:#fff}
 .lg-ckey{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:11px}
 .lg-ckey-k{display:inline-flex;align-items:center;gap:5px;color:var(--ink-soft,#6b7280)}
@@ -36534,7 +36550,7 @@ body.prt .pre-copy{display:none!important}
 .pbb.ed .pbb-ren:hover{box-shadow:0 0 0 1px var(--line-strong,#cfd4dc);background:#fff}
 .pbb.ed .pbb-ren:focus{background:#fff;box-shadow:0 0 0 2px var(--gold-1,#d8b877)}
 .pbb.ed .pbb-ren:hover::after{content:" ✎";font-size:11px;color:var(--ink-faint,#8a93a2)}
-.pbb-k .adj{font:700 9.5px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;background:#2f9e86;color:#fff;border-radius:3px;padding:1px 4px}
+.pbb-k .adj{font:700 9.5px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;background:#23806b;color:#fff;border-radius:3px;padding:1px 4px}
 .pbb-notes{margin-top:14px}
 .pbb-notes details > summary{display:inline-flex;align-items:center;gap:8px;font:700 11px/1 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;
   border:1.5px solid var(--line-strong,#cfd4dc);border-radius:8px;padding:6px 13px;cursor:pointer;list-style:none}
@@ -36605,7 +36621,7 @@ body.prt .pre-copy{display:none!important}
 .ui-group{min-width:0}
 .ui-group-h{display:flex;align-items:center;gap:8px;border-bottom:0;padding:0;margin:0 0 6px}
 .ui-group-h b{font:700 11px 'Oswald',sans-serif;letter-spacing:.15em;text-transform:uppercase;color:#fff;background:var(--ink,#141821);border-radius:5px;padding:4px 9px}
-.ui-group.good .ui-group-h b{background:#2f9e86}.ui-group.bad .ui-group-h b{background:#d8524e}
+.ui-group.good .ui-group-h b{background:#23806b}.ui-group.bad .ui-group-h b{background:#c4413d}
 .ui-group-h span{font:600 11px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
 .ui-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:7px}
 .ui-card{display:flex;flex-direction:column;gap:2px;min-width:0;border-radius:10px;padding:8px 10px 7px;background:var(--panel-2,#f4f5f7);border-top:3px solid var(--line-strong,#cfd4dc)}
@@ -37604,7 +37620,7 @@ body.edit-mode .phx.pre-roles .pre-lock{bottom:24px}
 .phx.pre-roles .vb-tile.vb-key{box-shadow:0 0 0 3px #1f4e9a}
 .phx.pre-roles .vb-tile.vb-stop{box-shadow:0 0 0 3px #c62828}
 .phx.pre-roles .vb-tile.vb-key .vb-hlb{background:#1f4e9a;color:#fff}
-.phx.pre-roles .vb-tile.vb-stop .vb-hlb{background:#d8524e;color:#fff}
+.phx.pre-roles .vb-tile.vb-stop .vb-hlb{background:#c4413d;color:#fff}
 .phx.pre-phx .pos-col-over{outline:1px dashed var(--gold,#c9a227);outline-offset:3px;border-radius:4px}
 /* Out of the bar, where it was a number nobody reads twenty times a day. It is still
    written into the element and still shown in Settings, under "App build", which is
@@ -39052,7 +39068,7 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-set .vol i{display:block;height:100%;background:#4a86d8}
 .dash-set u{flex:none;text-decoration:none;font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);min-width:16px;text-align:right}
 .dash-set em{flex:none;font:800 11px 'IBM Plex Mono',monospace;font-style:normal;border-radius:10px;padding:1px 7px;background:var(--panel-2,#f1f2f4)}
-.dash-set em.hi{background:#d8524e;color:#fff}.dash-set em.lo{background:#2f9e86;color:#fff}
+.dash-set em.hi{background:#c4413d;color:#fff}.dash-set em.lo{background:#23806b;color:#fff}
 @media (max-width:1000px){ .dash-3{grid-template-columns:minmax(0,1fr)} .dash-sub + .dash-sub{border-left:0;padding-left:0;border-top:1px solid var(--line,#e4e7ec);padding-top:10px} }
 /* the staff's main points over the post game overview */
 .pg-main{border:1px solid rgba(198,161,91,.55);background:rgba(198,161,91,.08);border-radius:11px;padding:10px 12px;margin:0 0 12px}
@@ -39314,7 +39330,7 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 }
 .dop-mm .pgmc-c.on .pgmc-k,.dop-mm .pgmc-c.on .pgmc-e{max-width:34px}
 .dop-mm .pgmc-c.on{height:auto}.dop-mm .pgmc-c.on .lg-bdg.pgmc-f{max-width:34px}
-.pgmc-c.st.up{background:#2f9e86;color:#fff}.pgmc-c.st.dn{background:#d8524e;color:#fff}.pgmc-c.st.av{background:var(--panel-2,#e9ecf0)}
+.pgmc-c.st.up{background:#23806b;color:#fff}.pgmc-c.st.dn{background:#c4413d;color:#fff}.pgmc-c.st.av{background:var(--panel-2,#e9ecf0)}
 .dash-pg{display:grid;gap:12px}
 .dash-pg .row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
 @media screen and (max-width:760px){ .dash-pg .row2{grid-template-columns:1fr} }
@@ -39359,7 +39375,7 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-ks .use u{text-decoration:none;font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
 .dash-ks .use small{font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
 .dash-ks em{font:800 11px 'IBM Plex Mono',monospace;font-style:normal;border-radius:10px;padding:1px 0;text-align:center;background:var(--panel-2,#f1f2f4)}
-.dash-ks em.hi{background:#d8524e;color:#fff}.dash-ks em.lo{background:#2f9e86;color:#fff}
+.dash-ks em.hi{background:#c4413d;color:#fff}.dash-ks em.lo{background:#23806b;color:#fff}
 .dash-ks .gm{display:flex;gap:2px}
 .dash-ks .gm i{flex:0 0 24px;height:18px;border-radius:4px;display:flex;align-items:center;justify-content:center;font:700 11px 'IBM Plex Mono',monospace;font-style:normal;background:var(--panel-2,#f1f3f6);color:var(--ink-faint,#8a93a2)}
 .dash-ks .gm i.z{opacity:.55}
@@ -39484,11 +39500,11 @@ body.dop-measure #print-area{display:block;position:fixed;left:-99999px;top:0}
 .dash-mins .c.hi{background:rgba(217,165,33,.25);color:#7a5c12}.dash-mins .c.lo{opacity:.55}.dash-mins .c.dnp{background:transparent;color:var(--ink-faint,#cfd4dc)}
 .dash-mins .c.s{background:transparent;border:1px solid var(--line,#e4e7ec)}.dash-mins .c.fl{background:transparent;font-size:11px}.dash-mins .c.fl.hi{background:rgba(217,165,33,.25)}
 .dash-av7 .c.ok{background:rgba(47,158,134,.12);color:#17805a}
-.dash-av7 .c.out{background:#d8524e;color:#fff}.dash-av7 .c.limited,.dash-av7 .c.lim{background:rgba(217,165,33,.3);color:#7a5c12}
+.dash-av7 .c.out{background:#c4413d;color:#fff}.dash-av7 .c.limited,.dash-av7 .c.lim{background:rgba(217,165,33,.3);color:#7a5c12}
 .dash-av7 .c:not(.ok):not(.out){background:rgba(217,165,33,.3);color:#7a5c12}
 .dash-vsum{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
 .dash-vsum span{font:700 11px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;border-radius:999px;padding:3px 10px;background:var(--panel-2,#f1f2f4)}
-.dash-vsum .bad{background:#d8524e;color:#fff}.dash-vsum .warn{background:rgba(217,165,33,.3);color:#7a5c12}.dash-vsum .good{background:rgba(47,158,134,.16);color:#17805a}
+.dash-vsum .bad{background:#c4413d;color:#fff}.dash-vsum .warn{background:rgba(217,165,33,.3);color:#7a5c12}.dash-vsum .good{background:rgba(47,158,134,.16);color:#17805a}
 .dash-vt{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:10px}
 @media (max-width:640px){ .dash-vt{grid-template-columns:minmax(0,1fr)} }
 .dash-vg{border:1px solid var(--line,#e4e7ec);border-radius:10px;padding:8px 10px;display:grid;gap:4px;align-content:start}
@@ -39499,8 +39515,8 @@ body.dop-measure #print-area{display:block;position:fixed;left:-99999px;top:0}
 .dash-vr .inf{grid-column:3;font:500 11px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);overflow-wrap:anywhere}
 .dash-vr .inf:empty{display:none}
 .dash-vr .pill{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase;text-align:center;border-radius:999px;padding:2px 6px;background:var(--panel-2,#f1f2f4);color:var(--ink-soft,#5b6472)}
-.dash-vr.late .pill{background:#d8524e;color:#fff}.dash-vr.today .pill,.dash-vr.soon .pill{background:#d9a521;color:#fff}
-.dash-vr.ok .pill{background:#2f9e86;color:#fff}.dash-vr.dlate .pill{background:rgba(217,165,33,.3);color:#7a5c12}
+.dash-vr.late .pill{background:#c4413d;color:#fff}.dash-vr.today .pill,.dash-vr.soon .pill{background:#d9a521;color:#fff}
+.dash-vr.ok .pill{background:#23806b;color:#fff}.dash-vr.dlate .pill{background:rgba(217,165,33,.3);color:#7a5c12}
 .dash-vr:not(:has(.dash-tick)){grid-template-columns:78px minmax(0,1fr)}.dash-vr:not(:has(.dash-tick)) .inf{grid-column:2}
 .dash-tick{width:20px;height:20px;border-radius:5px;border:1.5px solid var(--line-strong,#cfd4dc);background:var(--panel,#fff);cursor:pointer;font:800 12px/1 sans-serif;color:#fff;padding:0}
 .dash-tick.on{background:#2f9e86;border-color:#2f9e86}
@@ -39589,7 +39605,7 @@ body.dark .dash-kf .row.trn em{border-color:rgba(255,255,255,.28)}
 /* the video cells: a tick in a circle, not a button - green done, red ring late, amber due */
 .dash-vm .vc,.ow-parts .vc{justify-self:center;display:inline-grid;place-items:center;min-width:30px;height:24px;padding:0 6px;border-radius:999px;font:700 11px 'IBM Plex Mono',monospace;border:2px solid var(--line,#e4e7ec);background:transparent;color:var(--ink-faint,#8a93a2);white-space:nowrap;box-sizing:border-box}
 .dash-vm button.vc,.ow-parts button.vc{cursor:pointer}.dash-vm button.vc:hover{border-color:#c6a15b}
-.dash-vm .vc.ok,.ow-parts .vc.ok{background:#2f9e86;border-color:#2f9e86;color:#fff;font-size:13px}
+.dash-vm .vc.ok,.ow-parts .vc.ok{background:#23806b;border-color:#23806b;color:#fff;font-size:13px}
 .dash-vm .vc.dlate,.ow-parts .vc.dlate{background:#7cc3b3;border-color:#7cc3b3;color:#fff;font-size:13px}
 .dash-vm .vc.late,.ow-parts .vc.late{border-color:#d8524e;color:#c0403c;background:rgba(216,82,78,.08)}
 .dash-vm .vc.today,.dash-vm .vc.soon,.ow-parts .vc.today,.ow-parts .vc.soon{border-color:#d9a521;color:#9a6f0c;background:rgba(217,165,33,.1)}
@@ -39782,7 +39798,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .modal-doubt{display:inline-block;vertical-align:middle;margin-left:8px;font:700 11px 'Oswald',sans-serif;letter-spacing:.1em;padding:2px 8px;border-radius:5px;background:#d9a521;color:#141821}
 .modal-doubt.out{background:#5b6472;color:#fff}
 .modal-hl{display:inline-block;vertical-align:middle;margin-left:10px;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;padding:3px 10px;border-radius:999px}
-.modal-hl.key{background:#1f4e9a;color:#fff}.modal-hl.stop{background:#d8524e;color:#fff}
+.modal-hl.key{background:#1f4e9a;color:#fff}.modal-hl.stop{background:#c4413d;color:#fff}
 .modal-box.hl-key{box-shadow:0 0 0 4px #1f4e9a,0 20px 60px rgba(0,0,0,.35)!important}.modal-box.hl-stop{box-shadow:0 0 0 4px #c62828,0 20px 60px rgba(0,0,0,.35)!important}
 /* OUT: he will not play - the card in grey, its OUT badge in full colour */
 /* trends: paint touches, every game */
@@ -39942,7 +39958,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .adm-cs{display:inline-block;padding:1px 8px;border-radius:9px;font:700 11px 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}.adm-cs.ok{background:#e3f4e8;color:#1f7a3d}.adm-cs.bad{background:#fde6e6;color:#b42318}.adm-cs.wait{color:#888}
 .adm-type.co{background:rgba(20,24,33,.08)}.adm-type.pl{background:rgba(74,134,216,.14);color:#1e5aa8}
 .adm-acc-t .btn.sm{padding:3px 9px;font-size:11px}
-.adm-acc-t .adm-del{background:transparent;border:1px solid rgba(216,82,78,.5);color:#c0392b}.adm-acc-t .adm-del:hover{background:#d8524e;color:#fff}
+.adm-acc-t .adm-del{background:transparent;border:1px solid rgba(216,82,78,.5);color:#c0392b}.adm-acc-t .adm-del:hover{background:#c4413d;color:#fff}
 .adm-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0 10px}.adm-chips-l{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472);min-width:150px}
 .adm-chip{cursor:pointer;position:relative}.adm-chip input{position:absolute;opacity:0;pointer-events:none}
 .adm-chip span{display:inline-block;padding:4px 10px;border-radius:14px;border:1px solid var(--line,#dfe2e7);font-size:12px;color:var(--ink-faint,#8a93a2);background:var(--panel,#fff)}
@@ -40347,14 +40363,14 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 @media (max-width:900px){ .dash-pend-g{grid-template-columns:repeat(2,minmax(0,1fr))} }
 .dash-pend{border:1px solid var(--line,#e4e7ec);border-radius:10px;padding:8px 10px;min-width:0}
 .dash-pend-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.dash-pend-h b{font:700 11px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase}
-.dash-pend-h span{font:800 11px 'IBM Plex Mono',monospace;background:#d8524e;color:#fff;border-radius:999px;padding:0 7px}
+.dash-pend-h span{font:800 11px 'IBM Plex Mono',monospace;background:#c4413d;color:#fff;border-radius:999px;padding:0 7px}
 .dash-pend-r{display:flex;align-items:center;gap:8px;padding:4px 0;border-top:1px solid var(--line,#eef0f3)}
 .dash-pend-r > div{flex:1;min-width:0}.dash-pend-r b{display:block;font-size:12px}.dash-pend-r span{font-size:11px;color:var(--ink-faint,#8a919c)}
 .dash-pend-r.rev{background:rgba(217,165,33,.08)}
 .dash-pend-b{display:flex;gap:4px;flex-wrap:wrap}
 .dash-pend-more{margin-top:8px;border:0;background:none;color:var(--ink-soft,#5b6472);font:600 11px Inter,system-ui,sans-serif;cursor:pointer;padding:2px 0}
 .dash-pend-hid{border:1px dashed var(--line-strong,#d7dbe0);border-radius:9px;padding:4px 10px;margin-top:4px;opacity:.85}
-.dash-gp.ok{background:#2f9e86;color:#fff;border-color:#2f9e86}
+.dash-gp.ok{background:#23806b;color:#fff;border-color:#23806b}
 .wip-tag.sm{margin-left:4px;padding:0 5px;font-size:9px}
 .gp5-wip{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ink-soft,#5b6472)}
 .gp5-wip .wip-tag{margin-left:0}
@@ -40417,7 +40433,7 @@ body.dark .gp5 tr.gp5-rt td.v.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp5-tired>b{font:800 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#9a5b00}
 .gp5-tp{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:#f0b34a;color:#3a2400;font:800 13px Inter,system-ui,sans-serif;animation:gpTired 1.2s ease-in-out infinite}
 .gp5-tp em{font-style:normal;font-weight:700;opacity:.8}
-.gp5-tp.long{background:#d8524e;color:#fff}
+.gp5-tp.long{background:#c4413d;color:#fff}
 .gp5 em.tired{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;background:#f0b34a;color:#3a2400;font:800 10.5px Inter,system-ui,sans-serif;letter-spacing:.06em;font-style:normal;animation:gpTired 1.2s ease-in-out infinite}
 @keyframes gpTired{0%,100%{opacity:1}50%{opacity:.55}}
 /* their sets: one tile a set, the code big, the call under it; the out-of-bounds plays apart */
@@ -40473,7 +40489,7 @@ body.dark .gp5 tr.gp5-rt td.v.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp5-onp em{font:800 12px 'IBM Plex Mono',monospace;font-style:normal;color:#1f8a4c}
 .gp5-onp i{font:600 10.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a919c)}
 .gp5-onp.long{border-color:rgba(214,150,30,.6);background:rgba(214,150,30,.14)}.gp5-onp.long em{color:#a86a00}
-.gp5-now b{position:absolute;top:-2px;left:3px;font:800 10px 'IBM Plex Mono',monospace;background:#d8524e;color:#fff;border-radius:3px;padding:0 3px;white-space:nowrap}
+.gp5-now b{position:absolute;top:-2px;left:3px;font:800 10px 'IBM Plex Mono',monospace;background:#c4413d;color:#fff;border-radius:3px;padding:0 3px;white-space:nowrap}
 .gp5 .gp4-set{white-space:normal}
 .gp5 .gp4-setg{grid-template-columns:minmax(0,1fr)!important;gap:3px}
 .gp5 .gp4-sec{overflow:visible}
@@ -40799,9 +40815,9 @@ body.dark .gp9-five .pl.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp5-t td.st.long{color:#a86a00}
 .gp5-t tr.on td{background:rgba(31,138,76,.13)}
 .gp5-t tr.on td.nm{box-shadow:inset 3px 0 0 #1f8a4c}
-.gp5-t td.pf.hot{background:#d8524e;color:#fff;font-weight:800}
+.gp5-t td.pf.hot{background:#c4413d;color:#fff;font-weight:800}
 .gp5-t td.pf.most{background:#f6c3bf;color:#7a1511;font-weight:800}
-.gp5 tr.gp5-rt td.v.mgc.good{background:#2f9e86;color:#fff}.gp5 tr.gp5-rt td.v.mgc.bad{background:#d8524e;color:#fff}
+.gp5 tr.gp5-rt td.v.mgc.good{background:#23806b;color:#fff}.gp5 tr.gp5-rt td.v.mgc.bad{background:#c4413d;color:#fff}
 .gp5 tr.gp5-rt.rb td.v b{font-size:11px}
 /* the labels of the minute rows on one line, never over the cells */
 .gp5 tr.gp5-rt td.gp2-pos{white-space:nowrap;font-size:10.5px!important;letter-spacing:.02em;overflow:visible;text-overflow:clip}
@@ -40827,7 +40843,7 @@ body.dark .gp9-five .pl.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp-live-tab.off{opacity:.35;cursor:default}
 .gp-conn{margin:0 0 6px;padding:4px 10px;border-radius:7px;font:700 11px 'IBM Plex Mono',monospace}
 .gp-conn.ok{background:rgba(31,138,76,.12);color:#1f8a4c}
-.gp-conn.bad{background:#d8524e;color:#fff;animation:gpConn 1s ease-in-out infinite}
+.gp-conn.bad{background:#c4413d;color:#fff;animation:gpConn 1s ease-in-out infinite}
 .gp-conn{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .gp-conn.wait{background:var(--panel-2,#f4f5f7);color:var(--ink-soft,#5b6472)}
 .gp-conn-b{margin-left:auto;border:1px solid currentColor;background:transparent;color:inherit;border-radius:6px;padding:1px 9px;font:700 11px Inter,system-ui,sans-serif;cursor:pointer}
@@ -40907,7 +40923,7 @@ body.dark .gp9-five .pl.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp4-set .vol i{display:block;height:100%;background:#4a86d8;border-radius:3px}
 .gp4-set u{text-decoration:none;font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
 .gp4-set em{font:800 11px 'IBM Plex Mono',monospace;font-style:normal;border-radius:10px;padding:1px 7px;background:var(--panel-2,#f1f2f4)}
-.gp4-set em.hi{background:#d8524e;color:#fff}.gp4-set em.lo{background:#2f9e86;color:#fff}
+.gp4-set em.hi{background:#c4413d;color:#fff}.gp4-set em.lo{background:#23806b;color:#fff}
 @media(max-width:700px){.gp4-setg{grid-template-columns:minmax(0,1fr)}}
 /* one tablet screen: plan on the left, the game down the right */
 .gp4.dash{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(320px,1fr);gap:10px;align-items:start}
@@ -40976,7 +40992,7 @@ body.dark .gp9-five .pl.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp-lv-k{display:inline-flex;flex-direction:column;background:var(--panel-2,#f4f5f7);border-radius:7px;padding:3px 9px;min-width:54px}
 .gp-lv-k i{font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
 .gp-lv-k b{font:800 14px 'Inter',system-ui,sans-serif;font-variant-numeric:tabular-nums}
-.gp-live-tab.now{border-color:#d8524e;color:#c0403c}.gp-live-tab.now.on{background:#d8524e;color:#fff}
+.gp-live-tab.now{border-color:#d8524e;color:#c0403c}.gp-live-tab.now.on{background:#c4413d;color:#fff}
 .gp-bf{display:grid;gap:2px;margin-bottom:8px}
 .gp-bf-r{display:grid;grid-template-columns:52px minmax(0,1fr) 128px minmax(0,1fr) 52px;gap:6px;align-items:center;font-size:11.5px}
 .gp-bf-r .v{font:700 11.5px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;text-align:right}
@@ -41011,7 +41027,7 @@ body.dark .gp9-five .pl.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp-live{min-width:0;border-top:1px solid var(--line,#e6e8ec);padding-top:12px}
 .gp-live-h{display:flex;align-items:baseline;gap:10px}
 .gp-live-st{font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
-.gp-live-st.on{color:#fff;background:#d8524e;border-radius:4px;padding:1px 6px}
+.gp-live-st.on{color:#fff;background:#c4413d;border-radius:4px;padding:1px 6px}
 .gp-live-tabs{display:flex;flex-wrap:wrap;gap:4px;margin:2px 0 8px}
 .gp-live-tab{font:700 11px 'Oswald',sans-serif;letter-spacing:.08em;border:1px solid var(--line-strong,#cfd4dc);background:var(--panel,#fff);color:var(--ink,#141821);border-radius:6px;padding:4px 11px;cursor:pointer}
 .gp-live-tab.on{background:var(--ink,#141821);color:var(--panel,#fff);border-color:var(--ink,#141821)}
@@ -41042,7 +41058,7 @@ body.dark .gp9-five .pl.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp3-kv b{font:700 11px 'IBM Plex Mono',monospace;color:var(--ink,#141821)}
 .gp3-kv.none{visibility:hidden}
 .gp3-ke{flex:0 0 36px;text-align:center;font:800 11px 'IBM Plex Mono',monospace;border-radius:4px;padding:1px 0;color:var(--ink,#141821);background:var(--panel-2,#eef0f3)}
-.gp3-ke.hi{background:#d8524e;color:#fff}.gp3-ke.lo{background:#2f9e86;color:#fff}
+.gp3-ke.hi{background:#c4413d;color:#fff}.gp3-ke.lo{background:#23806b;color:#fff}
 .gp3-ke.none{visibility:hidden}
 .gp3-kc{max-width:30%}
 /* THE SHEET AS IT IS PRINTED: the screen's own arrangement at a fixed width, scaled as one
@@ -44427,8 +44443,43 @@ body.dark .pace-tbl th.pace-go{color:#7dbbe2}
 body.dark .pace-tbl th.pace-gd{color:#e2a466}
 /* a competition with no game in the week says so */
 .lg-euro-none{font:500 11.5px 'IBM Plex Mono',monospace;color:var(--ink-faint);padding:6px 0}
-/* by keyboard: a sortable heading and a row that opens something take the focus and show it */
-#viewLeague [data-kb]:focus-visible,.lg-emb [data-kb]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+/* by keyboard: whatever answers a click takes the focus and shows it (see _kbMark) */
+[data-kb]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+
+/* ==== THE WHOLE APP · the same audit, everything that is not the league (7/11/2026) ====
+   --panel-2, the second neutral of a panel, was only ever defined inside the player cards: in
+   the dark theme every other panel fell back to the light grey written beside it, and its
+   text - already the dark theme's light ink - stood on near white (Trends' rankings, the
+   dashboard's minute by minute, the playbook's game boxes, the post game's figures). */
+body.dark{--panel-2:#1c222c}
+/* a result in white: on the deeper green and red the league's calendar uses */
+.dash-form i.w,.dash-form i.l{color:#fff}
+.dash-form i.w{background:#23806b}
+.dash-form i.l{background:#c4413d}
+.dash-set em.hi{background:#c4413d}
+/* small greys that sat on a tinted row: one step darker */
+.ym-ha{color:var(--ink-soft)}
+.ui-card-n{color:var(--ink-soft)}
+/* the minute by minute: its greens and reds deep enough for 9.5 px on their tint */
+.pgmc-c.g{color:#0f6b4a}
+.pgmc-c.b{color:#a3302b}
+body.dark .pgmc-c.g{color:var(--perf-hi)}
+body.dark .pgmc-c.b{color:var(--perf-lo)}
+/* the counts in the playbook's game boxes are written in the light theme's ink: light on dark */
+body.dark .pbb-c-gm i:not(.z){color:var(--ink)!important}
+/* the greens and reds written straight into Trends, the dashboard and the post game, dark theme */
+body.dark :is(.sx-table td.tr-good,.tr-rank4 .tr-rank.good .tr-rank-v,.ui-split-l b.good,sup.tr-sup.good,.miss-t td.ok,.gp-court-t tr.on td.now,.sem-p.green .sem-nm){color:var(--perf-hi)}
+body.dark :is(.sx-table td.tr-warn,.tr-warnline,.tr-rank4 .tr-rank.bad .tr-rank-v,sup.tr-sup.bad,.miss-t td.no,.ow-info > span.no,.sem-p.red .sem-nm){color:var(--perf-lo)}
+/* a heat cell keeps its light colour in the dark theme, so its figure stays dark */
+body.dark .sx-cell:is(.s1,.s2,.s3,.s4){color:#12161d}
+body.dark .pg-main-h{color:var(--accent)}
+/* headings, tabs and toggles drawn in the light theme's ink */
+body.dark .ui-group-h b{background:#2a313d;color:#fff}
+body.dark .pg-uni .sxp-tab{color:var(--ink-soft)}
+body.dark .pg-uni .sxp-tab:hover{background:rgba(255,255,255,.07);color:var(--ink)}
+body.dark .ui-fig.vol b{color:#7fb0ef}
+body.dark .ssv-wk-cell.active{background:#241f13;border-color:var(--accent)}
+body.dark .pb-toggle{background:#1c222c}
 /* by finger: the toggles, chips and game picks are at least 32 px high on a touch screen */
 @media (pointer:coarse){
   #viewLeague .lg-seg-b,.lg-emb .lg-seg-b{min-height:32px;padding-inline:11px}
