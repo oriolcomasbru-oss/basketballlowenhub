@@ -654,21 +654,26 @@
   function lyChip(m, lines, pv) {
     if (!pv) return null;
     var c = vsLast(m, lines, pv);
-    if (c.ly == null) return el("div", { class: "pd-ly na", title: ONCOURT[m.k] ? "Needs who was on the floor - not in last season's line" : "Not in last season's line" }, el("i", {}, prevLabel()), el("b", {}, "—"));
+    /* in a tile room is short: 25/26, not 2025/26 (it was cut to "2025…") */
+    var lab = prevLabel().replace(/^20(\d\d)\//, "$1/");
+    if (c.ly == null) return el("div", { class: "pd-ly na", title: ONCOURT[m.k] ? "Needs who was on the floor - not in last season's line" : "Not in last season's line" }, el("i", {}, lab), el("b", {}, "—"));
     return el("div", { class: "pd-ly " + c.tone, title: prevLabel() + " (" + [pv.team, pv.league].filter(Boolean).join(", ") + "): " + fmt(m, c.ly) + " · this season " + fmt(m, c.now) },
-      el("i", {}, prevLabel()), el("b", {}, fmt(m, c.ly)), el("u", {}, c.tone === "up" ? "▲ better" : c.tone === "dn" ? "▼ worse" : "= same"));
+      el("i", {}, lab), el("b", {}, fmt(m, c.ly)), el("u", {}, c.tone === "up" ? "▲ better" : c.tone === "dn" ? "▼ worse" : "= same"));
   }
   function tile(m, lines, pv) {
     var t = trend(m, lines, UI.period, UI.mode);
     var series = lines.map(function (x, i) { return value(m, sum(lines.slice(Math.max(0, i - 2), i + 1)), UI.mode); });
     var n = UI.period === "all" ? 5 : Math.min(5, +UI.period || 5);
-    var lastG = lines.slice(-Math.max(n, 5)).map(function (x) { var S1 = sum([x]); return { x: x, v: value(m, S1, UI.mode), sm: m.t === "rate" && small(m, S1) }; });
+    var lastG = lines.slice(-n).map(function (x) { var S1 = sum([x]); return { x: x, v: value(m, S1, UI.mode), sm: m.t === "rate" && small(m, S1) }; });
     var ref = t.base != null ? t.base : value(m, sum(lines), UI.mode);
     var gl = el("div", { class: "pd-lg" }, lastG.map(function (o) {
       var c = "";
       if (o.v != null && ref != null && m.hi != null && !o.sm) { var d = o.v - ref, th = m.pct ? 4 : Math.max(0.5, Math.abs(ref) * 0.15); if (Math.abs(d) >= th) c = (d > 0) === m.hi ? "u" : "d"; }
-      /* a game a cell: a figure of a hundred or more is written whole, so five fit in the box */
-      return el("span", { class: c + (o.sm ? " sm" : ""), title: ddmm(o.x.d) + " " + (o.x.home ? "vs " : "@ ") + o.x.opp + " · " + m.l + " " + fmt(m, o.v) }, o.v == null ? "—" : (Math.abs(o.v) >= 100 ? String(Math.round(o.v)) : fmt(m, o.v))); }));
+      /* a game a cell, as many cells as the games the period reads (Last 3: three, not five), and
+         written short so the figures never run into each other (audit of 7/11/2026: they read
+         "1.01.02.02.01.0"): a share without its %, ten or more without decimals. The whole
+         figure is in the cell's title. */
+      return el("span", { class: c + (o.sm ? " sm" : ""), title: ddmm(o.x.d) + " " + (o.x.home ? "vs " : "@ ") + o.x.opp + " · " + m.l + " " + fmt(m, o.v) }, o.v == null ? "—" : (m.pct || Math.abs(o.v) >= 10 ? String(Math.round(o.v)) : fmt(m, o.v))); }));
     return { t: t, el: el("div", { class: "pd-tile " + t.tone + (t.small ? " sm" : ""), title: (m.note ? m.note + " · " : "") + (t.base != null ? "before " + fmt(m, t.base) : "") + (t.small ? " · small sample" : "") },
       el("i", {}, m.l),
       el("div", { class: "tv" }, el("b", {}, fmt(m, t.v)),
@@ -1284,20 +1289,20 @@
       ".pd-vd.up{background:rgba(47,158,134,.16);color:#17805a}.pd-vd.dn{background:rgba(216,82,78,.14);color:#c0403c}.pd-vd.mix{background:rgba(217,165,33,.18);color:#8a6410}",
       ".pd-pcb{display:grid;gap:8px}",
       ".pd-grn{font:700 11px 'Oswald',sans-serif;letter-spacing:.13em;text-transform:uppercase;color:#7a5c12;margin-bottom:4px}",
-      ".pd-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:5px}",
+      ".pd-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:5px}",
       ".pd-tile{display:grid;grid-template-columns:minmax(0,1fr);gap:1px;border-radius:8px;padding:5px 7px 3px;background:var(--panel-2,#f4f5f7);border-top:3px solid #cfd4dc;min-width:0;overflow:hidden}.pd-tile > *{min-width:0;max-width:100%}",
-      ".pd-tile.up{background:rgba(47,158,134,.09);border-top-color:#2f9e86}.pd-tile.dn{background:rgba(216,82,78,.08);border-top-color:#d8524e}.pd-tile.sm{opacity:.55}.pd-tile.staff{border-top-style:dashed;border-top-color:#c6a15b}",
-      ".pd-tile i{font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint,#8a93a2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".pd-tile.up{background:rgba(47,158,134,.09);border-top-color:#2f9e86}.pd-tile.dn{background:rgba(216,82,78,.08);border-top-color:#d8524e}.pd-tile.sm{background:transparent;border:1px dashed var(--line-strong,#cfd4dc);border-top:3px dashed #cfd4dc}.pd-tile.sm .tv b,.pd-tile.sm .tv em{color:var(--ink-soft,#5b6472)}.pd-tile.sm svg{opacity:.45}.pd-tile.staff{border-top-style:dashed;border-top-color:#c6a15b}",
+      ".pd-tile i{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft,#5b6472);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
       ".pd-tile .tv{display:flex;align-items:baseline;gap:6px}.pd-tile .tv b{font:700 17px 'Oswald',sans-serif}.pd-tile .tv em{font:700 11px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}",
       ".pd-tile.up .tv b,.pd-tile.up .tv em{color:#17805a}.pd-tile.dn .tv b,.pd-tile.dn .tv em{color:#c0403c}",
       ".pd-tile svg{width:100%;height:28px}",
-      ".pd-lg{display:flex;gap:2px;margin-top:1px;min-width:0;overflow:hidden}.pd-lg span{flex:1 1 0;white-space:nowrap;text-overflow:clip;text-align:center;font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);background:rgba(20,24,33,.05);border-radius:3px;padding:1px 0;min-width:0;overflow:hidden}",
-      ".pd-lg span.u{background:rgba(47,158,134,.2);color:#17603f}.pd-lg span.d{background:rgba(216,82,78,.17);color:#9e302c}.pd-lg span.sm{opacity:.5}",
+      ".pd-lg{display:flex;gap:3px;margin-top:1px;min-width:0;overflow:hidden}.pd-lg span{flex:1 1 0;white-space:nowrap;text-overflow:clip;text-align:center;font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);background:rgba(20,24,33,.05);border-radius:3px;padding:1px 0;min-width:0;overflow:hidden}",
+      ".pd-lg span.u{background:rgba(47,158,134,.2);color:#17603f}.pd-lg span.d{background:rgba(216,82,78,.17);color:#9e302c}.pd-lg span.sm{background:transparent;box-shadow:inset 0 0 0 1px rgba(20,24,33,.12);color:var(--ink-soft,#5b6472)}",
       ".pd .lg-l1.pd-l1{margin:8px 0 0}",
       /* last season */
       ".pd-ly{display:flex;align-items:baseline;gap:5px;margin-top:3px;padding:2px 5px;border-radius:5px;background:rgba(20,24,33,.05);font-size:11px;min-width:0;overflow:hidden}.pd-ly i{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}",
-      ".pd-ly i{font:600 9.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}.pd-ly b{font:700 11px 'IBM Plex Mono',monospace}.pd-ly u{text-decoration:none;margin-left:auto;font:700 10px 'IBM Plex Mono',monospace;white-space:nowrap}",
-      ".pd-ly.up{background:rgba(47,158,134,.16)}.pd-ly.up u{color:#17805a}.pd-ly.dn{background:rgba(216,82,78,.13)}.pd-ly.dn u{color:#c0403c}.pd-ly.na{opacity:.55}",
+      ".pd-ly i{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}.pd-ly b{font:700 11px 'IBM Plex Mono',monospace}.pd-ly u{text-decoration:none;margin-left:auto;font:700 10px 'IBM Plex Mono',monospace;white-space:nowrap}",
+      ".pd-ly.up{background:rgba(47,158,134,.16)}.pd-ly.up u{color:#0f6b4a}.pd-ly.dn{background:rgba(216,82,78,.13)}.pd-ly.dn u{color:#c0403c}.pd-ly.na{background:transparent;box-shadow:inset 0 0 0 1px rgba(20,24,33,.1)}.pd-ly.na b{color:var(--ink-soft,#5b6472)}",
       ".pd-lysrc{font:500 10.5px 'IBM Plex Mono',monospace;color:#7a5c12}.pd-lysrc.none{color:var(--ink-faint,#8a93a2)}",
       ".pd-mx .hd.ly{color:#7a5c12}.pd-mx .c.lyc{background:transparent;border:1px dashed var(--line-strong,#cfd4dc);color:var(--ink-soft,#5b6472)}",
       ".pd-mx .c.lyc.up{border:1px solid #2f9e86;background:rgba(47,158,134,.12);color:#17603f}.pd-mx .c.lyc.dn{border:1px solid #d8524e;background:rgba(216,82,78,.1);color:#9e302c}",
