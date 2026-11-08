@@ -15090,8 +15090,26 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
       /* THE VOLUME: the share of their possessions that end in this set, drawn like the use -
          a bar against the set they run most, and the number */
       { const tot=BASE.reduce((a,x)=>a+(x.n||0),0)||1, v=100*r.n/tot, mxV=100*mx/tot;
-        row.appendChild(h("span",{class:"pbb-c-vol", title:"≈"+Math.round(v)+"% of their tagged possessions ("+r.n+" of "+tot+")"},
-          h("i",{style:"width:"+Math.max(4,Math.round(100*v/mxV))+"%"}), h("b",{}, (v<1 && v>0? "<1" : String(Math.round(v)))+"%"))); }
+        const vc=h("span",{class:"pbb-c-vol", title:"≈"+Math.round(v)+"% of their tagged possessions ("+r.n+" of "+tot+")"},
+          h("span",{class:"pbb-v1"}, h("i",{style:"width:"+Math.max(4,Math.round(100*v/mxV))+"%"}), h("b",{}, (v<1 && v>0? "<1" : String(Math.round(v)))+"%")));
+        /* THE SECOND TIME WE MEET THEM (Oriol, 8/11/2026: "pon el volumen general y luego, al ser la
+           segunda vez que los analizamos, sepárame si desciende el uso o no, con números y visual,
+           simple"). Under the volume, how often a game they ran it before our last game against them
+           (sand) and since (blue): a slope from one to the other, the two numbers, and an arrow when it
+           moved by one run a game or more - with the sample the hub asks of a set (5 possessions) and
+           of a trend (5 games). */
+        const oldG=GAMES.filter(g=>isOld(g)), newG=GAMES.filter(g=>!isOld(g));
+        if(oldG.length && newG.length){
+          const pg=perGame(r), b=oldG.reduce((a,g)=>a+(pg[g]||0),0)/oldG.length, s=newG.reduce((a,g)=>a+(pg[g]||0),0)/newG.length;
+          const ok=(r.n||0)>=5 && GAMES.length>=5, d=s-b, dir=!ok? "" : d>=1? "up" : d<=-1? "dn" : "eq";
+          const f=x=>x>=9.95? String(Math.round(x)) : x.toFixed(1).replace(/\.0$/,"");
+          const top=Math.max(b, s, 0.1), y=x=>(10-8*x/top).toFixed(1);
+          const sl=sv("svg",{viewBox:"0 0 20 12", class:"pbb-sl", "aria-hidden":"true"},
+            sv("line",{x1:4, y1:y(b), x2:16, y2:y(s), class:"ln"}), sv("circle",{cx:4, cy:y(b), r:2.6, class:"o"}), sv("circle",{cx:16, cy:y(s), r:2.6, class:"n"}));
+          vc.appendChild(h("span",{class:"pbb-v2 "+dir, title:"A game: "+f(b)+" in the "+oldG.length+" games before "+meetTxt()+", "+f(s)+" in the "+newG.length+" since"
+            +(dir==="up"? " - run more now" : dir==="dn"? " - run less now" : dir==="eq"? " - about the same" : " - too few to say")},
+            sl, h("u",{}, f(b)+"→"+f(s)), dir==="up"? h("em",{},"▲") : dir==="dn"? h("em",{},"▼") : null)); }
+        row.appendChild(vc); }
       { const pg=perGame(r);
         row.appendChild(h("span",{class:"pbb-c-gm"}, GAMES.map((g,i)=>{ const k=pg[g]||0, a=k? 0.18+0.72*Math.min(1, k/gmMax) : 0, old=isOld(g);
           return h("i",{class:(k? "" : "z")+" "+gmCls(g,i), title:g+": "+k+(k===1? " time" : " times")+(old? " · in the pre game of "+MEET[0].date.slice(8,10)+"/"+MEET[0].date.slice(5,7) : ""),
@@ -37069,7 +37087,7 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pbb-chip.on{background:var(--ink,#141821);color:#fff;border-color:var(--ink,#141821)}.pbb-chip.on i{color:rgba(255,255,255,.7)}
 .pbb-sep{width:1px;height:18px;background:var(--line-strong,#cfd4dc);margin:0 4px}
 .pbb-main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
-.pbb-r{display:grid;grid-template-columns:26px 92px minmax(120px,1.1fr) minmax(56px,124px) 96px 52px 64px calc(var(--ng,4)*27px + var(--gsep,0px)) minmax(180px,1.3fr);gap:8px;align-items:center;
+.pbb-r{display:grid;grid-template-columns:26px 92px minmax(120px,1.1fr) minmax(56px,124px) 96px 52px 84px calc(var(--ng,4)*27px + var(--gsep,0px)) minmax(180px,1.3fr);gap:8px;align-items:center;
   padding:5px 8px;border-bottom:1px solid var(--line,#eef0f3);font-size:12.5px;border-left:4px solid transparent}
 .pbb-h{position:-webkit-sticky;position:sticky;top:0;z-index:2;background:var(--panel,#fff);border-bottom:2px solid var(--ink,#141821);
   font:700 10.5px 'IBM Plex Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
@@ -37151,7 +37169,7 @@ body.prt .pre-copy{display:none!important}
 .pbb-r > .pbb-c-call{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;justify-self:start;line-height:1.25}
 .pbb-new{font:700 10px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:#fff;background:#4a86d8;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:1px}
 @media (max-width:1100px){ .pbb .pbb-c-n{min-width:0} .pbb .pbb-c-n i{max-width:26px} }
-@media (max-width:560px){ .pbb .pbb-r{grid-template-columns:22px 62px minmax(70px,1fr) 44px 42px 46px;gap:6px} .pbb .pbb-c-vol i{max-width:14px} .pbb .pbb-c-gm{grid-column:2 / -1} }
+@media (max-width:560px){ .pbb .pbb-r{grid-template-columns:22px 62px minmax(70px,1fr) 44px 42px 58px;gap:6px} .pbb .pbb-c-vol i{max-width:14px} .pbb .pbb-c-gm{grid-column:2 / -1} }
 .pbb-c-adj{display:flex;align-items:flex-start;gap:6px;min-width:0}
 .pbb-rule{flex:1 1 auto;min-width:0;background:rgba(47,158,134,.10);border-radius:6px;padding:3px 8px!important;font-size:12.5px!important;min-height:24px!important}
 .pbb-add{border:1px dashed var(--line-strong,#cfd4dc);background:transparent;color:var(--ink-faint,#8a93a2);border-radius:6px;font-size:11px;padding:3px 9px;cursor:pointer;opacity:0;transition:opacity .12s}
@@ -37183,7 +37201,7 @@ body.prt .pre-copy{display:none!important}
 .pbb-note-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px}
 .pbb-note-2 i{font-style:normal;font-size:11px;color:var(--ink-faint,#8a93a2);text-transform:uppercase;letter-spacing:.06em}
 @media (max-width:1100px){ .pbb-main{grid-template-columns:minmax(0,1fr)} .pbb-key{position:static}
-  .pbb-r{grid-template-columns:24px 70px minmax(90px,1fr) 56px 46px 52px calc(var(--ng,4)*27px + var(--gsep,0px));row-gap:3px} .pbb-c-call{display:none} .pbb-c-adj{grid-column:2 / -1} .pbb-h .pbb-c-adj{display:none} }
+  .pbb-r{grid-template-columns:24px 70px minmax(90px,1fr) 56px 46px 70px calc(var(--ng,4)*27px + var(--gsep,0px));row-gap:3px} .pbb-c-call{display:none} .pbb-c-adj{grid-column:2 / -1} .pbb-h .pbb-c-adj{display:none} }
 
 /* post game / practice: the trainings between two games, folded */
 .ym-trg{margin:3px 0}
@@ -46044,6 +46062,19 @@ body.dark .modal-stats .modal-stat-cell.hl-hot .modal-stat-why,body.dark .modal-
 body.dark .phx .sc-ck.up{fill:#ff8f85}body.dark .phx .sc-ck.dn{fill:#5fcf9f}body.dark .phx .sc-ckm{stroke:#ff8f85}
 body.dark .phx .photo-sc{background:#2a313b;--sc-halo:#242a33;--sc-ink:#eef1f5}
 @media print{ .phx .photo-sc{background:#fff!important} }
+/* pre game playbook, the volume: the share on top, and the second time we meet them, before → since a game */
+.pbb .pbb-c-vol{flex-direction:column;align-items:stretch;gap:2px;min-width:0}
+.pbb .pbb-v1{display:flex;align-items:center;gap:5px}
+.pbb .pbb-v2{display:flex;align-items:center;gap:3px;font:600 10.5px 'IBM Plex Mono',monospace;color:#687180;white-space:nowrap}
+.pbb .pbb-v2 u{text-decoration:none}
+.pbb .pbb-v2 em{font-style:normal;font-size:10px}
+.pbb .pbb-sl{width:21px;height:13px;flex:none;overflow:visible}
+.pbb .pbb-sl .ln{stroke:#9aa3b1;stroke-width:1.6}
+.pbb .pbb-sl .o{fill:#b8862e}.pbb .pbb-sl .n{fill:#4a86d8}
+.pbb .pbb-v2.up{color:#c0403c}.pbb .pbb-v2.up .ln{stroke:#c0403c}
+.pbb .pbb-v2.dn{color:#17805a}.pbb .pbb-v2.dn .ln{stroke:#17805a}
+body.dark .pbb .pbb-v2{color:#9aa3b1} body.dark .pbb .pbb-v2.up{color:#ff8f85} body.dark .pbb .pbb-v2.up .ln{stroke:#ff8f85}
+body.dark .pbb .pbb-v2.dn{color:#5fcf9f} body.dark .pbb .pbb-v2.dn .ln{stroke:#5fcf9f}
 /* the games filter of the League page: gold while it is not the whole season, so nobody reads five games as a season */
 .lg-win-seg.lg-win-on .lg-seg-b.act{background:#8a6829!important;color:#fff!important;border-color:#8a6829!important}
 body.dark .lg-win-seg.lg-win-on .lg-seg-b.act{background:#e3c27a!important;color:#1b2028!important;border-color:#e3c27a!important}
