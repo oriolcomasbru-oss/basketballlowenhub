@@ -1274,7 +1274,7 @@ exports.handler = async (event) => {
     const season = sea.season;
     /* the caller's data version is part of the key, so a deploy that changes the shape
        of what this returns cannot be answered out of a cache filled by the old shape */
-    const ck = res + "|" + season + "|" + S(q.id) + "|v" + S(q.v || "0");
+    const ck = res + "|" + season + "|" + S(q.id) + "|v" + S(q.v || "0") + (q.last ? "|l" + S(q.last) : "");
     const ttl = TTL[res] || TTL.all;
     if (!fresh) { const hit = getCache(ck, ttl); if (hit) return reply(200, Object.assign({}, hit, { cached: true }), ttl); }
 
@@ -1570,7 +1570,11 @@ exports.handler = async (event) => {
       const units = Object.create(null);     /* key -> unit totals */
       const onoff = Object.create(null);
 
-      const want = played.slice(-40);
+      /* THE LAST N GAMES (Oriol, 8/11/2026: "all games, last 10, last 5, last 2"). &last=N reads only
+         the club's N most recent finished league games, and everything below - the players, the
+         shots, the units, the clock, the team boxes - is then about those games alone. */
+      const LAST = Math.max(0, Math.min(40, Math.floor(Number(q.last) || 0)));
+      const want = played.slice(-(LAST || 40));
       const read = await readFeeds(want, key, readBudget(),
         (g, e) => { if (meta.errors.length < 4) meta.errors.push("game " + g.id + ": " + e.message); });
 
@@ -1786,6 +1790,7 @@ exports.handler = async (event) => {
         const idk = k.slice(3);
         if (seen[idk] || (w.num && seen["no:" + S(w.num)])) return;
         if (!w.off || !w.off.gp) return;
+        if (LAST) return;   /* a man with no line in the last N games is not in them */
         seen[idk] = 1; if (w.num) seen["no:" + S(w.num)] = 1;
         players.push({ id: idk, num: S(w.num), name: w.name, first: w.first, last: w.last,
           all: blank(), home: blank(), away: blank(), q: [blank(), blank(), blank(), blank()],
@@ -1805,7 +1810,8 @@ exports.handler = async (event) => {
            a man second in his team with fewer assists than the man below him. When the
            official line covers at least the games read, its counting numbers replace ours;
            the splits (home, away, quarters) stay the feed's, the only place they exist. */
-        if (p.off && p.off.gp && p.off.gp >= (p.all.gp || 0)) {
+        /* (not over the last N games: the league's line is the whole season) */
+        if (!LAST && p.off && p.off.gp && p.off.gp >= (p.all.gp || 0)) {
           ["gp", "sec", "pts", "p2m", "p2a", "p3m", "p3a", "ftm", "fta", "oreb", "dreb", "reb",
            "ast", "stl", "blk", "tov", "pf", "fd", "pm", "eff"].forEach(k => { if (typeof p.off[k] === "number") p.all[k] = p.off[k]; });
           p.all.src = "league";
@@ -1846,7 +1852,7 @@ exports.handler = async (event) => {
            shooting of a season are already here; this is the same thing not added up */
         by_game: byGame.slice().sort(function (a, b) {
           return S(a.date).localeCompare(S(b.date)); }),
-        games: played.length, checks: checks,
+        games: played.length, last: LAST, checks: checks,
         /* partial means "there is more to fetch, ask again". A sheet the league will not
            give us is reported as failed and does not keep the client asking. */
         total: want.length, read: read.got.length, pending: read.pending,

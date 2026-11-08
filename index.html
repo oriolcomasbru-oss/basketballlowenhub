@@ -12696,11 +12696,11 @@ function _preHlRanks(L, c, tid){
     /* the leader of his team is always solid and says so - "#1 WÜR" - unless he is top 10 of
        the BBL: Wishart, first of Würzburg in assists and 19th of the league, was lit lighter
        than it reads beside Dye's "2nd WÜR" */
-    const both=(rb!=null? " · "+ord(rb)+" BBL" : "")+(rt!=null? " · "+ord(rt)+" "+short : "");
-    if(rb!=null && rb<=10) return { score:rb, hot:true, why:ord(rb)+" BBL"+basis+both };
-    if(rt===1) return { score:11, hot:true, why:"1st "+short+basis+both };
-    if(rb!=null && rb<=25) return { score:rb, hot:false, why:ord(rb)+" BBL"+basis+both };
-    if(rt!=null && rt<=3) return { score:100+rt, hot:false, why:ord(rt)+" "+short+basis+both };
+    /* ONLY WHAT STANDS OUT IN THE LEAGUE (Oriol, 8/11/2026: "ponme solamente si están destacados a
+       nivel BBL ... quita lo de Chemnitz dentro del equipo"). The ranks inside his own team and the
+       11th-25th of the league were most of the colour on a card and said little: top 10 of the BBL
+       or nothing. (What is very poor is marked apart, by _preHlLow.) */
+    if(rb!=null && rb<=10) return { score:rb, hot:true, why:ord(rb)+" BBL"+basis };
     return null; });
 }
 /* A FIFTH BOX. The card asks each position its own four questions - a wing is never
@@ -12793,11 +12793,9 @@ function _preHl(L, card, c, canEd, save, tid){
   let pick={};
   const man=c.hlStats && typeof c.hlStats==="object" && Object.keys(c.hlStats).length;
   if(man){ Object.keys(c.hlStats).forEach(k=>{ if(c.hlStats[k]==="hot"||c.hlStats[k]==="warm") pick[k]=c.hlStats[k]; }); }
-  /* EVERY NUMBER THAT STANDS OUT IS LIT, not the two best: kept to two, Wishart's 4.0
-     assists - first in Würzburg - stayed dark behind a 16th in the BBL at free throws.
-     Solid: top 10 of the BBL or first in his team; light: 11th to 25th of the BBL, or 2nd
-     and 3rd in his team when it is above the league's middle */
-  else if(ranks){ ranks.forEach((r,i)=>{ if(r) pick[i]=(r.hot || r.score<=10)? "hot" : "warm"; }); }
+  /* every number in the top 10 of the BBL is lit, not only the best two (since 8/11/2026 only those:
+     no team ranks, no 11th-25th) */
+  else if(ranks){ ranks.forEach((r,i)=>{ if(r) pick[i]="hot"; }); }
   /* the poor shooting, on a box nothing else lights - and never against the staff's own choice */
   let low=null; if(!man){ try{ low=_preHlLow(L, c, tid); }catch(e){ low=null; } }
   cells.forEach((cell,i)=>{
@@ -24050,7 +24048,7 @@ function _lgLeadLoad(L){
            being read stays where it is on the screen */
         if(v && v.style.display!=="none"){
           const old=v.querySelector(".ldr"); if(old) _lgSwapKeep(old, _lgLeaders(L2));
-          const op=v.querySelector(".lg-pace-live"); if(op) _lgSwapKeep(op, _lgPace(L2)); }
+          const op=v.querySelector(".lg-pace-live"); if(op && !_lgWin(L2)) _lgSwapKeep(op, _lgWinTag(_lgPace(L2), L2)); }
       }catch(e){_quiet(e)} });
   });
 }
@@ -27342,7 +27340,7 @@ function _lgPace(L){
   box.classList.add("lg-pace-live");
   const R=_paceLeague(L), n=(L.teams||[]).length, ready=R.rows.filter(r=>r.o.eP!=null).length;
   /* until every club is read the panel only says so: the table comes in whole, once */
-  if(ready<n){ try{ _lgLeadLoad(L); }catch(e){_quiet(e)}
+  if(ready<n && !_lgWin(L)){ try{ _lgLeadLoad(L); }catch(e){_quiet(e)}
     if(_lgLeadBusy>0 || _lgLeadTodo(L).ids.length){
       box.appendChild(h("div",{class:"ld lg-pace-wait"}, "Reading the clubs' seasons… ", h("b",{class:"lg-pace-n"}, ready+" of "+n), h("span",{class:"ld-bar"})));
       return box; } }
@@ -29280,13 +29278,15 @@ function _dashTopSetsInto(box, g){
         onclick:()=>{ try{ state.ui.pbKeyOrd=o[0]; persist(); }catch(e){_quiet(e)} paint(); }}, o[1])));
       const groups=PH.map(p=>({ head:p[1], list:top.filter(r=>kindOf(r)===p[0]).sort(mode==="cat"? byCat : byUse) })).filter(x=>x.list.length);
       const mkT=()=>h("div",{class:"dash-ks", style:"--ng:"+Math.max(1, GMS.length)+";--gsep:"+(hasSep? "7px" : "0px")},
-        row(h("span",{class:"hd"}), h("span",{class:"hd l"},"Set"), h("span",{class:"hd l"},"Call"), h("span",{class:"hd"},"Use"), h("span",{class:"hd"},"PPP"),
-          h("span",{class:"hd gm"}, GMS.map((x,i)=>h("i",{ class:cls(x,i), title:x+(dates[x]? " · "+dates[x].split("-").reverse().join("/") : "")+(isOld(x)? " · before our game of "+meetTxt : "") }, short(x), dates[x]? h("u",{}, dates[x].slice(8,10)+"/"+dates[x].slice(5,7)) : null)))));
+        h("div",{class:"ks-r ks-hr"}, h("span",{class:"hd"}), h("span",{class:"hd l"},"Set · call"), h("span",{class:"hd"},"Use"), h("span",{class:"hd"},"PPP"),
+          h("span",{class:"hd gm"}, GMS.map((x,i)=>h("i",{ class:cls(x,i), title:x+(dates[x]? " · "+dates[x].split("-").reverse().join("/") : "")+(isOld(x)? " · before our game of "+meetTxt : "") }, short(x))))));
       const setRow=r=>{ const rk=rankOf.get(r);
         return row(
           h("span",{class:"rk", title:"The "+_dashOrd(rk)+" most run of their key sets"}, String(rk)),
-          h("span",{class:"nm"}, h("b",{}, edits[r.label]||r.label), isNew(r)? h("i",{class:"ks-new", title:"Not run in the games before our game of "+meetTxt},"new") : null),
-          r.call? h("q",{}, r.call) : h("span",{class:"nc"},"—"),
+          /* one line a set (Oriol, 8/11/2026: "mucho más compacto, no permite leerlo rápido"): the call rides
+             beside the name instead of on a line of its own */
+          h("span",{class:"nm"}, h("b",{}, edits[r.label]||r.label), r.call? h("q",{}, r.call) : null,
+            isNew(r)? h("i",{class:"ks-new", title:"Not run in the games before our game of "+meetTxt},"new") : null),
           h("span",{class:"use", title:r.n+" runs · "+Math.round(100*r.n/tot)+"% of their possessions"}, h("span",{class:"vol"}, h("i",{style:"width:"+Math.max(8,Math.round(100*(r.n||0)/mx))+"%"})), h("u",{}, String(r.n||0)), h("small",{}, Math.round(100*r.n/tot)+"%")),
           r.ppp!=null? h("em",{class:(r.n||0)<MS_POSS? "" : r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : h("em",{},"—"),
           h("span",{class:"gm"}, GMS.map((x,j)=>{ const k=P(r)[x]||0, a=k? 0.18+0.72*Math.min(1, k/gmx) : 0, old=isOld(x);
@@ -29311,7 +29311,7 @@ function _dashTopSetsInto(box, g){
         (CUR>0 && GMS.some(isOld))? h("div",{class:"ks-era"}, h("span",{}, h("i",{class:"o"}), "Before our game of "+meetTxt), h("span",{}, h("i",{class:"n"}), "Since")) : h("span",{}),
         seg));
       /* in a box of its own, so a narrow card can lay the rows out compact (container query) */
-      if(two) box.appendChild(h("div",{class:"dks-2"}, h("div",{class:"dks-c"}, tA), h("div",{class:"dks-c"}, tB)));
+      if(two) box.appendChild(h("div",{class:"dks-w"}, h("div",{class:"dks-2"}, h("div",{class:"dks-c"}, tA), h("div",{class:"dks-c"}, tB))));
       else box.appendChild(h("div",{class:"dks-c"}, tA));
     };
     paint();
@@ -31517,6 +31517,104 @@ function renderProB(root){
   root.appendChild(h("div",{class:"lg-sub", style:"margin:12px 2px"},"The ProB key reads the whole league's schedule, table and scores, but only our own roster and stats: the other clubs' players are not open to it."));
 }
 
+/* THE LAST N GAMES (Oriol, 8/11/2026: "permíteme seleccionar all games, last 10, last 5, last 2 -
+   en team analysis, roster, shot chart, game pace, combinations, late clock, rebounding"). One
+   choice for the whole League page (L.gWin), shown on each of those panels. The league's reader
+   is asked for a club's last N finished league games (&last=N) and the panels are drawn from that
+   answer exactly as from the season's: the club's own panels from the picked club's last N, the
+   league tables (team analysis, game pace, rebounding) from every club's last N, each club its
+   own N games. Over the last N the numbers are the game sheets' own (the league's official
+   season line covers the whole season and cannot be cut). Kept in memory, not in the saved state. */
+const LG_WINS=[0,10,5,2];
+function _lgWin(L){ const n=+((L && L.gWin)||0); return LG_WINS.indexOf(n)>0? n : 0; }
+function _lgWinSeg(L){
+  return _lgSeg([[0,"All games","The whole season"],[10,"Last 10","Only each club's last 10 league games"],[5,"Last 5","Only each club's last 5 league games"],[2,"Last 2","Only each club's last 2 league games"]],
+    _lgWin(L), x=>{ L.gWin=x; });
+}
+const _lgPW={}, _lgPWBusy={}, _lgPWNo={}, _lgLW={}, _lgLWBusy={};
+function _lgWinProxy(L, ov){
+  return new Proxy(L, { get(t,k){ return Object.prototype.hasOwnProperty.call(ov,k)? ov[k] : t[k]; }, set(t,k,v){ t[k]=v; return true; } });
+}
+function _lgWinAsk(L, tid, n, round){
+  return fetch("/.netlify/functions/bbl?res=players&id="+encodeURIComponent(tid)+"&season="+encodeURIComponent(L.season||"")+"&v="+LG_FETCH_VER+"&last="+n)
+    .then(r=>{ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+    .then(j=>{
+      /* a reader that does not know &last answers with the whole season: that is not shown as N games */
+      if(!j || +j.last!==n){ _lgPWNo[n]=true; return null; }
+      if(j.partial && (round||0)<3) return new Promise(res=>setTimeout(res, 1500)).then(()=>_lgWinAsk(L, tid, n, (round||0)+1));
+      return j; });
+}
+/* the picked club's last N, in the shape the club panels read */
+function _lgPWLoad(L, tid, n){
+  const k=tid+"|"+n; if(_lgPWBusy[k]) return; _lgPWBusy[k]=true;
+  _lgWinAsk(L, tid, n, 0).then(j=>{ if(!j) return;
+    _lgPW[k]={ players:j.players||[], games:j.games||0, checks:j.checks||null,
+      team_tot:j.team_tot||null, opp_tot:j.opp_tot||null, shots:j.shots||[], team_q:j.team_q||null, opp_q:j.opp_q||null,
+      names:j.names||{}, by_game:j.by_game||[], rot:j.rot||[], units:j.units||[], onoff:j.onoff||[], clock:j.clock||null,
+      read:j.read||0, total:j.total||0, pending:j.pending||0, partial:!!j.partial, failed:j.failed||0, round:1, stalled:!!j.partial,
+      team:j.team||"", err:(j.errors&&j.errors.length)? j.errors.join(" · ") : "", updated:j.updated||new Date().toISOString(), fv:LG_FETCH_VER, win:n }; })
+    .catch(e=>{ _lgPW[k]={ players:[], err:(e&&e.message)||String(e), win:n }; })
+    .then(()=>{ delete _lgPWBusy[k]; _lgRerender(); });
+}
+/* every club's last N, slim, for the league tables - four at a time, the page drawn again once */
+function _lgWinSlim(tid, j){
+  const s=_lgLeadSlim(tid, j, 0), T=j.team_tot||{}, O=j.opp_tot||{}, TQ=j.team_q||[], OQ=j.opp_q||[];
+  s.box={ all:{ tm:T.all, op:O.all }, home:{ tm:T.home, op:O.home }, away:{ tm:T.away, op:O.away },
+    q:[0,1,2,3].map(i=>({ tm:TQ[i]||null, op:OQ[i]||null })) };
+  s.read=j.read||0; s.win=j.last||0;
+  return s;
+}
+function _lgLWLoad(L, n){
+  const have=_lgLW[n]||(_lgLW[n]={});
+  const busy=()=>Object.keys(_lgLWBusy).filter(k=>k.indexOf(n+"|")===0).length;
+  (L.teams||[]).map(t=>String(t.id)).filter(id=>!have[id] && !_lgLWBusy[n+"|"+id]).slice(0, Math.max(0, 4-busy())).forEach(tid=>{
+    const k=n+"|"+tid; _lgLWBusy[k]=true;
+    _lgWinAsk(L, tid, n, 0).then(j=>{ have[tid]=j? _lgWinSlim(tid, j) : { failed:true }; })
+      .catch(()=>{ have[tid]={ failed:true }; })
+      .then(()=>{ delete _lgLWBusy[k];
+        const L2=leagueState(), left=(L2.teams||[]).filter(t=>!have[String(t.id)]).length;
+        if(_lgPWNo[n] || (!left && !busy())){ _lgRerender(); return; }
+        document.querySelectorAll(".lg-win-n").forEach(x=>{ x.textContent=((L2.teams||[]).length-left)+" of "+(L2.teams||[]).length; });
+        _lgLWLoad(L2, n); });
+  });
+}
+function _lgWinLeague(L, n){
+  const have=_lgLW[n]||{}, teams=L.teams||[];
+  const ready=teams.filter(t=>have[String(t.id)]).length;
+  if(ready<teams.length) return { ready:ready, n:teams.length, L:null };
+  const four=[], dist={};
+  teams.forEach(t=>{ const s=have[String(t.id)]; if(!s || !s.box || !s.box.all.tm || !s.box.all.tm.gp) return;
+    four.push(Object.assign({ teamId:t.id, team:t.name, tlc:t.tlc||"" }, _lgBoxFactors(s.box.all.tm, s.box.all.op, s.box.all.tm.gp)));
+    dist[t.id]={ hm:s.box.home, aw:s.box.away, q:s.box.q }; });
+  return { ready:ready, n:teams.length, L:_lgWinProxy(L, { four:four, lead:have, players:{}, pbp:Object.assign({}, L.pbp||{}, { dist:dist }) }) };
+}
+function _lgWinClub(L, n){
+  const tid=String(_lgTeamId(L)||""); if(!tid) return { L:null };
+  const k=tid+"|"+n, d=_lgPW[k];
+  if(!d){ if(!_lgPWNo[n]) _lgPWLoad(L, tid, n); return { L:null, tid:tid }; }
+  const pl=Object.assign({}, L.players||{}); pl[tid]=d;
+  return { L:_lgWinProxy(L, { players:pl }), tid:tid };
+}
+/* the choice on a panel's own bar */
+function _lgWinTag(el, L){
+  const hd=el && el.querySelector && el.querySelector(".lg-h"); if(!hd) return el;
+  const seg=_lgWinSeg(L); seg.classList.add("lg-win-seg"); if(_lgWin(L)) seg.classList.add("lg-win-on");
+  const row=hd.querySelector(".lg-navrow");
+  if(row) row.insertBefore(seg, row.firstChild); else hd.appendChild(seg);
+  return el;
+}
+/* a panel waiting for its N games, or saying why it cannot have them */
+function _lgWinWait(L, title, msg){
+  const box=_lgPanel(title, null);
+  box.appendChild(msg);
+  return box;
+}
+function _lgWinMsg(L, n, kind, ready, total){
+  if(_lgPWNo[n]) return h("div",{class:"lg-warn"},"Last "+n+" games needs the new league reader, which is not published yet. Showing nothing rather than the whole season under that name.");
+  if(kind==="league") return h("div",{class:"ld"},"Reading every club's last "+n+" games… ", h("b",{class:"lg-win-n"}, (ready||0)+" of "+(total||0)), h("span",{class:"ld-bar"}));
+  const t=(L.teams||[]).filter(x=>String(x.id)===String(_lgTeamId(L)))[0];
+  return h("div",{class:"ld"},"Reading the last "+n+" games of "+((t&&t.name)||"the club")+"…", h("span",{class:"ld-bar"}));
+}
 function renderLeague(){
   const root=$("#viewLeague"); if(!root) return;
   const L=leagueState();
@@ -31550,21 +31648,26 @@ function renderLeague(){
   add(_lgResults(L), false);
   root.appendChild(h("div",{class:"lg-grid"}, _lgStandings(L), _lgCalendar(L)));
   add(_lgEuro(L));
+  /* the last N games: the league tables from every club's last N, the club's own panels from its last N */
+  const W=_lgWin(L), WL=W? _lgWinLeague(L, W) : null, WC=W? _lgWinClub(L, W) : null;
+  if(W && WL && !WL.L && !_lgPWNo[W]) _lgLWLoad(L, W);
+  const lgP=(title, fn)=>_lgWinTag(W? (WL.L && !_lgPWNo[W]? fn(WL.L) : _lgWinWait(L, title, _lgWinMsg(L, W, "league", WL.ready, WL.n))) : fn(L), L);
+  const clP=(title, fn)=>_lgWinTag(W? (WC.L && !_lgPWNo[W]? fn(WC.L) : _lgWinWait(L, title, _lgWinMsg(L, W, "club"))) : fn(L), L);
   root.appendChild(L2("How the teams play"));
-  add(_lgFour(L), false);
+  add(lgP("Team analysis", _lgFour), false);
   root.appendChild(L2("League leaders"));
   add(_lgLeaders(L), false);
   root.appendChild(L2("Players and shots"));
-  add(_lgRoster(L), false);
-  add(_lgShots(L));
+  add(clP("Roster", _lgRoster), false);
+  add(clP("Shot chart", _lgShots));
   root.appendChild(L2("Rotations, units and the clock"));
   add(_lgRot(L), false);
-  add(_lgUnits(L));
-  add(_lgClock(L));
+  add(clP("Combinations", _lgUnits));
+  add(clP("Late clock", _lgClock));
   root.appendChild(L2("Game pace"));
-  add(_lgPace(L), false);
+  add(lgP("Game pace", _lgPace), false);
   root.appendChild(L2("Rebounding"));
-  add(_lgReb(L));
+  add(lgP("Rebounding", _lgReb));
   add(_lgFold(L,"diag","the reader \u2014 what loaded and what did not",()=>_lgDiag(L)));
   if(!(L.four||[]).length && !_lgFourTried && !_lgFourBusy && !L.demo) syncFour(false);
   else _lgFourFresh(L);
@@ -45198,8 +45301,6 @@ body.dark .wx-t .wx-last{box-shadow:7px 0 9px -7px rgba(0,0,0,.7)}
    blue, a line between; and, in a box narrower than the table, a set on three short lines -
    name and PPP, the call, then the use and its games - instead of nine columns squeezed into
    a third of an iPad (Oriol, 8/11/2026: "sale desajustado completamente") */
-.dash-ks{grid-template-columns:16px minmax(0,1.5fr) minmax(0,.8fr) 84px 42px calc(var(--ng,4)*26px + var(--gsep,0px))}
-.dash-ks .ks-r{display:contents}
 .dash-ks .gm i.sep{margin-left:7px;position:relative}
 .dash-ks .gm i.sep::before{content:"";position:absolute;left:-6px;top:-3px;bottom:-3px;width:2px;border-radius:1px;background:#b8862e}
 .dash-ks .gm i.old.z{background:rgba(184,134,46,.12)}
@@ -45219,28 +45320,43 @@ body.dark .dash-ks .hd.gm i.old{color:#d9b46a}
   font:700 10.5px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#8a6829}
 .dash-ks .ks-g i{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#687180);letter-spacing:0}
 body.dark .dash-ks .ks-g{color:#e3c27a}
-@container (max-width:640px){
-  .dash-ks .ks-g{margin-top:8px}
-  .dash-ks .ks-g + .ks-r{border-top:0}
-  .dash-ks{display:flex;flex-direction:column;gap:0}
-  .dash-ks .ks-r{display:grid;grid-template-columns:18px 88px minmax(0,1fr) auto;grid-template-areas:"rk nm nm ppp" "rk call call call" ". use gm gm";
-    column-gap:8px;row-gap:3px;align-items:center;padding:8px 0;border-top:1px solid var(--line,#eef0f3)}
-  .dash-ks .ks-r:first-child{border-top:0;padding-top:0;grid-template-areas:"rk nm nm ppp" ". use gm gm"}
-  .dash-ks .ks-r > .rk,.dash-ks .ks-r:first-child > :nth-child(1){grid-area:rk;align-self:start}
-  .dash-ks .ks-r > .nm,.dash-ks .ks-r:first-child > :nth-child(2){grid-area:nm}
-  .dash-ks .ks-r > q,.dash-ks .ks-r > .nc{grid-area:call}
-  .dash-ks .ks-r > .nc,.dash-ks .ks-r:first-child > :nth-child(3){display:none}
-  .dash-ks .ks-r > .use,.dash-ks .ks-r:first-child > :nth-child(4){grid-area:use;text-align:left}
-  .dash-ks .ks-r > em,.dash-ks .ks-r:first-child > :nth-child(5){grid-area:ppp;padding:1px 7px}
-  .dash-ks .ks-r > .gm,.dash-ks .ks-r:first-child > :nth-child(6){grid-area:gm;flex-wrap:wrap;row-gap:3px}
-  .dash-ks .nm{font-size:13px}
-  .dash-ks q{font-size:12px}
-  .dash-ks .ks-r{width:100%;min-width:0;box-sizing:border-box}
-  .dash-ks .ks-r > *{min-width:0}
-  .dash-ks .nm .kd{white-space:normal}
-  .dash-ks .gm i{flex-basis:21px;font-size:10.5px}
-  .dash-ks .gm i.sep{margin-left:6px}
-  .dash-ks .ks-r{grid-template-columns:18px 76px minmax(0,1fr) auto}
+/* THEIR KEY SETS, ONE LINE A SET (Oriol, 8/11/2026: "no se entiende nada... mucho más compacto con
+   las mismas ideas; muchas líneas y espacios por cada set, hay que ir buscando las cosas"). Every row
+   is the same five columns - rank, the set with its call beside it, the use, the PPP, the games - so
+   the eye runs down one column at a time. Only in a box too narrow for that (a phone) does a set take
+   two lines: name, call and PPP, then the games and the use. */
+.dash-ks{display:flex!important;flex-direction:column;gap:0;font-size:12px;align-items:stretch!important;
+  --kcols:18px minmax(0,1fr) 62px 40px calc(var(--ng,4)*22px - 2px + var(--gsep,0px))}
+.dash-ks .ks-r{display:grid;grid-template-columns:var(--kcols);column-gap:8px;align-items:center;padding:3px 0;border-top:1px solid var(--line,#eef0f3);min-width:0}
+.dash-ks .ks-r > *{min-width:0}
+.dash-ks .ks-hr{border-top:0;padding:0 0 3px}
+.dash-ks .ks-g + .ks-r{border-top:0}
+.dash-ks .hd{font-size:9.5px;letter-spacing:.04em}
+.dash-ks .rk{font-size:10.5px}
+.dash-ks .nm{font-size:12.5px;line-height:1.25}
+.dash-ks .nm q{font-size:11.5px;margin-left:6px}
+.dash-ks .nm .ks-new{margin-left:5px}
+.dash-ks .use{gap:4px}
+.dash-ks .vol{width:20px;height:4px}
+.dash-ks .use u{font-size:11px}
+.dash-ks .use small{font-size:10px}
+.dash-ks em{font-size:10.5px;padding:1px 0}
+.dash-ks .gm{gap:2px}
+.dash-ks .gm i{flex:0 0 20px;height:16px;font-size:10px;border-radius:3px}
+.dash-ks .gm i.sep{margin-left:7px}
+.dash-ks .hd.gm i{height:auto;font-size:9px}
+.dash-ks .ks-g{margin-top:7px!important;padding-bottom:2px;font-size:10px}
+.dash-ks .ks-hr + .ks-g{margin-top:2px!important}
+@container (max-width:470px){
+  .dash-ks .ks-r{grid-template-columns:18px minmax(0,1fr) auto;grid-template-areas:"rk nm ppp" ". gm use";row-gap:3px;padding:5px 0}
+  .dash-ks .ks-r > .rk{grid-area:rk;align-self:start}
+  .dash-ks .ks-r > .nm{grid-area:nm}
+  .dash-ks .ks-r > em{grid-area:ppp;align-self:start;padding:1px 7px}
+  .dash-ks .ks-r > .use{grid-area:use;justify-content:flex-end}
+  .dash-ks .ks-r > .gm{grid-area:gm;flex-wrap:wrap;row-gap:2px}
+  .dash-ks .ks-hr > :nth-child(1){grid-area:rk} .dash-ks .ks-hr > :nth-child(2){grid-area:nm}
+  .dash-ks .ks-hr > :nth-child(3){grid-area:use;text-align:right} .dash-ks .ks-hr > :nth-child(4){grid-area:ppp}
+  .dash-ks .ks-hr > :nth-child(5){grid-area:gm}
 }
 /* A WIDE BLOCK INSIDE A DASHBOARD CARD SLIDES IN ITS OWN BOX. The blocks of a card are grid
    items, and a grid item is as wide as the widest thing in it: the key players' table (900 px)
@@ -45838,6 +45954,35 @@ body.dark .dash-mixr .bar i,body.dark .pbb-c-code b{filter:brightness(.82)}
 body.dark .modal-stats .modal-stat-cell.hl-hot{background:#bd4b45!important}
 body.dark .modal-stats .modal-stat-cell.hl-warm{background:#7f4a48!important}
 body.dark .modal-stats .modal-stat-cell.hl-hot *,body.dark .modal-stats .modal-stat-cell.hl-warm *{color:#fff!important}
+/* THE CARD'S NUMBERS, QUIETER (Oriol, 8/11/2026: "no me gustan los destacados, mucho ruido... sobre
+   todo colores y diseño"). Two marks only, and neither paints the box: a number in the BBL's top 10
+   gets a thin red bar over it, a faint wash and its rank in small red type ("#7 BBL"); a very poor
+   one (_preHlLow) the same in green with LOW - the weakness we can use. The number itself stays in
+   ink in both, so the row reads as one row of numbers with two or three of them pointed at. */
+html body .phx.phx .card .stat-cell.hl-hot,html body .phx.phx .card .stat-cell.hl-warm,html body .phx.phx .card .stat-cell.hl-low{
+  border-radius:6px!important;background:rgba(216,82,78,.08)!important;box-shadow:inset 0 2.5px 0 #d8524e!important}
+html body .phx.phx .card .stat-cell.hl-low{background:rgba(47,158,134,.09)!important;box-shadow:inset 0 2.5px 0 #2f9e86!important}
+html body .phx.phx .card .stat-cell.hl-warm{box-shadow:inset 0 2.5px 0 rgba(216,82,78,.45)!important}
+html body .phx.phx .card .stat-cell.hl-hot .stat-value,html body .phx.phx .card .stat-cell.hl-warm .stat-value,html body .phx.phx .card .stat-cell.hl-low .stat-value{color:#141821!important;font-weight:800!important}
+html body .phx.phx .card .stat-cell.hl-hot .stat-label,html body .phx.phx .card .stat-cell.hl-warm .stat-label,html body .phx.phx .card .stat-cell.hl-low .stat-label{color:#5b6472!important}
+html body .phx.phx .card .stat-cell.hl-hot .sv-pc,html body .phx.phx .card .stat-cell.hl-warm .sv-pc,html body .phx.phx .card .stat-cell.hl-low .sv-pc,
+html body .phx.phx .card .stat-cell.hl-hot .sv-sep,html body .phx.phx .card .stat-cell.hl-warm .sv-sep,html body .phx.phx .card .stat-cell.hl-low .sv-sep{color:#8a93a2!important}
+html body .phx.phx .card .stat-cell.hl-hot .hl-why,html body .phx.phx .card .stat-cell.hl-warm .hl-why{color:#c0403c!important;font-weight:700!important;opacity:1!important}
+html body .phx.phx .card .stat-cell.hl-low .hl-why{color:#17805a!important;font-weight:700!important;opacity:1!important}
+html body .phx.phx .card .stat-cell.hl-hot .hl-cell,html body .phx.phx .card .stat-cell.hl-warm .hl-cell{color:#c0403c!important}
+body.dark .phx.phx .card .stat-cell.hl-hot,body.dark .phx.phx .card .stat-cell.hl-warm{background:rgba(224,107,98,.14)!important;box-shadow:inset 0 2.5px 0 #e06b62!important}
+body.dark .phx.phx .card .stat-cell.hl-low{background:rgba(79,195,161,.14)!important;box-shadow:inset 0 2.5px 0 #4fc3a1!important}
+body.dark .phx.phx .card .stat-cell.hl-hot .stat-value,body.dark .phx.phx .card .stat-cell.hl-warm .stat-value,body.dark .phx.phx .card .stat-cell.hl-low .stat-value{color:#eef1f5!important}
+body.dark .phx.phx .card .stat-cell.hl-hot .stat-label,body.dark .phx.phx .card .stat-cell.hl-warm .stat-label,body.dark .phx.phx .card .stat-cell.hl-low .stat-label{color:#b8c0cb!important}
+body.dark .phx.phx .card .stat-cell.hl-hot .sv-pc,body.dark .phx.phx .card .stat-cell.hl-warm .sv-pc,body.dark .phx.phx .card .stat-cell.hl-low .sv-pc{color:#a9b1bd!important}
+body.dark .phx.phx .card .stat-cell.hl-hot .hl-why,body.dark .phx.phx .card .stat-cell.hl-warm .hl-why{color:#ff9d94!important}
+body.dark .phx.phx .card .stat-cell.hl-low .hl-why{color:#7fe0c4!important}
+/* the same two marks in the card's enlarged view */
+html body .modal-stats .modal-stat-cell.hl-hot,html body .modal-stats .modal-stat-cell.hl-warm{background:rgba(216,82,78,.08)!important;box-shadow:inset 0 2.5px 0 #d8524e!important;border-radius:6px}
+html body .modal-stats .modal-stat-cell.hl-hot *,html body .modal-stats .modal-stat-cell.hl-warm *{color:inherit!important}
+html body .modal-stats .modal-stat-cell.hl-hot .modal-stat-why,html body .modal-stats .modal-stat-cell.hl-warm .modal-stat-why{color:#c0403c!important}
+body.dark .modal-stats .modal-stat-cell.hl-hot,body.dark .modal-stats .modal-stat-cell.hl-warm{background:rgba(224,107,98,.14)!important;box-shadow:inset 0 2.5px 0 #e06b62!important}
+body.dark .modal-stats .modal-stat-cell.hl-hot .modal-stat-why,body.dark .modal-stats .modal-stat-cell.hl-warm .modal-stat-why{color:#ff9d94!important}
 /* THE SHOT CHART UNDER THE PHOTOGRAPH (the roster board; the card beside the video has the big chart under it, so not this one): the photo's column is
    cut in two - the portrait on top, the chart below it as wide as the column - and whatever sat
    on the photo's bottom edge moves up onto the portrait. The chart's height follows the column's
@@ -45861,6 +46006,9 @@ body.dark .modal-stats .modal-stat-cell.hl-hot *,body.dark .modal-stats .modal-s
 .sc-ck.k2{font-size:172px;stroke-width:42px}
 body.dark .phx .photo-sc{background:#2a313b;--sc-halo:#242a33;--sc-ink:#eef1f5}
 @media print{ .phx .photo-sc{background:#fff!important} }
+/* the games filter of the League page: gold while it is not the whole season, so nobody reads five games as a season */
+.lg-win-seg.lg-win-on .lg-seg-b.act{background:#8a6829!important;color:#fff!important;border-color:#8a6829!important}
+body.dark .lg-win-seg.lg-win-on .lg-seg-b.act{background:#e3c27a!important;color:#1b2028!important;border-color:#e3c27a!important}
 /* pre game playbook · the key sets by phase, by use or by category */
 .pbb-key-h{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .pbb-kord{display:inline-flex;border:1px solid var(--line-strong,#d2d7df);border-radius:7px;overflow:hidden}
@@ -45902,7 +46050,12 @@ body.dark .rt-nlr.z{background:rgba(255,255,255,.04)}
 .dash-pf > .dash-col{display:grid;gap:12px;align-content:start;min-width:0}
 .dash-pf > .dash-col > .dash-sub + .dash-sub{border-left:0;padding-left:0;border-top:1px solid var(--line,#e4e7ec);padding-top:10px}
 .dash-pf > .dash-sub{border-left:1px solid var(--line,#e4e7ec);padding-left:14px}
-.dks-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px;align-items:start}
+/* two tables side by side only where each still has room for a set on one line; narrower, one under
+   the other, the second without a header of its own */
+.dks-w{container-type:inline-size;min-width:0}
+.dks-2{display:grid;grid-template-columns:minmax(0,1fr);gap:0 24px;align-items:start}
+@container (min-width:1060px){ .dks-2{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@container (max-width:1059px){ .dks-2 > .dks-c + .dks-c .ks-hr{display:none} .dks-2 > .dks-c + .dks-c .dash-ks > .ks-g:nth-child(2){margin-top:7px!important} }
 @media (max-width:1100px){
   .dash-3c.dash-pf{grid-template-columns:minmax(0,1fr)!important}
   .dash-pf > .dash-col{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:14px}
@@ -45912,7 +46065,6 @@ body.dark .rt-nlr.z{background:rgba(255,255,255,.04)}
 @media (max-width:700px){
   .dash-pf > .dash-col{grid-template-columns:minmax(0,1fr)}
   .dash-pf > .dash-col > .dash-sub + .dash-sub{border-left:0;padding-left:0;border-top:1px solid var(--line,#e4e7ec);padding-top:10px}
-  .dks-2{grid-template-columns:minmax(0,1fr)}
 }
 </style>
 
