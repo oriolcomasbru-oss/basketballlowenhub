@@ -11926,6 +11926,9 @@ function _preShotMini(L, tid, pid){
   const line=mine.length+" shots · FG "+pc(m,mine.length)+" · 3P "+m3+"/"+a3+" "+pc(m3,a3)
     +"\nHexagon size: how often he shoots from there · colour: how well, against the league";
   const g=sv("g",{});
+  /* the floor to the edges of the box, as wide as the photograph above it (Oriol, 8/11/2026): the
+     margin that keeps the hexagons and the numbers whole is floor too, not white */
+  g.appendChild(sv("rect",{x:PRE_SC_VB[0], y:PRE_SC_VB[1], width:PRE_SC_VB[2], height:PRE_SC_VB[3], class:"sc-floor"}));
   g.appendChild(_lgCourt(_lgHexG(hm, fit, { card:true, top:34 })));
   /* THE THREE AREAS THAT MATTER FOR HIM (Oriol, 8/11/2026: "el promedio exterior, el de media distancia
      y el interior, destacando el que haga falta"; then "Smith debería tener las 3 marcadas, Fleming
