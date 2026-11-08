@@ -1520,9 +1520,7 @@
    where the number sits against its reference. Red is below it, green is above it. One
    rule for the league, the pre game and the post game: the colour is how big the number
    is, never who it favours - so a PPP this club concedes reads green when it is high. */
-  /* ONE HEAT FOR EVERY AMOUNT (Oriol, 8/11/2026): pale sand below the reference, nothing at it,
-     orange then deep red above - the hub's one scale, as on the shot charts (index.html PERF9) */
-  var PERF9 = ["#f7ecdf","#f1dcc6","#ebc9a8","#e6b991","#f2f2f0","#e2a073","#d98352","#b5452b","#9c2a1d"];
+  var PERF9 = ["#C53727","#d4705f","#e7a596","#f6ddd6","#f2f2f0","#d6e5dc","#8fc0a9","#3f9570","#17805A"];
   function perfStep(diff, span) {
     var k = Math.max(-1, Math.min(1, (diff || 0) / (span || 1)));
     return Math.round((k + 1) / 2 * 8);
@@ -1530,7 +1528,7 @@
   function perfChip(txt, diff, span, cls) {
     var st = perfStep(diff, span), d = Math.abs(st - 4);
     var td = el("td", "sxp-c" + (cls ? " " + cls : ""));
-    var sp = el("span", "sxp-v" + (d ? (d >= 3 ? " chip on" : " chip") : "") + (st >= 7 ? " hot" : ""), txt);
+    var sp = el("span", "sxp-v" + (d ? (d >= 3 ? " chip on" : " chip") : ""), txt);
     if (d) sp.style.background = PERF9[st];
     td.appendChild(sp);
     return td;
@@ -2902,7 +2900,7 @@
       ".sxp-v{display:block;padding:4px 8px;border-radius:5px;text-align:right;font-size:12px;",
       "font-family:ui-monospace,SFMono-Regular,Menlo,monospace}",
       ".sxp-v.chip{font-weight:800;color:#12161d}",
-      ".sxp-v.chip.on{color:#12161d}.sxp-v.chip.hot{color:#fff}",
+      ".sxp-v.chip.on{color:#fff}",
       ".sxp-c.ref .sxp-v,.sxp-c.muted .sxp-v{color:var(--ink-faint)}",
       /* a player who missed games: the column is his average, not the team's */
       ".sxp-c.warn .sxp-v{color:#8a5a12;font-weight:800}",

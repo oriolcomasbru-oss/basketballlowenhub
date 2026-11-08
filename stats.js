@@ -4997,15 +4997,12 @@
          The one exception is the tables that start from our defense - what we concede,
          transition defense, the half of the play types that is theirs - where those
          points are theirs and a high PPP is red. See pppStepD. */
-      /* ONE HEAT FOR EVERY AMOUNT (Oriol, 8/11/2026): a rate and a volume on the hub's one scale,
-         pale sand for the least, deep red for the most - as the shot charts (index.html PERF9) */
-      ".sx{--s0:#f1dcc6;--s1:#ebc9a8;--s2:#e6b991;--s3:#e2a073;--s4:#b5452b;--s5:#9c2a1d;",
-      "--b0:#f7ecdf;--b1:#f1dcc6;--b2:#ebc9a8;--b3:#e2a073;--b4:#b5452b;--b5:#9c2a1d;",
+      ".sx{--s0:#C53727;--s1:#d4705f;--s2:#e7a596;--s3:#d6e5dc;--s4:#8fc0a9;--s5:#17805A;",
+      "--b0:#eef1f6;--b1:#dbe2ee;--b2:#c2cfe2;--b3:#a3b6d2;--b4:#7f97bd;--b5:#5b77a6;",
       "font-size:13px;color:var(--ink)}",
 
       /* white type only where the fill is dark enough to need it */
-      ".sx-cell.s4,.sx-cell.s5{color:#fff}",
-      ".sx-vol.b4{color:#fff}",
+      ".sx-cell.s0,.sx-cell.s5{color:#fff}",
 
       ".sx-meta{font-size:12px;color:var(--ink-soft);margin-bottom:14px}",
       /* Blocks, not one running sheet. A group lays its sections side by side and a

@@ -686,30 +686,33 @@ body.chrome-hidden .hot-zone{display:block}
 
 /* ===== Dark mode (club black + gold) ===== */
 body.dark{
-  --bg:#0e1117; --panel:#161b23; --ink:#e9ebef; --ink-soft:#a3abb8; --ink-faint:#8f98a6;
-  --line:#252b35; --line-strong:#333b47; --accent:#d8b877; --accent-strong:#e7ca8b; --accent-soft:#241f13;
+  /* A SOFTER DARK (Oriol, 8/11/2026: "demasiado oscuro todo ... el fondo no debe ser tan oscuro"):
+     a charcoal ground and panels a step above it, the soft and faint inks lifted so every line
+     of text keeps 4.5 to 1 on the panels (they were 7 and 4.6 on near-black) */
+  --bg:#1b2028; --panel:#242a33; --ink:#eef1f5; --ink-soft:#c0c7d2; --ink-faint:#9aa3b1;
+  --line:#343c48; --line-strong:#434c5a; --accent:#ddc084; --accent-strong:#e9cf96; --accent-soft:#3a3220;
   --shadow:0 1px 2px rgba(0,0,0,.5); --shadow-md:0 3px 10px rgba(0,0,0,.55); --shadow-lg:0 14px 44px rgba(0,0,0,.65);
   --i-interesting:#38311a; --i-interesting-bd:#5c4f27; --i-high:#3a2a19; --i-high-bd:#5f4021;
   --i-priority:#173322; --i-priority-bd:#265c39; --alert:#ff8f85; --alert-bg:#3a1e1e; --alert-bd:#5b2c2c;
   --foreign:#6e7dff; --foreign-soft:#1f2440;
   background:var(--bg);color:var(--ink);
 }
-body.dark .topbar.glass{background:rgba(14,17,23,.72);border-color:var(--line)}
-body.dark .btn{background:#1a1f28;color:var(--ink);border-color:var(--line-strong)}
-body.dark .btn:hover{background:#222835}
+body.dark .topbar.glass{background:rgba(27,32,40,.85);border-color:var(--line)}
+body.dark .btn{background:#2a313b;color:var(--ink);border-color:var(--line-strong)}
+body.dark .btn:hover{background:#343c48}
 body.dark .btn.primary{background:var(--accent);color:#14181f;border-color:var(--accent)}
 body.dark .menu,body.dark .dialog-card,body.dark .int-menu{background:var(--panel);color:var(--ink);border-color:var(--line)}
-body.dark .panel{background:rgba(22,27,35,.88)}
+body.dark .panel{background:rgba(36,42,51,.92)}
 body.dark .menu button{color:var(--ink)}
-body.dark .menu button:hover{background:#222835}
+body.dark .menu button:hover{background:#343c48}
 body.dark .card{background:var(--panel);border-color:var(--line)}
-body.dark .avatar{background:#232a36;color:var(--ink-faint)}
+body.dark .avatar{background:#333a46;color:var(--ink-faint)}
 body.dark .pos-pill{background:#e9ebef;color:#161b23}
 body.dark .card[data-interest] .pos-pill{background:rgba(233,235,239,.85)}
-body.dark .zone-sel,body.dark .field input,body.dark .field select,body.dark .field textarea,body.dark .search input,body.dark .filters button,body.dark .slot-ctrl button{background:#1a1f28;color:var(--ink);border-color:var(--line-strong)}
+body.dark .zone-sel,body.dark .field input,body.dark .field select,body.dark .field textarea,body.dark .search input,body.dark .filters button,body.dark .slot-ctrl button{background:#2a313b;color:var(--ink);border-color:var(--line-strong)}
 body.dark .filters button.active{background:var(--ink);color:#161b23}
 body.dark .tier-surface{background:var(--panel)}
-body.dark .dh-cell{background:linear-gradient(180deg,#1d2431,#12161d)}
+body.dark .dh-cell{background:linear-gradient(180deg,#2b3340,#1f252e)}
 body.dark .tag-chip{background:rgba(255,255,255,.08);color:var(--ink-soft)}
 body.dark .empty-slot,body.dark .mkt-empty,body.dark .empty-state{border-color:var(--line-strong);color:var(--ink-faint)}
 body.dark .origin.local{background:rgba(255,255,255,.08);color:#aeb6c2;border-color:transparent}
@@ -843,7 +846,7 @@ body.dark .search svg{color:var(--ink-faint)}
 .plan-date{font-family:'Oswald',sans-serif;font-weight:700;font-size:13px;color:var(--ink);min-width:92px;text-align:center;text-transform:capitalize}
 .subtab{border:1px solid var(--line-strong);background:#fff;border-radius:9px;padding:7px 13px;font-weight:800;font-size:13px;color:var(--ink-soft);cursor:pointer}
 .subtab.active{background:var(--ink);color:#fff;border-color:var(--ink)}
-body.dark .subtab{background:#1a1f28}
+body.dark .subtab{background:#2a313b}
 body.dark .subtab.active{background:var(--accent);color:#14181f;border-color:var(--accent)}
 .week-nav{display:flex;align-items:center;gap:10px;margin-bottom:12px;position:-webkit-sticky;position:sticky;top:0;z-index:7;background:var(--bg);padding:8px 4px;border-radius:8px;box-shadow:0 8px 10px -10px rgba(16,24,40,.35)}
 .week-label{font-weight:800;font-size:15px}
@@ -868,7 +871,7 @@ body.dark .subtab.active{background:var(--accent);color:#14181f;border-color:var
 .wk-cell.avail[data-s=nocontact]{background:#fbead9}
 .wk-cell.avail[data-s=notfull]{background:#f9efd9}
 .wk-cell.avail[data-s=ind]{background:#efe9fb}
-body.dark .wk-cell.goal[data-g]{background:#1c212b}body.dark .wk-cell.avail[data-s]{background:#1c212b}
+body.dark .wk-cell.goal[data-g]{background:#2c333e}body.dark .wk-cell.avail[data-s]{background:#2c333e}
 /* the overview: the three readings of the season, stacked */
 .phome{display:block}
 .phome-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px}
@@ -895,7 +898,7 @@ body.dark .wk-cell.goal[data-g]{background:#1c212b}body.dark .wk-cell.avail[data
 body.dark .pn-foot{border-top-color:#262d3a}
 .pn-nav .btn{padding:4px 9px;font-size:12px}
 .pn-nav .btn.icon{width:26px;height:26px;padding:0}
-body.dark .pn{background:#161b23;border-color:#262d3a}
+body.dark .pn{background:#242a33;border-color:#262d3a}
 body.dark .pn-h{border-bottom-color:#262d3a}
 @media(max-width:1080px){ .phome-two{grid-template-columns:1fr} }
 .pyr{display:block}
@@ -965,7 +968,7 @@ body.dark .pn-h{border-bottom-color:#262d3a}
 .pyr-kk.aw::before{background:#2b2b2f}
 .pyr-kk.s::before{background:#bfe4cd}
 .pyr-kk.e::before{background:#e7f1fb}
-body.dark .phome-y{background:#161b23;border-color:#262d3a}
+body.dark .phome-y{background:#242a33;border-color:#262d3a}
 body.dark .pyr-c{background:rgba(255,255,255,.07)}
 body.dark .pyr-c.e{background:#16283a}
 body.dark .pyr-c.s{background:#1d4a33}
@@ -1082,7 +1085,7 @@ body.dark .ts-tr{color:#8fdcae}
 .scope-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 .scope-tab{border:1px solid var(--line-strong);background:#fff;border-radius:8px;padding:5px 11px;font-weight:800;font-size:12px;color:var(--ink-soft);cursor:pointer}
 .scope-tab.active{background:var(--ink);color:#fff;border-color:var(--ink)}
-body.dark .scope-tab{background:#1a1f28}body.dark .scope-tab.active{background:var(--accent);color:#14181f;border-color:var(--accent)}
+body.dark .scope-tab{background:#2a313b}body.dark .scope-tab.active{background:var(--accent);color:#14181f;border-color:var(--accent)}
 .scout-placeholder{border:1px dashed var(--line-strong);border-radius:10px;padding:22px;color:var(--ink-faint);font-size:13px;line-height:1.5;text-align:center;background:rgba(0,0,0,.015)}
 .scout-notes{width:100%;min-height:180px;border:1px solid var(--line-strong);border-radius:10px;padding:10px;font:inherit;font-size:13px;line-height:1.5;resize:vertical;background:var(--panel);color:var(--ink);margin-top:10px}
 .scout-notes.tall{min-height:280px}
@@ -1434,7 +1437,7 @@ body.dark .day-card.gameday{background:#2a1a17}
 .ss-v{font-size:13px;font-weight:800;color:var(--ink)}
 .ss-out{flex:1;min-width:200px}.ss-out .ss-v{color:var(--alert);font-size:12px}
 .sess-goal{border:1px solid var(--line-strong);border-radius:7px;padding:3px 6px;font:inherit;font-weight:700;background:#fff;color:var(--ink)}
-body.dark .week-jump,body.dark .sess-goal,body.dark .sess-start{background:#1a1f28;color:var(--ink)}
+body.dark .week-jump,body.dark .sess-goal,body.dark .sess-start{background:#2a313b;color:var(--ink)}
 .ss-goal-ro{font-size:11px;font-weight:800;color:#fff;padding:2px 9px;border-radius:6px}
 .blk-drag{cursor:grab;color:#9aa;font-size:12px;padding:0 4px;user-select:none}
 .blk-drag:active{cursor:grabbing}
@@ -1454,7 +1457,7 @@ body.dark .week-jump,body.dark .sess-goal,body.dark .sess-start{background:#1a1f
 .ab-dot[data-s=ind]{background:#7a5cc0;border-color:#7a5cc0}
 .ab-dot[data-s=nocontact]{background:#e0c33a;border-color:#e0c33a}
 .ab-dot[data-s=notfull]{background:#2fa360;border-color:#2fa360}
-body.dark .ab-card{background:#1a1f28;color:var(--ink);border-color:var(--line-strong)}
+body.dark .ab-card{background:#2a313b;color:var(--ink);border-color:var(--line-strong)}
 body.dark .ab-card[data-s=out]{background:#3a1e1e}
 body.dark .ab-card[data-s=ind]{background:#241f38}
 body.dark .ab-card[data-s=nocontact]{background:#33301a}
@@ -1487,15 +1490,15 @@ body.dark .ab-card[data-s=notfull]{background:#153223}
 .ap-legend{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;font-size:9px;font-weight:700;color:var(--ink-soft)}
 .ap-leg{display:flex;align-items:center;gap:3px}
 .ap-leg .ab-dot{width:9px;height:9px;border-width:1.5px}
-body.dark .ap-card{background:#1a1f28;color:var(--ink);border-color:var(--line-strong)}
+body.dark .ap-card{background:#2a313b;color:var(--ink);border-color:var(--line-strong)}
 body.dark .ap-card[data-s=out]{background:#3a1e1e}body.dark .ap-card[data-s=ind]{background:#241f38}body.dark .ap-card[data-s=nocontact]{background:#33301a}body.dark .ap-card[data-s=notfull]{background:#153223}
 .sess-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .sess-tab{border:1px solid var(--line-strong);background:#fff;border-radius:8px;padding:5px 12px;font-weight:800;font-size:12px;color:var(--ink-soft);cursor:pointer}
 .sess-tab.active{background:var(--ink);color:#fff;border-color:var(--ink)}
-body.dark .sess-tab{background:#1a1f28}body.dark .sess-tab.active{background:var(--accent);color:#14181f;border-color:var(--accent)}
+body.dark .sess-tab{background:#2a313b}body.dark .sess-tab.active{background:var(--accent);color:#14181f;border-color:var(--accent)}
 .sess-ctrl{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 .sess-label{border:1px solid var(--line-strong);border-radius:7px;padding:4px 8px;font:inherit;font-weight:800;width:110px;background:#fff;color:var(--ink)}
-body.dark .sess-label{background:#1a1f28}
+body.dark .sess-label{background:#2a313b}
 .rest-day{border:1px dashed var(--line-strong);border-radius:12px;padding:22px;text-align:center;font-weight:800;color:var(--ink-soft);margin-bottom:12px;max-width:640px}
 .rest-fill{flex:1}
 .btn.danger{color:#c0392b;border-color:#e3b7b0}
@@ -1831,7 +1834,7 @@ body.chrome-hidden.reveal-top .pre-submenu{margin-top:var(--tbh,53px)}
 .pre-submenu .version-badge,.pre-submenu .unsaved-badge,.pre-submenu #versionBadge,.pre-submenu #unsavedIndicator{display:none!important}
 .pre-submenu button{background:#fff;border:1px solid var(--line-strong,#d7dbe0);border-radius:8px;padding:6px 11px;font:inherit;font-weight:700;font-size:12px;color:var(--ink);cursor:pointer}
 .pre-submenu button:hover{background:#f2f4f7}
-body.dark .pre-submenu button{background:#1c222c;border-color:#2b3440;color:#e6e9ef}
+body.dark .pre-submenu button{background:#2c333e;border-color:#2b3440;color:#e6e9ef}
 
 /* ===== Pre-game report v2 (bigger titles, drag-reorder, resize, rich editor, players stats) ===== */
 .rs-drag{cursor:grab;font-size:18px;line-height:1;color:var(--ink-faint,#9aa1ac);padding:0 8px 0 0;user-select:none}
@@ -12058,6 +12061,39 @@ function _preAvlMan(c){
     || m.men.filter(e=>num && e.num===num && ln && _lgNorm(_lgLastName(e.name))===ln)[0] || null;
 }
 function _preAutoDoubt(c){ return (!c || c.doubt || c.out || c.doubtNo)? null : _preAvlMan(c); }
+/* RICH TEXT ON A CARD (Oriol, 8/11/2026: "en roster positions quiero poder tener la herramienta de
+   edición de texto si clico botón derecho, como en las otras partes"). The tagline, the key ideas
+   and the notes of a card take the report's right-click bar - bold, italic, the five colours,
+   clear - and keep what it does: a line with formatting is kept as clean HTML (only those marks
+   survive, everything else a paste brings is dropped), a plain line stays plain text. Whatever
+   reads a card as words (the game plan, the hover titles) reads it through _cardTxt. */
+const _CARD_RICH_OK={B:1,STRONG:1,I:1,EM:1,U:1,SPAN:1,FONT:1,MARK:1,BR:1};
+function _cardEsc(s){ return String(s==null? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function _cardRichClean(html){
+  const box=document.createElement("div"); box.innerHTML=String(html||"");
+  const walk=n=>{ Array.from(n.childNodes).forEach(ch=>{
+    if(ch.nodeType===3) return;
+    if(ch.nodeType!==1){ ch.remove(); return; }
+    walk(ch);
+    let el=ch;
+    if(!_CARD_RICH_OK[el.tagName]){ while(el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); return; }
+    const color=el.getAttribute("color")||el.style.color||"", bg=el.style.backgroundColor||"", fw=el.style.fontWeight||"", key=el.getAttribute("data-key");
+    Array.from(el.attributes).forEach(a=>el.removeAttribute(a.name));
+    if(el.tagName==="FONT"){ const sp=document.createElement("span"); while(el.firstChild) sp.appendChild(el.firstChild); el.replaceWith(sp); el=sp; }
+    if(color) el.style.color=color;
+    if(bg) el.style.backgroundColor=bg;
+    /* bold on a line the card already sets in bold takes it off: that is kept too */
+    if(fw && /bold|[6-9]00/.test(fw)) el.style.fontWeight="700"; else if(fw && /normal|[1-4]00/.test(fw)) el.style.fontWeight="400";
+    if(key!=null) el.setAttribute("data-key", key);
+    if(el.tagName==="SPAN" && !el.getAttribute("style") && key==null){ while(el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); }
+  }); };
+  walk(box);
+  return box.innerHTML.replace(/&nbsp;/g," ").trim();
+}
+function _cardRichOf(n){ return n.querySelector("b,strong,i,em,u,font,span[style],mark,span[data-key]")? _cardRichClean(n.innerHTML) : n.textContent.trim(); }
+function _cardRichHtml(v){ v=String(v==null? "" : v); return /<[a-z]/i.test(v)? _cardRichClean(v) : _cardEsc(v); }
+function _cardTxt(v){ return String(v==null? "" : v).replace(/<[^>]+>/g,"").replace(/&nbsp;/g," ").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&amp;/g,"&").trim(); }
+try{ window._cardRichHtml=_cardRichHtml; }catch(e){_quiet(e)}
 function _preCardToPhx(L, c){
   const ad=_preAutoDoubt(c);
   return { num:String(c.num||""), pos:String(c.pos||""),
@@ -12251,12 +12287,14 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
     _preOpenCard(_preLgForCards||leagueState(), _preTidForCards||"", c, canEd, save||(()=>{}));
   });
   card.dataset.preKey=pos+"|"+i;
-  const put=(n, get, set)=>{
+  const put=(n, get, set, rich)=>{
     if(!n || !canEd) return;
     n.setAttribute("contenteditable","true");
     n.dataset.preF="1";
     /* kept once, by whichever comes first: leaving the line, or a ✕ pressed while it is open */
-    n.__commit=()=>{ if(n.__done) return false; const v=n.textContent.trim(); if(v===String(get()||"")) return false; n.__done=true; set(v); return true; };
+    n.__commit=()=>{ if(n.__done) return false; const v=rich? _cardRichOf(n) : n.textContent.trim(); if(v===String(get()||"")) return false; n.__done=true; set(v); return true; };
+    /* the report's right-click bar on the lines that are words (see _cardRichClean) */
+    if(rich) n.addEventListener("contextmenu",e=>{ e.preventDefault(); e.stopPropagation(); try{ n.focus(); showRepToolbar(n, e); }catch(err){_quiet(err)} });
     /* a line that is no longer on the card - drawn again a moment ago - is not written a second time */
     n.addEventListener("blur",()=>{ if(!n.isConnected) return; if(n.__commit()) redraw(); });
     n.addEventListener("keydown",e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); n.blur(); }
@@ -12302,7 +12340,7 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
   put(q(".meta"), ()=>c.meta, v=>{ c.meta=v; });
   put(q(".roster-badge"), ()=>c.badge, v=>{ c.badge=v; });
   put(q(".minutes"), ()=>c.min, v=>{ c.min=v; });
-  put(q(".tagline"), ()=>c.tag, v=>{ c.tag=v; });
+  put(q(".tagline"), ()=>c.tag, v=>{ c.tag=v; }, true);
   /* the builder pads the ideas out to three empty lines, so a card always has somewhere
      to write; an index past what the feed wrote simply lands at the end of the list */
   /* THE LINES ARE READ AND WRITTEN AS THE CARD SHOWS THEM (Oriol, 30/10/2026: "si borro un texto
@@ -12317,13 +12355,13 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
       c.ideas=(c.ideas||[]).filter(x=>String(x||"").trim());
       if(ii<c.ideas.length){ if(v) c.ideas[ii]=v; else c.ideas.splice(ii,1); }
       else if(v) c.ideas.push(v);
-    });
+    }, true);
   });
   card.querySelectorAll(".extra-line").forEach((n,bi)=>{
     put(n, ()=>(c.blocks||[])[bi]||"", v=>{
       c.blocks=c.blocks||[];
       if(v) c.blocks[bi]=v; else c.blocks.splice(bi,1);
-    });
+    }, true);
   });
   card.querySelectorAll(".stat-cell").forEach((cell,si)=>{
     put(cell.querySelector(".stat-value"), ()=>((c.stats||[])[si]||[])[0]||"",
@@ -13678,7 +13716,7 @@ function _preCard(L, c, pos, i, C, canEd, redraw, drag){
   const ul=h("div",{class:"pc-ideas"});
   (c.ideas||[]).forEach((t,ii)=>{
     const row=h("div",{class:"pc-idea"});
-    row.appendChild(ed("pc-it", t, v=>{ if(v) c.ideas[ii]=v; else c.ideas.splice(ii,1); }, "span"));
+    row.appendChild(ed("pc-it", _cardTxt(t), v=>{ if(v) c.ideas[ii]=v; else c.ideas.splice(ii,1); }, "span"));
     row.appendChild(h("span",{class:"pc-dot"}));
     ul.appendChild(row);
   });
@@ -13909,24 +13947,20 @@ function _surname(n){
    There is one ramp now and it is SIGNED: the step is where the number sits against its
    reference, so green is below it, pale is on it and red is above it. More is red, and
    more is what a club does well, which is what a staff needs to see first. */
-/* (until 8/11/2026, see below) ONE RULE, EVERY NUMBER: less is red, more is green. It used to run the other way -
+/* ONE RULE, EVERY NUMBER: less is red, more is green. It used to run the other way -
    green below the reference, red above it - because the report was written about the
    opponent, where more of what they do is worse for us. Reading the same colour two ways
    on two screens is what made it useless. The direction now carries the SIZE of the
    number and nothing else, which means a PPP we concede reads green when it is high;
    that is the price of one rule and it is paid on purpose. */
-/* ONE HEAT FOR EVERY AMOUNT (Oriol, 8/11/2026: "este será el formato", after the shot charts).
-   The nine steps were red below the reference and green above it; elsewhere in the hub red meant
-   high (a dangerous PPP) and green low, so the same colour said two things. Now every amount -
-   a percentage, a PPP, a volume - is one heat: pale sand far below, nothing at the reference,
-   orange and then deep red above. Green and red stay only where they say better or worse. */
-const PERF9=["#f7ecdf","#f1dcc6","#ebc9a8","#e6b991","#f2f2f0","#e2a073","#d98352","#b5452b","#9c2a1d"];
+/* (the shot charts' single heat stays on the shot charts only - Oriol, 8/11/2026: "solo el tiro") */
+const PERF9=["#C53727","#d4705f","#e7a596","#f6ddd6","#f2f2f0","#d6e5dc","#8fc0a9","#3f9570","#17805A"];
 function _perfStep(diff, span){
   const k=Math.max(-1, Math.min(1, (diff||0)/(span||1)));
   return Math.round((k+1)/2*8);
 }
 /* the five steps of the one scale, from little to a lot - see the colour rule above */
-const PST_VOL=["#f7ecdf","#f1dcc6","#e6b991","#d98352","#9c2a1d"];   /* the heat (see PERF9) */
+const PST_VOL=["#f7ece9","#eed6d0","#d9e6de","#9dc5ae","#17805A"];
 /* the pooled rates the whole report measures shooting against */
 const PST_BASE={ p2:53.4, p3:36.1, ft:71.4 };
 function _pstStep(k){ return k<0.20?0 : k<0.45?1 : k<0.68?2 : k<0.87?3 : 4; }
@@ -13936,7 +13970,7 @@ function _pstN(v,d){ return v==null||isNaN(v) ? "—" : Number(v).toFixed(d==nul
 function _pstCell(txt, cls){ const td=h("td",{class:"sxp-c"+(cls?" "+cls:"")}); td.appendChild(h("span",{class:"sxp-v"},txt==null?"—":String(txt))); return td; }
 function _pstChip(txt, ramp, st, cls){
   const td=h("td",{class:"sxp-c"+(cls?" "+cls:"")});
-  const sp=h("span",{class:"sxp-v"+(st?(st>=3?" chip on":" chip"):"")+(st>=4? " hot" : "")}, txt);
+  const sp=h("span",{class:"sxp-v"+(st?(st>=3?" chip on":" chip"):"")}, txt);
   if(st) sp.style.background=ramp[st];
   td.appendChild(sp); return td;
 }
@@ -13945,7 +13979,7 @@ function _perfChip(txt, diff, span, cls){
   const st=_perfStep(diff, span);
   const d=Math.abs(st-4);
   const td=h("td",{class:"sxp-c"+(cls?" "+cls:"")});
-  const sp=h("span",{class:"sxp-v"+(d? (d>=3? " chip on" : " chip") : "")+(st>=7? " hot" : "")}, txt);
+  const sp=h("span",{class:"sxp-v"+(d? (d>=3? " chip on" : " chip") : "")}, txt);
   if(d) sp.style.background=PERF9[st];
   td.appendChild(sp); return td;
 }
@@ -14315,7 +14349,7 @@ function pbxPppChip(ppp, avg, n){
   if(ppp==null || n<5 || avg==null){ sp.classList.add("muted"); if(ppp!=null && n) sp.title=n+" possessions"; return sp; }
   if(Math.abs(ppp-avg)<0.10) return sp;
   const st=_perfStep(ppp-avg, 0.25);
-  if(Math.abs(st-4)){ sp.style.background=PERF9[st]; sp.classList.add("on"); if(st>=7) sp.classList.add("hot"); }
+  if(Math.abs(st-4)){ sp.style.background=PERF9[st]; sp.classList.add("on"); if(st<=1 || st>=7) sp.classList.add("dk"); }
   return sp;
 }
 /* A pick is dragged, never clicked into place — and the drag has to work with a
@@ -15008,13 +15042,30 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
   }
   function drawKey(){
     keyBox.innerHTML="";
-    keyBox.appendChild(h("div",{class:"pbb-key-h"}, "★ Key sets"));
-    const picked=ROWS.filter(r=>keyOn(r.label)).sort(cmp());
+    /* THE KEY SETS BY PHASE, THEN BY USE OR BY CATEGORY (Oriol, 8/11/2026: "dame las dos opciones,
+       y aunque esté por volumen o categoría debes respetar el esquema del playbook"). Always the
+       playbook's order - transition, half court, baseline, sideline - and inside each phase the
+       most run first, or the families in their order (H1, H2, H3A, H3B ...), as chosen here */
+    const mode=(state.ui && state.ui.pbKeyOrd==="cat")? "cat" : "use";
+    const seg=h("span",{class:"pbb-kord"}, [["use","By use"],["cat","By category"]].map(o=>h("button",{type:"button", class:mode===o[0]? "on" : "",
+      title:o[0]==="use"? "Inside each phase, the set they run most first" : "Inside each phase, by family: H1, H2, H3A, H3B …",
+      onclick:()=>{ state.ui.pbKeyOrd=o[0]; try{ persist(); }catch(e){_quiet(e)} drawKey(); }}, o[1])));
+    keyBox.appendChild(h("div",{class:"pbb-key-h"}, "★ Key sets", seg));
+    const picked=ROWS.filter(r=>keyOn(r.label));
     if(!picked.length){ keyBox.appendChild(h("div",{class:"pbx-keyempty"}, canEd? "Press the star of a set to put it here" : "—")); return; }
+    const PHASES=[["Transition","Transition"],["Half court","Half court"],["BLOB","Baseline · BLOB"],["SLOB","Sideline · SLOB"],["Concepts","Concepts"]];
+    const kindOf=r=>{ const k=(r.c && r.c.kind) || ((()=>{ try{ return _pbClass(r).kind; }catch(e){ return ""; } })()); return PHASES.some(p=>p[0]===k)? k : "Half court"; };
+    const famKey=r=>{ const m=/^([A-Z])(\d+)([A-Z]?)$/.exec(String((r.c && r.c.code)||"")); return m? [+m[2], m[3]] : [999, ""]; };
+    const byUse=(a,b)=>(b.n||0)-(a.n||0);
+    const byCat=(a,b)=>{ const x=famKey(a), y=famKey(b); return (x[0]-y[0]) || x[1].localeCompare(y[1]) || byUse(a,b); };
+    const ordered=[];
+    PHASES.forEach(p=>{ const list=picked.filter(r=>kindOf(r)===p[0]).sort(mode==="cat"? byCat : byUse);
+      if(list.length) ordered.push({ head:p[1], n:list.length }, ...list); });
     /* one card a set, two lines with room in them: the code and the name the staff gave
        it, then what they shout, how often they run it and what it returns */
     const mxK=Math.max.apply(null, picked.map(x=>x.n).concat([1]));
-    picked.forEach(r=>{
+    ordered.forEach(r=>{
+      if(r.head){ keyBox.appendChild(h("div",{class:"pbb-kgrp"}, r.head, h("i",{}, String(r.n)))); return; }
       const nm=h("span",{class:"nm"}, nameOf(r.label));
       if(canEd) _pbbRename(nm, r, itemFor, areas, save, draw);
       const top=h("div",{class:"pbb-k1"}, r.c.code? paint(h("b",{}, r.c.code), r) : null, nm,
@@ -17721,12 +17772,12 @@ function renderPlanSection(sec, canEd, save, allSecs){
       if(hasCards && curOpp===opp){
         GP_POS.forEach((k,i)=>(cards[k]||[]).forEach(c=>{
           const m=pb["#"+String(c.num||"")] || pb[nk(c.name)] || null;
-          const ideas=(c.ideas||[]).filter(x=>String(x||"").trim() && !_preIdeaKind(x));
+          const ideas=(c.ideas||[]).map(_cardTxt).filter(x=>String(x||"").trim() && !_preIdeaKind(x));
           /* a man at the end of the bench with nothing written about him is left out */
           if(!m && String(c.badge||"").toUpperCase()==="BENCH" && !String(c.tag||"").trim() && !ideas.length) return;
           const mn=m? m.e.min : (parseFloat(c.min)||0);
           groups[i].push({ num:String(c.num||""), name:c.name||"", st:!!(m&&m.st), e:m? m.e : null, min:mn,
-            tag:String(c.tag||"").trim(), ideas:ideas, co:CO[c.co]||null, doubt:!!c.doubt });
+            tag:_cardTxt(c.tag), ideas:ideas, co:CO[c.co]||null, doubt:!!c.doubt });
         }));
       } else if(R){
         R.five.forEach((e,i)=>groups[i].push({ num:String(e.num||""), name:e.name, st:true, e:e, min:e.min, tag:"", ideas:[], co:null }));
@@ -18253,7 +18304,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
            there for the printer that drops fills. */
         bands.forEach(i=>{
           const item=h("div",{class:"gp3-ki"});
-          item.style.borderColor=colors[i]; item.style.backgroundColor=colors[i]+(side==="off"?"cc":"52");
+          item.style.borderColor=colors[i]; item.style.backgroundColor=colors[i]+(side==="off"?"cc":"52"); item.classList.add(side==="off"? "k-off" : "k-def");
           const span=gpBarSpan(bar, i+1);
           const line=h("div",{class:"gp3-kl"});
           /* named as on the sheet - FIRST 4', NEXT 4', LAST 2' - with the clock on the hover */
@@ -18276,7 +18327,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
         });
         if(derived){
           const item=h("div",{class:"gp3-ki"});
-          item.style.borderColor=derived.color; item.style.backgroundColor=derived.color+"52";
+          item.style.borderColor=derived.color; item.style.backgroundColor=derived.color+"52"; item.classList.add("k-def");
           item.appendChild(h("div",{class:"gp3-kl"}, h("span",{class:"gp3-ktag"}, "ALL "+GP_COLS+"′"),
             h("span",{class:"gp3-ktext"}, derived.text)));
           grp.appendChild(item);
@@ -21384,7 +21435,7 @@ function _lgStdTable(L){
   const rows=_lgMergeStandings(L);
   const nTeams=rows.length;
   const tbl=h("table",{class:"lg-tbl lg-std"});
-  tbl.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Team"), h("th",{},"GP"), h("th",{},"W"), h("th",{},"L"), h("th",{class:"lg-pct"},"PCT"), h("th",{},"DIFF"), h("th",{title:"The last five league games, oldest first. Cup and play-offs are not counted."},"FORM")));
+  tbl.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Team"), h("th",{},"GP"), h("th",{},"W"), h("th",{},"L"), h("th",{class:"lg-std-pct"},"PCT"), h("th",{},"DIFF"), h("th",{title:"The last five league games, oldest first. Cup and play-offs are not counted."},"FORM")));
   rows.slice().sort((a,b)=>(a.pos||99)-(b.pos||99)).forEach(r=>{
     const id=r.teamId||r.team;
     const z=_lgZone(r.pos, nTeams);
@@ -21398,7 +21449,7 @@ function _lgStdTable(L){
       h("td",{}, r.gp!=null?String(r.gp):"—"),
       h("td",{}, r.w!=null?String(r.w):"—"),
       h("td",{}, r.l!=null?String(r.l):"—"),
-      h("td",{class:"lg-pct"}, r.pct!=null? (Math.round(r.pct*1000)/10).toFixed(1)+"%" : "—"),
+      h("td",{class:"lg-std-pct"}, r.pct!=null? (Math.round(r.pct*1000)/10).toFixed(1)+"%" : "—"),
       h("td",{class:(r.diff>0?"pos":(r.diff<0?"neg":""))}, r.diff!=null? (r.diff>0?"+":"")+r.diff : "\u2014"),
       h("td",{}, _lgFormCell(L, id)));
     tbl.appendChild(tr);
@@ -25274,9 +25325,7 @@ function _lgRoster(L){
   const edge={};
   cols.forEach(c=>{
     if(c.pair) return;
-    /* the colour is the size of the number, as the key over the report says (8/11/2026): the
-       most turnovers are marked as the most, not as the worst - and in the hub's one heat */
-    const dir = 1;
+    const dir = (c.k==="tov"||c.k==="pf"||c.k==="tovp") ? -1 : 1;
     const pool=rows.filter(r=>!thin[r.id]);
     edge[c.k]=_lgEdges(pool, r=>_lgRsVal(c,r[split],per,ctx), dir, r=>r.id, LG_EDGE_K);
   });
@@ -25352,7 +25401,7 @@ function _lgRoster(L){
       h("td",{}, String(t.gp)));
     cols.forEach(c=>{
       /* the colour of the number is the team: green its best in the column, red its weakest */
-      const cls=(edge[c.k]||{})[p.id]||"", tip=cls==="pos"? "one of the highest in the team in this column" : cls==="neg"? "one of the lowest in the team in this column" : "";
+      const cls=(edge[c.k]||{})[p.id]||"", tip=cls==="pos"? "one of the team's best in this column" : cls==="neg"? "one of the team's weakest in this column" : "";
       /* no bar under the minutes either: the number says it, and the rotation has its gold edge */
       tr.appendChild(h("td",{class:cls, title:tip}, h("span",{class:"rx-v"}, _lgRsTxt(c,t,per,ctx))));
     });
@@ -28705,7 +28754,7 @@ function _dashRosterInto(box, g, wide){
           cd && cd.badge==="NEW"? h("span",{class:"new"},"NEW") : null,
           (cd && cd.hl==="stop")? h("span",{class:"hlb stop"},"STOP HIM") : (cd && cd.hl==="key")? h("span",{class:"hlb key"},"KEY") : null,
           p.min? h("i",{}, Math.round(p.min)+"′"+(start && R? " · S "+p.st+"/"+R.n : "")) : null),
-        (cd && String(cd.tag||"").trim())? h("div",{class:"tg"}, cd.tag) : null,
+        (cd && _cardTxt(cd.tag))? h("div",{class:"tg"}, _cardTxt(cd.tag)) : null,
         ideas.length? h("div",{class:"id"}, ideas.join(" · ")) : null)); };
     const wrap=h("div",{class:wide? "dash-ros5" : ""}); box.appendChild(wrap);
     /* THE STAFF'S ORDER FIRST. When the pre game has cards, the roster is the cards: each
@@ -29134,7 +29183,9 @@ function _dashTopSetsInto(box, g){
     /* the games, oldest first, and what each set ran in each */
     const dates={}, games=_pbGameOrder(((res && res.games)||[]).filter((x,i,a)=>a.indexOf(x)===i), tid, dates);
     const per=r=>{ const o={}; ((r && r._chs)||[]).forEach(c=>{ const k=(c && c[0] && c[0].game)||""; o[k]=(o[k]||0)+1; }); return o; };
-    const P=top.map(per), gmx=Math.max(1, ...P.map(o=>Math.max(0, ...Object.keys(o).map(k=>o[k]))));
+    const PM=new Map(top.map(r=>[r, per(r)])), P=r=>PM.get(r)||{};
+    const gmx=Math.max(1, ...top.map(r=>Math.max(0, ...Object.values(P(r)))));
+    const rankOf=new Map(top.map((r,i)=>[r, i+1]));
     const short=x=>String(x||"").replace(/^(VS|AT|@)\s+/i,"").slice(0,3).toUpperCase();
     const mx=Math.max(1, ...top.map(r=>r.n||0));
     /* THE GAMES BEFORE OUR LAST MEETING AND THE GAMES SINCE, AS IN THE PRE GAME (Oriol,
@@ -29147,27 +29198,60 @@ function _dashTopSetsInto(box, g){
     const isOld=x=>CUR>0 && E.era[x]!=null && E.era[x]<CUR;
     const cls=(x,i)=>(isOld(x)? "old" : "")+(i>0 && isOld(GMS[i-1]) && !isOld(x)? " sep" : "");
     const meetTxt=MEET.length? MEET[0].date.slice(8,10)+"/"+MEET[0].date.slice(5,7) : "";
-    const isNew=i=>CUR>0 && GMS.some(x=>isOld(x)) && !GMS.some(x=>isOld(x) && (P[i][x]||0)>0) && GMS.some(x=>!isOld(x) && (P[i][x]||0)>0);
+    const isNew=r=>CUR>0 && GMS.some(x=>isOld(x)) && !GMS.some(x=>isOld(x) && (P(r)[x]||0)>0) && GMS.some(x=>!isOld(x) && (P(r)[x]||0)>0);
     const hasSep=GMS.some((x,i)=>/sep/.test(cls(x,i)));
     const row=(...kids)=>h("div",{class:"ks-r"}, ...kids);
-    const t=h("div",{class:"dash-ks", style:"--ng:"+Math.max(1, GMS.length)+";--gsep:"+(hasSep? "7px" : "0px")},
-      row(h("span",{class:"hd"}), h("span",{class:"hd l"},"Set"), h("span",{class:"hd l"},"Call"), h("span",{class:"hd"},"Use"), h("span",{class:"hd"},"PPP"),
-        h("span",{class:"hd gm"}, GMS.map((x,i)=>h("i",{ class:cls(x,i), title:x+(dates[x]? " · "+dates[x].split("-").reverse().join("/") : "")+(isOld(x)? " · before our game of "+meetTxt : "") }, short(x), dates[x]? h("u",{}, dates[x].slice(8,10)+"/"+dates[x].slice(5,7)) : null)))));
-    top.forEach((r,i)=>{ let kind=""; try{ kind=_pbClass(r).kind||""; }catch(e){_quiet(e)}
-      t.appendChild(row(
-        h("span",{class:"rk"}, String(i+1)),
-        h("span",{class:"nm"}, h("b",{}, edits[r.label]||r.label), kind? h("i",{class:"kd"}, " "+kind) : null, isNew(i)? h("i",{class:"ks-new", title:"Not run in the games before our game of "+meetTxt},"new") : null),
-        r.call? h("q",{}, r.call) : h("span",{class:"nc"},"—"),
-        h("span",{class:"use", title:r.n+" runs · "+Math.round(100*r.n/tot)+"% of their possessions"}, h("span",{class:"vol"}, h("i",{style:"width:"+Math.max(8,Math.round(100*(r.n||0)/mx))+"%"})), h("u",{}, String(r.n||0)), h("small",{}, Math.round(100*r.n/tot)+"%")),
-        r.ppp!=null? h("em",{class:(r.n||0)<MS_POSS? "" : r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : h("em",{},"—"),
-        h("span",{class:"gm"}, GMS.map((x,j)=>{ const k=P[i][x]||0, a=k? 0.18+0.72*Math.min(1, k/gmx) : 0, old=isOld(x);
-          return h("i",{class:(k? "" : "z")+" "+cls(x,j), title:x+": "+k+(old? " · before our game of "+meetTxt : ""),
-            style:k? "background:rgba("+(old? "184,134,46" : "74,134,216")+","+a.toFixed(2)+");color:"+(a>0.55? "#fff" : old? "#5a3d0c" : "#1d3a66") : ""}, k? String(k) : "·"); }))));
-    });
-    if(CUR>0 && GMS.some(isOld)) box.appendChild(h("div",{class:"ks-era"},
-      h("span",{}, h("i",{class:"o"}), "Before our game of "+meetTxt), h("span",{}, h("i",{class:"n"}), "Since")));
-    /* in a box of its own, so a narrow card can lay the rows out compact (container query) */
-    box.appendChild(h("div",{class:"dks-c"}, t));
+    /* THE KEY SETS IN THE PLAYBOOK'S PHASES, BY USE OR BY CATEGORY (Oriol, 8/11/2026: "dame las
+       dos opciones, y aunque esté por volumen o categoría debes respetar el esquema del playbook
+       de transition, half court, baseline, sideline"). The choice is the pre game board's own. */
+    const PH=[["Transition","Transition"],["Half court","Half court"],["BLOB","Baseline · BLOB"],["SLOB","Sideline · SLOB"]];
+    const kindOf=r=>{ let k=""; try{ k=_pbClass(r).kind||""; }catch(e){_quiet(e)} return PH.some(p=>p[0]===k)? k : "Half court"; };
+    const famKey=r=>{ let c=""; try{ c=_pbClass(r).code||""; }catch(e){_quiet(e)} const m=/^([A-Z])(\d+)([A-Z]?)$/.exec(c); return m? [+m[2], m[3]] : [999, ""]; };
+    const byUse=(a,b)=>(b.n||0)-(a.n||0);
+    const byCat=(a,b)=>{ const x=famKey(a), y=famKey(b); return (x[0]-y[0]) || x[1].localeCompare(y[1]) || byUse(a,b); };
+    const paint=()=>{
+      box.innerHTML="";
+      const mode=(state.ui && state.ui.pbKeyOrd==="cat")? "cat" : "use";
+      const seg=h("span",{class:"pbb-kord"}, [["use","By use"],["cat","By category"]].map(o=>h("button",{type:"button", class:mode===o[0]? "on" : "",
+        title:o[0]==="use"? "Inside each phase, the set they run most first" : "Inside each phase, by family: H1, H2, H3A, H3B …",
+        onclick:()=>{ try{ state.ui.pbKeyOrd=o[0]; persist(); }catch(e){_quiet(e)} paint(); }}, o[1])));
+      const groups=PH.map(p=>({ head:p[1], list:top.filter(r=>kindOf(r)===p[0]).sort(mode==="cat"? byCat : byUse) })).filter(x=>x.list.length);
+      const mkT=()=>h("div",{class:"dash-ks", style:"--ng:"+Math.max(1, GMS.length)+";--gsep:"+(hasSep? "7px" : "0px")},
+        row(h("span",{class:"hd"}), h("span",{class:"hd l"},"Set"), h("span",{class:"hd l"},"Call"), h("span",{class:"hd"},"Use"), h("span",{class:"hd"},"PPP"),
+          h("span",{class:"hd gm"}, GMS.map((x,i)=>h("i",{ class:cls(x,i), title:x+(dates[x]? " · "+dates[x].split("-").reverse().join("/") : "")+(isOld(x)? " · before our game of "+meetTxt : "") }, short(x), dates[x]? h("u",{}, dates[x].slice(8,10)+"/"+dates[x].slice(5,7)) : null)))));
+      const setRow=r=>{ const rk=rankOf.get(r);
+        return row(
+          h("span",{class:"rk", title:"The "+_dashOrd(rk)+" most run of their key sets"}, String(rk)),
+          h("span",{class:"nm"}, h("b",{}, edits[r.label]||r.label), isNew(r)? h("i",{class:"ks-new", title:"Not run in the games before our game of "+meetTxt},"new") : null),
+          r.call? h("q",{}, r.call) : h("span",{class:"nc"},"—"),
+          h("span",{class:"use", title:r.n+" runs · "+Math.round(100*r.n/tot)+"% of their possessions"}, h("span",{class:"vol"}, h("i",{style:"width:"+Math.max(8,Math.round(100*(r.n||0)/mx))+"%"})), h("u",{}, String(r.n||0)), h("small",{}, Math.round(100*r.n/tot)+"%")),
+          r.ppp!=null? h("em",{class:(r.n||0)<MS_POSS? "" : r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : h("em",{},"—"),
+          h("span",{class:"gm"}, GMS.map((x,j)=>{ const k=P(r)[x]||0, a=k? 0.18+0.72*Math.min(1, k/gmx) : 0, old=isOld(x);
+            return h("i",{class:(k? "" : "z")+" "+cls(x,j), title:x+": "+k+(old? " · before our game of "+meetTxt : ""),
+              style:k? "background:rgba("+(old? "184,134,46" : "74,134,216")+","+a.toFixed(2)+");color:"+(a>0.55? "#fff" : old? "#5a3d0c" : "#1d3a66") : ""}, k? String(k) : "·"); })));
+      };
+      const gHead=(t,n,more)=>h("div",{class:"ks-g"}, t+(more? " · cont." : ""), h("i",{}, String(n)));
+      /* MANY KEY SETS, TWO COLUMNS (Oriol, 8/11/2026, Chemnitz): more than eight starred sets are
+         laid out in two tables side by side; a phase stays whole in one column when the split
+         allows it, and one that has to break says so at the top of the second */
+      const two=top.length>8, tA=mkT(), tB=two? mkT() : null;
+      const flat=[]; groups.forEach(gr=>{ gr.list.forEach((r,i)=>flat.push({ gr:gr, r:r, first:i===0 })); });
+      let cut=flat.length;
+      if(two){ const half=Math.ceil(flat.length/2); let best=-1;
+        flat.forEach((x,i)=>{ if(i>0 && x.first && (best<0 || Math.abs(i-half)<Math.abs(best-half))) best=i; });
+        cut=(best>0 && Math.abs(best-half)<=2)? best : half; }
+      flat.forEach((x,i)=>{ const t=(i<cut)? tA : tB;
+        if(x.first) t.appendChild(gHead(x.gr.head, x.gr.list.length, false));
+        else if(i===cut) t.appendChild(gHead(x.gr.head, x.gr.list.length, true));
+        t.appendChild(setRow(x.r)); });
+      box.appendChild(h("div",{class:"ks-top"},
+        (CUR>0 && GMS.some(isOld))? h("div",{class:"ks-era"}, h("span",{}, h("i",{class:"o"}), "Before our game of "+meetTxt), h("span",{}, h("i",{class:"n"}), "Since")) : h("span",{}),
+        seg));
+      /* in a box of its own, so a narrow card can lay the rows out compact (container query) */
+      if(two) box.appendChild(h("div",{class:"dks-2"}, h("div",{class:"dks-c"}, tA), h("div",{class:"dks-c"}, tB)));
+      else box.appendChild(h("div",{class:"dks-c"}, tA));
+    };
+    paint();
 
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their playbook could not be read.")); });
 }
@@ -30062,7 +30146,9 @@ function renderDashboard(){
       /* the notes take the whole width, a concept at a time; the ball screen, their sets and
          how they come in share the line under them */
       c.__b.appendChild(h("div",{class:"dash-blk"}, cN));
-      c.__b.appendChild(h("div",{class:"dash-3c"}, cV, cS, cF));
+      /* the ball screen with their recent form under it, and their key sets beside them with the
+         room they need (Oriol, 8/11/2026: "recent form puede ir debajo de pick and roll") */
+      c.__b.appendChild(h("div",{class:"dash-3c dash-pf"}, h("div",{class:"dash-col"}, cV, cF), cS));
       c.__b.appendChild(h("div",{class:"dash-blk"}, cP));
       _dashTeamStatsInto(cT.__b, g.opponent);
       _dashRosterInto(cR.__b, g, true);
@@ -36610,12 +36696,12 @@ body.dark .rt-zebra{fill:rgba(255,255,255,.035)}
 /* the court is the frame, not a decoration: drawn dark enough to read under the
    hexagons, the way a printed shot chart does it */
 .sc-floor{fill:var(--panel-2,#f8f9fb);stroke:var(--line,#e6e8ec);stroke-width:4}
-body.dark .sc-floor{fill:#161b23;stroke:#262d3a}
+body.dark .sc-floor{fill:#242a33;stroke:#262d3a}
 .sc-line{fill:none;stroke:#3c4350;stroke-width:5;opacity:.72}
 body.dark .sc-line{stroke:#aab2c0;opacity:.6}
 .sc-dot.made{fill:#2f9e86;stroke:var(--panel,#fff);stroke-width:3}
 .sc-dot.miss{fill:none;stroke:#d8524e;stroke-width:5}
-body.dark .sc-dot.made{fill:#2f9e86;stroke:#161b23}
+body.dark .sc-dot.made{fill:#2f9e86;stroke:#242a33}
 .sc-chips{display:flex;flex-wrap:wrap;gap:5px;margin:2px 0 8px}
 .sc-chip{border:1px solid var(--line-strong,#d7dbe0);background:transparent;color:var(--ink-faint,#8a919c);font:inherit;font-size:11px;padding:3px 8px;border-radius:999px;cursor:pointer}
 .sc-chip:hover{color:var(--ink)}
@@ -36660,11 +36746,11 @@ body.dark .sc-kfd{fill:#5c6472}
 .sc-hex.mn1{fill:#64a0cb}.sc-hex.mn2{fill:#15537f}
 .sc-ht{font:600 20px var(--font,system-ui);fill:#1d2430;text-anchor:middle;paint-order:stroke;
   stroke:var(--panel,#fff);stroke-width:5px;pointer-events:none}
-body.dark .sc-hex{stroke:#161b23}
+body.dark .sc-hex{stroke:#242a33}
 body.dark .sc-hex.m0{fill:#646c7a}
 body.dark .sc-hex.mp1{fill:#df9676}body.dark .sc-hex.mp2{fill:#c4503f}
 body.dark .sc-hex.mn1{fill:#8fbcd8}body.dark .sc-hex.mn2{fill:#3a7fab}
-body.dark .sc-ht{fill:#eef1f6;stroke:#161b23}
+body.dark .sc-ht{fill:#eef1f6;stroke:#242a33}
 .sc-kz.m0::before{background:#d4d7dc}
 .sc-kz.mp1::before{background:#e59277}
 .sc-kz.mp2::before{background:#a8302a}
@@ -37305,7 +37391,7 @@ td.tr-supc{font-weight:700}
 /* the best of a column is a gold cell, not gold type: gold letters on a white table are
    the first thing to disappear on a projector or a phone in a sports hall */
 .lgg-box td.top{font-weight:800;color:#1a1408;background:#ecd08a;box-shadow:inset 0 0 0 2px var(--panel,#fff);border-radius:6px}
-body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 0 2px var(--panel,#161b23)}
+body.dark .lgg-box td.top{background:#d8b877;color:#14110a;box-shadow:inset 0 0 0 2px var(--panel,#242a33)}
 .lgg-box tr.pick:hover td.top{background:#e3c06a}
 .lgg-box tr.first-bench td{border-top:2px solid var(--line-strong,#d2d7df)}
 .lgg-shots{display:grid;grid-template-columns:1fr 1fr;gap:22px}
@@ -37685,7 +37771,7 @@ td.avgm{box-shadow:inset 0 -2px 0 rgba(140,148,160,.5)}
   background:transparent;color:var(--ink);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
 .lg-tsel-o:hover{background:var(--panel-2,#f3f5f8)}
 .lg-tsel-o.on{font-weight:700;background:var(--panel-2,#f3f5f8)}
-body.dark .lg-tsel-b,body.dark .lg-tsel-p{background:#161b23;border-color:#2a3140}
+body.dark .lg-tsel-b,body.dark .lg-tsel-p{background:#242a33;border-color:#2a3140}
 body.dark .lg-tsel-o:hover,body.dark .lg-tsel-o.on{background:rgba(255,255,255,.06)}
 .lg-bdg.crest .lg-bdg-m{font-size:7.5px}
 .lg-bdg.face{width:20px;height:20px;border-radius:50%;background:var(--panel-2,#eef0f3)}
@@ -37697,7 +37783,7 @@ body.dark .lg-tsel-o:hover,body.dark .lg-tsel-o.on{background:rgba(255,255,255,.
 .lg-bdg.face.sum{width:34px;height:34px;margin-right:6px}
 .lg-bdg.face.sum .lg-bdg-m{font-size:13px}
 .us-f .lg-bdg.face.sum+.lg-bdg.face.sum{margin-left:-11px;box-shadow:0 0 0 2px var(--panel,#fff)}
-body.dark .us-f .lg-bdg.face.sum+.lg-bdg.face.sum{box-shadow:0 0 0 2px #11151c}
+body.dark .us-f .lg-bdg.face.sum+.lg-bdg.face.sum{box-shadow:0 0 0 2px #242a33}
 /* the opponent badge wherever a game is listed outside the league view */
 .lg-bdg.crest.opp{width:15px;height:15px;margin:0 5px 0 0}
 .lg-bdg.crest.opp .lg-bdg-m{font-size:6.5px}
@@ -38526,7 +38612,7 @@ body.dark .lg-fix tr.nextg td{background:rgba(224,199,129,.12)}
 .lg-fold-i{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;
   border-radius:4px;background:var(--panel-2,#f1f3f6);font-size:11px;line-height:1}
 .lg-fold.on>.lg-fold-b{margin-bottom:10px}
-body.dark .lg-fold-b{background:#161b23;border-color:#262d3a;color:#aeb6c2}
+body.dark .lg-fold-b{background:#242a33;border-color:#262d3a;color:#aeb6c2}
 body.dark .lg-fold-i{background:rgba(255,255,255,.07)}
 .lg-emb-p+.lg-emb-p{margin-top:14px}
 .lg-emb .lg-panel{margin:0}
@@ -38556,7 +38642,7 @@ body.dark .lg-moved{background:rgba(224,199,129,.18);color:#e3c781}
 .lg-bar-n{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.07em;text-transform:uppercase;
   color:var(--ink-faint,#b2b8c2)}
 body.dark .lg-bar{background:rgba(255,255,255,.04);border-color:#262d3a}
-body.dark .lg-bar .lg-tsel-b{background:#161b23}
+body.dark .lg-bar .lg-tsel-b{background:#242a33}
 @media(max-width:760px){ .lg-bar{flex-wrap:wrap;gap:9px} .lg-bar-n{display:none} }
 .lg-bdg.crest.pc{width:100%;height:100%;margin:0}
 .lg-bdg.crest.pc .lg-bdg-m{font-size:4.5px}
@@ -38574,7 +38660,7 @@ body.dark .lg-bar .lg-tsel-b{background:#161b23}
 .lg-bdg.face.zone .lg-bdg-m{font-size:26px}
 .sc-own{font-family:'Oswald',sans-serif;font-weight:600;font-size:32px;fill:var(--ink);text-anchor:start}
 .sc-ownbg{fill:var(--panel,#fff);stroke:var(--line,#e4e7ec);stroke-width:2px;opacity:.96}
-body.dark .sc-ownbg{fill:#161b23;stroke:#2b3440}
+body.dark .sc-ownbg{fill:#242a33;stroke:#2b3440}
 .lg-lb{position:fixed;top:0;right:0;bottom:0;left:0;z-index:9000;display:flex;align-items:center;justify-content:center;
   background:rgba(12,15,20,.78);opacity:0;transition:opacity .13s ease;cursor:zoom-out;padding:24px}
 .lg-lb.in{opacity:1}
@@ -38591,7 +38677,7 @@ body.dark .sc-ownbg{fill:#161b23;stroke:#2b3440}
 .sc-card.multi{max-width:62%}
 .sc-card-f{display:flex;align-items:center;flex:0 0 auto}
 .sc-card-f .lg-bdg.face.card+.lg-bdg.face.card{margin-left:-11px;box-shadow:0 0 0 2px var(--panel,#fff)}
-body.dark .sc-card-f .lg-bdg.face.card+.lg-bdg.face.card{box-shadow:0 0 0 2px #161b23}
+body.dark .sc-card-f .lg-bdg.face.card+.lg-bdg.face.card{box-shadow:0 0 0 2px #242a33}
 .sc-card-more{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-faint,#9aa1ac);
   margin-left:5px;flex:0 0 auto}
 .sc-card-t{display:flex;flex-direction:column;line-height:1.15;min-width:0}
@@ -38600,7 +38686,7 @@ body.dark .sc-card-f .lg-bdg.face.card+.lg-bdg.face.card{box-shadow:0 0 0 2px #1
 .sc-card-t span{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;
   color:var(--ink-faint,#9aa1ac)}
 body.dark .lg-bdg.face.zone{border-color:rgba(0,0,0,.5)}
-body.dark .sc-card{background:#161b23;border-color:#2a3140}
+body.dark .sc-card{background:#242a33;border-color:#2a3140}
 td.lg-team{white-space:nowrap}
 td.lg-team > span{vertical-align:middle}
 .lg-help{cursor:help}
@@ -38639,8 +38725,8 @@ th.srt{color:var(--ink);font-weight:700}
 
 body.dark .rs{background:rgba(255,255,255,.04);border-color:#262d3a}
 body.dark .rs-r + .rs-r{border-top-color:#262d3a}
-body.dark .rs-t{background:#161b23;border-color:#262d3a}
-body.dark .rs-t.soft .lg-bdg.face{box-shadow:0 0 0 2px #11151c,0 0 0 3.5px #e0c781}
+body.dark .rs-t{background:#242a33;border-color:#262d3a}
+body.dark .rs-t.soft .lg-bdg.face{box-shadow:0 0 0 2px #242a33,0 0 0 3.5px #e0c781}
 @media(max-width:860px){
   .rs-l{flex:1 1 100%}
   .rs-n{flex:1 1 100%;text-align:left;max-width:none}
@@ -38772,7 +38858,7 @@ body.dark .rt-l4{fill:#e3c781;background:#e3c781}
   font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
   color:var(--ink-faint,#9aa1ac);text-decoration:underline}
 .cmb-clear:hover{color:var(--ink)}
-body.dark .cmb-chip{background:#161b23;border-color:#262d3a;color:#aeb6c2}
+body.dark .cmb-chip{background:#242a33;border-color:#262d3a;color:#aeb6c2}
 body.dark .cmb-chip.on{background:#e8ddc0;border-color:#e8ddc0;color:#1a1f27}
 /* the card above the combinations: who is picked, and their own numbers when the pick is
    itself one of the groups in the table */
@@ -41815,12 +41901,12 @@ function _deadFetch(url){
     var ideaVals = (Array.isArray(p.ideas) ? p.ideas : []).filter(function(v){ return String(v||"").trim(); }).slice(0,4);
     var ideaBlanks = Math.max(0, 4 - ideaVals.length);   /* the way in, while editing */
     var ideasHtml = ideaVals.map(function(v,i){
-      return '<div class="idea-row removable"><span class="idea-line editable" contenteditable="false" data-placeholder="key idea '+(i+1)+'">'+escapeHtml(v)+'</span><button type="button" class="rm-x rm-x-inline" title="Remove idea">×</button></div>';
+      return '<div class="idea-row removable"><span class="idea-line editable" contenteditable="false" data-placeholder="key idea '+(i+1)+'">'+(window._cardRichHtml? window._cardRichHtml(v) : escapeHtml(v))+'</span><button type="button" class="rm-x rm-x-inline" title="Remove idea">×</button></div>';
     }).join('') + (function(){ var o=''; for(var k=0;k<ideaBlanks;k++){
       o += '<div class="idea-row removable idea-blank"><span class="idea-line editable" contenteditable="false" data-placeholder="key idea '+(ideaVals.length+k+1)+'"></span><button type="button" class="rm-x rm-x-inline" title="Remove idea">×</button></div>';
     } return o; })();
     var blocksHtml = (Array.isArray(p.blocks) ? p.blocks : []).map(function(v){
-      return '<div class="extra-block removable"><span class="extra-line editable" contenteditable="false" data-placeholder="extra note">'+escapeHtml(v)+'</span><button type="button" class="rm-x rm-x-inline" title="Remove">×</button></div>';
+      return '<div class="extra-block removable"><span class="extra-line editable" contenteditable="false" data-placeholder="extra note">'+(window._cardRichHtml? window._cardRichHtml(v) : escapeHtml(v))+'</span><button type="button" class="rm-x rm-x-inline" title="Remove">×</button></div>';
     }).join('');
     /* "5.0\u00b740%" is two numbers, not one: how often he shoots it and how often it goes
        in. The percentage used to be set small, as if it were a footnote to the volume, and
@@ -41887,7 +41973,7 @@ function _deadFetch(url){
       +     '</div>'
       +     '<div class="removable tagline-wrap">'
       +       '<button type="button" class="rm-x" title="Remove tagline">×</button>'
-      +       '<p class="tagline editable" contenteditable="false">'+escapeHtml(p.tagline)+'</p>'
+      +       '<p class="tagline editable" contenteditable="false">'+(window._cardRichHtml? window._cardRichHtml(p.tagline) : escapeHtml(p.tagline))+'</p>'
       +     '</div>'
       +     '<div class="ideas">'+ideasHtml+'</div>'
       +     '<div class="extra-blocks">'+blocksHtml+'</div>'
@@ -44749,7 +44835,7 @@ body.edit-mode .phx.phx .roster-columns .card .rm-x:hover{opacity:1}
    dark panel. */
 :root{--gold-ink:#7a5c12}
 body.dark{--perf-hi:#4fc08d;--perf-lo:#ff8a7e;--gold-ink:var(--accent)}
-body.dark #viewLeague,body.dark .lg-emb,body.dark .lgg-back{--panel-2:#1c222c}
+body.dark #viewLeague,body.dark .lg-emb,body.dark .lgg-back{--panel-2:#2c333e}
 /* the rank beside a figure, and the three big ranks of the team analysis */
 .lg-rk{color:var(--gold-ink);font-size:10px}
 .lg-4f-r{color:var(--gold-3,#a9812f)}
@@ -44794,7 +44880,7 @@ body.dark .pace-tbl th.pace-gd{color:#e2a466}
    the dark theme every other panel fell back to the light grey written beside it, and its
    text - already the dark theme's light ink - stood on near white (Trends' rankings, the
    dashboard's minute by minute, the playbook's game boxes, the post game's figures). */
-body.dark{--panel-2:#1c222c}
+body.dark{--panel-2:#2c333e}
 /* a result in white: on the deeper green and red the league's calendar uses */
 .dash-form i.w,.dash-form i.l{color:#fff}
 .dash-form i.w{background:#23806b}
@@ -44814,7 +44900,7 @@ body.dark .pbb-c-gm i:not(.z){color:var(--ink)!important}
 body.dark :is(.sx-table td.tr-good,.tr-rank4 .tr-rank.good .tr-rank-v,.ui-split-l b.good,sup.tr-sup.good,.miss-t td.ok,.gp-court-t tr.on td.now,.sem-p.green .sem-nm){color:var(--perf-hi)}
 body.dark :is(.sx-table td.tr-warn,.tr-warnline,.tr-rank4 .tr-rank.bad .tr-rank-v,sup.tr-sup.bad,.miss-t td.no,.ow-info > span.no,.sem-p.red .sem-nm){color:var(--perf-lo)}
 /* a heat cell keeps its light colour in the dark theme, so its figure stays dark */
-body.dark .sx-cell:is(.s0,.s1,.s2,.s3){color:#12161d}
+body.dark .sx-cell:is(.s1,.s2,.s3,.s4){color:#12161d}
 body.dark .pg-main-h{color:var(--accent)}
 /* headings, tabs and toggles drawn in the light theme's ink */
 body.dark .ui-group-h b{background:#2a313d;color:#fff}
@@ -44822,9 +44908,9 @@ body.dark .pg-uni .sxp-tab{color:var(--ink-soft)}
 body.dark .pg-uni .sxp-tab:hover{background:rgba(255,255,255,.07);color:var(--ink)}
 body.dark .ui-fig.vol b{color:#7fb0ef}
 body.dark .ssv-wk-cell.active{background:#241f13;border-color:var(--accent)}
-body.dark .pb-toggle{background:#1c222c}
+body.dark .pb-toggle{background:#2c333e}
 /* Trends' band rows: the heat cells keep their light colours, so their figures stay dark */
-body.dark .tr-sets .sx-table tr.tr-bandrow td.sx-cell:is(.s0,.s1,.s2,.s3){color:#12161d}
+body.dark .tr-sets .sx-table tr.tr-bandrow td.sx-cell:is(.s1,.s2,.s3,.s4){color:#12161d}
 /* a call written on its chip, the "mixed" verdict of Player development: gold ink on dark */
 body.dark .pbx-call,body.dark .pd-vd.mix{color:var(--accent)}
 /* Trends' band rows: the label cells are painted a light grey with !important */
@@ -45037,7 +45123,7 @@ body.dark .wx-t .wx-last{box-shadow:7px 0 9px -7px rgba(0,0,0,.7)}
 .lg-md-hr{font-style:normal}
 @media (max-width:600px){
   .lg-std .nm-f,.lg-md .nm-f{display:none} .lg-std .nm-s,.lg-md .nm-s{display:inline}
-  .lg-std .lg-pct{display:none}
+  .lg-std .lg-std-pct{display:none}
   .lg-std th,.lg-std td{padding-left:4px!important;padding-right:4px!important}
   .lg-std .lg-team{white-space:nowrap}
   .lg-md-row{grid-template-columns:40px minmax(0,1fr) 54px minmax(0,1fr);gap:6px;padding:6px 2px}
@@ -45063,7 +45149,16 @@ body.dark .wx-t .wx-last{box-shadow:7px 0 9px -7px rgba(0,0,0,.7)}
 body.dark .dash-ks .gm i:not(.z){color:var(--ink)!important}
 body.dark .dash-ks .hd.gm i.old{color:#d9b46a}
 .dks-c{container-type:inline-size;min-width:0}
+/* a phase of the playbook over its sets, and the choice of order beside the era legend */
+.ks-top{display:flex;align-items:center;justify-content:space-between;gap:6px 12px;flex-wrap:wrap;margin:0 0 8px}
+.ks-top .ks-era{margin:0}
+.dash-ks .ks-g{grid-column:1/-1;justify-self:stretch;align-self:stretch;width:100%;box-sizing:border-box;text-align:left;display:flex;align-items:center;gap:6px;margin-top:6px;padding-bottom:2px;border-bottom:1px solid rgba(198,161,91,.45);
+  font:700 10.5px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#8a6829}
+.dash-ks .ks-g i{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#687180);letter-spacing:0}
+body.dark .dash-ks .ks-g{color:#e3c27a}
 @container (max-width:640px){
+  .dash-ks .ks-g{margin-top:8px}
+  .dash-ks .ks-g + .ks-r{border-top:0}
   .dash-ks{display:flex;flex-direction:column;gap:0}
   .dash-ks .ks-r{display:grid;grid-template-columns:18px 88px minmax(0,1fr) auto;grid-template-areas:"rk nm nm ppp" "rk call call call" ". use gm gm";
     column-gap:8px;row-gap:3px;align-items:center;padding:8px 0;border-top:1px solid var(--line,#eef0f3)}
@@ -45077,6 +45172,9 @@ body.dark .dash-ks .hd.gm i.old{color:#d9b46a}
   .dash-ks .ks-r > .gm,.dash-ks .ks-r:first-child > :nth-child(6){grid-area:gm;flex-wrap:wrap;row-gap:3px}
   .dash-ks .nm{font-size:13px}
   .dash-ks q{font-size:12px}
+  .dash-ks .ks-r{width:100%;min-width:0;box-sizing:border-box}
+  .dash-ks .ks-r > *{min-width:0}
+  .dash-ks .nm .kd{white-space:normal}
   .dash-ks .gm i{flex-basis:21px;font-size:10.5px}
   .dash-ks .gm i.sep{margin-left:6px}
   .dash-ks .ks-r{grid-template-columns:18px 76px minmax(0,1fr) auto}
@@ -45206,46 +45304,489 @@ body.dark .sc-hex.mn2{fill:#5a4637}body.dark .sc-hex.mn1{fill:#8a5d3d}body.dark 
 body.dark .sc-hex.mp1{fill:#e0663a}body.dark .sc-hex.mp2{fill:#ff8a66}body.dark .sc-hex.mx{fill:#3a414d}
 body.dark .sc-kz.mn2::before{background:#5a4637}body.dark .sc-kz.mn1::before{background:#8a5d3d}body.dark .sc-kz.m0::before{background:#c07443}
 body.dark .sc-kz.mp1::before{background:#e0663a}body.dark .sc-kz.mp2::before{background:#ff8a66}body.dark .sc-kz.mx::before{background:#3a414d}
-/* ONE HEAT FOR EVERY AMOUNT, EVERYWHERE (Oriol, 8/11/2026: "se aplica a todo el hub, también a
-   las de pregame y las fichas al acceder al vídeo. A todo. Ahora este será el formato"). The
-   scale of the shot charts - pale sand, sand, orange, red, deep red - is the one scale for how
-   much and how well: the chips of the pre game tables (PERF9), the volumes and rates of Trends
-   and the post game (stats.js), the PPP of the sets and of each man, and the lit boxes of the
-   cards, on the board and beside the video. Dark type on the pale steps, white on the deep. */
-.sxp-v.chip.on{color:#12161d!important}.sxp-v.chip.hot{color:#fff!important}
-.pbx-ppp.on{color:#12161d}.pbx-ppp.hot{color:#fff}
-/* the key over every report, and the roster table's highest and lowest in each column */
-.pre-grad{background:linear-gradient(90deg,#f7ecdf,#ebc9a8,#e6b991 40%,#f2f2f0 48%,#f2f2f0 52%,#e2a073,#b5452b,#9c2a1d)!important}
-.pre-k.them{color:#9a6b45}.pre-k.us{color:#9c2a1d}
-.lg-rost td.pos{color:#b5452b!important;font-weight:700}.lg-rost td.neg{color:#a8896d!important}
-body.dark .lg-rost td.pos{color:#ff8a66!important}body.dark .lg-rost td.neg{color:#b9a48f!important}
-/* the cards: the lit box deep red, the next one sand, a poor shooter the palest */
-.phx .card .stat-cell.hl-hot{background:#b5452b!important}
-.phx .card .stat-cell.hl-hot *{color:#fff!important}
-.phx .card .stat-cell.hl-warm{background:#ebc9a8!important}
-.phx .card .stat-cell.hl-warm *{color:#3b1a10!important}
-.phx .card .stat-cell.hl-low{background:#f7ecdf!important;box-shadow:inset 0 0 0 1px #ead7c2}
-.phx .card .stat-cell.hl-low .stat-value,.phx .card .stat-cell.hl-low .hl-why,.phx .card .stat-cell.hl-low .sv-pc{color:#8a5a3a!important}
-.modal-stats .modal-stat-cell.hl-hot{background:#b5452b!important}
-.modal-stats .modal-stat-cell.hl-hot *{color:#fff!important}
-.modal-stats .modal-stat-cell.hl-warm{background:#ebc9a8!important}
-.modal-stats .modal-stat-cell.hl-warm *{color:#3b1a10!important}
-.modal-stats .modal-stat-cell.hl-low{background:#f7ecdf!important;box-shadow:inset 0 0 0 1px #ead7c2;border-radius:6px}
-.modal-stats .modal-stat-cell.hl-low *{color:#8a5a3a!important}
-/* each man's PPP in the roster table, and how much he ends in each role */
-.rt-chip.rt-p0{background:#f1dcc6;color:#3b1a10}.rt-chip.rt-p1{background:#ebc9a8;color:#3b1a10}.rt-chip.rt-p2{background:#e6b991;color:#3b1a10}
-.rt-chip.rt-p3{background:#e2a073;color:#2a120a}.rt-chip.rt-p4{background:#b5452b;color:#fff}.rt-chip.rt-p5{background:#9c2a1d;color:#fff}
-.rt-heat.h1{background:#f7ecdf}.rt-heat.h2{background:#f1dcc6}.rt-heat.h3{background:#e6b991}
-.rt-heat.h4{background:#d98352;color:#fff}.rt-heat.h5{background:#9c2a1d;color:#fff}
-/* the dashboard: a set's PPP, a man's PPP against their average */
-.dash-ks em.hi{background:#9c2a1d;color:#fff}.dash-ks em.lo{background:#f1dcc6;color:#5a3a22}
-.dash-kp .c.hot{background:#f0cfb4;color:#8a2216}.dash-kp .c.cold{background:#f7ecdf;color:#8a5a3a}
-/* where the shots come from: the rim deepest, the three next, the middle sand */
-.gp-sq .sq-s.in{background:#9c2a1d}.gp-sq .sq-s.th{background:#c95a33}
-.gp-sq .sq-s.mid{background:#ebc9a8;color:#3b1a10}.gp-sq .sq-s.mid.warn{background:#e2a073;color:#2a120a}
 /* the shot chart's dots: a make in deep red, a miss a sand ring */
 .sc-dot.made{fill:#b5452b}.sc-dot.miss{stroke:#d9b28c}
 body.dark .sc-dot.made{fill:#e0663a}body.dark .sc-dot.miss{stroke:#8a6a4f}
+
+/* ==== DARK THEME, TEXT MADE FOR A WHITE PAGE (Oriol, 8/11/2026: "muchas cosas no se ven") ====
+   Every rule that writes a deep green, red, gold, blue, purple or a mid grey for a white page with no
+   ground of its own (or only a faint wash) gets its light-on-charcoal version here, and every pill
+   painted in the ink with white type gets dark type (the ink is light in the dark). Generated from
+   the rules themselves (.claude/test/tools/darkfix.pl): run it again when classes are added. */
+body.dark .pos-pill{color:#1b2028}
+body.dark .mkt-group-head .glabel{color:#1b2028}
+body.dark .filters button.active{color:#1b2028}
+body.dark .tag-editor .tag-chip{color:#1b2028}
+body.dark .interest-choose button[data-l=normal].sel{color:#1b2028}
+body.dark .toast{color:#1b2028}
+body.dark .qa-pos button.sel{color:#1b2028}
+body.dark .tb-tab.active{color:#1b2028}
+body.dark #charBtn.on{color:#1b2028}
+body.dark .subtab.active{color:#1b2028}
+body.dark .doc-dot{color:#62d39a}
+body.dark .docs-bar b{color:#62d39a}
+body.dark .scope-tab.active{color:#1b2028}
+body.dark .rp-pos{color:#1b2028}
+body.dark .rp-video{color:#ff8f85}
+body.dark .rp-del{color:#ff8f85}
+body.dark .rs-card-x:hover{color:#ff8f85}
+body.dark .pdb-pos{color:#1b2028}
+body.dark .pos-t.on{color:#1b2028}
+body.dark .login-err{color:#ff8f85}
+body.dark .adm-pv-note.bad{color:#ff8f85}
+body.dark .rt-pk.on{color:#1b2028}
+body.dark .rt-pk.w .rt-pk-g{color:#62d39a}
+body.dark .sess-tab.active{color:#1b2028}
+body.dark .btn.danger{color:#ff8f85}
+body.dark .dc-add-sub{color:#e3c27a}
+body.dark .day-card .dc-add-sub{color:#e3c27a}
+body.dark .pf-l.live .pf-t{color:#ff8f85}
+body.dark .rs-add-sec.alt{color:#62d39a}
+body.dark .rst-err{color:#ff8f85}
+body.dark .gp-qtab.on{color:#1b2028}
+body.dark .gp-tbl th.gp-min{color:#1b2028}
+body.dark .gp-rowdel:hover{color:#ff8f85}
+body.dark .gp-barh{color:#1b2028}
+body.dark .use-t td.use-last.on{color:#5fcf9f}
+body.dark .pbx-sortlbl{color:#aeb6c2}
+body.dark .pbx-row.pbx-head{color:#aeb6c2}
+body.dark .pbx-n{color:#b8c0cb}
+body.dark .pbx-ppp.muted{color:#aeb6c2}
+body.dark .pbx-efg{color:#b8c0cb}
+body.dark .pbx-nocall{color:#aeb6c2}
+body.dark .pbx-load,body.dark .pbx-none{color:#aeb6c2}
+body.dark .pbx-restore{color:#aeb6c2}
+body.dark .pbx-drop{color:#aeb6c2}
+body.dark .pbx-head .pbx-ppp:hover,body.dark .pbx-head .pbx-efg:hover{color:#b8c0cb}
+body.dark .rs-dual-col.key::before{color:#e3c27a}
+body.dark .rs-tbl .rs-colx:hover,body.dark .rs-tbl .rs-rowx:hover{color:#ff8f85}
+body.dark .ss-badge.bbl{color:#e3c27a}
+body.dark .smg-c.bbl{color:#e3c27a}
+body.dark .ssv-sem-h{color:#aeb6c2}
+body.dark .ssv-wk-md.g{color:#ff9d94}
+body.dark .sem-lbl{color:#aeb6c2}
+body.dark .sem-p.red .sem-nm{color:#ff8f85}
+body.dark .sem-p.dl .sem-nm:after{color:#aeb6c2}
+body.dark .dm-p.out{color:#ff8f85}
+body.dark .dm-p.dl:after{color:#aeb6c2}
+body.dark .pb-x.sm:hover{color:#ff8f85}
+body.dark .ssv-avail-h{color:#aeb6c2}
+body.dark .ssv-avail-right .ssv-avail-h{color:#aeb6c2}
+body.dark .repv-r.big span:nth-child(3){color:#5fcf9f}
+body.dark .vb-x:hover{color:#ff8f85}
+body.dark .phx .vb-x:hover{color:#ff8f85}
+body.dark .phx .card .meta{color:#aeb6c2!important}
+body.dark .phx .card .meta{color:#a9b1bd!important}
+body.dark .phx .card .stat-value .pct{color:#e3c27a!important}
+body.dark .phx .card .stat-label{color:#aeb6c2!important}
+body.dark .pdf-up{color:#e3c27a}
+body.dark .pb-imgdrop{color:#e3c27a}
+body.dark .pb-sc.w{color:#62d39a}
+body.dark .pb-sc.l{color:#ff8f85}
+body.dark .pb-live.on .pb-st{color:#ff8f85}
+body.dark .ui-fig.good b{color:#5fcf9f}
+body.dark .ui-fig.bad b{color:#ff8f85}
+body.dark .ui-fig.vol b{color:#8fb8f0}
+body.dark .trg-mx td.up{color:#5fcf9f}
+body.dark .trg-mx td.dn{color:#ff8f85}
+body.dark .pbb-chip.on{color:#1b2028}
+body.dark .pbb-c-gm.hd i u.nd{color:#ff8f85}
+body.dark .pre-copy-t{color:#e3c27a}
+body.dark .pre-copy-g{color:#e3c27a}
+body.dark .pre-last-who > .pre-last-sc.l{color:#ff8f85}
+body.dark .pbb-key-h{color:#e3c27a}
+body.dark .ui-fig.good .ui-meter{color:#62cfb3}
+body.dark .ui-fig.bad .ui-meter{color:#ff8f85}
+body.dark .ui-fig.neutral .ui-meter{color:#a9b1bd}
+body.dark .ui-strip-c.good .plot b{color:#5fcf9f}
+body.dark .ui-strip-c.bad .plot b{color:#ff8f85}
+body.dark .ui-strip-c.vol .plot b{color:#8fb8f0}
+body.dark .ui-split-l b.good{color:#5fcf9f}
+body.dark .ui-split-l b.bad{color:#ff8f85}
+body.dark .ui-group-h b{color:#1b2028}
+body.dark .ui-card.good .ui-card-v b{color:#5fcf9f}
+body.dark .ui-card.bad .ui-card-v b{color:#ff8f85}
+body.dark .ui-card.vol .ui-card-v b{color:#8fb8f0}
+body.dark .avl-t tr.avl-sep.long td{color:#cfa6ea}
+body.dark .avl-t tr.st-long td.avl-s{color:#cfa6ea}
+body.dark .avl-t td.avl-g span.x{color:#ff8f85}
+body.dark .avl-t td.avl-g.n{color:#ff8f85}
+body.dark .avl-t tr.st-back td.avl-s{color:#5fcf9f}
+body.dark .tr-rank4 .tr-rank.good .tr-rank-v{color:#5fcf9f}
+body.dark .tr-rank4 .tr-rank.bad .tr-rank-v{color:#ff8f85}
+body.dark sup.tr-sup.good{color:#5fcf9f}
+body.dark sup.tr-sup.bad{color:#ff8f85}
+body.dark .lg-eu-res.w{color:#62d39a}
+body.dark .lg-eu-res.l{color:#ff8f85}
+body.dark .lg-pc-note.warn{color:#ff8f85}
+body.dark .lg-err-t{color:#ff8f85}
+body.dark .lg-4f-c.bad .lg-4f-r{color:#ff8f85}
+body.dark .lg-4f-c.good .lg-4f-r{color:#5fcf9f}
+body.dark .pre-cm .pre-cm-ph{color:#aeb6c2}
+body.dark .phx.pre-phx .rm-x-stat{color:#c0c7d2}
+body.dark .st-diag .lg-diag-r.warn .lg-diag-v{color:#ff8f85}
+body.dark .trg-val.up{color:#5fcf9f}
+body.dark .trg-val.dn{color:#ff8f85}
+body.dark .trg-mx .trg-x.up,body.dark .trg-mx .trg-t.up{color:#5fcf9f}
+body.dark .trg-mx .trg-x.dn,body.dark .trg-mx .trg-t.dn{color:#ff8f85}
+body.dark .trg-chip.up b{color:#5fcf9f}
+body.dark .trg-chip.dn b{color:#ff8f85}
+body.dark .rs-banner.rs-banner-sec{color:#1b2028}
+body.dark .pre-k.them{color:#ff8f85}
+body.dark .pre-k.us{color:#5fcf9f}
+body.dark .lg-fix tr.w .lg-fix-r{color:#62d39a}
+body.dark .lg-fix tr.l .lg-fix-r{color:#ff8f85}
+body.dark .gp-opp-r .st em{color:#ff8f85}
+body.dark .gp-ros-p em{color:#ff8f85}
+body.dark .gp-opp .gp-ros-p .sx{color:#e3c27a}
+body.dark .dash-a.bad{color:#ff8f85}
+body.dark .dash-a.warn{color:#e3c27a}
+body.dark .dash-mv.good b{color:#5fcf9f}
+body.dark .dash-mv.bad b{color:#ff8f85}
+body.dark .dash-h5.bad{color:#ff8f85}
+body.dark .dash-ptab .c.up b{color:#5fcf9f}
+body.dark .dash-ptab .c.dn b{color:#ff8f85}
+body.dark .dash-man .l1 em{color:#ff8f85}
+body.dark .dash-man .tg{color:#e3c27a}
+body.dark .dash-dx.ob{color:#8fb8f0}
+body.dark .dash-dt{color:#5fcf9f}
+body.dark .dash-ptab .c.top i{color:#e3c27a}
+body.dark .dash-sub h4.bad{color:#ff8f85}
+body.dark .dash-qs.good{color:#5fcf9f}
+body.dark .dash-qs.bad{color:#ff8f85}
+body.dark .dash-ck.ready{color:#5fcf9f}
+body.dark .dash-ck.prep{color:#e3c27a}
+body.dark .dash-ck.pend{color:#ff8f85}
+body.dark .dash-pp em{color:#ff8f85}
+body.dark .dash-set q{color:#e3c27a}
+body.dark .pg-main-h{color:#e3c27a}
+body.dark .dash-score.good{color:#5fcf9f}
+body.dark .dash-score.bad{color:#ff8f85}
+body.dark .dash-pill.ready{color:#5fcf9f}
+body.dark .dash-pill.prep{color:#e3c27a}
+body.dark .dash-pill.pend{color:#ff8f85}
+body.dark .dash-ideas li.good > i{color:#5fcf9f}
+body.dark .dash-ideas li.bad > i{color:#ff8f85}
+body.dark .dash-fig.good b{color:#5fcf9f}
+body.dark .dash-fig.bad b{color:#ff8f85}
+body.dark .dash-wl .pf-l.live .pf-t{color:#ff8f85}
+body.dark .dash-wo span{color:#8fb8f0}
+body.dark .dash-tgt b.good{color:#5fcf9f}
+body.dark .dash-tgt b.bad{color:#ff8f85}
+body.dark .dash-t.str .t1 em{color:#ff8f85}
+body.dark .dash-t.wk .t1 em{color:#5fcf9f}
+body.dark .dash-t.str .t3 b{color:#ff8f85}
+body.dark .dash-t.wk .t3 b{color:#5fcf9f}
+body.dark .dash-t.thr .t1 em{color:#ff8f85}
+body.dark .dash-t.thr .t3 b{color:#ff8f85}
+body.dark .dash-t.opp .t1 em{color:#5fcf9f}
+body.dark .dash-t.opp .t3 b{color:#5fcf9f}
+body.dark .dash-form .fg > b{color:#ff8f85}
+body.dark .dash-form .fg.w > b{color:#5fcf9f}
+body.dark .dash-form .fg i{color:#e3c27a}
+body.dark .dash-formsum b.up{color:#5fcf9f}
+body.dark .dash-formsum b.dn{color:#ff8f85}
+body.dark .dash-nc .nh{color:#ff8f85}
+body.dark .dash-nc.d .nh{color:#5fcf9f}
+body.dark .dash-kt .nh{color:#ff8f85}
+body.dark .dash-kt.d .nh{color:#5fcf9f}
+body.dark .pgm-rc.dn h5{color:#ff8f85}
+body.dark .pgm-rc.up h5{color:#5fcf9f}
+body.dark .pgm-run.dn > b{color:#ff8f85}
+body.dark .pgm-run.up > b{color:#62cfb3}
+body.dark .pgm-run.dn .sc{color:#ff8f85}
+body.dark .pgm-run.up .sc{color:#5fcf9f}
+body.dark .pgmc-c.g{color:#5fcf9f}
+body.dark .pgmc-c.b{color:#ff8f85}
+body.dark .dash-qt td.up{color:#5fcf9f}
+body.dark .dash-pl tr.g td.pir{color:#5fcf9f}
+body.dark .dash-pl tr.b td.pir{color:#ff8f85}
+body.dark .dash-kf .bsplit .bp.bad b{color:#ff8f85}
+body.dark .dash-kf .bsplit .bp.good b{color:#5fcf9f}
+body.dark .dash-ks q{color:#e3c27a}
+body.dark .dash-nt.all.flat .pt > i{color:#aeb6c2}
+body.dark .dash-cov .c.good i{color:#5fcf9f}
+body.dark .dash-cov .c.bad i{color:#ff8f85}
+body.dark .dash-ideas.best small.tg{color:#e3c27a}
+body.dark .dash-ptab .c.mv.up b,body.dark .dash-ptab .c.mv.up i{color:#5fcf9f}
+body.dark .dash-ptab .c.mv.dn b,body.dark .dash-ptab .c.mv.dn i{color:#ff8f85}
+body.dark .dash-mins .c.hi{color:#e3c27a}
+body.dark .dash-av7 .c.ok{color:#5fcf9f}
+body.dark .dash-av7 .c.limited,body.dark .dash-av7 .c.lim{color:#e3c27a}
+body.dark .dash-av7 .c:not(.ok):not(.out){color:#e3c27a}
+body.dark .dash-vsum .warn{color:#e3c27a}
+body.dark .dash-vsum .good{color:#5fcf9f}
+body.dark .dash-vr.dlate .pill{color:#e3c27a}
+body.dark .dash-dl{color:#ff8f85}
+body.dark .dash-vgm.cut u{color:#5fcf9f}
+body.dark .dash-keyh b{color:#e3c27a}
+body.dark .dash-kf.good > b{color:#5fcf9f}
+body.dark .dash-kf.bad > b{color:#ff8f85}
+body.dark .dash-kf .row em.good u{color:#5fcf9f}
+body.dark .dash-kf .row em.bad u{color:#ff8f85}
+body.dark .dash-vm .vc.late,body.dark .ow-parts .vc.late{color:#ff8f85}
+body.dark .dash-vm .vc.today,body.dark .dash-vm .vc.soon,body.dark .ow-parts .vc.today,body.dark .ow-parts .vc.soon{color:#e3c27a}
+body.dark .vr-t b.w{color:#5fcf9f}
+body.dark .vr-t b.l{color:#ff8f85}
+body.dark .vr-t u{color:#5fcf9f}
+body.dark .dash-og u{color:#5fcf9f}
+body.dark .gp-tl-i.good em{color:#5fcf9f}
+body.dark .gp-tl-i.bad em{color:#ff8f85}
+body.dark .pbb-tb:hover{color:#e3c27a}
+body.dark .ow-due{color:#a9b1bd}
+body.dark .ow-due.late{color:#ff8f85}
+body.dark .ow-due.ok{color:#62cfb3}
+body.dark .ow-info > span.ok{color:#5fcf9f}
+body.dark .ow-info > span.mid{color:#e3c27a}
+body.dark .ow-info > span.no{color:#ff8f85}
+body.dark .dash-kp .hd.g2{color:#e3c27a}
+body.dark .dash-kp .c sup.t10{color:#e3c27a}
+body.dark .dash-kp .c.hot{color:#ff8f85}
+body.dark .dash-kp .c.cold{color:#8fb8f0}
+body.dark .modal-stats .modal-stat-label{color:#aeb6c2}
+body.dark .modal-stats .modal-stat-cell.hl-warm .modal-stat-basis{color:#ff8f85}
+body.dark .modal-stats .modal-stat-cell.hl-warm .modal-stat-value,body.dark .modal-stats .modal-stat-cell.hl-warm .modal-stat-why{color:#ff8f85!important}
+body.dark .tpt-n b.dn,body.dark .tpt-t td.dn{color:#ff8f85}
+body.dark .reb-fig b.dn{color:#ff8f85}
+body.dark .reb-t td.dn,body.dark .reb-lg td.dn,body.dark .reb-t td.reb-d.dn{color:#ff8f85}
+body.dark .reb-pre th.us{color:#8fb8f0}
+body.dark .sx-prlook-t td.r{color:#ff8f85}
+body.dark .sx-prlook-b.r b{color:#ff8f85}
+body.dark .miss-t td.no{color:#ff8f85}
+body.dark .pb-stk.l{color:#ff8f85}
+body.dark .pb-g.l .pb-g-r b{color:#ff8f85}
+body.dark .pb-g.next .pb-g-r{color:#e3c27a}
+body.dark .adm-cs.wait{color:#a9b1bd}
+body.dark .adm-type.pl{color:#8fb8f0}
+body.dark .adm-acc-t .adm-del{color:#ff8f85}
+body.dark .sv-pub.no{color:#ff8f85}
+body.dark .dash-kind.pre{color:#8fb8f0}
+body.dark .dash-kind.post{color:#e3c27a}
+body.dark .dash-kind.rev{color:#c6b0f0}
+body.dark .rb-h > b.bad{color:#ff8f85}
+body.dark .lg-rost td.rx-r{color:#ff8f85}
+body.dark .rx-ex.r b{color:#ff8f85}
+body.dark .rb-riv b{color:#ff8f85}
+body.dark .rb-lbl .opp{color:#ff8f85}
+body.dark .pace-v .pbd-n b.dn{color:#ff8f85}
+body.dark .pace-v td.pnum.fast{color:#5fcf9f}
+body.dark .pace-v td.pnum.slow{color:#ff8f85}
+body.dark .pace-vleg em.dn{color:#ff8f85}
+body.dark .pace-kv .fast em{color:#62d39a}
+body.dark .pace-kv .slow em{color:#ff8f85}
+body.dark .trp-sc-t u em{color:#b8c0cb}
+body.dark .trp-sc-t i.us em{color:#e3c27a}
+body.dark .trp-sc-t i.them em{color:#ff8f85}
+body.dark .trp-chip.fast em{color:#62d39a}
+body.dark .trp-chip.slow em{color:#ff8f85}
+body.dark .pace-post-t small.fast{color:#62d39a}
+body.dark .pace-post-t small.slow{color:#ff8f85}
+body.dark .pace-post-t td.pp-hi b{color:#62d39a}
+body.dark .pace-post-t td.pp-lo b{color:#ff8f85}
+body.dark .pace-post-t td.pace-sc2.dn b{color:#ff8f85}
+body.dark .gp-court-t tr.on td.now{color:#62d39a}
+body.dark .gp-court-t td.pf.bad{color:#ff8f85}
+body.dark .phx .card .stat-cell.hl-warm .stat-value{color:#ff8f85!important}
+body.dark .phx .card .stat-cell.hl-low .stat-value,body.dark .phx .card .stat-cell.hl-low .hl-why{color:#5fcf9f!important}
+body.dark .phx .card .stat-cell.hl-warm .hl-basis{color:#ff8f85}
+body.dark .phx .card .stat-cell.hl-warm .hl-why{color:#ff8f85}
+body.dark .phx .card .hl-cell{color:#a9b1bd}
+body.dark .lg-eust-t tr.me td.l{color:#e3c27a}
+body.dark .lg-eust-t i.q{color:#5fcf9f}
+body.dark .p3-now.under .big{color:#ff8f85}
+body.dark .dash-pnext em{color:#e3c27a}
+body.dark .pg-uni .sxp-tab{color:#b8c0cb}
+body.dark .gp5 .gp2-st .gp5-real{color:#ff8f85}
+body.dark .gp5 .gp5-t td.bx{color:#a9b1bd}
+body.dark .gp5 .gp5-t td.bx.cold{color:#ff9d94}
+body.dark .gp5 .gp5-opp td.bx.cold{color:#6fd8a8}
+body.dark .gp5-t td.st.blink{color:#f0b36a}
+body.dark .gp5-onnow > b{color:#62d39a}
+body.dark .gp5-onp em{color:#62d39a}
+body.dark .gp5-sb-sc b.up{color:#5fcf9f}
+body.dark .gp5-sb-sc b.dn{color:#ff8f85}
+body.dark .gp5-sb-q .v.w{color:#5fcf9f}
+body.dark .gp5-al-score.up{color:#5fcf9f}
+body.dark .gp5-al-score.dn{color:#ff8f85}
+body.dark .gp7-k b.bad{color:#ff8f85}
+body.dark .gp7-sc b.dn{color:#ff8f85}
+body.dark .gp7-p .pf.out{color:#ff8f85}
+body.dark .gp9-five.bad .pm b{color:#ff8f85}
+body.dark .gp9-pr.hot .t .n b{color:#ff8f85}
+body.dark .gp5-t td.hist b.s{color:#e3c27a}
+body.dark .gp5-t td.rl.over{color:#ff8f85}
+body.dark .gp5-t td.st{color:#62d39a}
+body.dark .gp5-t em.q{color:#ff8f85}
+body.dark .gp-conn.ok{color:#62d39a}
+body.dark .gp-rp-clk{color:#ff8f85}
+body.dark .gp4-pill em{color:#ff8f85}
+body.dark .gp4-mt.off b{color:#ff8f85}
+body.dark .gp4-set q{color:#e3c27a}
+body.dark .gp-fc.good .imp{color:#5fcf9f}
+body.dark .gp-fc.bad .imp{color:#ff8f85}
+body.dark .gp-lv-top .sc.up,body.dark .gp-lv-k.up b{color:#5fcf9f}
+body.dark .gp-lv-top .sc.dn,body.dark .gp-lv-k.dn b{color:#ff8f85}
+body.dark .gp-live-tab.now{color:#ff8f85}
+body.dark .gp-bf-r.w .v:first-child{color:#5fcf9f}
+body.dark .gp-bf-r.l .v:first-child{color:#ff8f85}
+body.dark .gp-ck-c.good b{color:#5fcf9f}
+body.dark .gp-ck-c.bad b{color:#ff8f85}
+body.dark .gp-live-sc b.up,body.dark .gp-live-sc .mo.up{color:#5fcf9f}
+body.dark .gp-live-sc b.dn,body.dark .gp-live-sc .mo.dn{color:#ff8f85}
+body.dark .pbb-star{color:#a9b1bd}
+body.dark .phx .card .stat-value .pct,body.dark .phx.phx .stat-value .sv-pc,body.dark .phx.phx .stat-value .pct{color:#a9b1bd!important}
+body.dark .dash-ks .hd.gm i.old{color:#e3c27a}
+body.dark .pgmc-qp button.on{color:#1b2028}
+body.dark .td-kpi.good b{color:#5fcf9f}
+body.dark .td-kpi.bad b{color:#ff8f85}
+body.dark .td-kpi b u.good{color:#5fcf9f}
+body.dark .td-kpi b u.bad{color:#ff8f85}
+body.dark .td-pr.up .td-pr-v.end b{color:#5fcf9f}
+body.dark .td-pr.down .td-pr-v.end b{color:#ff8f85}
+body.dark .tr-flag.good,body.dark .tr-flag.up{color:#5fcf9f}
+body.dark .tr-flag.warn,body.dark .tr-flag.down{color:#ff8f85}
+body.dark .sx-table td.tr-good{color:#5fcf9f}
+body.dark .sx-table td.tr-warn{color:#ff8f85}
+body.dark .sx-table td.tr-up{color:#5fcf9f}
+body.dark .sx-table td.tr-down{color:#ff8f85}
+body.dark .tr-warnline{color:#ff8f85}
+body.dark .sx-table td.cmp-up{color:#62d39a}
+body.dark .sx-table td.cmp-down{color:#ff8f85}
+body.dark .sx-post .sx-tab{color:#b8c0cb}
+body.dark .sxp-k.them{color:#e3c27a}
+body.dark .sxp-ev.pos{color:#5fcf9f}
+body.dark .sxp-ev.neg{color:#ff8f85}
+body.dark .sxp-tab{color:#b8c0cb}
+body.dark .sxp-clips>summary{color:#b8c0cb}
+body.dark .sxp-sortb.on{color:#1b2028}
+body.dark .sxp-qnet.pos{color:#5fcf9f}
+body.dark .sxp-qnet.neg{color:#ff8f85}
+body.dark .pd-row .wk em{color:#e3c27a}
+body.dark .pd-row .c.up i{color:#5fcf9f}
+body.dark .pd-row .c.dn i{color:#ff8f85}
+body.dark .pd-gm.up .gn2 b,body.dark .pd-gm.up .gn2 em{color:#5fcf9f}
+body.dark .pd-gm.dn .gn2 b,body.dark .pd-gm.dn .gn2 em{color:#ff8f85}
+body.dark .pd-mx .hd i.w{color:#5fcf9f}
+body.dark .pd-mx .hd i.l{color:#ff8f85}
+body.dark .pd-mx .grp{color:#e3c27a}
+body.dark .pd-mx .c.u1{color:#6fd8a8}
+body.dark .fd-say.amber{color:#e3c27a}
+body.dark .fd-say.green{color:#6fd8a8}
+body.dark .pd-vd.up{color:#5fcf9f}
+body.dark .pd-vd.dn{color:#ff8f85}
+body.dark .pd-vd.mix{color:#e3c27a}
+body.dark .pd-grn{color:#e3c27a}
+body.dark .pd-tile.up .tv b,body.dark .pd-tile.up .tv em{color:#5fcf9f}
+body.dark .pd-tile.dn .tv b,body.dark .pd-tile.dn .tv em{color:#ff8f85}
+body.dark .pd-lg span.u{color:#6fd8a8}
+body.dark .pd-ly.up u{color:#5fcf9f}
+body.dark .pd-ly.dn u{color:#ff8f85}
+body.dark .pd-lysrc{color:#e3c27a}
+body.dark .pd-mx .hd.ly{color:#e3c27a}
+body.dark .pd-mx .c.lyc.up{color:#6fd8a8}
+body.dark .pd-cc.up b,body.dark .pd-cc.up u{color:#5fcf9f}
+body.dark .pd-cc.dn b,body.dark .pd-cc.dn u{color:#ff8f85}
+body.dark .pd-goal .gx.up b{color:#5fcf9f}
+body.dark .pd-goal .gx.dn b{color:#ff8f85}
+body.dark .pd-cht span.up{color:#5fcf9f}
+body.dark .pd-cht span.dn{color:#ff8f85}
+body.dark .pd-oo .up b{color:#5fcf9f}
+body.dark .pd-oo .dn b{color:#ff8f85}
+body.dark .pd-strip .up b{color:#5fcf9f}
+body.dark .pd-strip .dn b{color:#ff8f85}
+body.dark .pd-log2 .up{color:#5fcf9f}
+body.dark .pd-log2 .dn{color:#ff8f85}
+/* and the near-black type written straight on the page */
+body.dark .pbp-e b,body.dark .dash-pk .sl,body.dark .dash-pk .gh,body.dark .dash-nt .gh,body.dark .pgmc-qh b,body.dark .ow-game{color:var(--ink)}
+/* ==== END DARKFIX ==== */
+
+
+
+
+/* THE CARDS IN THE DARK TOO (Oriol, 8/11/2026: "roster positions, roles y how to attack, defend
+   debe estar también en oscuro, pero revisa que se vea bien"). The player boards kept their white
+   paper in the dark theme - the cards, the roles, the position columns. They take the charcoal
+   now: the card a step above the column, the type light, the lit boxes deeper so white reads on
+   them (the hot one red, the next a muted red), a poor shooter's box a teal wash. */
+body.dark .phx{--bg:transparent;--panel:#272e38;--panel-2:#2f3642;--cream:#eef1f5;--on-dark:#eef1f5;--muted:#aab2bf;--line:rgba(255,255,255,.12);--line-gold:rgba(221,192,132,.35);color:#eef1f5;background:transparent}
+body.dark .phx .page-bg{background:transparent!important}
+body.dark .phx .pos-col{background:#20262f;border-color:#343c48}
+body.dark .phx .card{background:#2a313b!important;border-color:#3d4553!important;box-shadow:0 1px 3px rgba(0,0,0,.45)!important}
+body.dark .phx .card .name,body.dark .phx .card .tagline{color:#f3f5f8!important}
+body.dark .phx .card .meta{color:#aab2bf!important}
+body.dark .phx .card .idea-line,body.dark .phx .card .extra-line{color:#d3d9e1!important}
+body.dark .phx .card .minutes{color:#e6eaf0!important;background:#3a4250!important}
+body.dark .phx .card .stat-bar{border-top-color:#3d4553!important;background:#3d4553!important}
+body.dark .phx .card .stat-cell{border-right-color:#3d4553!important;background:#2a313b!important}
+body.dark .phx .card .stat-value{color:#f3f5f8!important}
+body.dark .phx .card .stat-label{color:#aab2bf!important}
+body.dark .phx .card .stat-value .pct,body.dark .phx.phx .stat-value .sv-pc,body.dark .phx.phx .stat-value .pct{color:#c3cad5!important}
+body.dark .phx .card .stat-cell.hl-hot{background:#bd4b45!important}
+body.dark .phx .card .stat-cell.hl-warm{background:#7f4a48!important}
+body.dark .phx .card .stat-cell.hl-hot *,body.dark .phx .card .stat-cell.hl-warm *{color:#fff!important}
+body.dark .phx .card .stat-cell.hl-low{background:rgba(47,158,134,.24)!important}
+body.dark .phx .card .stat-cell.hl-low .stat-value,body.dark .phx .card .stat-cell.hl-low .hl-why{color:#7fe0c4!important}
+body.dark .phx .card .photo{background-color:#323a46}
+body.dark .phx .card .doubt-why{color:#ffb3a8!important}
+/* DARK THEME, ONE BY ONE: what the generated rules cannot know - a chip whose ground is its own,
+   type at half strength, a light box that stayed light (measured view by view, 8/11/2026) */
+body.dark{--perf-hi:#6fd8a5;--perf-lo:#ffa59b}
+body.dark span.c.sm{opacity:.85}
+body.dark .ow-days span.we{opacity:.85}
+body.dark .ow-days span.t b{color:#1b1408}
+body.dark .dash-dg i,body.dark .dash-dg u{opacity:1!important}
+body.dark .dash-dg.l{background:#b8453f}body.dark .dash-dg.w{background:#23806b}
+body.dark .phx .card .stat-cell.hl-hot .stat-value,body.dark .phx .card .stat-cell.hl-warm .stat-value{color:#fff!important}
+body.dark .phx .card .stat-cell .hl-why{opacity:1!important}
+body.dark .phx .card .stat-cell.hl-low .stat-label,body.dark .phx .card .stat-cell.hl-low .sv-sep{color:#d0d7e0!important}
+body.dark .pbb-new{background:#2f6cc0}
+body.dark .pbx-ppp{color:var(--ink)}body.dark .pbx-ppp.on{color:#12161d}body.dark .pbx-ppp.dk{color:#fff}
+body.dark .pbb-c-gm i.old u{color:#e3c27a}
+body.dark .lg-g-cmp{opacity:1}
+body.dark .rt-chip.rt-p0,body.dark .rt-chip.rt-p5{color:#fff!important}body.dark .rt-chip.rt-p4{color:#1b1010}
+body.dark .lg-rost-one tr.lg-tbl-g th.g-lg{background:#3a4250;color:#fff}
+body.dark .tr-none{color:#7f8897}
+body.dark .gp5-sum ol{background:#3a3424;border-color:#5c5030;color:var(--ink)}
+body.dark .gp5 .gp5-t td.bx.hot{background:rgba(47,158,134,.24);color:#7fe0b8}
+body.dark .gp5 .gp5-opp td.bx.hot{background:rgba(216,82,78,.24);color:#ff9d94}
+body.dark .gp6-sr em.hi,body.dark .gp8-r em.hi,body.dark .gp5-sb-nt .bad{background:rgba(216,82,78,.24);color:#ff9d94}
+body.dark .gp6-sr em.lo,body.dark .gp8-r em.lo,body.dark .gp5-sb-nt .good{background:rgba(47,158,134,.24);color:#7fe0b8}
+body.dark .gp6-sr em.mid,body.dark .gp8-r em.mid{background:#343c48;color:var(--ink-soft)}
+body.dark .gp3-ki.k-off .gp3-ktext{color:#14181f}
+body.dark .gp4-h .sub{opacity:.85}
+body.dark .gp6-defl{background:var(--panel-2);color:var(--ink)}
+body.dark .gp-sq .sq-s.mid{color:#14181f}body.dark .gp-sq .sq-s.in{background:#23806b}
+body.dark .gp6-more{color:var(--ink)}
+body.dark .m-sess .doc-dot{color:#7fe0a8}body.dark .m-add{opacity:.9}
+body.dark .ssv-wk-md{opacity:1}body.dark .ssv-wk-md.g{color:#ff9d94}
+body.dark .p3-g.lock{opacity:.85}
+body.dark .pbb-c-gm i.old:not(.z){color:#f6ead2!important}
+body.dark .ui-group-h b{color:var(--ink)!important}
+body.dark .pbb-kind b{color:#d4a8ee}
+body.dark .rs-banner .pc-rebuild{color:#fff!important}
+body.dark .pbb-chip.on i{color:rgba(27,32,40,.7)!important}
+body.dark .sxp-warn b{color:#e3c27a}
+body.dark tr.avl-r.st-out td.avl-s{color:#ff9d94}
+body.dark .sv-not,body.dark .sv-not b{color:#ffb0a6}
+body.dark tr.us td.n{color:#e3c27a}
+body.dark .dash-mixr .bar i[style*="#d9a521"]{color:#1b1408}
+body.dark .dash-mixr .bar i,body.dark .pbb-c-code b{filter:brightness(.82)}
+/* the card beside the video and the roster's own card window, the same */
+body.dark .modal-stats .modal-stat-cell.hl-hot{background:#bd4b45!important}
+body.dark .modal-stats .modal-stat-cell.hl-warm{background:#7f4a48!important}
+body.dark .modal-stats .modal-stat-cell.hl-hot *,body.dark .modal-stats .modal-stat-cell.hl-warm *{color:#fff!important}
+/* pre game playbook · the key sets by phase, by use or by category */
+.pbb-key-h{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.pbb-kord{display:inline-flex;border:1px solid var(--line-strong,#d2d7df);border-radius:7px;overflow:hidden}
+.pbb-kord button{border:0;background:var(--panel,#fff);color:var(--ink-soft,#5b6472);font:700 10px 'IBM Plex Mono',monospace;letter-spacing:.04em;padding:4px 8px;cursor:pointer;min-height:24px}
+.pbb-kord button.on{background:var(--ink,#141821);color:var(--panel,#fff)}
+.dop-fit .pbb-kord,#print-area .pbb-kord{display:none!important}
+@media print{.pbb-kord{display:none!important}}
+.pbb-kgrp{display:flex;align-items:center;gap:6px;margin:10px 0 3px;font:700 10.5px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#8a6829;
+  border-bottom:1px solid rgba(198,161,91,.45);padding-bottom:2px}
+.pbb-kgrp:first-of-type{margin-top:4px}
+.pbb-kgrp i{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#687180)}
+body.dark .pbb-kgrp{color:#e3c27a}
 /* the Trends screen on a phone: the charts say they show the last five games */
 .tl-l5t{font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);margin:-2px 0 6px}
 /* the rotation strip on a phone: the names fixed, the minutes sliding (_lgRotStrip) */
@@ -45268,10 +45809,24 @@ body.dark .rt-nlr.z{background:rgba(255,255,255,.04)}
   .pgmc.one .pgmc-c.on{height:auto}
 }
 .dash-mixkey .k.l5{font-weight:700;color:var(--ink-soft,#5b6472)}
-/* the three blocks under the scouting notes: on a tablet the sets take a line of their own */
-@media (max-width:1100px) and (min-width:701px){
-  .dash-3c > .dash-sub:nth-child(2){grid-column:1 / -1;order:3;border-left:0!important;padding-left:0!important;border-top:1px solid var(--line,#e4e7ec);padding-top:10px}
-  .dash-3c > .dash-sub:nth-child(3){grid-column:auto;border-left:1px solid var(--line,#e4e7ec)!important;padding-left:14px!important}
+/* NEXT OPPONENT: the ball screen and their recent form one under the other, their key sets beside
+   them with the width (two tables when there are more than eight); on a tablet the sets take the
+   line under the other two, which sit side by side; on a phone all of it one under the other */
+.dash-3c.dash-pf{grid-template-columns:minmax(0,1fr) minmax(0,1.9fr)!important}
+.dash-pf > .dash-col{display:grid;gap:12px;align-content:start;min-width:0}
+.dash-pf > .dash-col > .dash-sub + .dash-sub{border-left:0;padding-left:0;border-top:1px solid var(--line,#e4e7ec);padding-top:10px}
+.dash-pf > .dash-sub{border-left:1px solid var(--line,#e4e7ec);padding-left:14px}
+.dks-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px;align-items:start}
+@media (max-width:1100px){
+  .dash-3c.dash-pf{grid-template-columns:minmax(0,1fr)!important}
+  .dash-pf > .dash-col{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:14px}
+  .dash-pf > .dash-col > .dash-sub + .dash-sub{border-top:0;padding-top:0;border-left:1px solid var(--line,#e4e7ec);padding-left:14px}
+  .dash-pf > .dash-sub{border-left:0;padding-left:0;border-top:1px solid var(--line,#e4e7ec);padding-top:10px}
+}
+@media (max-width:700px){
+  .dash-pf > .dash-col{grid-template-columns:minmax(0,1fr)}
+  .dash-pf > .dash-col > .dash-sub + .dash-sub{border-left:0;padding-left:0;border-top:1px solid var(--line,#e4e7ec);padding-top:10px}
+  .dks-2{grid-template-columns:minmax(0,1fr)}
 }
 </style>
 
