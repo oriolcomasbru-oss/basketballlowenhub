@@ -12022,7 +12022,7 @@ function _preShotMini(L, tid, pid){
   /* the floor to the edges of the box, as wide as the photograph above it (Oriol, 8/11/2026): the
      margin that keeps the hexagons and the numbers whole is floor too, not white */
   g.appendChild(sv("rect",{x:PRE_SC_VB[0], y:PRE_SC_VB[1], width:PRE_SC_VB[2], height:PRE_SC_VB[3], class:"sc-floor"}));
-  g.appendChild(_lgCourt(_lgHexG(hm, fit, { card:true, top:34 })));
+  g.appendChild(_lgCourt(_lgHexG(hm, fit, { card:true, top:60 })));
   /* THE THREE AREAS THAT MATTER FOR HIM (Oriol, 8/11/2026: "el promedio exterior, el de media distancia
      y el interior, destacando el que haga falta"; then "Smith debería tener las 3 marcadas, Fleming
      también con su 77%: los datos más relevantes de cada jugador"). Each area - three, mid range,
@@ -26015,7 +26015,7 @@ function _lgHexMap(shots, fit, lg, grid, opts){
       const lgRate=(bn>=6)? bm/bn : own;
       if(wn>max) max=wn;
       cells.push({x:x, y:y, n:wn, m:wm, rate:wm/wn, base:lgRate,
-                  diff:(wn>=1.9*MUL)? (wm/wn)-lgRate : null});
+                  diff:(wn>=1.9)? (wm/wn)-lgRate : null});   /* the same two shots as the big chart (Oriol, 9/11/2026: on the card the red patches outside the numbers came out grey) */
     }
   }
   if(!cells.length) return null;
@@ -26048,7 +26048,7 @@ function _lgHexG(map, fit, opts){
   /* The roster card's chart (Oriol, 8/11/2026: "los hexágonos un punto diferentes a nivel de
      volumen para que quede bien"): bigger cells, so the steps between them are wider apart
      than on the small League multiples - where he lives is the big ones, at a glance. */
-  const SZ=(o.card? [0.30,0.47,0.64,0.82,1.0] : o.min? [0.46,0.60,0.74,0.88,1.0] : [0.24,0.40,0.57,0.78,1.0]).map(f=>rMax*f);
+  const SZ=(o.card? [0.40,0.55,0.70,0.85,1.0] : o.min? [0.46,0.60,0.74,0.88,1.0] : [0.24,0.40,0.57,0.78,1.0]).map(f=>rMax*f);
   const sizeOf=n=>{ let i=0; while(i<cut.length && n>cut[i]) i++; return SZ[i]; };
   const hexd=(cx,cy,r)=>{
     let d="";
