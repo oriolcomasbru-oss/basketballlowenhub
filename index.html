@@ -15505,6 +15505,36 @@ function gpPlanEmpty(plan){
   return !GP_HALF.some(q=>plan.gen && plan.gen[q]
     && (String(plan.gen[q].off||"").trim() || String(plan.gen[q].def||"").trim()));
 }
+/* A PLAN KEPT FROM A SHEET THAT WAS READ WRONG IS PUT RIGHT FROM THE SHEET. Until 7/11 the
+   reader gave a stretch's text to the box under it when the two boxes touched (Bonn: the
+   yellow NEXT 4' sits on the red LAST 3', and the yellow showed nothing while the red had
+   both texts; Würzburg, Bremerhaven and Bamberg the same in Q2). Once a plan is kept it is
+   no longer read from the Drive, so mending the reader did not mend those. Here: a colour
+   on a quarter's strip with no words for that quarter makes the page read the sheet again,
+   and the quarter's texts are taken from it only when the strip is the sheet's own and the
+   words of the quarter, every colour together, are exactly the sheet's - the same words,
+   only in other colours. Anything somebody typed or changed by hand leaves it as it is. */
+const _gpFixAsked=new WeakSet(), _gpFixUnsaved=new WeakSet();
+function gpLegGap(plan){
+  return GP_HALF.some(q=>((plan.offbar||{})[q]||[]).some(v=>v && !String(gpLegQText((plan.offleg||[])[v-1], q)||"").trim()));
+}
+function gpRepairFromSheet(plan, fresh){
+  if(!fresh || !Array.isArray(fresh.offleg)) return false;
+  const norm=t=>String(t||"").toUpperCase().replace(/\s+/g," ").trim();
+  let changed=false;
+  GP_HALF.forEach(q=>{
+    const bar=(plan.offbar||{})[q]||[], fb=(fresh.offbar||{})[q]||[];
+    if(bar.join(",")!==fb.join(",")) return;
+    const words=legs=>[0,1,2,3].map(i=>gpLegQ(legs[i], q).map(p=>p.calls.map(norm).join("/")).join("/"))
+      .join("/").split("/").filter(Boolean).sort().join("|");
+    if(words(plan.offleg)!==words(fresh.offleg)) return;
+    for(let i=0;i<4;i++){
+      const want=gpLegQText(fresh.offleg[i], q);
+      if(norm(gpLegQText(plan.offleg[i], q))!==norm(want)){ plan.offleg[i]=gpLegQSet(plan.offleg[i], q, want); changed=true; }
+    }
+  });
+  return changed;
+}
 function gpSheetFor(){
   const g=(state.games||[]).filter(x=>x.opponent===_scoutOpponent && (!_scoutDate || x.date===_scoutDate))[0];
   if(!g) return null;
@@ -17368,6 +17398,27 @@ function renderPlanSection(sec, canEd, save, allSecs){
         };
         try{ Promise.resolve(syncDocs(false)).then(()=>setTimeout(again, 50)).catch(()=>{ waiting=false; redraw(); }); }catch(e){ waiting=false; }
       }
+    }
+    else if(canEd && _gpFixUnsaved.has(plan)){
+      /* put right while nobody could save it: kept now, as a sheet read is kept */
+      _gpFixUnsaved.delete(plan); try{ save(); }catch(e){_quiet(e)}
+    }
+    else if(gpLegGap(plan) && !_gpFixAsked.has(plan)){
+      /* a kept plan with a colour that has no words: see gpRepairFromSheet */
+      _gpFixAsked.add(plan);
+      const fix=f=>{
+        if(!f) return;
+        const ask=_gpSheetMemo[f.id] || (_gpSheetMemo[f.id]=
+          driveFetch(DOCS_FN+"?plan="+encodeURIComponent(f.id), {cache:"no-store"}).then(r=>r.json()));
+        ask.then(j=>{
+          if(!j || !j.plan || !gpRepairFromSheet(plan, j.plan)) return;
+          if(canEd){ try{ save(); }catch(e){_quiet(e)} } else _gpFixUnsaved.add(plan);
+          if(box.parentNode) redraw();
+        }).catch(()=>{ delete _gpSheetMemo[f.id]; });
+      };
+      const f0=gpSheetFor();
+      if(f0) fix(f0);
+      else if(!_docsTried){ try{ Promise.resolve(syncDocs(false)).then(()=>fix(gpSheetFor())).catch(()=>{}); }catch(e){_quiet(e)} }
     }
   }
 

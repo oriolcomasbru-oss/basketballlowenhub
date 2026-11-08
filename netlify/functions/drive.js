@@ -631,10 +631,21 @@ function parseGamePlan(L) {
            Chemnitz sheet "NEXT 4" starts at x 656, still over the green box (517-670), and its
            text "= 7POP..." at 677, on the yellow one (669-772) - read at the label, the yellow
            stretch got nothing and its text went into the green. Of two boxes there, the
-           smaller one shows. */
-        var px = (cl.x2 != null ? cl.x2 + 2 : cl.x + 15);
+           smaller one shows.
+           And the box the text is IN, before one it only touches: on the Bonn sheet the yellow
+           box (NEXT 4') sits right on top of the red one (LAST 3'), the line's foot was 2.7
+           points over the red box's top, inside the 4 points of give, and the two boxes are the
+           same size - so the yellow stretch's text went to the red one and the yellow showed
+           nothing (Bonn both quarters, Würzburg, Bremerhaven and Bamberg the second). The line
+           is measured at the middle of its letters, and the box nearest to it wins.
+           A line that came in one piece ("NEXT 4'= E2 / 3HIP / 3DOWN", Würzburg's second
+           quarter, from x 653 over the green box that ends at 670) is read just after its
+           equals sign, counted at 3.4 points a letter, and not at its label. */
+        var eqAt = cl.s.indexOf("=");
+        var px = (cl.x2 != null ? cl.x2 + 2 : cl.x + (eqAt > 0 ? (eqAt + 2) * 3.4 : 15)), py = cl.y + 3;
+        var off = function (f) { return py < f.y ? f.y - py : (py > f.y + f.h ? py - f.y - f.h : 0); };
         var fill = F.filter(function (f) { return f.x >= boxLeft - 8 && px >= f.x - 1 && px <= f.x + f.w && cl.y >= f.y - 4 && cl.y <= f.y + f.h + 4; })
-          .sort(function (a, b) { return (a.w * a.h) - (b.w * b.h); })[0];
+          .sort(function (a, b) { return (off(a) - off(b)) || ((a.w * a.h) - (b.w * b.h)); })[0];
         var eq = s.indexOf("=");
         bands.push({ label: (eq > 0 ? s.slice(0, eq) : s).trim(), text: eq > 0 ? s.slice(eq + 1).trim() : "", c: fill ? fill.c : "", raw: s });
       } else gen[side].push(s);
