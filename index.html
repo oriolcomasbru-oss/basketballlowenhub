@@ -11929,6 +11929,82 @@ function _preScLeague(L, fit, fk){
     const t=z[_lgZoneOf(q.x, q.y, three)]; if(!t) return; t.a+=e[1]||0; t.m+=e[0]||0; });
   return (_preScLg[key]=z);
 }
+/* THE NUMBER PAINTED INSIDE ITS SHOTS (Oriol, 8/11/2026, after a long search: "el número está dentro del rojo
+   de los hexágonos, pintado dentro; los hexágonos se juntan en las zonas clave para dar el espacio"; then
+   "un punto de degradado en los márgenes" and "formas irregulares, es demasiado pegote"). For each area
+   that matters (up to three - see _preShotMini), the main group of his shots there is gathered on a lattice
+   into one body:
+   - THE CORE: exactly the hexagons that reach the number's box, whole and touching, so the number is always
+     inside and never cut;
+   - ROUND IT, up to three layers of cells, each there (and as big as it is) by how many of his shots of that
+     area are near it, with a touch of irregularity: the body reaches out where he shoots and frays where not.
+   The body's colour is the area's verdict on the map's own scale (deep red above the league, sand below,
+   orange level). Bodies keep apart; the rest of the map stays where it is, and a shot of another area that
+   a body lands on steps to the nearest free place. */
+const _PSB_SPOT={ midL:[372,900], midR:[1128,900], midC:[750,700], top3:[750,470], w3L:[198,650], w3R:[1302,650], c3L:[108,1215], c3R:[1392,1215] };
+function _preScBodies(g, marks){
+  const court=g.querySelector(".sc-court"); if(!court || !marks.length) return;
+  const hexInfo=p=>{ const n=(p.getAttribute("d")||"").match(/-?\d+(\.\d+)?/g)||[]; let x=0,y=0,k=0,xs=[];
+    for(let i=0;i+1<n.length;i+=2){ x+=+n[i]; y+=+n[i+1]; xs.push(+n[i]); k++; } return { cx:x/k, cy:y/k, r:(Math.max(...xs)-Math.min(...xs))/Math.sqrt(3) }; };
+  const zoneOf=(x,y)=>{ const dx=x-750, dy=1242.5-y, r=Math.sqrt(dx*dx+dy*dy); if((Math.abs(dx)>660 && dy<160) || r>675) return "out"; if(r<125) return "rim"; if(Math.abs(dx)<245 && dy<425) return "in"; return "mid"; };
+  const hexD=(x,y,R)=>{ let d=""; for(let i=0;i<6;i++){ const an=Math.PI/180*(60*i-30); d+=(i?"L":"M")+(x+R*Math.cos(an)).toFixed(1)+" "+(y+R*Math.sin(an)).toFixed(1); } return d+"Z"; };
+  const hash=(x,y)=>{ const v=Math.sin(x*12.9898+y*78.233)*43758.5453; return v-Math.floor(v); };
+  const H=[...g.querySelectorAll(".sc-hex")].map(p=>Object.assign(hexInfo(p),{ p:p, used:false }));
+  if(!H.length) return;
+  const VB=PRE_SC_VB, R=Math.max(...H.map(h=>h.r))*0.72, DX=Math.sqrt(3)*R, DY=1.5*R;
+  const X0=VB[0]+R*1.05, X1=VB[0]+VB[2]-R*1.05, Y0=VB[1]+R*1.05, Y1=VB[1]+VB[3]-R*1.05;
+  const lat=(r,c)=>({ x:c*DX+((r&1)? DX/2 : 0), y:r*DY, k:r+","+c });
+  const near=(x,y)=>{ const r=Math.round(y/DY), out=[]; for(let rr=r-1;rr<=r+1;rr++){ const c=Math.round((x-((rr&1)? DX/2 : 0))/DX); out.push(lat(rr,c)); } return out.sort((a,b)=>Math.hypot(a.x-x,a.y-y)-Math.hypot(b.x-x,b.y-y))[0]; };
+  const ring=(c0, rad)=>{ const out=[], r0=Math.round(c0.y/DY); for(let r=r0-rad;r<=r0+rad;r++){ const c1=Math.round((c0.x-((r&1)? DX/2 : 0))/DX); for(let c=c1-rad-1;c<=c1+rad+1;c++) out.push(lat(r,c)); } return out; };
+  const taken=new Set(), takenXY=[], solidXY=[], inB=c=>c.x>=X0 && c.x<=X1 && c.y>=Y0 && c.y<=Y1;
+  const clear=c=>!taken.has(c.k) && !takenXY.some(t=>Math.hypot(t.x-c.x,t.y-c.y)<DX*1.05);
+  const roomy=c=>!taken.has(c.k) && !solidXY.some(t=>Math.hypot(t.x-c.x,t.y-c.y)<DX*1.1);
+  /* mid range first, then the paint, then the three: each as near its own shots as the ones before allow */
+  const ORD={ spot:0, mid:0, rim:1, in:1, out:2 };
+  marks.slice().sort((a,b)=>(ORD[a.k]!=null? ORD[a.k] : 1)-(ORD[b.k]!=null? ORD[b.k] : 1)).forEach(m=>{
+    const L=H.filter(h=>!h.used && (m.k==="spot"? (Math.hypot(h.cx-_PSB_SPOT[m.spot][0], h.cy-_PSB_SPOT[m.spot][1])<380 && zoneOf(h.cx,h.cy)===(/^mid/.test(m.spot)? "mid" : "out"))
+      : m.k==="rim"? Math.hypot(h.cx-750,h.cy-1242)<330 : (zoneOf(h.cx,h.cy)===m.k || (m.k==="in" && zoneOf(h.cx,h.cy)==="rim"))));
+    if(!L.length) return;
+    const dens=h0=>L.reduce((a,q)=>a+(Math.hypot(q.cx-h0.cx,q.cy-h0.cy)<260? q.r*q.r : 0),0);
+    const seed=L.reduce((b,h)=>dens(h)>dens(b)? h : b, L[0]);
+    const grp=L.filter(h=>Math.hypot(h.cx-seed.cx,h.cy-seed.cy)<300);
+    let wx=0, wy=0, ws=0; grp.forEach(h=>{ const w=h.r*h.r; wx+=h.cx*w; wy+=h.cy*w; ws+=w; });
+    const key=/k1/.test(m.cls), fs=key? 175 : 150, val=m.p+"%";
+    /* Oswald bold: a digit is about .56 of the size, the per cent sign .86 */
+    const tw=fs*(0.56*(val.length-1)+0.86), th=fs*0.72, bw=tw/2+fs*0.05, bh=th/2+fs*0.07;
+    const reach=(c,c0)=>{ const ox=Math.max(0, Math.abs(c.x-c0.x)-bw), oy=Math.max(0, Math.abs(c.y-c0.y)-bh); return ox<R*0.866 && oy<R-ox/Math.sqrt(3); };
+    const shape=c0=>{ const all=ring(c0, 9);
+      all.forEach(c=>{ c.core=reach(c,c0); c.lay=c.core? 0 : 9; });
+      for(let l=1;l<=3;l++){ const prev=all.filter(c=>c.lay===l-1); all.forEach(c=>{ if(c.lay===9 && prev.some(q=>Math.hypot(q.x-c.x,q.y-c.y)<DX*1.05)) c.lay=l; }); }
+      return all; };
+    const fits=c0=>shape(c0).filter(c=>c.core).every(c=>inB(c) && roomy(c));
+    const want=near(wx/ws, wy/ws);
+    const c0=ring(want, 11).sort((a,b)=>Math.hypot(a.x-want.x,a.y-want.y)-Math.hypot(b.x-want.x,b.y-want.y)).find(fits);
+    if(!c0) return;
+    const sh=shape(c0), core=sh.filter(c=>c.core);
+    const sig=DX*1.5, near2=c=>grp.reduce((a,h)=>a+h.r*h.r*Math.exp(-((h.cx-c.x)**2+(h.cy-c.y)**2)/(2*sig*sig)),0);
+    const halo=sh.filter(c=>!c.core && c.lay<=3 && inB(c) && clear(c));
+    const dmax=Math.max(1e-6, ...halo.map(near2)), LB={1:0.32, 2:0.08, 3:-0.08};
+    halo.forEach(c=>{ c.h=hash(c.x,c.y); c.score=near2(c)/dmax*0.8+LB[c.lay]+(c.h-0.5)*0.34; });
+    const body=core.concat(halo.filter(c=>c.score>0.36));
+    grp.forEach(h=>{ h.used=true; });
+    L.forEach(h=>{ if(!h.used && body.some(c=>Math.hypot(c.x-h.cx,c.y-h.cy)<R*1.5)) h.used=true; });
+    body.forEach(c=>{ taken.add(c.k); takenXY.push(c); if(c.core || c.lay===1) solidXY.push(c); });
+    H.forEach(h=>{ if(h.used) return; const hx=h.mx!=null? h.mx : h.cx, hy=h.my!=null? h.my : h.cy;
+      if(!body.some(c=>Math.hypot(c.x-hx,c.y-hy)<R*1.6)) return;
+      const to=ring(near(hx,hy), 4).filter(c=>inB(c) && !taken.has(c.k) && !body.some(b=>Math.hypot(b.x-c.x,b.y-c.y)<R*1.9)).sort((a,b)=>Math.hypot(a.x-hx,a.y-hy)-Math.hypot(b.x-hx,b.y-hy))[0];
+      if(to){ h.mx=to.x; h.my=to.y; h.p.setAttribute("transform","translate("+(to.x-h.cx).toFixed(1)+" "+(to.y-h.cy).toFixed(1)+")"); } else h.used=true; });
+    const cls=m.cls.indexOf("up")>=0? "mp2" : m.cls.indexOf("dn")>=0? "mn1" : "m0";
+    const bg=sv("g",{class:"sc-body"});
+    body.forEach(c=>{ const hh=(typeof c.h==="number")? c.h : hash(c.x,c.y);
+      if(c.core){ const inner=Math.abs(c.x-c0.x)<bw && Math.abs(c.y-c0.y)<bh; bg.appendChild(sv("path",{d:hexD(c.x,c.y,R*(inner? 1.03 : 0.92+0.12*hh)), class:"sc-hex "+cls})); return; }
+      const k=Math.max(0.28, Math.min(0.9, (0.34+0.62*c.score)*(c.lay===1? 1 : c.lay===2? 0.86 : 0.72)));
+      const vx=c.x-c0.x, vy=c.y-c0.y, vl=Math.hypot(vx,vy)||1, push=R*(0.06+0.14*c.lay)*(0.6+0.8*hh), side=R*(hh-0.5)*0.3;
+      bg.appendChild(sv("path",{d:hexD(c.x+vx/vl*push-vy/vl*side, c.y+vy/vl*push+vx/vl*side, R*k), class:"sc-hex "+cls})); });
+    court.appendChild(bg);
+    court.appendChild(sv("text",{x:c0.x.toFixed(0), y:(c0.y+th*0.5).toFixed(0), "font-size":fs, class:"sc-bn b-"+cls}, val)); });
+  H.forEach(h=>{ if(h.used) h.p.remove(); });
+}
 function _preShotMini(L, tid, pid){
   const d=(L.players||{})[tid];
   const all=(d&&d.shots)||[];
@@ -11984,21 +12060,16 @@ function _preShotMini(L, tid, pid){
   if(B) LG_ZONES.forEach(o=>{ const e=Z[o.k], b=B[o.k]; if(!SPOT[o.k] || !e || e.a<8 || !b || b.a<30) return;
     const p=pctOf(e), d=p-pctOf(b), own=rows.filter(r=>r.keys.indexOf(o.k)>=0)[0];
     if(d>=15 && own && own.p!=null && p-own.p>=10 && (!spot || d>spot.dev)) spot={ k:o.k, a:e.a, m:e.m, p:p, dev:d, range:own.k }; });
-  const marks=rows.filter(r=>r.show && !(spot && spot.range===r.k)).map(r=>({ x:r.at[0], y:r.at[1], tag:r.tag, p:r.p, dev:r.dev, col:r.col, a:r.a }));
-  if(spot){ const a0=LG_ZONE_AT[spot.k]||[750,900], x=Math.max(500, Math.min(1060, a0[0])), y=Math.max(580, Math.min(1360, a0[1]+60));
-    /* where the label had to move off the spot, a dot marks the spot itself */
-    if(Math.abs(x-a0[0])>220 || Math.abs(y-(a0[1]+60))>220) g.appendChild(sv("circle",{cx:Math.max(10, Math.min(1490, a0[0])), cy:Math.min(1390, a0[1]+40), r:46, class:"sc-ckm"}));
-    marks.push({ x:x, y:y, tag:SPOT[spot.k]||spot.k, p:spot.p, dev:spot.dev, col:true, a:spot.a }); }
+  /* the areas that matter, each as a body of its own shots with its number inside (_preScBodies);
+     a spot takes its area's place */
+  const marks=[];
+  rows.forEach(r=>{
+    if(spot && spot.range===r.k){ marks.push({ tag:SPOT[spot.k]||spot.k, p:Math.round(spot.p), dev:spot.dev, col:true, a:spot.a, k:"spot", spot:spot.k }); return; }
+    if(r.show) marks.push({ tag:r.tag, p:Math.round(r.p), dev:r.dev, col:r.col, a:r.a, k:r.tag==="RIM"? "rim" : r.k }); });
   const colored=marks.filter(x=>x.col);
   const top=colored.length? colored.reduce((b,x)=>Math.abs(x.dev)>Math.abs(b.dev)? x : b) : marks.reduce((b,x)=>(!b || x.a>b.a)? x : b, null);
-  /* EACH NUMBER ON ITS OWN PILL (Oriol, 8/11/2026: "los números no se acaban de leer encima del mapa"):
-     a small ground in the floor's colour, nearly solid, behind each one - the chart shows round it */
-  marks.forEach(x=>{ const fs=(x===top)? 232 : 190, pc=Math.round(x.p)+"%";
-    const w=fs*(0.66*(0.55*x.tag.length+0.25)+0.55*(pc.length-1)+0.85)+0.44*fs, hh=0.98*fs;
-    const cx=Math.max(PRE_SC_VB[0]+10+w/2, Math.min(PRE_SC_VB[0]+PRE_SC_VB[2]-10-w/2, x.x));
-    g.appendChild(sv("rect",{x:(cx-w/2).toFixed(0), y:(x.y-0.78*fs).toFixed(0), width:w.toFixed(0), height:hh.toFixed(0), rx:(0.3*fs).toFixed(0), class:"sc-ckb"}));
-    const t=sv("text",{x:cx.toFixed(0), y:x.y, class:"sc-ck "+(x.col? (x.dev>0? "up" : "dn") : "nt")+(x===top? "" : " k2")});
-    t.appendChild(sv("tspan",{class:"t"}, x.tag+" ")); t.appendChild(sv("tspan",{}, pc)); g.appendChild(t); });
+  marks.forEach(x=>{ x.cls=(x.col? (x.dev>0? "up" : "dn") : "nt")+(x===top? " k1" : ""); });
+  try{ _preScBodies(g, marks); }catch(e){_quiet(e)}
   const full=line+"\n"+tipR;
   const svg=sv("svg",{viewBox:PRE_SC_VB.join(" "), class:"sc-svg sc-pcard", preserveAspectRatio:"xMidYMax meet", role:"img", "aria-label":full.replace(/\n/g," · ")},
     sv("title",{}, full), g);
@@ -46151,6 +46222,10 @@ body.dark .pbt.dn{color:#5fcf9f} body.dark .pbt.dn .ln{stroke:#5fcf9f}
 /* the games filter of the League page: gold while it is not the whole season, so nobody reads five games as a season */
 .lg-win-seg.lg-win-on .lg-seg-b.act{background:#8a6829!important;color:#fff!important;border-color:#8a6829!important}
 body.dark .lg-win-seg.lg-win-on .lg-seg-b.act{background:#e3c27a!important;color:#1b2028!important;border-color:#e3c27a!important}
+/* the card chart's numbers, painted inside their bodies: white on the deep red, dark on sand and orange (and the reverse in the dark) */
+.sc-bn{font-family:'Oswald',sans-serif;font-weight:700;text-anchor:middle;stroke:none}
+.sc-bn.b-mp2{fill:#fff}.sc-bn.b-mn1{fill:#3a2410}.sc-bn.b-m0{fill:#2a1608}
+body.dark .sc-bn.b-mp2{fill:#1b2028}body.dark .sc-bn.b-mn1{fill:#fff}body.dark .sc-bn.b-m0{fill:#1b2028}
 /* pre game playbook · the key sets by phase, by use or by category */
 .pbb-key-h{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .pbb-kord{display:inline-flex;border:1px solid var(--line-strong,#d2d7df);border-radius:7px;overflow:hidden}
