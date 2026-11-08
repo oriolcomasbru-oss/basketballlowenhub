@@ -11891,11 +11891,24 @@ function _preShotFor(L, tid, pid){
    arriba la foto del jugador y abajo el mapa de tiro"). The same picture as the League chart -
    size is how often he shoots from there, colour how well against the league, in the one heat -
    drawn for a column 75 px wide: a coarser lattice, so fewer and bigger hexagons with wider
-   steps of size, the floor cut just behind the arc, and only the percentages that matter, big
-   enough to read: the zone he shoots most from, and his main zone at the other range (a two
-   if the first is a three, and the other way round). Fifteen shots or no chart. */
+   steps of size, the floor cut just behind the arc, and at most three numbers (see below).
+   Fifteen shots or no chart. */
 const PRE_SC_MIN=15, PRE_SC_VB=[-30, 395, 1560, 1015];   /* the floor with a margin all round: nothing touches the edge */
 const _preScFit={};
+/* the league's shooting zone by zone, from the play-by-play's grid of every shot in the league,
+   laid on this club's floor (its fit) so the zones are cut exactly as his are */
+const _preScLg={};
+function _preScLeague(L, fit, fk){
+  const lg=(L.pbp&&L.pbp.league)||null; if(!lg || !fit) return null;
+  const key=fk+"|"+((L.pbp&&L.pbp.read)||0); if(_preScLg[key]) return _preScLg[key];
+  const G=(L.pbp&&L.pbp.grid)||20, z={};
+  LG_ZONES.forEach(o=>{ z[o.k]={ a:0, m:0 }; });
+  Object.keys(lg).forEach(k=>{ const c=k.split(","), e=lg[k]; if(!e) return;
+    const q=_lgShotXY(["",0,0,+c[0]+G/2,+c[1]+G/2], fit), dx=q.x-750, dy=1242.5-q.y;
+    const three=(Math.abs(dx)>660 && dy<160) || Math.sqrt(dx*dx+dy*dy)>675;
+    const t=z[_lgZoneOf(q.x, q.y, three)]; if(!t) return; t.a+=e[1]||0; t.m+=e[0]||0; });
+  return (_preScLg[key]=z);
+}
 function _preShotMini(L, tid, pid){
   const d=(L.players||{})[tid];
   const all=(d&&d.shots)||[];
@@ -11914,22 +11927,41 @@ function _preShotMini(L, tid, pid){
     +"\nHexagon size: how often he shoots from there · colour: how well, against the league";
   const g=sv("g",{});
   g.appendChild(_lgCourt(_lgHexG(hm, fit, { card:true, top:34 })));
-  /* the key percentages: a zone needs six shots to be named at all */
-  const Z=_lgZoneAgg(mine, fit), is3=k=>/3/.test(k);
-  const zs=LG_ZONES.map(o=>Z[o.k]).filter(e=>e && e.a>=6).sort((a,b)=>b.a-a.a);
-  const pick=zs.length? [zs[0]] : [];
-  if(zs.length){ const other=zs.filter(e=>is3(e.k)!==is3(zs[0].k))[0] || zs[1]; if(other) pick.push(other); }
-  const at=k=>{ const p=LG_ZONE_AT[k]||[750,900];
-    return [Math.max(250, Math.min(1250, p[0])), Math.max(PRE_SC_VB[1]+205, Math.min(1360, p[1]+60))]; };
-  const spots=[];
-  pick.forEach((e,i)=>{ const p=at(e.k);
-    /* two labels on top of each other are none: the second gives way */
-    if(spots.some(q=>Math.abs(q[0]-p[0])<620 && Math.abs(q[1]-p[1])<240)) return;
-    spots.push(p);
-    g.appendChild(sv("text",{x:p[0], y:p[1], class:"sc-ck"+(i? " k2" : "")}, pc(e.m,e.a))); });
-  const svg=sv("svg",{viewBox:PRE_SC_VB.join(" "), class:"sc-svg sc-pcard", preserveAspectRatio:"xMidYMax meet", role:"img", "aria-label":line.replace(/\n/g," · ")},
-    sv("title",{}, line), g);
-  return { svg:svg, n:mine.length, line:line };
+  /* THREE NUMBERS, ONLY THE ONES THAT SAY SOMETHING (Oriol, 8/11/2026: "el promedio exterior, el de
+     media distancia y el interior, destacando el que haga falta; si alguno no destaca no lo pongas;
+     y si es muy destacado en un espacio concreto, pon el espacio allí, pero muy claro"). Each range
+     against the league's own percentage from the same range: shown only with ten shots and six
+     points away from it - red above (respect it), green below (ours to use), the furthest one the
+     largest. A single spot takes its range's place only when it is plainly his: eight shots there,
+     fifteen points over the league from that spot and ten over his own range. The rest is in the
+     big chart beside the video. */
+  const Z=_lgZoneAgg(mine, fit), B=_preScLeague(L, fit, fk);
+  const RANGES=[["out","3P",["c3L","w3L","top3","w3R","c3R"],[750,585]],["mid","MID",["midL","midC","midR"],[750,770]],["in","IN",["rim","paint"],[750,1090]]];
+  const sumZ=(src,ks)=>ks.reduce((o,k)=>{ const e=src&&src[k]; if(e){ o.a+=e.a||0; o.m+=e.m||0; } return o; },{ a:0, m:0 });
+  const SPOT={ midL:"L MID", midC:"MID", midR:"R MID", c3L:"L CORNER", w3L:"L WING", top3:"TOP", w3R:"R WING", c3R:"R CORNER" };
+  const rows=RANGES.map(r=>{ const me=sumZ(Z, r[2]), lg=sumZ(B, r[2]);
+    const p=me.a? 100*me.m/me.a : null, q=lg.a>=50? 100*lg.m/lg.a : null;
+    return { k:r[0], tag:r[1], keys:r[2], at:r[3], a:me.a, m:me.m, p:p, q:q, dev:(p!=null && q!=null)? p-q : null }; });
+  const tipR=rows.map(r=>r.tag+" "+(r.a? Math.round(r.p)+"% ("+r.m+"/"+r.a+")" : "—")+(r.q!=null? " · league "+Math.round(r.q)+"%" : "")).join("\n");
+  rows.forEach(r=>{ r.show=r.a>=10 && r.dev!=null && Math.abs(r.dev)>=6; });
+  /* the spot, at most one */
+  let spot=null;
+  /* (a spot is a place on the floor - a corner, a wing, the top, an elbow: the rim and the paint are "inside" already) */
+  if(B) LG_ZONES.forEach(o=>{ const e=Z[o.k], b=B[o.k]; if(o.k==="rim" || o.k==="paint" || !e || e.a<8 || !b || b.a<30) return;
+    const p=100*e.m/e.a, d=p-100*b.m/b.a, own=rows.filter(r=>r.keys.indexOf(o.k)>=0)[0];
+    if(d>=15 && own && own.p!=null && p-own.p>=10 && (!spot || d>spot.dev)) spot={ k:o.k, a:e.a, m:e.m, p:p, dev:d, range:own.k }; });
+  const marks=rows.filter(r=>r.show && !(spot && spot.range===r.k)).map(r=>({ x:r.at[0], y:r.at[1], tag:r.tag, p:r.p, dev:r.dev }));
+  if(spot){ const a0=LG_ZONE_AT[spot.k]||[750,900], x=Math.max(500, Math.min(1060, a0[0])), y=Math.max(585, Math.min(1360, a0[1]+60));
+    /* where the label had to move off the spot, a dot marks the spot itself */
+    if(Math.abs(x-a0[0])>220 || Math.abs(y-(a0[1]+60))>220) g.appendChild(sv("circle",{cx:Math.max(10, Math.min(1490, a0[0])), cy:Math.min(1390, a0[1]+40), r:46, class:"sc-ckm"}));
+    marks.push({ x:x, y:y, tag:SPOT[spot.k]||spot.k, p:spot.p, dev:spot.dev, spot:true }); }
+  const top=marks.reduce((b,x)=>(!b || Math.abs(x.dev)>Math.abs(b.dev))? x : b, null);
+  marks.forEach(x=>{ const t=sv("text",{x:x.x, y:x.y, class:"sc-ck "+(x.dev>0? "up" : "dn")+(x===top? "" : " k2")+(x.spot? " sp" : "")});
+    t.appendChild(sv("tspan",{class:"t"}, x.tag+" ")); t.appendChild(sv("tspan",{}, Math.round(x.p)+"%")); g.appendChild(t); });
+  const full=line+"\n"+tipR;
+  const svg=sv("svg",{viewBox:PRE_SC_VB.join(" "), class:"sc-svg sc-pcard", preserveAspectRatio:"xMidYMax meet", role:"img", "aria-label":full.replace(/\n/g," · ")},
+    sv("title",{}, full), g);
+  return { svg:svg, n:mine.length, line:full };
 }
 /* the chart into the photo's column, under the photograph */
 function _preCardShots(card, L, tid, c){
@@ -31525,10 +31557,10 @@ function renderProB(root){
    league tables (team analysis, game pace, rebounding) from every club's last N, each club its
    own N games. Over the last N the numbers are the game sheets' own (the league's official
    season line covers the whole season and cannot be cut). Kept in memory, not in the saved state. */
-const LG_WINS=[0,10,5,2];
+const LG_WINS=[0,10,5,2,1];
 function _lgWin(L){ const n=+((L && L.gWin)||0); return LG_WINS.indexOf(n)>0? n : 0; }
 function _lgWinSeg(L){
-  return _lgSeg([[0,"All games","The whole season"],[10,"Last 10","Only each club's last 10 league games"],[5,"Last 5","Only each club's last 5 league games"],[2,"Last 2","Only each club's last 2 league games"]],
+  return _lgSeg([[0,"All games","The whole season"],[10,"Last 10","Only each club's last 10 league games"],[5,"Last 5","Only each club's last 5 league games"],[2,"Last 2","Only each club's last 2 league games"],[1,"Last 1","Only each club's last league game"]],
     _lgWin(L), x=>{ L.gWin=x; });
 }
 const _lgPW={}, _lgPWBusy={}, _lgPWNo={}, _lgLW={}, _lgLWBusy={};
@@ -31610,10 +31642,11 @@ function _lgWinWait(L, title, msg){
   return box;
 }
 function _lgWinMsg(L, n, kind, ready, total){
-  if(_lgPWNo[n]) return h("div",{class:"lg-warn"},"Last "+n+" games needs the new league reader, which is not published yet. Showing nothing rather than the whole season under that name.");
-  if(kind==="league") return h("div",{class:"ld"},"Reading every club's last "+n+" games… ", h("b",{class:"lg-win-n"}, (ready||0)+" of "+(total||0)), h("span",{class:"ld-bar"}));
+  const gm=n===1? "last game" : "last "+n+" games";
+  if(_lgPWNo[n]) return h("div",{class:"lg-warn"},"Last "+n+(n===1? " game needs" : " games needs")+" the new league reader, which is not published yet. Showing nothing rather than the whole season under that name.");
+  if(kind==="league") return h("div",{class:"ld"},"Reading every club's "+gm+"… ", h("b",{class:"lg-win-n"}, (ready||0)+" of "+(total||0)), h("span",{class:"ld-bar"}));
   const t=(L.teams||[]).filter(x=>String(x.id)===String(_lgTeamId(L)))[0];
-  return h("div",{class:"ld"},"Reading the last "+n+" games of "+((t&&t.name)||"the club")+"…", h("span",{class:"ld-bar"}));
+  return h("div",{class:"ld"},"Reading the "+gm+" of "+((t&&t.name)||"the club")+"…", h("span",{class:"ld-bar"}));
 }
 function renderLeague(){
   const root=$("#viewLeague"); if(!root) return;
@@ -46001,9 +46034,14 @@ body.dark .modal-stats .modal-stat-cell.hl-hot .modal-stat-why,body.dark .modal-
 .sc-pcard .sc-line{stroke-width:1px;vector-effect:non-scaling-stroke;opacity:.5}
 .sc-pcard .sc-floor{stroke:none}
 /* the key percentages: ink on a halo of the floor, the first one larger than the second */
-.sc-ck{font-family:'Oswald',sans-serif;font-weight:700;font-size:215px;text-anchor:middle;fill:var(--sc-ink,#141821);
+.sc-ck{font-family:'Oswald',sans-serif;font-weight:700;font-size:232px;text-anchor:middle;fill:var(--sc-ink,#141821);
   stroke:var(--sc-halo,#f8f9fb);stroke-width:50px;stroke-linejoin:round;paint-order:stroke}
-.sc-ck.k2{font-size:172px;stroke-width:42px}
+.sc-ck.k2{font-size:190px;stroke-width:44px}
+/* the range named small before its number; red above the league (respect it), green below (ours to use) */
+.sc-ck .t{font-size:.66em;font-weight:600;letter-spacing:.04em}
+.sc-ck.up{fill:#a8301f}.sc-ck.dn{fill:#17805a}
+.sc-ckm{fill:none;stroke:#a8301f;stroke-width:16px}
+body.dark .phx .sc-ck.up{fill:#ff8f85}body.dark .phx .sc-ck.dn{fill:#5fcf9f}body.dark .phx .sc-ckm{stroke:#ff8f85}
 body.dark .phx .photo-sc{background:#2a313b;--sc-halo:#242a33;--sc-ink:#eef1f5}
 @media print{ .phx .photo-sc{background:#fff!important} }
 /* the games filter of the League page: gold while it is not the whole season, so nobody reads five games as a season */
