@@ -10776,6 +10776,7 @@ function renderReportSections(body, rep, key, g, canEd, kind, opts){
   }
 }
 function _rrsBuild(body, rep, key, g, canEd, kind, opts){
+  let _preLastLater=null;   /* the last game against them, drawn at the end (see below) */
   kind = (kind==="postgame") ? "postgame" : "pregame";
   /* "only" narrows what is drawn, never what is stored: the Game plan screen
      renders one section of the same report and saves it the same way. */
@@ -10991,9 +10992,10 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
          four blocks a player is given. */
       /* their last games from the play by play now open the TEAM STATS overview (see _preInj) */
     }
-    /* we have played them already: that game's post game - the Game Summary and its team stats */
+    /* we have played them already: that game's post game - the Game Summary and its team stats - goes
+       at the very end of the pre game (Oriol, 9/11/2026: "el post game al final del todo") */
     if(playerBlockOk("lastgame") && _preMeetings(g && g.opponent, g && g.date).some(m=>m.date<=todayISO()))
-      wrap.appendChild(_preSafe("OUR LAST GAME AGAINST THEM", ()=>_preLastBlock(g, key)));
+      _preLastLater=()=>_preSafe("OUR LAST GAME AGAINST THEM", ()=>_preLastBlock(g, key));
   }
   /* A report on disk was written by whichever build was live the day it was written, and
      some of them are a year old. One section whose stored shape this code does not expect
@@ -11173,6 +11175,8 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
     wrap.appendChild(blk);
   }
 
+  /* our last game against them: after everything else */
+  if(_preLastLater){ try{ wrap.appendChild(_preLastLater()); }catch(e){_quiet(e)} }
   if(canEd && !ONLY){
     wrap.appendChild(h("div",{class:"rs-add-row"},
       h("button",{class:"rs-add-sec", onclick:()=>{ secs.push({id:uid(),title:"NEW SECTION",items:[{t:"Item",v:""}]}); save(); reRender(); }},"＋ Add section"),
