@@ -14439,14 +14439,16 @@ function pbxBand(title){
 }
 /* their offense, so a high number is their number: gold hurts us, green is
    where the set dies on them. The same law as everywhere else in the report. */
-/* the playbook reads on the same scale as everything else: a set that produces more
-   than the average is red, one that produces less is green */
+/* THEIR SETS: RED IS DANGER (Oriol, 8/11/2026: "el color de la eficiencia está al revés: rojo
+   peligroso, verde no"). A set that scores more than their average a possession is red, one that dies
+   on them is green - the general scale turned round, because here a high number is theirs. The
+   dashboard's key sets read the same way. */
 function pbxPppChip(ppp, avg, n){
   const sp=h("span",{class:"pbx-ppp"}, (ppp==null?"—":Number(ppp).toFixed(2)));
   if(ppp==null || n<5 || avg==null){ sp.classList.add("muted"); if(ppp!=null && n) sp.title=n+" possessions"; return sp; }
   if(Math.abs(ppp-avg)<0.10) return sp;
   const st=_perfStep(ppp-avg, 0.25);
-  if(Math.abs(st-4)){ sp.style.background=PERF9[st]; sp.classList.add("on"); if(st<=1 || st>=7) sp.classList.add("dk"); }
+  if(Math.abs(st-4)){ sp.style.background=PERF9[8-st]; sp.classList.add("on"); if(st<=1 || st>=7) sp.classList.add("dk"); }
   return sp;
 }
 /* A pick is dragged, never clicked into place — and the drag has to work with a
