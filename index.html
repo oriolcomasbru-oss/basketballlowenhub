@@ -11892,8 +11892,8 @@ function _preShotFor(L, tid, pid){
    size is how often he shoots from there, colour how well against the league, in the one heat -
    drawn for a column 75 px wide: a coarser lattice, so fewer and bigger hexagons with wider
    steps of size, the floor cut just behind the arc, and at most three numbers (see below).
-   Fifteen shots or no chart. */
-const PRE_SC_MIN=15, PRE_SC_VB=[-30, 395, 1560, 1015];   /* the floor with a margin all round: nothing touches the edge */
+   Eight shots or no chart (Oriol: Atkins, three games, has good numbers too). */
+const PRE_SC_MIN=8, PRE_SC_VB=[-30, 395, 1560, 1015];   /* the floor with a margin all round: nothing touches the edge */
 const _preScFit={};
 /* the league's shooting zone by zone, from the play-by-play's grid of every shot in the league,
    laid on this club's floor (its fit) so the zones are cut exactly as his are */
@@ -11927,36 +11927,48 @@ function _preShotMini(L, tid, pid){
     +"\nHexagon size: how often he shoots from there · colour: how well, against the league";
   const g=sv("g",{});
   g.appendChild(_lgCourt(_lgHexG(hm, fit, { card:true, top:34 })));
-  /* THREE NUMBERS, ONLY THE ONES THAT SAY SOMETHING (Oriol, 8/11/2026: "el promedio exterior, el de
-     media distancia y el interior, destacando el que haga falta; si alguno no destaca no lo pongas;
-     y si es muy destacado en un espacio concreto, pon el espacio allí, pero muy claro"). Each range
-     against the league's own percentage from the same range: shown only with ten shots and six
-     points away from it - red above (respect it), green below (ours to use), the furthest one the
-     largest. A single spot takes its range's place only when it is plainly his: eight shots there,
-     fifteen points over the league from that spot and ten over his own range. The rest is in the
-     big chart beside the video. */
+  /* THE THREE AREAS THAT MATTER FOR HIM (Oriol, 8/11/2026: "el promedio exterior, el de media distancia
+     y el interior, destacando el que haga falta"; then "Smith debería tener las 3 marcadas, Fleming
+     también con su 77%: los datos más relevantes de cada jugador"). Each area - three, mid range,
+     inside - against the league's own percentage from the same area:
+     - it is there when he shoots from there: 10 shots, or 5 and a fifth of his shots;
+     - it is coloured only when it stands apart from the league - 10 shots and 6 points, or 6 shots
+       and 15 points: red above (respect it), green below (ours to use); otherwise it is in ink;
+     - inside, his rim takes the paint's place when it is plainly better (8 shots, 10 points over his
+       inside), and a spot outside the paint - a corner, a wing, the top, a side of mid range - takes
+       its area's place when it is plainly his (8 shots, 15 points over the league from there, 10 over
+       his own area);
+     - the largest is the one that stands apart most (none coloured: the one he shoots most).
+     The rest is in the big chart beside the video. */
   const Z=_lgZoneAgg(mine, fit), B=_preScLeague(L, fit, fk);
   const RANGES=[["out","3P",["c3L","w3L","top3","w3R","c3R"],[750,585]],["mid","MID",["midL","midC","midR"],[750,770]],["in","IN",["rim","paint"],[750,1090]]];
   const sumZ=(src,ks)=>ks.reduce((o,k)=>{ const e=src&&src[k]; if(e){ o.a+=e.a||0; o.m+=e.m||0; } return o; },{ a:0, m:0 });
   const SPOT={ midL:"L MID", midC:"MID", midR:"R MID", c3L:"L CORNER", w3L:"L WING", top3:"TOP", w3R:"R WING", c3R:"R CORNER" };
+  const pctOf=e=>e && e.a? 100*e.m/e.a : null;
+  const colOk=(a,dev)=>dev!=null && ((a>=10 && Math.abs(dev)>=6) || (a>=6 && Math.abs(dev)>=15));
   const rows=RANGES.map(r=>{ const me=sumZ(Z, r[2]), lg=sumZ(B, r[2]);
-    const p=me.a? 100*me.m/me.a : null, q=lg.a>=50? 100*lg.m/lg.a : null;
+    const p=pctOf(me), q=lg.a>=50? pctOf(lg) : null;
     return { k:r[0], tag:r[1], keys:r[2], at:r[3], a:me.a, m:me.m, p:p, q:q, dev:(p!=null && q!=null)? p-q : null }; });
-  const tipR=rows.map(r=>r.tag+" "+(r.a? Math.round(r.p)+"% ("+r.m+"/"+r.a+")" : "—")+(r.q!=null? " · league "+Math.round(r.q)+"%" : "")).join("\n");
-  rows.forEach(r=>{ r.show=r.a>=10 && r.dev!=null && Math.abs(r.dev)>=6; });
-  /* the spot, at most one */
+  let tipR=rows.map(r=>r.tag+" "+(r.a? Math.round(r.p)+"% ("+r.m+"/"+r.a+")" : "—")+(r.q!=null? " · league "+Math.round(r.q)+"%" : "")).join("\n");
+  rows.forEach(r=>{ r.col=colOk(r.a, r.dev); r.show=r.a>=10 || (r.a>=5 && r.a/mine.length>=0.2) || (r.a>=5 && r.col); });
+  /* the rim, when it is the story inside */
+  { const inR=rows[2], e=Z.rim, b=B && B.rim, p=pctOf(e);
+    if(e && e.a>=8 && inR.p!=null && p-inR.p>=10){ const q=(b && b.a>=30)? pctOf(b) : null;
+      Object.assign(inR, { tag:"RIM", a:e.a, m:e.m, p:p, q:q, dev:q!=null? p-q : null }); inR.col=colOk(inR.a, inR.dev); inR.show=true;
+      tipR+="\nRIM "+Math.round(p)+"% ("+e.m+"/"+e.a+")"+(q!=null? " · league "+Math.round(q)+"%" : ""); } }
+  /* a spot outside the paint, at most one */
   let spot=null;
-  /* (a spot is a place on the floor - a corner, a wing, the top, an elbow: the rim and the paint are "inside" already) */
-  if(B) LG_ZONES.forEach(o=>{ const e=Z[o.k], b=B[o.k]; if(o.k==="rim" || o.k==="paint" || !e || e.a<8 || !b || b.a<30) return;
-    const p=100*e.m/e.a, d=p-100*b.m/b.a, own=rows.filter(r=>r.keys.indexOf(o.k)>=0)[0];
+  if(B) LG_ZONES.forEach(o=>{ const e=Z[o.k], b=B[o.k]; if(!SPOT[o.k] || !e || e.a<8 || !b || b.a<30) return;
+    const p=pctOf(e), d=p-pctOf(b), own=rows.filter(r=>r.keys.indexOf(o.k)>=0)[0];
     if(d>=15 && own && own.p!=null && p-own.p>=10 && (!spot || d>spot.dev)) spot={ k:o.k, a:e.a, m:e.m, p:p, dev:d, range:own.k }; });
-  const marks=rows.filter(r=>r.show && !(spot && spot.range===r.k)).map(r=>({ x:r.at[0], y:r.at[1], tag:r.tag, p:r.p, dev:r.dev }));
+  const marks=rows.filter(r=>r.show && !(spot && spot.range===r.k)).map(r=>({ x:r.at[0], y:r.at[1], tag:r.tag, p:r.p, dev:r.dev, col:r.col, a:r.a }));
   if(spot){ const a0=LG_ZONE_AT[spot.k]||[750,900], x=Math.max(500, Math.min(1060, a0[0])), y=Math.max(585, Math.min(1360, a0[1]+60));
     /* where the label had to move off the spot, a dot marks the spot itself */
     if(Math.abs(x-a0[0])>220 || Math.abs(y-(a0[1]+60))>220) g.appendChild(sv("circle",{cx:Math.max(10, Math.min(1490, a0[0])), cy:Math.min(1390, a0[1]+40), r:46, class:"sc-ckm"}));
-    marks.push({ x:x, y:y, tag:SPOT[spot.k]||spot.k, p:spot.p, dev:spot.dev, spot:true }); }
-  const top=marks.reduce((b,x)=>(!b || Math.abs(x.dev)>Math.abs(b.dev))? x : b, null);
-  marks.forEach(x=>{ const t=sv("text",{x:x.x, y:x.y, class:"sc-ck "+(x.dev>0? "up" : "dn")+(x===top? "" : " k2")+(x.spot? " sp" : "")});
+    marks.push({ x:x, y:y, tag:SPOT[spot.k]||spot.k, p:spot.p, dev:spot.dev, col:true, a:spot.a }); }
+  const colored=marks.filter(x=>x.col);
+  const top=colored.length? colored.reduce((b,x)=>Math.abs(x.dev)>Math.abs(b.dev)? x : b) : marks.reduce((b,x)=>(!b || x.a>b.a)? x : b, null);
+  marks.forEach(x=>{ const t=sv("text",{x:x.x, y:x.y, class:"sc-ck "+(x.col? (x.dev>0? "up" : "dn") : "nt")+(x===top? "" : " k2")});
     t.appendChild(sv("tspan",{class:"t"}, x.tag+" ")); t.appendChild(sv("tspan",{}, Math.round(x.p)+"%")); g.appendChild(t); });
   const full=line+"\n"+tipR;
   const svg=sv("svg",{viewBox:PRE_SC_VB.join(" "), class:"sc-svg sc-pcard", preserveAspectRatio:"xMidYMax meet", role:"img", "aria-label":full.replace(/\n/g," · ")},
@@ -15100,15 +15112,7 @@ function renderPlaybookBoard(sec, canEd, save, reRender){
            of a trend (5 games). */
         const oldG=GAMES.filter(g=>isOld(g)), newG=GAMES.filter(g=>!isOld(g));
         if(oldG.length && newG.length){
-          const pg=perGame(r), b=oldG.reduce((a,g)=>a+(pg[g]||0),0)/oldG.length, s=newG.reduce((a,g)=>a+(pg[g]||0),0)/newG.length;
-          const ok=(r.n||0)>=5 && GAMES.length>=5, d=s-b, dir=!ok? "" : d>=1? "up" : d<=-1? "dn" : "eq";
-          const f=x=>x>=9.95? String(Math.round(x)) : x.toFixed(1).replace(/\.0$/,"");
-          const top=Math.max(b, s, 0.1), y=x=>(10-8*x/top).toFixed(1);
-          const sl=sv("svg",{viewBox:"0 0 20 12", class:"pbb-sl", "aria-hidden":"true"},
-            sv("line",{x1:4, y1:y(b), x2:16, y2:y(s), class:"ln"}), sv("circle",{cx:4, cy:y(b), r:2.6, class:"o"}), sv("circle",{cx:16, cy:y(s), r:2.6, class:"n"}));
-          vc.appendChild(h("span",{class:"pbb-v2 "+dir, title:"A game: "+f(b)+" in the "+oldG.length+" games before "+meetTxt()+", "+f(s)+" in the "+newG.length+" since"
-            +(dir==="up"? " - run more now" : dir==="dn"? " - run less now" : dir==="eq"? " - about the same" : " - too few to say")},
-            sl, h("u",{}, f(b)+"→"+f(s)), dir==="up"? h("em",{},"▲") : dir==="dn"? h("em",{},"▼") : null)); }
+          const tr=_pbTrend(perGame(r), oldG, newG, r.n, meetTxt()); if(tr){ tr.classList.add("pbb-v2"); vc.appendChild(tr); } }
         row.appendChild(vc); }
       { const pg=perGame(r);
         row.appendChild(h("span",{class:"pbb-c-gm"}, GAMES.map((g,i)=>{ const k=pg[g]||0, a=k? 0.18+0.72*Math.min(1, k/gmMax) : 0, old=isOld(g);
@@ -29270,6 +29274,23 @@ function _dashTrendsPrint(){
 /* THEIR KEY SETS: the ten the staff starred in the pre game playbook that they run most - with
    the staff's names, calls and splits, how often and what they return, and game by game, as the
    pre game playbook shows it: one box a tagged game, oldest first, the runs in each */
+/* HOW OFTEN A GAME, BEFORE OUR LAST GAME AGAINST THEM AND SINCE (Oriol, 8/11/2026: "si desciende el
+   uso o no, con números y visual, simple"). A slope from the sand dot (before) to the blue one
+   (since), the two numbers a game, and an arrow when it moved by one run a game or more - with the
+   sample the hub asks of a set (5 possessions) and of a trend (5 games). The pre game board and the
+   dashboard draw the same thing. pg: runs by game; oldG/newG: the games before and since. */
+function _pbTrend(pg, oldG, newG, n, meet){
+  if(!pg || !oldG.length || !newG.length) return null;
+  const b=oldG.reduce((a,g)=>a+(pg[g]||0),0)/oldG.length, s=newG.reduce((a,g)=>a+(pg[g]||0),0)/newG.length;
+  const ok=(n||0)>=5 && (oldG.length+newG.length)>=5, d=s-b, dir=!ok? "" : d>=1? "up" : d<=-1? "dn" : "eq";
+  const f=x=>x>=9.95? String(Math.round(x)) : x.toFixed(1).replace(/\.0$/,"");
+  const top=Math.max(b, s, 0.1), y=x=>(10-8*x/top).toFixed(1);
+  const sl=sv("svg",{viewBox:"0 0 20 12", class:"pbb-sl", "aria-hidden":"true"},
+    sv("line",{x1:4, y1:y(b), x2:16, y2:y(s), class:"ln"}), sv("circle",{cx:4, cy:y(b), r:2.6, class:"o"}), sv("circle",{cx:16, cy:y(s), r:2.6, class:"n"}));
+  return h("span",{class:"pbt "+dir, title:"A game: "+f(b)+" in the "+oldG.length+" games before "+meet+", "+f(s)+" in the "+newG.length+" since"
+      +(dir==="up"? " - run more now" : dir==="dn"? " - run less now" : dir==="eq"? " - about the same" : " - too few to say")},
+    sl, h("u",{}, f(b)+"→"+f(s)), dir==="up"? h("em",{},"▲") : dir==="dn"? h("em",{},"▼") : null);
+}
 function _dashTopSetsInto(box, g){
   box.innerHTML=""; box.appendChild(h("div",{class:"ld dash-ld"},"Reading their playbook…", h("span",{class:"ld-bar"})));
   const L=leagueState(), tid=_lgTeamIdByName(L, g.opponent);
@@ -29327,8 +29348,14 @@ function _dashTopSetsInto(box, g){
         title:o[0]==="use"? "Inside each phase, the set they run most first" : "Inside each phase, by family: H1, H2, H3A, H3B …",
         onclick:()=>{ try{ state.ui.pbKeyOrd=o[0]; persist(); }catch(e){_quiet(e)} paint(); }}, o[1])));
       const groups=PH.map(p=>({ head:p[1], list:top.filter(r=>kindOf(r)===p[0]).sort(mode==="cat"? byCat : byUse) })).filter(x=>x.list.length);
-      const mkT=()=>h("div",{class:"dash-ks", style:"--ng:"+Math.max(1, GMS.length)+";--gsep:"+(hasSep? "7px" : "0px")},
-        h("div",{class:"ks-r ks-hr"}, h("span",{class:"hd"}), h("span",{class:"hd l"},"Set · call"), h("span",{class:"hd"},"Use"), h("span",{class:"hd"},"PPP"),
+      /* BEFORE AND SINCE, A GAME (Oriol, 8/11/2026: "aplica aquí también la mejora en use% respecto lo
+         primero analizado y lo segundo"): a club we have met already gets, beside the use, how often a
+         game each set ran before that game and since - the same slope, numbers and arrow as the pre game */
+      const oldG=GMS.filter(isOld), newG=GMS.filter(x=>!isOld(x)), hasTr=CUR>0 && oldG.length>0 && newG.length>0;
+      const mkT=()=>h("div",{class:"dash-ks"+(hasTr? " ks-tr" : ""), style:"--ng:"+Math.max(1, GMS.length)+";--gsep:"+(hasSep? "7px" : "0px")},
+        h("div",{class:"ks-r ks-hr"}, h("span",{class:"hd h-rk"}), h("span",{class:"hd l h-nm"},"Set · call"), h("span",{class:"hd h-use"},"Use"),
+          hasTr? h("span",{class:"hd h-tr", title:"How often a game: in the games before our game of "+meetTxt+" → since"},"A game") : null,
+          h("span",{class:"hd h-ppp"},"PPP"),
           h("span",{class:"hd gm"}, GMS.map((x,i)=>h("i",{ class:cls(x,i), title:x+(dates[x]? " · "+dates[x].split("-").reverse().join("/") : "")+(isOld(x)? " · before our game of "+meetTxt : "") }, short(x))))));
       const setRow=r=>{ const rk=rankOf.get(r);
         return row(
@@ -29338,25 +29365,25 @@ function _dashTopSetsInto(box, g){
           h("span",{class:"nm"}, h("b",{}, edits[r.label]||r.label), r.call? h("q",{}, r.call) : null,
             isNew(r)? h("i",{class:"ks-new", title:"Not run in the games before our game of "+meetTxt},"new") : null),
           h("span",{class:"use", title:r.n+" runs · "+Math.round(100*r.n/tot)+"% of their possessions"}, h("span",{class:"vol"}, h("i",{style:"width:"+Math.max(8,Math.round(100*(r.n||0)/mx))+"%"})), h("u",{}, String(r.n||0)), h("small",{}, Math.round(100*r.n/tot)+"%")),
+          hasTr? h("span",{class:"tr"}, _pbTrend(P(r), oldG, newG, r.n, "our game of "+meetTxt)) : null,
           r.ppp!=null? h("em",{class:(r.n||0)<MS_POSS? "" : r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : h("em",{},"—"),
           h("span",{class:"gm"}, GMS.map((x,j)=>{ const k=P(r)[x]||0, a=k? 0.18+0.72*Math.min(1, k/gmx) : 0, old=isOld(x);
             return h("i",{class:(k? "" : "z")+" "+cls(x,j), title:x+": "+k+(old? " · before our game of "+meetTxt : ""),
               style:k? "background:rgba("+(old? "184,134,46" : "74,134,216")+","+a.toFixed(2)+");color:"+(a>0.55? "#fff" : old? "#5a3d0c" : "#1d3a66") : ""}, k? String(k) : "·"); })));
       };
-      const gHead=(t,n,more)=>h("div",{class:"ks-g"}, t+(more? " · cont." : ""), h("i",{}, String(n)));
-      /* MANY KEY SETS, TWO COLUMNS (Oriol, 8/11/2026, Chemnitz): more than eight starred sets are
-         laid out in two tables side by side; a phase stays whole in one column when the split
-         allows it, and one that has to break says so at the top of the second */
-      const two=top.length>8, tA=mkT(), tB=two? mkT() : null;
-      const flat=[]; groups.forEach(gr=>{ gr.list.forEach((r,i)=>flat.push({ gr:gr, r:r, first:i===0 })); });
-      let cut=flat.length;
-      if(two){ const half=Math.ceil(flat.length/2); let best=-1;
-        flat.forEach((x,i)=>{ if(i>0 && x.first && (best<0 || Math.abs(i-half)<Math.abs(best-half))) best=i; });
-        cut=(best>0 && Math.abs(best-half)<=2)? best : half; }
-      flat.forEach((x,i)=>{ const t=(i<cut)? tA : tB;
-        if(x.first) t.appendChild(gHead(x.gr.head, x.gr.list.length, false));
-        else if(i===cut) t.appendChild(gHead(x.gr.head, x.gr.list.length, true));
-        t.appendChild(setRow(x.r)); });
+      const gHead=(t,n)=>h("div",{class:"ks-g"}, t, h("i",{}, String(n)));
+      /* MANY KEY SETS, TWO COLUMNS - only where the box is wide enough for two tables of one line a
+         set, and never through the middle of a phase (Oriol, 8/11/2026: "¿por qué separas half
+         court?"): the second table starts at the phase boundary nearest the middle */
+      let W=0; try{ W=box.getBoundingClientRect().width; }catch(e){_quiet(e)}
+      let cutG=-1;
+      if(top.length>8 && W>=1060 && groups.length>1){ const half=top.length/2; let run=0, best=-1, bd=1e9;
+        groups.forEach((gr,i)=>{ if(i>0){ const d=Math.abs(run-half); if(d<bd){ bd=d; best=i; } } run+=gr.list.length; });
+        cutG=best; }
+      const two=cutG>0, tA=mkT(), tB=two? mkT() : null;
+      groups.forEach((gr,i)=>{ const t=(two && i>=cutG)? tB : tA;
+        t.appendChild(gHead(gr.head, gr.list.length));
+        gr.list.forEach(r=>t.appendChild(setRow(r))); });
       box.appendChild(h("div",{class:"ks-top"},
         (CUR>0 && GMS.some(isOld))? h("div",{class:"ks-era"}, h("span",{}, h("i",{class:"o"}), "Before our game of "+meetTxt), h("span",{}, h("i",{class:"n"}), "Since")) : h("span",{}),
         seg));
@@ -45405,9 +45432,9 @@ body.dark .dash-ks .ks-g{color:#e3c27a}
   .dash-ks .ks-r > em{grid-area:ppp;align-self:start;padding:1px 7px}
   .dash-ks .ks-r > .use{grid-area:use;justify-content:flex-end}
   .dash-ks .ks-r > .gm{grid-area:gm;flex-wrap:wrap;row-gap:2px}
-  .dash-ks .ks-hr > :nth-child(1){grid-area:rk} .dash-ks .ks-hr > :nth-child(2){grid-area:nm}
-  .dash-ks .ks-hr > :nth-child(3){grid-area:use;text-align:right} .dash-ks .ks-hr > :nth-child(4){grid-area:ppp}
-  .dash-ks .ks-hr > :nth-child(5){grid-area:gm}
+  .dash-ks .ks-hr > .h-rk{grid-area:rk} .dash-ks .ks-hr > .h-nm{grid-area:nm}
+  .dash-ks .ks-hr > .h-use{grid-area:use;text-align:right} .dash-ks .ks-hr > .h-ppp{grid-area:ppp}
+  .dash-ks .ks-hr > .gm{grid-area:gm}
 }
 /* A WIDE BLOCK INSIDE A DASHBOARD CARD SLIDES IN ITS OWN BOX. The blocks of a card are grid
    items, and a grid item is as wide as the widest thing in it: the key players' table (900 px)
@@ -46052,29 +46079,36 @@ body.dark .modal-stats .modal-stat-cell.hl-hot .modal-stat-why,body.dark .modal-
 .sc-pcard .sc-line{stroke-width:1px;vector-effect:non-scaling-stroke;opacity:.5}
 .sc-pcard .sc-floor{stroke:none}
 /* the key percentages: ink on a halo of the floor, the first one larger than the second */
-.sc-ck{font-family:'Oswald',sans-serif;font-weight:700;font-size:232px;text-anchor:middle;fill:var(--sc-ink,#141821);
+.sc-ck{font-family:'Oswald',sans-serif;font-weight:700;font-size:232px;text-anchor:middle;fill:var(--sc-ink,#141821);fill-opacity:.9;stroke-opacity:.55;
   stroke:var(--sc-halo,#f8f9fb);stroke-width:50px;stroke-linejoin:round;paint-order:stroke}
 .sc-ck.k2{font-size:190px;stroke-width:44px}
 /* the range named small before its number; red above the league (respect it), green below (ours to use) */
 .sc-ck .t{font-size:.66em;font-weight:600;letter-spacing:.04em}
-.sc-ck.up{fill:#a8301f}.sc-ck.dn{fill:#17805a}
+.sc-ck.up{fill:#a8301f}.sc-ck.dn{fill:#17805a}.sc-ck.nt{fill:#3c4350}
 .sc-ckm{fill:none;stroke:#a8301f;stroke-width:16px}
-body.dark .phx .sc-ck.up{fill:#ff8f85}body.dark .phx .sc-ck.dn{fill:#5fcf9f}body.dark .phx .sc-ckm{stroke:#ff8f85}
+body.dark .phx .sc-ck.nt{fill:#d0d6de}body.dark .phx .sc-ck.up{fill:#ff8f85}body.dark .phx .sc-ck.dn{fill:#5fcf9f}body.dark .phx .sc-ckm{stroke:#ff8f85}
 body.dark .phx .photo-sc{background:#2a313b;--sc-halo:#242a33;--sc-ink:#eef1f5}
 @media print{ .phx .photo-sc{background:#fff!important} }
-/* pre game playbook, the volume: the share on top, and the second time we meet them, before → since a game */
+/* before → since a game (_pbTrend): the pre game board's volume and the dashboard's key sets */
 .pbb .pbb-c-vol{flex-direction:column;align-items:stretch;gap:2px;min-width:0}
 .pbb .pbb-v1{display:flex;align-items:center;gap:5px}
-.pbb .pbb-v2{display:flex;align-items:center;gap:3px;font:600 10.5px 'IBM Plex Mono',monospace;color:#687180;white-space:nowrap}
-.pbb .pbb-v2 u{text-decoration:none}
-.pbb .pbb-v2 em{font-style:normal;font-size:10px}
-.pbb .pbb-sl{width:21px;height:13px;flex:none;overflow:visible}
-.pbb .pbb-sl .ln{stroke:#9aa3b1;stroke-width:1.6}
-.pbb .pbb-sl .o{fill:#b8862e}.pbb .pbb-sl .n{fill:#4a86d8}
-.pbb .pbb-v2.up{color:#c0403c}.pbb .pbb-v2.up .ln{stroke:#c0403c}
-.pbb .pbb-v2.dn{color:#17805a}.pbb .pbb-v2.dn .ln{stroke:#17805a}
-body.dark .pbb .pbb-v2{color:#9aa3b1} body.dark .pbb .pbb-v2.up{color:#ff8f85} body.dark .pbb .pbb-v2.up .ln{stroke:#ff8f85}
-body.dark .pbb .pbb-v2.dn{color:#5fcf9f} body.dark .pbb .pbb-v2.dn .ln{stroke:#5fcf9f}
+.pbt{display:flex;align-items:center;gap:3px;font:600 10.5px 'IBM Plex Mono',monospace;color:#687180;white-space:nowrap}
+.pbt u{text-decoration:none}
+.pbt em{font-style:normal;font-size:10px}
+.pbb-sl{width:21px;height:13px;flex:none;overflow:visible}
+.pbb-sl .ln{stroke:#9aa3b1;stroke-width:1.6}
+.pbb-sl .o{fill:#b8862e}.pbb-sl .n{fill:#4a86d8}
+.pbt.up{color:#c0403c}.pbt.up .ln{stroke:#c0403c}
+.pbt.dn{color:#17805a}.pbt.dn .ln{stroke:#17805a}
+body.dark .pbt{color:#9aa3b1} body.dark .pbt.up{color:#ff8f85} body.dark .pbt.up .ln{stroke:#ff8f85}
+body.dark .pbt.dn{color:#5fcf9f} body.dark .pbt.dn .ln{stroke:#5fcf9f}
+.dash-ks.ks-tr{--kcols:18px minmax(0,1fr) 62px 76px 40px calc(var(--ng,4)*22px - 2px + var(--gsep,0px))}
+.dash-ks .tr .pbt{font-size:10px}
+@container (max-width:470px){
+  .dash-ks.ks-tr .ks-r{grid-template-columns:18px minmax(0,1fr) auto auto;grid-template-areas:"rk nm use ppp" ". gm gm tr"}
+  .dash-ks .ks-r > .tr,.dash-ks .ks-hr > .h-tr{grid-area:tr;justify-self:end}
+  .dash-ks.ks-tr .ks-r > .use{justify-content:flex-start}
+}
 /* the games filter of the League page: gold while it is not the whole season, so nobody reads five games as a season */
 .lg-win-seg.lg-win-on .lg-seg-b.act{background:#8a6829!important;color:#fff!important;border-color:#8a6829!important}
 body.dark .lg-win-seg.lg-win-on .lg-seg-b.act{background:#e3c27a!important;color:#1b2028!important;border-color:#e3c27a!important}
