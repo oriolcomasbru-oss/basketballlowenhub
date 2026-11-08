@@ -11887,6 +11887,60 @@ function _preShotFor(L, tid, pid){
   const pc=(mm,aa)=>aa? Math.round(100*mm/aa)+"%" : "\u2014";
   return { svg:svgEl, line:mine.length+" shots \u00b7 FG "+pc(m,mine.length)+" \u00b7 3P "+m3+"/"+a3+" "+pc(m3,a3) };
 }
+/* THE SHOT CHART ON THE ROSTER CARD (Oriol, 8/11/2026: "la misma idea que ya teníamos, adaptada:
+   arriba la foto del jugador y abajo el mapa de tiro"). The same picture as the League chart -
+   size is how often he shoots from there, colour how well against the league, in the one heat -
+   drawn for a column 75 px wide: a coarser lattice, so fewer and bigger hexagons with wider
+   steps of size, the floor cut just behind the arc, and only the percentages that matter, big
+   enough to read: the zone he shoots most from, and his main zone at the other range (a two
+   if the first is a three, and the other way round). Fifteen shots or no chart. */
+const PRE_SC_MIN=15, PRE_SC_VB=[0, 420, 1500, 980];
+const _preScFit={};
+function _preShotMini(L, tid, pid){
+  const d=(L.players||{})[tid];
+  const all=(d&&d.shots)||[];
+  if(!all.length || !pid) return null;
+  const mine=all.filter(x=>String(x[0])===String(pid));
+  if(mine.length<PRE_SC_MIN) return null;
+  const fk=tid+"|"+all.length, fit=_preScFit[fk] || (_preScFit[fk]=_lgShotFit(all));
+  if(!fit) return null;
+  const lg=(L.pbp&&L.pbp.league)||null, grid=(L.pbp&&L.pbp.grid)||20;
+  const hm=_lgHexMap(mine, fit, lg, grid, { mul:2.2 });
+  if(!hm) return null;
+  let m=0,a3=0,m3=0;
+  mine.forEach(x=>{ if(x[1]===1) m++; if(x[2]===1){ a3++; if(x[1]===1) m3++; } });
+  const pc=(mm,aa)=>aa? Math.round(100*mm/aa)+"%" : "—";
+  const line=mine.length+" shots · FG "+pc(m,mine.length)+" · 3P "+m3+"/"+a3+" "+pc(m3,a3)
+    +"\nHexagon size: how often he shoots from there · colour: how well, against the league";
+  const g=sv("g",{});
+  g.appendChild(_lgCourt(_lgHexG(hm, fit, { card:true, top:34 })));
+  /* the key percentages: a zone needs six shots to be named at all */
+  const Z=_lgZoneAgg(mine, fit), is3=k=>/3/.test(k);
+  const zs=LG_ZONES.map(o=>Z[o.k]).filter(e=>e && e.a>=6).sort((a,b)=>b.a-a.a);
+  const pick=zs.length? [zs[0]] : [];
+  if(zs.length){ const other=zs.filter(e=>is3(e.k)!==is3(zs[0].k))[0] || zs[1]; if(other) pick.push(other); }
+  const at=k=>{ const p=LG_ZONE_AT[k]||[750,900];
+    return [Math.max(250, Math.min(1250, p[0])), Math.max(PRE_SC_VB[1]+170, Math.min(1370, p[1]+60))]; };
+  const spots=[];
+  pick.forEach((e,i)=>{ const p=at(e.k);
+    /* two labels on top of each other are none: the second gives way */
+    if(spots.some(q=>Math.abs(q[0]-p[0])<620 && Math.abs(q[1]-p[1])<240)) return;
+    spots.push(p);
+    g.appendChild(sv("text",{x:p[0], y:p[1], class:"sc-ck"+(i? " k2" : "")}, pc(e.m,e.a))); });
+  const svg=sv("svg",{viewBox:PRE_SC_VB.join(" "), class:"sc-svg sc-pcard", preserveAspectRatio:"xMidYMax meet", role:"img", "aria-label":line.replace(/\n/g," · ")},
+    sv("title",{}, line), g);
+  return { svg:svg, n:mine.length, line:line };
+}
+/* the chart into the photo's column, under the photograph */
+function _preCardShots(card, L, tid, c){
+  try{
+    if(!card || !c || !L || !tid) return;
+    const ph=card.querySelector(".photo"); if(!ph) return;
+    const sc=_preShotMini(L, tid, c.pid); if(!sc) return;
+    card.classList.add("has-sc");
+    ph.appendChild(h("div",{class:"photo-sc", title:sc.line}, sc.svg));
+  }catch(e){_quiet(e)}
+}
 function _preOpenCard(L, tid, c, canEd, save){
   const old=document.getElementById("preCardModal"); if(old) old.remove();
   /* decided first, because both the bar and what the empty frame says depend on it */
@@ -12785,6 +12839,7 @@ function _prePhxBoard(L, C, canEd, redraw){
       if(!card) return;
       _preWireCard(card, c, pos, i, C, canEd, redraw, drag, redraw);
       try{ _preHl(L, card, c, canEd, redraw, _preClub()); }catch(e){_quiet(e)}
+      _preCardShots(card, L, _preTidForCards, c);
       if(!canEd){
         card.querySelectorAll(".idea-row").forEach(r=>{
           const t=r.querySelector(".idea-line");
@@ -25763,7 +25818,7 @@ function _lgZoneLabels(z, opts){
    the top: those are counted once each, in the areas a coach actually talks in. */
 var LG_HEX_PITCH=11;        /* lattice spacing in feed units, ~59 cm */
 var LG_HEX_KR=19;           /* how far a shot reaches, ~1.0 m */
-function _lgHexMap(shots, fit, lg, grid){
+function _lgHexMap(shots, fit, lg, grid, opts){
   const pts=[];
   shots.forEach(s=>{
     const x=+s[3], y=+s[4];
@@ -25780,7 +25835,10 @@ function _lgHexMap(shots, fit, lg, grid){
   });
   const own=pts.reduce((a,p)=>a+p.m,0)/pts.length;
 
-  const P=LG_HEX_PITCH, KR=LG_HEX_KR, KR2=KR*KR;
+  /* a coarser lattice for a chart drawn the size of a stamp (the roster card): fewer, bigger
+     cells, each reaching further, and a colour only where enough shots stand behind it */
+  const MUL=(opts && opts.mul) || 1;
+  const P=LG_HEX_PITCH*MUL, KR=LG_HEX_KR*MUL, KR2=KR*KR;
   const rowH=P*Math.sqrt(3)/2;
   const cells=[];
   let max=0;
@@ -25806,7 +25864,7 @@ function _lgHexMap(shots, fit, lg, grid){
       const lgRate=(bn>=6)? bm/bn : own;
       if(wn>max) max=wn;
       cells.push({x:x, y:y, n:wn, m:wm, rate:wm/wn, base:lgRate,
-                  diff:(wn>=1.9)? (wm/wn)-lgRate : null});
+                  diff:(wn>=1.9*MUL)? (wm/wn)-lgRate : null});
     }
   }
   if(!cells.length) return null;
@@ -25823,7 +25881,9 @@ function _lgHexG(map, fit, opts){
     return "m0";
   };
   const pitch=map.pitch*fit.scale;
-  const rMax=pitch*0.60;
+  /* on the roster card the cells keep a hairline of floor between them, so each one reads
+     on its own at the size of a stamp */
+  const rMax=pitch*(o.card? 0.55 : 0.60);
   /* Five sizes, cut at percentiles of this club's own density rather than as a fraction
      of the single busiest cell. One hot spot under the rim is always far denser than
      anywhere else, so scaling against it shrinks the entire rest of the chart to dots
@@ -25834,7 +25894,10 @@ function _lgHexG(map, fit, opts){
   /* A chart drawn at a quarter of the width loses its thinnest cells to the eye and keeps
      them as grey noise, so a small multiple is drawn thicker: the same five steps, lifted
      off the floor. The shape is what a small chart is for. */
-  const SZ=(o.min? [0.46,0.60,0.74,0.88,1.0] : [0.24,0.40,0.57,0.78,1.0]).map(f=>rMax*f);
+  /* The roster card's chart (Oriol, 8/11/2026: "los hexágonos un punto diferentes a nivel de
+     volumen para que quede bien"): bigger cells, so the steps between them are wider apart
+     than on the small League multiples - where he lives is the big ones, at a glance. */
+  const SZ=(o.card? [0.30,0.47,0.64,0.82,1.0] : o.min? [0.46,0.60,0.74,0.88,1.0] : [0.24,0.40,0.57,0.78,1.0]).map(f=>rMax*f);
   const sizeOf=n=>{ let i=0; while(i<cut.length && n>cut[i]) i++; return SZ[i]; };
   const hexd=(cx,cy,r)=>{
     let d="";
@@ -45775,6 +45838,28 @@ body.dark .dash-mixr .bar i,body.dark .pbb-c-code b{filter:brightness(.82)}
 body.dark .modal-stats .modal-stat-cell.hl-hot{background:#bd4b45!important}
 body.dark .modal-stats .modal-stat-cell.hl-warm{background:#7f4a48!important}
 body.dark .modal-stats .modal-stat-cell.hl-hot *,body.dark .modal-stats .modal-stat-cell.hl-warm *{color:#fff!important}
+/* THE SHOT CHART UNDER THE PHOTOGRAPH (the roster board; the card beside the video has the big chart under it, so not this one): the photo's column is
+   cut in two - the portrait on top, the chart below it as wide as the column - and whatever sat
+   on the photo's bottom edge moves up onto the portrait. The chart's height follows the column's
+   width (.68 of it, the cut floor's shape) (no line of text under it: too few shots, no chart). */
+.phx.phx .card.has-sc > .photo{container-type:inline-size;--sch:calc(100cqw * .654);
+  height:auto!important;min-height:calc(108px + 30cqw * .654)!important;align-self:stretch!important}
+/* on a phone the card is one to a row: a little more of the portrait over the chart (Oriol: "algo más, pero no te pases") */
+@media (max-width:560px){ .phx.phx .card.has-sc > .photo{min-height:calc(130px + 30cqw * .654)!important} }
+.phx.phx .card.has-sc > .photo > .photo-img{bottom:var(--sch)!important}
+.phx.phx .card.has-sc > .photo::before,.phx.phx .card.has-sc > .photo::after{bottom:var(--sch)!important}
+.phx.phx .card.has-sc > .photo > .hand-badge,.phx.phx .card.has-sc > .photo > .photo-lock-btn{bottom:calc(var(--sch) + 3px)!important}
+.phx .photo-sc{position:absolute;left:0;right:0;bottom:0;height:var(--sch);z-index:4;display:flex;flex-direction:column;
+  background:#fff;border-top:1px solid #e7e9ee;--sc-halo:#f8f9fb;--sc-ink:#141821}
+.phx .photo-sc .sc-pcard{flex:1 1 auto;min-height:0;width:100%;height:auto}
+.sc-pcard .sc-line{stroke-width:1px;vector-effect:non-scaling-stroke;opacity:.5}
+.sc-pcard .sc-floor{stroke:none}
+/* the key percentages: ink on a halo of the floor, the first one larger than the second */
+.sc-ck{font-family:'Oswald',sans-serif;font-weight:700;font-size:215px;text-anchor:middle;fill:var(--sc-ink,#141821);
+  stroke:var(--sc-halo,#f8f9fb);stroke-width:50px;stroke-linejoin:round;paint-order:stroke}
+.sc-ck.k2{font-size:172px;stroke-width:42px}
+body.dark .phx .photo-sc{background:#2a313b;border-top-color:#3a4250;--sc-halo:#242a33;--sc-ink:#eef1f5}
+@media print{ .phx .photo-sc{background:#fff!important} }
 /* pre game playbook · the key sets by phase, by use or by category */
 .pbb-key-h{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .pbb-kord{display:inline-flex;border:1px solid var(--line-strong,#d2d7df);border-radius:7px;overflow:hidden}
