@@ -7940,6 +7940,26 @@ function _rtUnwrapInLi(root){
   });
   return root;
 }
+/* A PASTE NEVER STARTS ITS LINES WITH SPACES (Oriol, 8/11/2026: "siempre que pego un texto en el pregame
+   me salen unos espacios al principio de cada hilera"). What Word, Docs or a PDF hand over as HTML is
+   laid out with line breaks and indentation between its tags; the editor keeps every such run as a
+   hard space, so each pasted line began with one or two. Source line breaks inside a text are only
+   spaces in HTML, and whatever stands at the start of a line - after a break, at the start of an item,
+   at the very top - is dropped. */
+function _rtTrimLines(root){
+  const walk=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), list=[]; let n;
+  while((n=walk.nextNode())) list.push(n);
+  list.forEach(t=>{ t.nodeValue=t.nodeValue.replace(/[\r\n\t]+/g," "); });
+  list.forEach(t=>{ if(!t.parentNode) return;
+    let p=t.previousSibling, up=t;
+    /* what stands before it on the page: the node before it, or before the first inline element it opens */
+    while(!p && up.parentNode && up.parentNode!==root && !/^(LI|UL|OL)$/.test(up.parentNode.nodeName)){ up=up.parentNode; p=up.previousSibling; }
+    while(p && p.nodeType===3 && !p.nodeValue.trim()) p=p.previousSibling;
+    const atStart=!p || /^(BR|LI|UL|OL)$/.test(p.nodeName);
+    if(atStart) t.nodeValue=t.nodeValue.replace(/^[  ]+/,"");
+    if(!t.nodeValue.length) t.remove(); });
+  return root;
+}
 function _rtFlatten(root){
   try{ _rtUnwrapInLi(root); }catch(_){_quiet(_)}
   for(let guard=0; guard<2000; guard++){
@@ -8388,12 +8408,12 @@ function wireRichBox(val){
     const html=dt.getData("text/html");
     if(html){ const tmp=document.createElement("div"); tmp.innerHTML=html;
       try{ _rtOffice(tmp); }catch(_){_quiet(_)}
-      _rtStrip(tmp); _rtFlatten(tmp);
+      _rtStrip(tmp); _rtFlatten(tmp); _rtTrimLines(tmp);
       document.execCommand("insertHTML",false,tmp.innerHTML); }
     else {
       /* the same shape as an HTML paste: a newline is a <br>, never a new block,
          so plain text and rich text land with identical spacing */
-      const txt=dt.getData("text/plain")||"";
+      const txt=(dt.getData("text/plain")||"").replace(/^[ \t ]+/gm,"");   /* no line starts with spaces */
       const esc=txt.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
       document.execCommand("insertHTML",false,esc.replace(/\r\n?|\n/g,"<br>"));
     }
