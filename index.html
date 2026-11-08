@@ -2353,7 +2353,7 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
 .dc-blk-m{width:46px;border:1px solid var(--line);border-radius:7px;padding:4px 4px;font-size:11.5px;text-align:center;background:var(--panel);color:var(--ink);outline:none}
 .dc-add{margin-top:5px;border:1px dashed var(--line-strong,#cfd4da);background:transparent;color:var(--ink-faint);border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;width:100%}
 .dc-addsess{border:0;background:rgba(201,162,39,.14);color:var(--accent-strong,#a8801a);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:800;cursor:pointer}
-#themeBtn{display:none!important}#themeMenuBtn{display:none!important}#versionsBtn{display:none!important}#storageStatus{display:none!important}
+#themeBtn{display:none!important}#versionsBtn{display:none!important}#storageStatus{display:none!important}
 /* ===== v7: unified availability (game-to-game + session), season view, per-section JSON import ===== */
 .avx{display:flex;flex-direction:column;gap:5px}
 .avx.compact{margin-top:5px;border-top:1px dashed var(--line);padding-top:6px;gap:4px}
@@ -4570,7 +4570,15 @@ function sessionSheetView(){
     });
     wkCol=wk;
   })();
-  if(!arr.length){ wrap.appendChild(h("div",{class:"ssv-main"}, wkCol||h("div"), h("div",{class:"ssv-empty"}, "No session planned for this day. ", h("button",{class:"btn primary",onclick:addSess},"Create session")))); return wrap; }
+  if(!arr.length){
+    /* a day with a session sheet in the Drive and nothing planned here: the sheet is one tap
+       away, and its blocks can be read into the day (the Overview sends a tap on it here) */
+    let sheet=null; try{ sheet=((docIndex().day||{})[iso]||[]).filter(f=>f && f.folder==="practicedoc")[0]||null; }catch(e){_quiet(e)}
+    wrap.appendChild(h("div",{class:"ssv-main"}, wkCol||h("div"), h("div",{class:"ssv-empty"},
+      sheet? "No session planned for this day — its sheet is in the Drive. " : "No session planned for this day. ",
+      sheet? h("button",{class:"btn primary", onclick:()=>_sheetRead(sheet, iso)},"Read its blocks into a session") : null,
+      sheet? h("button",{class:"btn", onclick:()=>docOpen(sheet)},"Open the sheet") : null,
+      h("button",{class:sheet? "btn" : "btn primary",onclick:addSess},"Create session")))); return wrap; }
   const se=arr[idx]; se.blocks=se.blocks||[];
 
   const paper=h("div",{class:"ssv-paper"});
@@ -4692,12 +4700,24 @@ function monthlyView(opts){
     /* the day a cell is, written on the cell. Nothing in the calendar carried it, so the
        only way to say "this box is the 27th" was to read the number printed inside it -
        which is also why a day gone wrong was so hard to look into. */
-    const cell=h("div",{class:"month-cell"+(iso===todayISO()?" today":"")+(games.length?" hasgame":"")+(weekend?" wknd":"")+nowCls(iso), dataset:{iso:iso}, style:cstyle||null, onclick:()=>addMonthEntry(iso)});
+    /* A DAY OPENS ITS SESSION (Oriol, 8/11/2026: "es muy difícil acceder a la ficha web de cada
+       sesión, no paran de saltarme otras cosas"). A tap on a day asked to add something to it,
+       the dots opened the Drive, and the session itself was a line of a few pixels. A day with
+       a session planned now opens it wherever it is touched; adding to that day is its own "+"
+       in the corner; a day with nothing planned still adds, as before. */
+    const nPlanned=((state.plan.sessions&&state.plan.sessions[iso])||[]).length;
+    let hasSheet=false; try{ hasSheet=((docIndex().day||{})[iso]||[]).some(f=>f && f.folder==="practicedoc"); }catch(e){_quiet(e)}
+    const openSess=si=>{ state.ui.planTab="session"; state.ui.sessionDate=iso; state.ui.sessionIdx=si||0; persist(); renderPlan(); };
+    const toSess=nPlanned>0 || hasSheet;
+    const cell=h("div",{class:"month-cell"+(iso===todayISO()?" today":"")+(games.length?" hasgame":"")+(weekend?" wknd":"")+(toSess?" has-sess":"")+nowCls(iso), dataset:{iso:iso}, style:cstyle||null,
+      title:toSess? "Open the session of this day" : null,
+      onclick:()=>{ if(toSess) openSess(0); else addMonthEntry(iso); }});
     cell.appendChild(h("div",{class:"m-top"},
       h("div",{class:"m-date"}, day),
       h("div",{class:"m-top-r"},
         (kl&&kl.avg)? h("span",{class:"m-loadn", style:"color:rgb("+loadRGB(r)+")", title:"Team load "+Math.round(kl.avg)}, Math.round(kl.avg)) : null,
-        goal? h("span",{class:"m-goaldot", style:"background:"+goal[2], title:"Session focus: "+goal[1]}) : null)));
+        goal? h("span",{class:"m-goaldot", style:"background:"+goal[2], title:"Session focus: "+goal[1]}) : null,
+        toSess? h("button",{type:"button", class:"m-add", title:"Add to this day", "aria-label":"Add to this day", onclick:e=>{ e.stopPropagation(); addMonthEntry(iso); }},"+") : null)));
     /* the game as the league draws it: crest, who, and the result or the hour - and, when
        a game plan or a session sheet is in Drive for it, a green mark that opens the file */
     const DX=docIndex(), TX=tagIndex();
@@ -4725,8 +4745,7 @@ function monthlyView(opts){
         title:(se.goal? ("Focus: "+se.goal+" \u00b7 ") : "")+"open the session sheet"
           +(doc? ("  \u00b7  sheet: "+doc.name) : "")+(tg? ("  \u00b7  tagging: "+tg.name) : "")
           +((doc&&tg)? "  \u00b7  both in" : ""),
-        onclick:e=>{ e.stopPropagation(); state.ui.planTab="session"; state.ui.sessionDate=iso;
-          state.ui.sessionIdx=si; persist(); renderPlan(); }},
+        onclick:e=>{ e.stopPropagation(); openSess(si); }},
         h("span",{class:"m-ss-t"}, se.start||"\u00b7"),
         h("span",{class:"m-ss-l"}, se.label||"Session"),
         docDot(doc, "Session sheet"), docDot(tg, "Practice tagging")));
@@ -4750,8 +4769,8 @@ function monthlyView(opts){
       return h("div",{class:"m-sess has-doc orphan",
         title:f.name+"  \u00b7  dated "+(f.date||"not dated")
           +(f.how? ("  \u00b7  from: "+f.how) : "")
-          +"  \u2014 in Drive with no session planned for this day",
-        onclick:e=>{ e.stopPropagation(); docOpen(f); }},
+          +"  \u2014 in Drive with no session planned for this day \u00b7 opens the day's session page",
+        onclick:e=>{ e.stopPropagation(); openSess(0); }},
         h("span",{class:"m-ss-t"},"\u00b7"),
         h("span",{class:"m-ss-l"}, o.doc? "Sheet" : "Tagging"),
         docDot(o.doc, "Session sheet"), docDot(o.tag, "Practice tagging"));
@@ -10171,7 +10190,7 @@ function _fitNoScroll(){
     const held=!!(tbl && tbl.classList.contains("cw-set"));
     const reset=()=>{
       FIT_STEPS.forEach(c=>host.classList.remove(c));
-      host.classList.remove("fit-scaled");
+      host.classList.remove("fit-scaled"); s.classList.remove("fit-scroll");
       if(tbl && !held){ tbl.style.transform=""; tbl.style.width=""; tbl.style.transformOrigin=""; }
       s.style.height="";
     };
@@ -10190,6 +10209,12 @@ function _fitNoScroll(){
       _fitGrew=true;
       return;
     }
+    /* ON A PHONE OR A TABLET IT SLIDES INSTEAD (Oriol, 8/11/2026). Below the two steps that
+       still read, the next ones and the drawing made every wide table on an iPad a picture
+       of a table - "se ve todo muy pequeño". There, a table that does not fit at a legible
+       size scrolls sideways under a reference column that stays put (_wxPass). A desktop
+       keeps the old answer, and paper always does. */
+    if(over>2 && _wxMode()){ s.classList.add("fit-scroll"); return; }
     for(let i=FIT_LEGIBLE;i<FIT_STEPS.length && over>2;i++){
       host.classList.add(FIT_STEPS[i]);
       over=s.scrollWidth-s.clientWidth;
@@ -10212,6 +10237,99 @@ function _fitNoScroll(){
     s.style.height=Math.ceil(hNat*k)+"px";
   });
 }
+/* ==== A WIDE TABLE ON A PHONE OR A TABLET: IT SLIDES, ITS NAMES STAY (Oriol, 8/11/2026) ======
+   "Que puedas desplazarte horizontalmente ... una primera columna de referencia muy compacta."
+   On a screen under 1200 px, or any touch screen, a table that is wider than its box at a
+   legible size scrolls sideways inside its box, and the column that says what each row is -
+   the player, the club, the set - stays on the left while the numbers slide under it, with a
+   soft shadow at its edge. A rank or a crest before it stays with it. The reference column is
+   kept narrow: a long name is cut with an ellipsis, the whole name on the hover.
+   Every table the pass touches is put back the moment it fits again (a phone turned on its
+   side), and a table that was never inside a box that scrolls gets one. Paper is untouched. */
+function _wxMode(){
+  const b=document.body;
+  if(b.classList.contains("prt") || b.classList.contains("printing")) return false;
+  try{ return window.matchMedia("(max-width:1199px), (pointer:coarse)").matches; }catch(e){ return false; }
+}
+const WX_SCROLLERS=".fit-scroll,.lg-scroll,.pb-scroll,.rt-wrap,.sxp-scroll,.rs-tbl-wrap,.wx-wrap,.trg-mxw";
+function _wxBg(el){
+  /* the colour a cell shows, made solid: what it has, over what is under it */
+  const parse=c=>{ const m=/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?/.exec(c||""); return m? [+m[1],+m[2],+m[3], m[4]==null? 1 : +m[4]] : null; };
+  const layers=[];
+  for(let e=el; e && e.nodeType===1; e=e.parentElement){ const c=parse(getComputedStyle(e).backgroundColor); if(c && c[3]>0){ layers.push(c); if(c[3]>=0.99) break; } }
+  let base=document.body.classList.contains("dark")? [22,27,35] : [255,255,255];
+  if(layers.length && layers[layers.length-1][3]>=0.99) base=layers.pop().slice(0,3);
+  for(let i=layers.length-1;i>=0;i--){ const t=layers[i]; base=base.map((v,j)=>v*(1-t[3])+t[j]*t[3]); }
+  return "rgb("+base.map(Math.round).join(",")+")";
+}
+function _wxUnstick(tbl){
+  tbl.classList.remove("wx-t");
+  tbl.querySelectorAll(".wx-st").forEach(c=>{ c.classList.remove("wx-st","wx-last"); c.style.left=""; c.style.backgroundColor=""; });
+}
+function _wxStick(tbl){
+  const rows=[...tbl.rows]; if(rows.length<2) return;
+  const ref=rows.filter(r=>r.cells.length>=3 && [...r.cells].every(c=>c.colSpan===1) && !r.querySelector(":scope > th"))[0]
+    || rows.filter(r=>r.cells.length>=3 && [...r.cells].every(c=>c.colSpan===1))[0];
+  if(!ref) return;
+  const n=ref.cells.length;
+  /* the reference column: the first of the first three whose cells read as words */
+  let k=-1;
+  for(let j=0;j<Math.min(3,n) && k<0;j++){ let words=0, tot=0;
+    rows.forEach(r=>{ if(r.cells.length!==n) return; const t=(r.cells[j].textContent||"").trim(); if(!t) return; tot++; if(/[A-Za-zÀ-ÿ]{3,}/.test(t)) words++; });
+    if(tot>=2 && words/tot>=0.6) k=j; }
+  if(k<0) k=0;
+  const box=(tbl.closest(WX_SCROLLERS)||tbl.parentElement).clientWidth;
+  tbl.classList.add("wx-t");
+  const stuck=[];
+  rows.forEach(r=>{ let col=0;
+    [...r.cells].forEach(c=>{ const end=col+c.colSpan-1;
+      if(end<=k){ c.classList.add("wx-st"); c.classList.toggle("wx-last", end===k); stuck.push([c, col]); }
+      col+=c.colSpan; }); });
+  /* narrow enough to leave most of the screen to the numbers */
+  const widths=()=>{ const xs=[]; let acc=0; for(let j=0;j<=k;j++){ xs.push(acc); acc+=ref.cells[j].getBoundingClientRect().width; } return [xs, acc]; };
+  let W=widths();
+  if(W[1]>box*0.42){ tbl.classList.add("wx-narrow"); W=widths(); }
+  stuck.forEach(([c, col])=>{ c.style.left=W[0][col]+"px";
+    if(c.classList.contains("wx-last") && c.scrollWidth>c.clientWidth+1 && !c.title) c.title=(c.textContent||"").trim();
+    c.style.backgroundColor=""; c.style.backgroundColor=_wxBg(c); });
+}
+function _wxPass(){
+  const on=_wxMode();
+  document.querySelectorAll("table.wx-t").forEach(t=>{ const s=t.closest(WX_SCROLLERS);
+    if(!on || !s || s.scrollWidth<=s.clientWidth+2 || !t.getClientRects().length){ _wxUnstick(t); t.classList.remove("wx-narrow"); } });
+  if(!on) return;
+  document.querySelectorAll("#workspace table, #__preBox table, .dialog table").forEach(t=>{
+    if(!t.getClientRects().length || t.closest(".gp2-sheet,.cw-set,.wx-skip,svg")) return;
+    /* a table already looked at, at the same width, in the same place: nothing to do (the live
+       game plan draws every second, and this runs after every drawing) */
+    const w0=t.offsetWidth, bw=(t.parentElement||{}).clientWidth||0;
+    if(t.__wxW===w0 && t.__wxB===bw && t.__wxP===t.parentElement) return;
+    t.__wxW=w0; t.__wxB=bw; t.__wxP=t.parentElement;
+    const scroller=x=>{ const o=getComputedStyle(x).overflowX; return o==="auto"||o==="scroll"; };
+    /* the box that slides: the nearest one that already does, short of the page itself */
+    let s=null;
+    for(let a=t.parentElement; a && a!==document.body; a=a.parentElement){ if(a.id==="workspace" || a.id==="__preBox") break; if(scroller(a)){ s=a; break; } }
+    if(!s){
+      /* a table wider than its box and in nothing that scrolls: it gets a box that does */
+      const p=t.parentElement; if(!p) return;
+      if(t.offsetWidth<=p.clientWidth+2) return;
+      const w=h("div",{class:"wx-wrap"}); p.insertBefore(w, t); w.appendChild(t); s=w;
+    }
+    if(s.scrollWidth<=s.clientWidth+2){ if(t.classList.contains("wx-t")) _wxUnstick(t); return; }
+    s.classList.add("wx-sc");
+    if(!t.classList.contains("wx-t") || !t.querySelector(".wx-st")) _wxStick(t);
+  });
+}
+/* the League and the dashboard draw without the fitting pass: the sliding tables are looked at
+   again whenever anything new is drawn, the window changes size or a phone is turned */
+let _wxT=0;
+function _wxSoon(){ clearTimeout(_wxT); _wxT=setTimeout(()=>{ _wxT=0; if(_fitTyping()) { _wxSoon(); return; } try{ _wxPass(); }catch(e){_quiet(e)} }, 280); }
+try{
+  const wxGo=()=>{ if(!document.body){ setTimeout(wxGo, 300); return; }
+    new MutationObserver(ms=>{ for(let i=0;i<ms.length;i++){ if(ms[i].addedNodes.length){ _wxSoon(); return; } } }).observe(document.body, {childList:true, subtree:true});
+    window.addEventListener("resize", _wxSoon); window.addEventListener("orientationchange", _wxSoon); };
+  wxGo();
+}catch(e){_quiet(e)}
 let _fitRO=null;
 /* THE FITTING PASS WAITS FOR THE WINDOW TO STOP MOVING.
    Fitting measures every table on the page, tightens it a step, measures again - a few
@@ -10417,6 +10535,7 @@ function _fitAll(){
     try{ _prescFit(); }catch(e){_quiet(e)}
     try{ _hlInit(); }catch(e){_quiet(e)}
     try{ _fitNoScroll(); }catch(e){_quiet(e)}
+    try{ _wxPass(); }catch(e){_quiet(e)}
     /* after the no-scroll pass, which resets inline table widths it did not set */
     /* after the font steps are settled, so the columns are measured at the size they
        will be read at */
@@ -11290,7 +11409,7 @@ function _preStanding(L){
     const fm=_lgFormCell(L, r.teamId);
     tbl.appendChild(h("tr",{class:(_lgOurs(r.team)?"ours ":"")+(r.teamId===tid?"sel":"")},
       h("td",{class:"lg-pos"}, String(x.i+1)),
-      h("td",{class:"l lg-team"}, _lgCrest(L, r.teamId), h("span",{}, r.team||"")),
+      h("td",{class:"l lg-team", title:r.team||""}, _lgCrest(L, r.teamId), h("span",{class:"nm-f"}, r.team||""), h("span",{class:"nm-s"}, _lgShort(r.team||""))),
       h("td",{}, String(r.gp!=null? r.gp : ((r.w||0)+(r.l||0)))),
       h("td",{}, String(r.w||0)), h("td",{}, String(r.l||0)),
       h("td",{class:(diff>0?"pos":(diff<0?"neg":""))}, diff==null? "\u2014" : (diff>0?"+":"")+diff),
@@ -11380,7 +11499,7 @@ function _preShotChart(L){
     h("span",{class:"sc-kl"},"Efficiency"),
     h("span",{class:"sc-kz mn2"},"below"), h("span",{class:"sc-kz mn1"},""),
     h("span",{class:"sc-kz m0"},""), h("span",{class:"sc-kz mp1"},""),
-    h("span",{class:"sc-kz mp2"},"above league average")));
+    h("span",{class:"sc-kz mp2"},"above league average"), h("span",{class:"sc-kz mx"},"too few shots")));
   _lgSetHelp(box, "The club on the left, every man who has taken at least eight shots on the "
     +"right, on the same floor and the same colour scale — hexagon size is how often they "
     +"shoot from there, colour is how well against the league from the same cell, and the "
@@ -11557,11 +11676,32 @@ function _preCardsDraft(L, tid){
 const PRE_AUTO_IDEA=[["takes",/^Takes \d+% of their shots$/],["creates",/^Creates: [\d.]+ ast\/g$/],["crashes",/^Crashes: [\d.]+ oreb\/g$/],
   ["hands",/^Hands: [\d.]+ stl\/g$/],["3p",/^3P \d+% on \d+ — (never leave him|let him shoot it)$/],["2p",/^2P \d+% — contest and live with it$/],["ft",/^FT \d+% — foul him late$/]];
 function _preIdeaKind(s){ const t=String(s||"").replace(/<[^>]+>/g,"").replace(/&nbsp;/g," ").trim(); const k=PRE_AUTO_IDEA.filter(x=>x[1].test(t))[0]; return k? k[0] : ""; }
+/* A CARD BROUGHT IN FROM ANOTHER CLUB OR SEASON STOPS BEING ONE (Oriol, 8/11/2026: Ryan Mikesell's
+   card did not say what the table above it said). A man added as NEW kept the numbers he was
+   added with - his last club's, or last season's - for good, even after he had played for the
+   club of the report and the table above showed this season's line. The day he has a game with
+   this club his card takes this club's numbers, as every other card does; the NEW badge stays.
+   And when a card reads a line with more games than the table above has, the table is read
+   again, so the two never show different seasons. */
+let _preTblAsked={};
 function _preCardsFresh(L, tid, C){
   if(!C || !C.pos || !tid) return;
+  let ahead=false;
+  const tbl=(((L.players||{})[tid]||{}).players)||[];
   PRE_CARD_POS.forEach(pos=>(C.pos[pos]||[]).forEach(c=>{ try{
-    if(!c || c.from) return;
+    if(!c) return;
     const d=_preCardFreshOf(c, L, tid); if(!d) return;
+    if(c.from){
+      if(!((d.gp||0)>0) || d.cupOnly) return;
+      /* the same man, by his id or his whole name - never by a shirt number another man wears here */
+      if(!(c.pid && String(d.pid||"")===String(c.pid)) && _lgNorm(String(d.name||""))!==_lgNorm(String(c.name||""))) return;
+      delete c.from;
+      c.min=String(c.min||"").replace(/\s*\(\d{4}\/\d{2}\)\s*$/,"");
+      c.meta=String(c.meta||"").split(" · ").filter(x=>!/^\d{4}\/\d{2} with /.test(x) && !/^no games in \d{4}\/\d{2}$/.test(x)).join(" · ");
+      if((d.stats||[]).length) c.stats=JSON.parse(JSON.stringify(d.stats));
+    }
+    { const nm=_lgNorm(_lgLastName(String(c.name||""))), row=tbl.filter(x=>(c.pid && String(x.id)===String(c.pid)) || _lgNorm(_lgLastName(x.name||""))===nm)[0];
+      if(row && row.all && (d.gp||0)>(row.all.gp||0)) ahead=true; }
     /* a card drafted before the man had played (no games, so no boxes) gets its boxes the day he
        has played - a card whose boxes the staff took off had games and is left without them */
     if((!Array.isArray(c.stats) || !c.stats.length) && !(+c.gp>0) && (d.gp||0)>0 && (d.stats||[]).length) c.stats=JSON.parse(JSON.stringify(d.stats));
@@ -11576,6 +11716,7 @@ function _preCardsFresh(L, tid, C){
     /* a number is never a line up top: the lines the draft used to write go, on every card */
     if(Array.isArray(c.ideas)) c.ideas=c.ideas.filter(x=>!_preIdeaKind(x));
   }catch(e){_quiet(e)} }));
+  if(ahead && !_preTblAsked[tid] && !L.demo){ _preTblAsked[tid]=1; try{ syncPlayers(tid, true); }catch(e){_quiet(e)} }
 }
 /* A MAN WHO HAS ONLY PLAYED IN THE CUP. The cards count the league's games (as the league's own
    numbers and the "14th BBL" ranks do), so a man whose only game is a cup game - Polite, back
@@ -11899,7 +12040,9 @@ function _preAvlLoad(tid, then){
     const F=both[0], X=both[1], men=[];
     if(F && (F.rows||[]).length>=2){ const A=_lgAvail(F.rows.slice(0,5), X);
       const one=(e, why)=>men.push({ id:String(e.id), num:String(e.num||"").trim(), name:String(e.name||""), why:why });
-      A.out.forEach(e=>one(e, "missed the last "+(e.missed>1? e.missed+" games" : "game")));
+      /* the rotation's and everybody else's: a man off the sheet lately is a doubt on his card
+         whatever his minutes (Oriol, 8/11/2026, Darion Atkins) */
+      A.out.concat(A.outMinor).forEach(e=>one(e, "missed the last "+(e.missed>1? e.missed+" games" : "game")));
       A.long.forEach(e=>one(e, "out long term")); }
     _preAvlMemo[k]={ men:men };
     if(men.length && then) then();
@@ -13766,19 +13909,24 @@ function _surname(n){
    There is one ramp now and it is SIGNED: the step is where the number sits against its
    reference, so green is below it, pale is on it and red is above it. More is red, and
    more is what a club does well, which is what a staff needs to see first. */
-/* ONE RULE, EVERY NUMBER: less is red, more is green. It used to run the other way -
+/* (until 8/11/2026, see below) ONE RULE, EVERY NUMBER: less is red, more is green. It used to run the other way -
    green below the reference, red above it - because the report was written about the
    opponent, where more of what they do is worse for us. Reading the same colour two ways
    on two screens is what made it useless. The direction now carries the SIZE of the
    number and nothing else, which means a PPP we concede reads green when it is high;
    that is the price of one rule and it is paid on purpose. */
-const PERF9=["#C53727","#d4705f","#e7a596","#f6ddd6","#f2f2f0","#d6e5dc","#8fc0a9","#3f9570","#17805A"];
+/* ONE HEAT FOR EVERY AMOUNT (Oriol, 8/11/2026: "este será el formato", after the shot charts).
+   The nine steps were red below the reference and green above it; elsewhere in the hub red meant
+   high (a dangerous PPP) and green low, so the same colour said two things. Now every amount -
+   a percentage, a PPP, a volume - is one heat: pale sand far below, nothing at the reference,
+   orange and then deep red above. Green and red stay only where they say better or worse. */
+const PERF9=["#f7ecdf","#f1dcc6","#ebc9a8","#e6b991","#f2f2f0","#e2a073","#d98352","#b5452b","#9c2a1d"];
 function _perfStep(diff, span){
   const k=Math.max(-1, Math.min(1, (diff||0)/(span||1)));
   return Math.round((k+1)/2*8);
 }
 /* the five steps of the one scale, from little to a lot - see the colour rule above */
-const PST_VOL=["#f7ece9","#eed6d0","#d9e6de","#9dc5ae","#17805A"];
+const PST_VOL=["#f7ecdf","#f1dcc6","#e6b991","#d98352","#9c2a1d"];   /* the heat (see PERF9) */
 /* the pooled rates the whole report measures shooting against */
 const PST_BASE={ p2:53.4, p3:36.1, ft:71.4 };
 function _pstStep(k){ return k<0.20?0 : k<0.45?1 : k<0.68?2 : k<0.87?3 : 4; }
@@ -13788,7 +13936,7 @@ function _pstN(v,d){ return v==null||isNaN(v) ? "—" : Number(v).toFixed(d==nul
 function _pstCell(txt, cls){ const td=h("td",{class:"sxp-c"+(cls?" "+cls:"")}); td.appendChild(h("span",{class:"sxp-v"},txt==null?"—":String(txt))); return td; }
 function _pstChip(txt, ramp, st, cls){
   const td=h("td",{class:"sxp-c"+(cls?" "+cls:"")});
-  const sp=h("span",{class:"sxp-v"+(st?(st>=3?" chip on":" chip"):"")}, txt);
+  const sp=h("span",{class:"sxp-v"+(st?(st>=3?" chip on":" chip"):"")+(st>=4? " hot" : "")}, txt);
   if(st) sp.style.background=ramp[st];
   td.appendChild(sp); return td;
 }
@@ -13797,7 +13945,7 @@ function _perfChip(txt, diff, span, cls){
   const st=_perfStep(diff, span);
   const d=Math.abs(st-4);
   const td=h("td",{class:"sxp-c"+(cls?" "+cls:"")});
-  const sp=h("span",{class:"sxp-v"+(d? (d>=3? " chip on" : " chip") : "")}, txt);
+  const sp=h("span",{class:"sxp-v"+(d? (d>=3? " chip on" : " chip") : "")+(st>=7? " hot" : "")}, txt);
   if(d) sp.style.background=PERF9[st];
   td.appendChild(sp); return td;
 }
@@ -14167,7 +14315,7 @@ function pbxPppChip(ppp, avg, n){
   if(ppp==null || n<5 || avg==null){ sp.classList.add("muted"); if(ppp!=null && n) sp.title=n+" possessions"; return sp; }
   if(Math.abs(ppp-avg)<0.10) return sp;
   const st=_perfStep(ppp-avg, 0.25);
-  if(Math.abs(st-4)){ sp.style.background=PERF9[st]; sp.classList.add("on"); }
+  if(Math.abs(st-4)){ sp.style.background=PERF9[st]; sp.classList.add("on"); if(st>=7) sp.classList.add("hot"); }
   return sp;
 }
 /* A pick is dragged, never clicked into place — and the drag has to work with a
@@ -15554,8 +15702,10 @@ function _gpOurMen(){
   const list=(full && (full.players||[]).length)? full.players : (slim? slim.players : null);
   return list||null;
 }
-function _gpFace(nick, redraw){
-  if(_gpForPrint) return null;                 /* the printed sheet keeps its own measures */
+/* (named _gpFace until 8/11/2026, the same name as the face-by-id helper further down, which
+   being declared later replaced it: the plan's nicknames were looked up as if they were ids) */
+function _gpNickFace(nick, redraw, cls){
+  if(_gpForPrint && !cls) return null;          /* the printed sheet keeps its own measures */
   const men=_gpOurMen();
   if(!men){
     /* our own totals have not been read in this browser yet: one light request, then the
@@ -15583,7 +15733,7 @@ function _gpFace(nick, redraw){
     if(s>bestS){ best=p; bestS=s; tie=false; } else if(s && s===bestS) tie=true;
   });
   if(!best || tie) return null;
-  try{ return _lgFace(leagueState(), {n:best.num, name:best.name, photo:best.photo, pid:best.pid, id:best.id}, "gpf"); }catch(e){ return null; }
+  try{ return _lgFace(leagueState(), {n:best.num, name:best.name, photo:best.photo, pid:best.pid, id:best.id}, cls||"gpf"); }catch(e){ return null; }
 }
 /* THEIR FIVE, AND WHO COMES IN FOR WHOM - BY POSITION.
    Read from the play by play of their last five games: who was on the floor at the tip,
@@ -16249,12 +16399,12 @@ function _gpAlertBar(){
    this game. In grey; in colour only when one says something - a man who scores (12+), carries
    the game (PIR 12+, or −3 and worse), runs it (5+ assists) or owns our glass (3+ offensive). */
 const GP_BX=[["pts","PTS","points"],["val","VAL","valoración (PIR)"],["ast","AST","assists"],["or","OR","offensive rebounds"]];
-function _gpBoxTh(){ return GP_BX.map(b=>h("th",{class:"bx", title:b[2]+" in this game"}, b[1])); }
+function _gpBoxTh(){ return GP_BX.map(b=>h("th",{class:"bx bx-"+b[0], title:b[2]+" in this game"}, b[1])); }
 function _gpBoxTds(p, live){
-  if(!p) return GP_BX.map(()=>h("td",{class:"bx"}, live? "0" : ""));
+  if(!p) return GP_BX.map(b=>h("td",{class:"bx bx-"+b[0]}, live? "0" : ""));
   const v={ pts:p.pts||0, val:p.pir||0, ast:p.ast||0, or:p.or||0 };
   const hot={ pts:v.pts>=12, val:v.val>=12, ast:v.ast>=5, or:v.or>=3 }, cold={ val:v.val<=-3 };
-  return GP_BX.map(b=>h("td",{class:"bx"+(hot[b[0]]? " hot" : cold[b[0]]? " cold" : "")}, String(v[b[0]])));
+  return GP_BX.map(b=>h("td",{class:"bx bx-"+b[0]+(hot[b[0]]? " hot" : cold[b[0]]? " cold" : "")}, String(v[b[0]])));
 }
 /* THE SCORE, ALWAYS IN SIGHT. Between our team and theirs: the score and the clock, the score
    of every quarter, the fouls and timeouts of both, the arrow, the run being played and the
@@ -17530,7 +17680,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
         del.addEventListener("click",()=>{ arr.splice(i,1); save(); redraw(); });
         row.appendChild(us); row.appendChild(them); row.appendChild(del);
       } else {
-        row.appendChild(h("span",{class:"gp2-u"}, _gpFace(pr2.us||"", redraw), h("span",{}, pr2.us||"")));
+        row.appendChild(h("span",{class:"gp2-u"}, _gpNickFace(pr2.us||"", redraw), h("span",{}, pr2.us||"")));
         row.appendChild(h("span",{class:"gp2-t"}, pr2.them||""));
       }
       wrap.appendChild(row); });
@@ -17598,7 +17748,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
         { const hs=(Lv && Lv.feed)? _gpHlStrip(Lv, "t") : null; if(hs) slot.appendChild(hs); }
         const t=h("table",{class:"gp5-t gp5-opp"});
         t.appendChild(h("tr",{}, h("th",{},""), h("th",{},"#"), h("th",{class:"l"},"Player"), h("th",{class:"hist", title:"S = probable starter, with his starts in their last games"},"S"),
-          h("th",{class:"hist", title:"minutes a game in their last games"},"Avg"), h("th",{title:"minutes in this game"},"Real"), h("th",{},"Stint"), h("th",{},"PF"), ..._gpBoxTh()));
+          h("th",{class:"hist", title:"minutes a game in their last games"},"Avg"), h("th",{class:"rl", title:"minutes in this game"},"Real"), h("th",{class:"st"},"Stint"), h("th",{},"PF"), ..._gpBoxTh()));
         const seenLive={};
         /* THEIR TIRED MEN, TO ATTACK. Whoever of theirs has been on the floor more than 4:30 in a
            row, named above the table and marked on his line - the man to go at. */
@@ -17708,7 +17858,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
     tbl.appendChild(h("tr",{}, h("th",{},"Player"), h("th",{},"Q1"), h("th",{},"Q2"), h("th",{},"Mapped → game"), h("th",{class:"bar"},"")));
     rows.forEach(pl=>{ const a=perQ.Q1[pl.id]||0, b=perQ.Q2[pl.id]||0, m=a+b;
       tbl.appendChild(h("tr",{},
-        h("td",{class:"nm"}, _gpFace(pl.name, redraw), h("span",{}, pl.name)),
+        h("td",{class:"nm"}, _gpNickFace(pl.name, redraw), h("span",{}, pl.name)),
         h("td",{}, a||"–"), h("td",{}, b||"–"),
         h("td",{class:"map"}, m? (m+" ") : "– ", m? h("span",{class:"x2"},"→ "+(m*2)) : null),
         h("td",{class:"bar"}, h("i",{style:"width:"+Math.round((m/max)*100)+"%"})))); });
@@ -17983,8 +18133,8 @@ function renderPlanSection(sec, canEd, save, allSecs){
       /* what deserves a look among ours, right now */
       if(hlU.length) wrap.appendChild(h("div",{class:"gp5-hl"}, hlU.map(x=>h("span",{class:"gp5-hl-i "+x.tone}, h("i",{}, x.tag), x.txt))));
       const t=h("table",{class:"gp5-t"});
-      t.appendChild(h("tr",{}, h("th",{},"#"), h("th",{class:"l"},"Player"), noRot? null : h("th",{title:"minutes the plan gives him for the game (the half on the boards, doubled)"},"Plan"),
-        h("th",{title:"minutes really played, from the league's play by play"},"Real"), h("th",{title:"on the floor: time in this stint"},"Stint"), h("th",{},"PF"), ..._gpBoxTh()));
+      t.appendChild(h("tr",{}, h("th",{},"#"), h("th",{class:"l"},"Player"), noRot? null : h("th",{class:"pl", title:"minutes the plan gives him for the game (the half on the boards, doubled)"},"Plan"),
+        h("th",{class:"rl", title:"minutes really played, from the league's play by play"},"Real"), h("th",{class:"st", title:"on the floor: time in this stint"},"Stint"), h("th",{},"PF"), ..._gpBoxTh()));
       show.forEach(r=>{ const fl=_gpFoulLv(r.pf, qi);
         const over=r.plan && r.sec/60>r.plan+2;
         t.appendChild(h("tr",{class:(r.on? "on " : "")+(fl==="out"? "fout" : "")},
@@ -21234,7 +21384,7 @@ function _lgStdTable(L){
   const rows=_lgMergeStandings(L);
   const nTeams=rows.length;
   const tbl=h("table",{class:"lg-tbl lg-std"});
-  tbl.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Team"), h("th",{},"GP"), h("th",{},"W"), h("th",{},"L"), h("th",{},"PCT"), h("th",{},"DIFF"), h("th",{title:"The last five league games, oldest first. Cup and play-offs are not counted."},"FORM")));
+  tbl.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Team"), h("th",{},"GP"), h("th",{},"W"), h("th",{},"L"), h("th",{class:"lg-pct"},"PCT"), h("th",{},"DIFF"), h("th",{title:"The last five league games, oldest first. Cup and play-offs are not counted."},"FORM")));
   rows.slice().sort((a,b)=>(a.pos||99)-(b.pos||99)).forEach(r=>{
     const id=r.teamId||r.team;
     const z=_lgZone(r.pos, nTeams);
@@ -21244,11 +21394,11 @@ function _lgStdTable(L){
         /* picking a club makes the page about it, and opens how it has been doing */
         if(!was){ try{ _lgTeamOpen(id); }catch(e){_quiet(e)} } }},
       h("td",{class:"lg-pos"}, String(r.pos||"")),
-      h("td",{class:"l lg-team"}, _lgCrest(L, id), h("span",{}, r.team||"")),
+      h("td",{class:"l lg-team", title:r.team||""}, _lgCrest(L, id), h("span",{class:"nm-f"}, r.team||""), h("span",{class:"nm-s"}, _lgShort(r.team||""))),
       h("td",{}, r.gp!=null?String(r.gp):"—"),
       h("td",{}, r.w!=null?String(r.w):"—"),
       h("td",{}, r.l!=null?String(r.l):"—"),
-      h("td",{}, r.pct!=null? (Math.round(r.pct*1000)/10).toFixed(1)+"%" : "—"),
+      h("td",{class:"lg-pct"}, r.pct!=null? (Math.round(r.pct*1000)/10).toFixed(1)+"%" : "—"),
       h("td",{class:(r.diff>0?"pos":(r.diff<0?"neg":""))}, r.diff!=null? (r.diff>0?"+":"")+r.diff : "\u2014"),
       h("td",{}, _lgFormCell(L, id)));
     tbl.appendChild(tr);
@@ -21506,12 +21656,12 @@ function _lgMdRows(games, selId){
        two badges meet in the middle around the score and the fixture reads as a pairing */
     list.appendChild(h("div",{class:"lg-md-row"+((_lgOurs(g.home)||_lgOurs(g.away))?" ours":"")+(mine?" sel":"")+(done?" open":""),
         title:done?"Open the game":null, onclick:done?(()=>_lgGameOpen(g)):null},
-      h("span",{class:"lg-md-date"}, (g.date? g.date.slice(8,10)+"/"+g.date.slice(5,7) : "")+(g.time?(" "+g.time):"")),
-      h("span",{class:"lg-md-t r"+(done&&g.hs>g.as?" win":"")},
-        h("span",{class:"lg-md-nm"}, g.home||""), _lgCrest(L, g.homeId||g.home, "mdc")),
+      h("span",{class:"lg-md-date"}, (g.date? g.date.slice(8,10)+"/"+g.date.slice(5,7) : ""), g.time? h("i",{class:"lg-md-hr"}, " "+g.time) : null),
+      h("span",{class:"lg-md-t r"+(done&&g.hs>g.as?" win":""), title:g.home||""},
+        h("span",{class:"lg-md-nm"}, h("span",{class:"nm-f"}, g.home||""), h("span",{class:"nm-s"}, _lgShort(g.home||""))), _lgCrest(L, g.homeId||g.home, "mdc")),
       h("span",{class:"lg-md-sc"}, done? (g.hs+" : "+g.as) : "–"),
-      h("span",{class:"lg-md-t"+(done&&g.as>g.hs?" win":"")},
-        _lgCrest(L, g.awayId||g.away, "mdc"), h("span",{class:"lg-md-nm"}, g.away||""))));
+      h("span",{class:"lg-md-t"+(done&&g.as>g.hs?" win":""), title:g.away||""},
+        _lgCrest(L, g.awayId||g.away, "mdc"), h("span",{class:"lg-md-nm"}, h("span",{class:"nm-f"}, g.away||""), h("span",{class:"nm-s"}, _lgShort(g.away||""))))));
   });
   return list;
 }
@@ -22873,12 +23023,13 @@ function _postMinutes(sg, opt){
     const qs=[]; for(let qi=0; qi<=maxQ; qi++) qs.push(qi);
     const tot=qs.reduce((a,qi)=>a+minsOf(qi),0);
     const grid=h("div",{class:"pgmc", style:"grid-template-columns:var(--pgmc-l,62px) repeat("+tot+",minmax(0,1fr))"});
-    const put=(el, first)=>{ if(first) el.classList.add("q0"); grid.appendChild(el); };
+    let curQ=-1;
+    const put=(el, first)=>{ if(first) el.classList.add("q0"); if(curQ>=0) el.dataset.q=String(curQ); grid.appendChild(el); };
     grid.appendChild(h("span",{class:"pgmc-l"}, ""));
     qs.forEach(qi=>{ let qu=0, qt=0; for(let mm=0; mm<minsOf(qi); mm++){ const b=B[qi+"|"+mm]; if(b){ qu+=b.u.pts; qt+=b.t.pts; } }
-      grid.appendChild(h("span",{class:"pgmc-qh q0 "+(qu>qt? "up" : qu<qt? "dn" : ""), style:"grid-column:span "+minsOf(qi)}, h("b",{}, ql(qi)), " "+qu+"–"+qt)); });
+      grid.appendChild(h("span",{class:"pgmc-qh q0 "+(qu>qt? "up" : qu<qt? "dn" : ""), style:"grid-column:span "+minsOf(qi), "data-q":String(qi)}, h("b",{}, ql(qi)), " "+qu+"–"+qt)); });
     R.forEach(r=>{ grid.appendChild(h("span",{class:"pgmc-l"}, r[0]));
-      qs.forEach(qi=>{ for(let mm=0; mm<minsOf(qi); mm++){ const b=B[qi+"|"+mm], when=ql(qi)+" "+(minsOf(qi)-mm)+"′";
+      qs.forEach(qi=>{ curQ=qi; for(let mm=0; mm<minsOf(qi); mm++){ const b=B[qi+"|"+mm], when=ql(qi)+" "+(minsOf(qi)-mm)+"′";
         if(!r[1]){ const L2=lead[qi+"|"+mm], d=L2.u-L2.t, u=b? b.u.pts : 0, t=b? b.t.pts : 0;
           /* the number is the margin; the colour, whether this minute made it better or worse */
           const ch=u-t;
@@ -22893,7 +23044,7 @@ function _postMinutes(sg, opt){
       grid.appendChild(h("span",{class:"pgmc-l"}, "On court"));
       /* each man keeps his line while he stays on: his face the minute he comes in, a bar
          after it, so a change is a new face and everything else reads as the same five */
-      qs.forEach(qi=>{ let slots=[null,null,null,null,null];
+      qs.forEach(qi=>{ let slots=[null,null,null,null,null]; curQ=qi;
         for(let mm=0; mm<minsOf(qi); mm++){ const t0=qBase(qi)+mm*60, t1=t0+60;
         const five=ours.map(p=>({ p:p, s:onIn(p.id, t0, t1) })).filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,5).map(x=>x.p);
         const ids=five.map(p=>String(p.id)), prev=slots.slice();
@@ -22901,6 +23052,25 @@ function _postMinutes(sg, opt){
         five.forEach(p=>{ if(slots.some(q=>q && String(q.id)===String(p.id))) return; const k=slots.indexOf(null); if(k>=0) slots[k]=p; });
         put(h("span",{class:"pgmc-c on", title:ql(qi)+" "+(minsOf(qi)-mm)+"′ · "+five.map(x=>"#"+x.num+" "+short(x.name)).join(", ")},
           slots.map((p,k)=>!p? h("i",{class:"pgmc-e"}) : (mm>0 && prev[k] && String(prev[k].id)===String(p.id))? h("i",{class:"pgmc-k", title:"#"+p.num+" "+short(p.name)}) : face(p))), mm===0); } }); }
+    curQ=-1;
+    /* ON A PHONE, A QUARTER AT A TIME (Oriol, 8/11/2026: "minute by minute lo mismo"). Forty
+       columns in a phone's width are eight pixels each and say nothing; ten are readable. Under
+       600 px the strip shows one quarter, picked on the tabs above it (the last one played to
+       start), and the same table comes back whole the moment the screen is wide enough. */
+    const pick=h("div",{class:"pgmc-qp", role:"tablist"});
+    let selQ=qs[qs.length-1];
+    const narrow=()=>{ try{ return window.matchMedia("(max-width:600px)").matches; }catch(e){ return false; } };
+    const showQ=()=>{ const one=narrow();
+      grid.style.gridTemplateColumns="var(--pgmc-l,62px) repeat("+(one? minsOf(selQ) : tot)+",minmax(0,1fr))";
+      grid.classList.toggle("one", one);
+      grid.querySelectorAll("[data-q]").forEach(el=>{ el.style.display=(!one || el.dataset.q===String(selQ))? "" : "none"; });
+      pick.querySelectorAll("button").forEach(b=>b.classList.toggle("on", b.dataset.q===String(selQ))); };
+    qs.forEach(qi=>{ const b=h("button",{type:"button", role:"tab", "data-q":String(qi)}, ql(qi));
+      b.addEventListener("click", ()=>{ selQ=qi; showQ(); }); pick.appendChild(b); });
+    try{ const mq=window.matchMedia("(max-width:600px)"); const fn=()=>{ if(grid.isConnected) showQ(); };
+      if(mq.addEventListener) mq.addEventListener("change", fn); else if(mq.addListener) mq.addListener(fn); }catch(e){_quiet(e)}
+    showQ();
+    box.appendChild(pick);
     box.appendChild(h("div",{class:"pgmc-w"}, grid));
     box.appendChild(h("div",{class:"pgm-leg"}, h("span",{}, "margin: + we are in front, − behind ·"), h("span",{}, h("i",{class:"up"}), "the minute made it better"), h("span",{}, h("i",{class:"dn"}), "worse"),
       h("span",{}, "· on court: a face where a man comes in, the bar while he stays"),
@@ -23634,6 +23804,13 @@ function _lgAvailBlock(tid){
       A.back.map(e=>h("span",{class:"avl-chip back"}, h("b",{}, "#"+e.num+" "+e.name), " back last time"))));
     if(A.long.length) slot.appendChild(h("div",{class:"avl-doubt long"}, h("b",{},"Out long term"),
       A.long.map(e=>h("span",{class:"avl-chip long"}, h("b",{}, "#"+e.num+" "+e.name), e.why? " "+e.why : ""))));
+    /* EVERYBODY WHO HAS BEEN MISSING, ON TOP (Oriol, 8/11/2026: Chemnitz's Darion Atkins, 21.8
+       minutes the one game he played and off the sheet for the four since, was only a line under
+       "outside the rotation"). Whoever was off the sheet for their last game or games is named
+       here, the rotation or not, with how many he has missed - and his card says DOUBT and why. */
+    if(A.outMinor.length) slot.appendChild(h("div",{class:"avl-doubt miss"}, h("b",{},"Missing"),
+      A.outMinor.map(e=>h("span",{class:"avl-chip out minor"}, h("b",{}, "#"+e.num+" "+e.name),
+        " missed the last "+(e.missed>1? e.missed+" games" : "game")+(e.gp? " · "+f1(e.avgMin)+" min in "+(e.gp===1? "the game he played" : "the "+e.gp+" he played") : "")))));
     slot.appendChild(_lgAvailTable(F.rows, A));
   }).catch(()=>{ slot.innerHTML=""; slot.appendChild(h("div",{class:"lg-empty"},"Could not be read.")); });
   return box;
@@ -23995,7 +24172,7 @@ function _lgGamePanel(g, close){
       const key=h("div",{class:"sc-sum"},
         h("span",{class:"sc-kl"},"Efficiency"), h("span",{class:"sc-kz mn2"},"below"), h("span",{class:"sc-kz mn1"},""),
         h("span",{class:"sc-kz m0"},""), h("span",{class:"sc-kz mp1"},""),
-        h("span",{class:"sc-kz mp2"}, lgOn? "above league average" : "above the team's own average"),
+        h("span",{class:"sc-kz mp2"}, lgOn? "above league average" : "above the team's own average"), h("span",{class:"sc-kz mx"},"too few shots"),
         h("span",{class:"sc-kl"},"Frequency"),
         h("span",{class:"sc-kf"}, sv("svg",{viewBox:"0 0 74 18", width:"74", height:"18"},
           sv("circle",{cx:"6",cy:"9",r:"3",class:"sc-kfd"}), sv("circle",{cx:"20",cy:"9",r:"5",class:"sc-kfd"}),
@@ -25097,7 +25274,9 @@ function _lgRoster(L){
   const edge={};
   cols.forEach(c=>{
     if(c.pair) return;
-    const dir = (c.k==="tov"||c.k==="pf"||c.k==="tovp") ? -1 : 1;
+    /* the colour is the size of the number, as the key over the report says (8/11/2026): the
+       most turnovers are marked as the most, not as the worst - and in the hub's one heat */
+    const dir = 1;
     const pool=rows.filter(r=>!thin[r.id]);
     edge[c.k]=_lgEdges(pool, r=>_lgRsVal(c,r[split],per,ctx), dir, r=>r.id, LG_EDGE_K);
   });
@@ -25173,7 +25352,7 @@ function _lgRoster(L){
       h("td",{}, String(t.gp)));
     cols.forEach(c=>{
       /* the colour of the number is the team: green its best in the column, red its weakest */
-      const cls=(edge[c.k]||{})[p.id]||"", tip=cls==="pos"? "one of the team's best in this column" : cls==="neg"? "one of the team's weakest in this column" : "";
+      const cls=(edge[c.k]||{})[p.id]||"", tip=cls==="pos"? "one of the highest in the team in this column" : cls==="neg"? "one of the lowest in the team in this column" : "";
       /* no bar under the minutes either: the number says it, and the rotation has its gold edge */
       tr.appendChild(h("td",{class:cls, title:tip}, h("span",{class:"rx-v"}, _lgRsTxt(c,t,per,ctx))));
     });
@@ -25588,7 +25767,8 @@ function _lgHexG(map, fit, opts){
   const o=opts||{};
   const g=sv("g",{});
   const band=d=>{
-    if(d==null) return "m0";
+    /* too few shots to say: grey, apart from the scale (it used to be the scale's own middle) */
+    if(d==null) return "mx";
     if(d>=0.070) return "mp2"; if(d>=0.020) return "mp1";
     if(d<=-0.070) return "mn2"; if(d<=-0.020) return "mn1";
     return "m0";
@@ -25800,6 +25980,7 @@ function _lgShots(L){
     sum.appendChild(h("span",{class:"sc-kz m0"},""));
     sum.appendChild(h("span",{class:"sc-kz mp1"},""));
     sum.appendChild(h("span",{class:"sc-kz mp2"},"above league average"));
+    sum.appendChild(h("span",{class:"sc-kz mx"},"too few shots"));
     sum.appendChild(h("span",{class:"sc-kl"},"Frequency"));
     sum.appendChild(h("span",{class:"sc-kf"},
       sv("svg",{viewBox:"0 0 74 18", width:"74", height:"18"},
@@ -25893,6 +26074,12 @@ function _lgNames(d){
    a printer drops, no absolute positioning that reflows, and a row height set so that at
    page width the names and the minutes are still readable. */
 function _lgRotStrip(g, ids, by, names, showNames){
+  /* ON A PHONE THE NAMES STAY (Oriol, 8/11/2026: "rotation: misma idea que las otras tablas").
+     The strip is a 700 px drawing that slides; its names were part of the drawing and slid away
+     with it. Under 700 px the names are a column of their own, fixed on the left, and only the
+     minutes slide under them. */
+  let nameCol=false;
+  try{ if(showNames && window.matchMedia("(max-width:700px)").matches){ showNames=false; nameCol=true; } }catch(e){_quiet(e)}
   const end=Math.max(g.end||2400, 2400);
   const W=1000, LEFT=showNames?176:16, RIGHT=54;
   const HEAD=30, SUBS=15, ROW=23, BAR=13;
@@ -25960,7 +26147,15 @@ function _lgRotStrip(g, ids, by, names, showNames){
     const mins=spans.reduce((a,sp)=>a+(sp.to-sp.from),0)/60;
     gg.appendChild(sv("text",{x:W-6, y:y+BAR-2, class:"rt-mn"+(mins?"":" zero")}, mins? mins.toFixed(0)+"'" : "\u2013"));
   });
-  return sv("svg",{viewBox:"0 0 "+W+" "+H, width:"100%", class:"rt-svg"}, gg);
+  const svg=sv("svg",{viewBox:"0 0 "+W+" "+H, width:"100%", class:"rt-svg"}, gg);
+  if(!nameCol) return svg;
+  /* the drawing at a fixed 720 px, and the names in rows of exactly its rows' height */
+  const PX=720, s=PX/W;
+  svg.setAttribute("width", String(PX)); svg.classList.add("rt-c");
+  const col=h("div",{class:"rt-nl", style:"padding-top:"+(TOP*s).toFixed(2)+"px"});
+  ids.forEach((id,i)=>{ const who=_lgWho(names[id])||"#?";
+    col.appendChild(h("div",{class:"rt-nlr"+(i%2? " z" : ""), title:who, style:"height:"+(ROW*s).toFixed(2)+"px;line-height:"+(BAR*s).toFixed(2)+"px"}, who)); });
+  return h("div",{class:"rt-split"}, col, svg);
 }
 /* The rotation raster.
 
@@ -26352,7 +26547,9 @@ document.addEventListener("keydown", e=>{
    that use one did not have to change beyond the call. Closes on Escape, on a click
    outside, and on choosing; the button keeps focus so the keyboard still works. */
 let _lgSelOpen=null;
-function _lgCloseSel(){ if(_lgSelOpen){ _lgSelOpen.classList.remove("open"); _lgSelOpen=null; } }
+function _lgCloseSel(){ if(_lgSelOpen){ _lgSelOpen.classList.remove("open"); _lgSelOpen=null; }
+  /* the redraw that waited for the list: now, unless the pick that closed it draws anyway */
+  if(_lgRrHeld){ const at=_lgRrN; setTimeout(()=>{ if(_lgRrHeld && _lgRrN===at) _lgRerender(); }, 0); } }
 document.addEventListener("click", e=>{ if(_lgSelOpen && !_lgSelOpen.contains(e.target)) _lgCloseSel(); });
 document.addEventListener("keydown", e=>{ if(e.key==="Escape") _lgCloseSel(); });
 function _lgTeamSelect(L, tid, set, opts){
@@ -27763,7 +27960,15 @@ function _lgEmbedKept(x){
   if(document.body.contains(x.el)){ x.on=1; return true; }
   return !x.on && Date.now()-(x.at||0)<15000;
 }
+/* A CLUB LIST THAT IS OPEN IS NOT REDRAWN FROM UNDER THE FINGER (Oriol, 8/11/2026: "en league no
+   me permite seleccionar equipo", on the phone). The League screen is drawn again every time
+   another club's numbers come in, and on a phone they come in for half a minute: each redraw
+   built a new, closed picker in place of the open one, so the list vanished before a club
+   could be touched. While a list is open the redraw waits; it runs when the list closes. */
+let _lgRrHeld=false, _lgRrN=0;
 function _lgRerender(){
+  if(_lgSelOpen && _lgSelOpen.isConnected){ _lgRrHeld=true; return; }
+  _lgRrHeld=false; _lgRrN++;
   /* A pre-game report stays in the document when its tab is hidden, so "an embed exists"
      is not the same as "an embed is on screen" - and taking that for the same thing is
      what stopped every button in the league view from doing anything. What is visible is
@@ -28932,19 +29137,37 @@ function _dashTopSetsInto(box, g){
     const P=top.map(per), gmx=Math.max(1, ...P.map(o=>Math.max(0, ...Object.keys(o).map(k=>o[k]))));
     const short=x=>String(x||"").replace(/^(VS|AT|@)\s+/i,"").slice(0,3).toUpperCase();
     const mx=Math.max(1, ...top.map(r=>r.n||0));
-    const t=h("div",{class:"dash-ks", style:"--ng:"+Math.max(1, games.length)},
-      h("span",{class:"hd"}), h("span",{class:"hd l"},"Set"), h("span",{class:"hd l"},"Call"), h("span",{class:"hd"},"Use"), h("span",{class:"hd"},"PPP"),
-      h("span",{class:"hd gm"}, games.map(x=>h("i",{ title:x+(dates[x]? " · "+dates[x].split("-").reverse().join("/") : "") }, short(x), dates[x]? h("u",{}, dates[x].slice(8,10)+"/"+dates[x].slice(5,7)) : null))));
+    /* THE GAMES BEFORE OUR LAST MEETING AND THE GAMES SINCE, AS IN THE PRE GAME (Oriol,
+       8/11/2026). A club we have already played has two playbooks on this card: the one we
+       prepared for, sand, and what they have run since, blue, with a line between the two. A
+       set first seen after the meeting says NEW. The volume stays one: the use counts both. */
+    const MEET=_preMeetings(g.opponent, g.date);
+    const E=_pbEras(games, dates, (res && res.gameFiles)||{}, g.date, MEET);
+    const GMS=E.games, CUR=E.cur;
+    const isOld=x=>CUR>0 && E.era[x]!=null && E.era[x]<CUR;
+    const cls=(x,i)=>(isOld(x)? "old" : "")+(i>0 && isOld(GMS[i-1]) && !isOld(x)? " sep" : "");
+    const meetTxt=MEET.length? MEET[0].date.slice(8,10)+"/"+MEET[0].date.slice(5,7) : "";
+    const isNew=i=>CUR>0 && GMS.some(x=>isOld(x)) && !GMS.some(x=>isOld(x) && (P[i][x]||0)>0) && GMS.some(x=>!isOld(x) && (P[i][x]||0)>0);
+    const hasSep=GMS.some((x,i)=>/sep/.test(cls(x,i)));
+    const row=(...kids)=>h("div",{class:"ks-r"}, ...kids);
+    const t=h("div",{class:"dash-ks", style:"--ng:"+Math.max(1, GMS.length)+";--gsep:"+(hasSep? "7px" : "0px")},
+      row(h("span",{class:"hd"}), h("span",{class:"hd l"},"Set"), h("span",{class:"hd l"},"Call"), h("span",{class:"hd"},"Use"), h("span",{class:"hd"},"PPP"),
+        h("span",{class:"hd gm"}, GMS.map((x,i)=>h("i",{ class:cls(x,i), title:x+(dates[x]? " · "+dates[x].split("-").reverse().join("/") : "")+(isOld(x)? " · before our game of "+meetTxt : "") }, short(x), dates[x]? h("u",{}, dates[x].slice(8,10)+"/"+dates[x].slice(5,7)) : null)))));
     top.forEach((r,i)=>{ let kind=""; try{ kind=_pbClass(r).kind||""; }catch(e){_quiet(e)}
-      t.appendChild(h("span",{class:"rk"}, String(i+1)));
-      t.appendChild(h("span",{class:"nm"}, h("b",{}, edits[r.label]||r.label), kind? h("i",{class:"kd"}, " "+kind) : null));
-      t.appendChild(r.call? h("q",{}, r.call) : h("span",{class:"nc"},"—"));
-      t.appendChild(h("span",{class:"use", title:r.n+" runs · "+Math.round(100*r.n/tot)+"% of their possessions"}, h("span",{class:"vol"}, h("i",{style:"width:"+Math.max(8,Math.round(100*(r.n||0)/mx))+"%"})), h("u",{}, String(r.n||0)), h("small",{}, Math.round(100*r.n/tot)+"%")));
-      t.appendChild(r.ppp!=null? h("em",{class:(r.n||0)<MS_POSS? "" : r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : h("em",{},"—"));
-      t.appendChild(h("span",{class:"gm"}, games.map(x=>{ const k=P[i][x]||0, a=k? 0.18+0.72*Math.min(1, k/gmx) : 0;
-        return h("i",{class:k? "" : "z", title:x+": "+k, style:k? "background:rgba(74,134,216,"+a.toFixed(2)+");color:"+(a>0.55? "#fff" : "#1d3a66") : ""}, k? String(k) : "·"); })));
+      t.appendChild(row(
+        h("span",{class:"rk"}, String(i+1)),
+        h("span",{class:"nm"}, h("b",{}, edits[r.label]||r.label), kind? h("i",{class:"kd"}, " "+kind) : null, isNew(i)? h("i",{class:"ks-new", title:"Not run in the games before our game of "+meetTxt},"new") : null),
+        r.call? h("q",{}, r.call) : h("span",{class:"nc"},"—"),
+        h("span",{class:"use", title:r.n+" runs · "+Math.round(100*r.n/tot)+"% of their possessions"}, h("span",{class:"vol"}, h("i",{style:"width:"+Math.max(8,Math.round(100*(r.n||0)/mx))+"%"})), h("u",{}, String(r.n||0)), h("small",{}, Math.round(100*r.n/tot)+"%")),
+        r.ppp!=null? h("em",{class:(r.n||0)<MS_POSS? "" : r.ppp>=1.1? "hi" : r.ppp<=0.85? "lo" : ""}, Number(r.ppp).toFixed(2)) : h("em",{},"—"),
+        h("span",{class:"gm"}, GMS.map((x,j)=>{ const k=P[i][x]||0, a=k? 0.18+0.72*Math.min(1, k/gmx) : 0, old=isOld(x);
+          return h("i",{class:(k? "" : "z")+" "+cls(x,j), title:x+": "+k+(old? " · before our game of "+meetTxt : ""),
+            style:k? "background:rgba("+(old? "184,134,46" : "74,134,216")+","+a.toFixed(2)+");color:"+(a>0.55? "#fff" : old? "#5a3d0c" : "#1d3a66") : ""}, k? String(k) : "·"); }))));
     });
-    box.appendChild(t);
+    if(CUR>0 && GMS.some(isOld)) box.appendChild(h("div",{class:"ks-era"},
+      h("span",{}, h("i",{class:"o"}), "Before our game of "+meetTxt), h("span",{}, h("i",{class:"n"}), "Since")));
+    /* in a box of its own, so a narrow card can lay the rows out compact (container query) */
+    box.appendChild(h("div",{class:"dks-c"}, t));
 
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their playbook could not be read.")); });
 }
@@ -29361,6 +29584,7 @@ function _dashSwitch(cur){
    the old hub's sessions where it has them and this app's after. His pre games: the next
    three, the one the staff has published opens, the others are there and locked until the
    staff opens them. Only time with the pre game on screen and in use counts. */
+let _pdCalMonth="";   /* the month the player's calendar shows, this visit ("" = this month) */
 async function _playerDash(root, who){
   const G=_dashGames(), T=todayISO();
   const page=h("div",{class:"dash pdash pd3"}); root.appendChild(page);
@@ -29369,6 +29593,11 @@ async function _playerDash(root, who){
     h("div",{class:"dash-hi"}, h("b",{}, own? _dashGreeting()+", "+(nm.split(/\s+/)[0]||nm) : nm), h("span",{}, "Player")),
     h("span",{class:"dash-day"}, _dashFmt(T)+(G.next? " · "+(dayDelta(G.next.g.date)===0? "game day" : dayDelta(G.next.g.date)+" days to "+G.next.g.opponent) : "")));
   if(!own && isAdmin()) top.appendChild(_dashSwitch("pl:"+nm));
+  /* HIS FACE BESIDE HIS NAME (Oriol, 8/11/2026): the league's portrait, found from the name the
+     bench calls him the way the game plan finds it; none when no one man answers */
+  { const slot=h("span",{class:"pdash-face", "aria-hidden":"true"}), hi=top.querySelector(".dash-hi");
+    const fill=()=>{ let f=null; try{ f=_gpNickFace(nm, fill, "pdash-f"); }catch(e){_quiet(e)} if(f){ slot.innerHTML=""; slot.appendChild(f); slot.classList.add("on"); } };
+    if(hi){ hi.insertBefore(slot, hi.firstChild); fill(); } }
   page.appendChild(top);
   const ph=g=>{ try{ return _gamePlaceholder(g.opponent); }catch(e){ return false; } };
   const crest=g=>{ try{ return _lgOppCrest(g, "opp big")||h("span",{class:"dash-crest"}, String(g.opponent||"?").slice(0,3).toUpperCase()); }catch(e){ return null; } };
@@ -29387,6 +29616,24 @@ async function _playerDash(root, who){
     _dashRep(g).then(rep=>{ const ok=!!(rep && rep.share_state==="published");
       tile.disabled=!ok; tile.classList.toggle("lock", !ok); tile.classList.toggle("open", ok); cta.textContent=ok? "Open ›" : "🔒 Not open yet"; }); });
   if(!bGames.children.length) bGames.appendChild(h("div",{class:"dash-miss"},"No game in the calendar yet."));
+  /* OUR MONTH, UNDER HIS PRE GAMES (Oriol, 8/11/2026): League's calendar and results for us -
+     every game of the month, won, lost or still to play, the arrows for the months around it */
+  { const bCal=h("div",{class:"p3-cal"});
+    page.appendChild(h("div",{class:"p3-tag"},"Calendar & results")); page.appendChild(bCal);
+    const drawCal=()=>{ const L=leagueState(); let tid=""; try{ tid=_lgOurTeamId(L); }catch(e){_quiet(e)}
+      bCal.innerHTML="";
+      if(!tid || !(L.games||[]).length){ bCal.appendChild(h("div",{class:"ld dash-ld"},"Reading the league…", h("span",{class:"ld-bar"}))); return false; }
+      const now=todayISO().slice(0,7), ym=_pdCalMonth||now;
+      const go=d=>{ _pdCalMonth=_lgShiftMonth(ym,d); drawCal(); };
+      const nav=h("div",{class:"lg-navrow"},
+        h("button",{type:"button", class:"btn sm", "aria-label":"Month before", onclick:()=>go(-1)},"‹"),
+        h("span",{class:"lg-month"}, new Date(ym+"-01T00:00:00").toLocaleDateString("en-GB",{month:"long",year:"numeric"})),
+        h("button",{type:"button", class:"btn sm", "aria-label":"Month after", onclick:()=>go(1)},"›"),
+        ym!==now? h("button",{type:"button", class:"btn sm", onclick:()=>{ _pdCalMonth=""; drawCal(); }},"This month") : null);
+      try{ bCal.appendChild(_lgCalBody(L, tid, ym, _lgPanel("Calendar & results", nav))); }
+      catch(e){ bCal.innerHTML=""; bCal.appendChild(h("div",{class:"dash-miss"},"The league's calendar could not be read.")); }
+      return true; };
+    if(!drawCal()){ try{ Promise.resolve(syncLeague(false)).then(()=>{ if(bCal.isConnected && !drawCal()) { bCal.innerHTML=""; bCal.appendChild(h("div",{class:"dash-miss"},"The league's calendar is not in yet.")); } }).catch(()=>{}); }catch(e){_quiet(e)} } }
   let doc=null;
   try{ const r=await sbrpc("get_report",{ p_token:SB_TOKEN, p_key:useKey(nm) }); doc=r && r.ok && r.report && r.report.data; }catch(e){_quiet(e)}
   try{ if(own && _use && !_viewAs) doc=doc && doc.days? _useMerge(doc, _use) : _use; }catch(e){_quiet(e)}
@@ -29890,13 +30137,20 @@ function renderDashboard(){
         pts=pts.filter(p=>series.some(sr=>isFinite(sr.get(p.s))));
         if(pts.length<2) return null;
         pts.sort((a,b)=>a.d<b.d? -1 : a.d>b.d? 1 : (a.kind==="game"? 1 : 0)-(b.kind==="game"? 1 : 0));
+        /* ON A PHONE, THE LAST FIVE GAMES (Oriol, 8/11/2026). A season of games and trainings on a
+           phone-wide chart is a knot of lines; the last five games, and the trainings between
+           them, read. The whole season is on any wider screen and on the Trends screen. */
+        let last5=false;
+        try{ if(window.matchMedia("(max-width:600px)").matches){ const gs=pts.filter(p=>p.kind==="game");
+          if(gs.length>5){ const from=gs[gs.length-5].d; pts=pts.filter(p=>p.d>=from); last5=true; } } }catch(e){_quiet(e)}
         /* a training's last value is not written at the end of its line: the games' are */
         series.forEach(sr=>{ if(sr.dash) sr.noEnd=true; });
         const MN=(opts && opts.minN)||0, thin=MN && pts.some(p=>series.some(sr=>sr.n && isFinite(sr.get(p.s)) && (sr.n(p.s)||0)<MN));
         const o2=Object.assign({ height:150, kinds:false, legend:false, thinDots:true }, opts||{});
         if(c.__tall) o2.height=Math.round(o2.height*c.__tall);
-        return h("div",{class:"sx dash-mix"}, API.chart("", "", pts, series, o2),
-          mixKey(measures||[], series.some(sr=>sr.dash), thin? (opts.thinLbl||"under "+MN+" · off the line") : null)); };
+        const kk=mixKey(measures||[], series.some(sr=>sr.dash), thin? (opts.thinLbl||"under "+MN+" · off the line") : null);
+        if(last5) kk.appendChild(h("span",{class:"k l5"},"last 5 games"));
+        return h("div",{class:"sx dash-mix"+(last5? " l5" : "")}, API.chart("", "", pts, series, o2), kk); };
       const pairS=(name, color, get, extra)=>[
         Object.assign({ name:name? name+" · games" : "Games", color:color, only:"game", get:s=>s.__g? get(s) : NaN }, extra||{}),
         Object.assign({ name:name? name+" · trainings" : "Trainings", color:color, only:"practice", dash:true, hollow:true, get:s=>s.__g? NaN : get(s) }, extra||{}) ];
@@ -31935,7 +32189,15 @@ function _errLogDialog(){
       h("b",{}, tm(x.t)+(x.n>1? " · ×"+x.n : "")), h("span",{}, x.m), x.s? h("small",{}, x.s) : null))) : null,
     h("div",{class:"dialog-foot"}, h("button",{class:"btn primary", onclick:closeDialog},"Close"))));
 }
-function openDialog(node){ const c=$("#dialogCard"); c.innerHTML=""; c.appendChild(node); $("#dialog").classList.add("open"); }
+/* A WAY OUT THAT IS ALWAYS IN REACH (Oriol, 8/11/2026). A dialog covers the whole screen, the
+   bar included, and its own Done / Cancel is at the end of what it holds - in Permissions &
+   users that is under every account and the log, a long scroll on a phone. A round button,
+   bottom right, closes any dialog from wherever it has been scrolled to. */
+function openDialog(node){ const c=$("#dialogCard"); c.innerHTML=""; c.appendChild(node);
+  const d=$("#dialog");
+  if(d && !d.querySelector(".dlg-x")){ const x=h("button",{type:"button", class:"dlg-x", title:"Close", "aria-label":"Close"}, h("span",{"aria-hidden":"true"},"✕"), h("b",{},"Close"));
+    x.addEventListener("click", e=>{ e.stopPropagation(); closeDialog(); }); d.appendChild(x); }
+  d.classList.add("open"); }
 function closeDialog(){ $("#dialog").classList.remove("open"); }
 function confirmDialog(title, msg, okLabel, onOk, danger){
   openDialog(h("div",{},
@@ -32338,7 +32600,13 @@ function normalizeState(s, exact){
   s.playerDB = Array.isArray(s.playerDB) ? s.playerDB : [];
   s.ui = s.ui || {}; s.ui.collapsed = Object.assign({roster:false,nego:false,second:false,market:false,discarded:false}, s.ui.collapsed||{});
   if(typeof s.ui.showTags!=="boolean") s.ui.showTags=false;
-  s.ui.theme="light"; /* light-only for now */
+  /* LIGHT UNLESS THIS BROWSER CHOSE DARK. The theme was locked to light while the dark one
+     was unfinished, and its switch was hidden. Since the audit of 7/11/2026 the dark theme
+     reads, and the switch is back in the club menu (Oriol, 8/11/2026). Whatever a browser
+     had saved from the old days is reset once, so nobody wakes up in dark by surprise;
+     from then on its own choice stands. */
+  if(s.ui.themeV!==1){ s.ui.theme="light"; s.ui.themeV=1; }
+  if(s.ui.theme!=="dark") s.ui.theme="light";
   s.ui.view = s.ui.view || "rooster"; s.ui.calView = s.ui.calView || "month";
   /* Season, Month and the old Calendar are one screen now; anything saved from before
      opens it instead of a tab that no longer exists */
@@ -32836,9 +33104,10 @@ function wireEvents(){
   applyTags();
 
   // theme
-  const applyTheme=()=>{ const d=state.ui.theme==="dark"; document.body.classList.toggle("dark", d); $("#themeBtn").textContent=d?"☀":"☾"; };
+  const applyTheme=()=>{ const d=state.ui.theme==="dark"; document.body.classList.toggle("dark", d); $("#themeBtn").textContent=d?"☀":"☾";
+    const mb=$("#themeMenuBtn"); if(mb) mb.textContent=d? "☀ Light theme" : "☾ Dark theme"; };
   const toggleTheme=()=>{ state.ui.theme = state.ui.theme==="dark"?"light":"dark"; applyTheme(); persist(); };
-  $("#themeBtn").onclick=toggleTheme; $("#themeMenuBtn").onclick=()=>{ toggleTheme(); };
+  $("#themeBtn").onclick=toggleTheme; $("#themeMenuBtn").onclick=()=>{ toggleTheme(); try{ $("#settingsMenu").classList.remove("open"); }catch(e){_quiet(e)} };
   { const eb=$("#errLogBtn"); if(eb) eb.onclick=()=>{ try{ $("#settingsMenu").classList.remove("open"); }catch(e){ _quiet(e); } _errLogDialog(); }; }
   applyTheme();
 
@@ -32868,6 +33137,7 @@ function wireEvents(){
         const on=!bar.classList.contains("nav-open");
         bar.classList.toggle("nav-open", on);
         nb.setAttribute("aria-expanded", on? "true":"false");
+        try{ $("#settingsMenu").classList.remove("open"); }catch(e2){_quiet(e2)}
       });
       /* a tap anywhere else closes it, and so does picking a screen */
       document.addEventListener("click", e=>{
@@ -32881,7 +33151,14 @@ function wireEvents(){
 
   // settings menu (via club logo)
   const settingsMenu=$("#settingsMenu");
-  $("#settingsBtn").onclick=e=>{ e.stopPropagation(); settingsMenu.classList.toggle("open"); };
+  /* THE CLUB'S BUTTON CLOSES WHAT IS OPEN FIRST (Oriol, 8/11/2026). On a phone the menu of
+     screens opens under the bar, and a tap on the crest - the one button left in reach - only
+     opened the club menu on top of it: its click never reached the page, so the menu of
+     screens stayed. A tap on the crest now closes that menu; the next one opens the club's. */
+  $("#settingsBtn").onclick=e=>{ e.stopPropagation();
+    const bar=$("#topbar");
+    if(bar && bar.classList.contains("nav-open")){ bar.classList.remove("nav-open"); const nb=$("#navBtn"); if(nb) nb.setAttribute("aria-expanded","false"); settingsMenu.classList.remove("open"); return; }
+    settingsMenu.classList.toggle("open"); };
   settingsMenu.addEventListener("click", e=>e.stopPropagation());
   document.addEventListener("click", ()=>settingsMenu.classList.remove("open"));
   // clear data
@@ -32905,10 +33182,21 @@ function wireEvents(){
   if(window.ResizeObserver && $("#topbar")) new ResizeObserver(syncTbh).observe($("#topbar"));
   $("#hotTop").addEventListener("mouseenter",()=>document.body.classList.add("reveal-top"));
   $("#topbar").addEventListener("mouseleave",()=>document.body.classList.remove("reveal-top"));
+  /* THE BAR COMES BACK WHEN YOU GO LOOKING FOR IT (Oriol, 8/11/2026). Scrolled down, the bar
+     hides and came back only under a mouse at the top edge - on an iPad there is no mouse,
+     so the menu was a scroll all the way up. A long, unbroken scroll upwards - more than a
+     screen and a half - is somebody heading for the menu: the bar comes down over the page.
+     A short scroll up to re-read a line does nothing, and scrolling down again puts it away. */
+  let wsLast=ws.scrollTop, upRun=0, downRun=0, byScroll=false;
   ws.addEventListener("scroll",()=>{
-    if(ws.scrollTop>56) document.body.classList.add("chrome-hidden");
-    else if(ws.scrollTop<12){ document.body.classList.remove("chrome-hidden"); document.body.classList.remove("reveal-top"); }
-  });
+    const y=ws.scrollTop, dy=y-wsLast; wsLast=y;
+    if(y>56) document.body.classList.add("chrome-hidden");
+    else if(y<12){ document.body.classList.remove("chrome-hidden"); document.body.classList.remove("reveal-top"); byScroll=false; upRun=0; downRun=0; return; }
+    if(dy<0){ upRun-=dy; downRun=0;
+      if(!byScroll && upRun>Math.max(700, window.innerHeight*1.5) && document.body.classList.contains("chrome-hidden")){ byScroll=true; document.body.classList.add("reveal-top"); } }
+    else if(dy>0){ downRun+=dy; if(downRun>48){ upRun=0;
+      if(byScroll){ byScroll=false; document.body.classList.remove("reveal-top"); } } }
+  }, {passive:true});
 
   // ---- Auto-scroll while dragging near workspace edges ----
   let scrollDir=0, autoRAF=null;
@@ -44526,7 +44814,7 @@ body.dark .pbb-c-gm i:not(.z){color:var(--ink)!important}
 body.dark :is(.sx-table td.tr-good,.tr-rank4 .tr-rank.good .tr-rank-v,.ui-split-l b.good,sup.tr-sup.good,.miss-t td.ok,.gp-court-t tr.on td.now,.sem-p.green .sem-nm){color:var(--perf-hi)}
 body.dark :is(.sx-table td.tr-warn,.tr-warnline,.tr-rank4 .tr-rank.bad .tr-rank-v,sup.tr-sup.bad,.miss-t td.no,.ow-info > span.no,.sem-p.red .sem-nm){color:var(--perf-lo)}
 /* a heat cell keeps its light colour in the dark theme, so its figure stays dark */
-body.dark .sx-cell:is(.s1,.s2,.s3,.s4){color:#12161d}
+body.dark .sx-cell:is(.s0,.s1,.s2,.s3){color:#12161d}
 body.dark .pg-main-h{color:var(--accent)}
 /* headings, tabs and toggles drawn in the light theme's ink */
 body.dark .ui-group-h b{background:#2a313d;color:#fff}
@@ -44536,7 +44824,7 @@ body.dark .ui-fig.vol b{color:#7fb0ef}
 body.dark .ssv-wk-cell.active{background:#241f13;border-color:var(--accent)}
 body.dark .pb-toggle{background:#1c222c}
 /* Trends' band rows: the heat cells keep their light colours, so their figures stay dark */
-body.dark .tr-sets .sx-table tr.tr-bandrow td.sx-cell:is(.s1,.s2,.s3,.s4){color:#12161d}
+body.dark .tr-sets .sx-table tr.tr-bandrow td.sx-cell:is(.s0,.s1,.s2,.s3){color:#12161d}
 /* a call written on its chip, the "mixed" verdict of Player development: gold ink on dark */
 body.dark .pbx-call,body.dark .pd-vd.mix{color:var(--accent)}
 /* Trends' band rows: the label cells are painted a light grey with !important */
@@ -44694,6 +44982,297 @@ body.dark .pbb-c-gm i.z.old{background:rgba(184,134,46,.14)}
 .modal-stats .modal-stat-cell.hl-hot *,.modal-stats .modal-stat-cell.hl-warm *{color:#fff!important}
 .modal-stats .modal-stat-cell.hl-hot .modal-stat-value{font-weight:800}
 .modal-stats .modal-stat-cell .modal-stat-why,.modal-stats .modal-stat-cell .modal-stat-basis{font-weight:500;opacity:.85}
+
+/* ==== PHONE, IPAD AND THE SMALL THINGS (Oriol, 8/11/2026) ====================================== */
+/* THE CREST, ROUND, ON EVERY SCREEN. The button behind it was a black disc with a border, the
+   picture carried a drop shadow made for the big crest of the cover, and a tap painted the
+   browser's grey square over it: on a phone the crest sat on a square. The badge is round on
+   its own, so it is drawn bare. */
+.tb-logo-btn{background:transparent!important;border:0!important;box-shadow:none!important;-webkit-appearance:none;appearance:none;
+  -webkit-tap-highlight-color:transparent;padding:0}
+.tb-logo-btn img.brand-logo{filter:none!important;background:transparent!important;border-radius:50%;clip-path:circle(50% at 50% 50%)}
+.tb-logo-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* a dialog's way out, bottom right, wherever it has been scrolled to */
+.dlg-x{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));z-index:320;
+  display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 18px 0 15px;border-radius:999px;cursor:pointer;
+  border:1px solid rgba(0,0,0,.12);background:var(--accent,#c9a227);color:#16181d;font:800 14px/1 var(--f-body,inherit);letter-spacing:.02em;
+  box-shadow:0 10px 28px rgba(0,0,0,.38);-webkit-tap-highlight-color:transparent}
+.dlg-x span{font-size:15px}
+.dlg-x:focus-visible{outline:2px solid #fff;outline-offset:3px}
+@media (max-width:520px){ .dlg-x b{display:none} .dlg-x{width:52px;height:52px;padding:0;justify-content:center} .dlg-x span{font-size:18px} }
+/* room under a dialog's last line, so the round button never sits on its own Done */
+.dialog.open #dialogCard{margin-bottom:64px}
+
+/* ONE ROW FROM THE NEXT, AT A GLANCE (Oriol, 8/11/2026). A table of ten rows and more takes a
+   faint band on every other row - a soft wash from the left, enough for the eye to keep its
+   line across, never enough to read as a colour that means something. A row or a cell that is
+   coloured for a reason keeps its own colour on top. */
+:root{--zebra:linear-gradient(90deg,rgba(28,40,62,.058),rgba(28,40,62,.028) 70%,rgba(28,40,62,.016))}
+body.dark{--zebra:linear-gradient(90deg,rgba(255,255,255,.055),rgba(255,255,255,.026) 70%,rgba(255,255,255,.014))}
+table:has(tr:nth-child(10)) tr:nth-child(even):not(:has(> th)) > td{background-image:var(--zebra)}
+table:has(tr:nth-child(10)) tr:nth-child(even):not(:has(> th)) > td[style*="background"]{background-image:none}
+/* and the long lists drawn as rows of their own: the pre game playbook, the sets at a glance */
+.pbb-r:not(.pbb-h):nth-child(odd),.tr-gl-cols > .tr-gl-r:nth-child(even){background-image:var(--zebra)}
+
+/* A WIDE TABLE SLIDES UNDER ITS NAMES (phone and tablet; see _wxPass) */
+.fit-scroll{overflow-x:auto!important;overflow-y:hidden;-webkit-overflow-scrolling:touch;max-width:100%}
+.wx-wrap{overflow-x:auto;overflow-y:hidden;max-width:100%;-webkit-overflow-scrolling:touch}
+.wx-sc{overscroll-behavior-x:contain;
+  background:
+    linear-gradient(to left, var(--panel,#fff) 40%, rgba(255,255,255,0)) right center/26px 100% no-repeat local,
+    radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,.16), rgba(0,0,0,0)) right center/13px 100% no-repeat scroll}
+.wx-t .wx-st{position:-webkit-sticky;position:sticky;z-index:2}
+.wx-t th.wx-st{z-index:3}
+.wx-t .wx-last{box-shadow:7px 0 9px -7px rgba(16,24,40,.32)}
+body.dark .wx-t .wx-last{box-shadow:7px 0 9px -7px rgba(0,0,0,.7)}
+.wx-narrow .wx-last{white-space:normal!important;width:112px;min-width:92px;max-width:112px;overflow-wrap:break-word;line-height:1.2}
+.wx-narrow .wx-last *{white-space:normal!important;max-width:100%}
+@media (max-width:520px){ .wx-narrow .wx-last{width:100px;max-width:100px} }
+
+/* LEAGUE ON A PHONE: THE RESULTS AND THE TABLE IN ONE SCREEN'S WIDTH (Oriol, 8/11/2026). A club
+   is its town on a phone - Bonn, Braunschweig, Trier - with its crest; the full name is on the
+   hover and everywhere wider. The table drops its percentage (wins and losses say it) and so
+   fits without sliding; the results put the hour under the day. */
+.nm-s{display:none}
+.lg-md-hr{font-style:normal}
+@media (max-width:600px){
+  .lg-std .nm-f,.lg-md .nm-f{display:none} .lg-std .nm-s,.lg-md .nm-s{display:inline}
+  .lg-std .lg-pct{display:none}
+  .lg-std th,.lg-std td{padding-left:4px!important;padding-right:4px!important}
+  .lg-std .lg-team{white-space:nowrap}
+  .lg-md-row{grid-template-columns:40px minmax(0,1fr) 54px minmax(0,1fr);gap:6px;padding:6px 2px}
+  .lg-md-date{font-size:10.5px;line-height:1.15}
+  .lg-md-hr{display:block;font-size:9.5px;opacity:.85}
+}
+
+/* DASHBOARD · THEIR KEY SETS: the games before our last meeting in sand, the games since in
+   blue, a line between; and, in a box narrower than the table, a set on three short lines -
+   name and PPP, the call, then the use and its games - instead of nine columns squeezed into
+   a third of an iPad (Oriol, 8/11/2026: "sale desajustado completamente") */
+.dash-ks{grid-template-columns:16px minmax(0,1.5fr) minmax(0,.8fr) 84px 42px calc(var(--ng,4)*26px + var(--gsep,0px))}
+.dash-ks .ks-r{display:contents}
+.dash-ks .gm i.sep{margin-left:7px;position:relative}
+.dash-ks .gm i.sep::before{content:"";position:absolute;left:-6px;top:-3px;bottom:-3px;width:2px;border-radius:1px;background:#b8862e}
+.dash-ks .gm i.old.z{background:rgba(184,134,46,.12)}
+.dash-ks .hd.gm i.old{color:#8a6829}
+.ks-new{font:700 9.5px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:#fff;background:#2f6cc0;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:1px;white-space:nowrap}
+.ks-era{display:flex;flex-wrap:wrap;gap:4px 14px;margin:0 0 8px;font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.ks-era span{display:inline-flex;align-items:center;gap:5px}
+.ks-era i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.ks-era i.o{background:rgba(184,134,46,.8)} .ks-era i.n{background:rgba(74,134,216,.8)}
+body.dark .dash-ks .gm i:not(.z){color:var(--ink)!important}
+body.dark .dash-ks .hd.gm i.old{color:#d9b46a}
+.dks-c{container-type:inline-size;min-width:0}
+@container (max-width:640px){
+  .dash-ks{display:flex;flex-direction:column;gap:0}
+  .dash-ks .ks-r{display:grid;grid-template-columns:18px 88px minmax(0,1fr) auto;grid-template-areas:"rk nm nm ppp" "rk call call call" ". use gm gm";
+    column-gap:8px;row-gap:3px;align-items:center;padding:8px 0;border-top:1px solid var(--line,#eef0f3)}
+  .dash-ks .ks-r:first-child{border-top:0;padding-top:0;grid-template-areas:"rk nm nm ppp" ". use gm gm"}
+  .dash-ks .ks-r > .rk,.dash-ks .ks-r:first-child > :nth-child(1){grid-area:rk;align-self:start}
+  .dash-ks .ks-r > .nm,.dash-ks .ks-r:first-child > :nth-child(2){grid-area:nm}
+  .dash-ks .ks-r > q,.dash-ks .ks-r > .nc{grid-area:call}
+  .dash-ks .ks-r > .nc,.dash-ks .ks-r:first-child > :nth-child(3){display:none}
+  .dash-ks .ks-r > .use,.dash-ks .ks-r:first-child > :nth-child(4){grid-area:use;text-align:left}
+  .dash-ks .ks-r > em,.dash-ks .ks-r:first-child > :nth-child(5){grid-area:ppp;padding:1px 7px}
+  .dash-ks .ks-r > .gm,.dash-ks .ks-r:first-child > :nth-child(6){grid-area:gm;flex-wrap:wrap;row-gap:3px}
+  .dash-ks .nm{font-size:13px}
+  .dash-ks q{font-size:12px}
+  .dash-ks .gm i{flex-basis:21px;font-size:10.5px}
+  .dash-ks .gm i.sep{margin-left:6px}
+  .dash-ks .ks-r{grid-template-columns:18px 76px minmax(0,1fr) auto}
+}
+/* A WIDE BLOCK INSIDE A DASHBOARD CARD SLIDES IN ITS OWN BOX. The blocks of a card are grid
+   items, and a grid item is as wide as the widest thing in it: the key players' table (900 px)
+   made the whole next-opponent card 900 px on a 390 px phone, and the card cut it off. Each
+   block now keeps the card's width and its table slides inside, the player's name fixed. */
+.dash-sub > *{min-width:0}
+@media (max-width:1199px), (pointer:coarse){
+  .dash-kp .n,.dash-kp > .hd:first-child{position:-webkit-sticky;position:sticky;left:0;z-index:1;background:var(--panel,#fff)}
+  .dash-kp > .hd:first-child{z-index:2}
+  .dash-kp .n{box-shadow:7px 0 9px -7px rgba(16,24,40,.25)}
+  .dash-kpw{overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+}
+@media (max-width:700px){
+  .dash-kp{grid-template-columns:118px repeat(8,minmax(40px,auto)) repeat(3,minmax(44px,auto)) 170px;min-width:0;font-size:12px}
+  .dash-kp .n .lg-face,.dash-kp .n img{flex:none}
+}
+/* a player's dashboard: his face beside the greeting, and our month under his pre games */
+.pdash-face{display:none}
+.dash-hi:has(.pdash-face.on){display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:12px;align-items:center}
+.dash-hi:has(.pdash-face.on) > :not(.pdash-face){grid-column:2}
+.pdash-face.on{display:block;grid-row:1 / span 2;width:60px;height:60px;border-radius:50%;overflow:hidden;
+  box-shadow:0 0 0 2px var(--accent,#c9a227),0 4px 12px rgba(0,0,0,.12);background:var(--panel-2,#f1f3f6)}
+.pdash-face .face,.pdash-face img{width:100%!important;height:100%!important;object-fit:cover;object-position:50% 12%;border-radius:50%;display:block}
+.p3-cal .lg-panel{margin:0}
+@media (max-width:600px){ .pdash-face.on{width:52px;height:52px} }
+/* THE MONTH ON A PHONE: seven days across leave a game 44 px, so the crest says who it is (the
+   name is on the hover and on the tap) and the result takes the room: W or L over the score */
+@media (max-width:600px){
+  .lg-cal{gap:3px}
+  .lg-cal-cell{min-height:56px;padding:2px}
+  .lg-g{padding:2px 3px;font-size:10px;border-left-width:3px}
+  .lg-g-opp > span{display:none}
+  .lg-g-res{font-size:9.5px;line-height:1.15;white-space:normal;overflow-wrap:anywhere}
+  .lg-g-cmp{display:none}
+}
+/* PLANNING · A DAY OPENS ITS SESSION; adding is the small "+" of the day */
+.month-cell.has-sess{cursor:pointer}
+.m-add{width:20px;height:20px;padding:0;border-radius:6px;border:1px solid var(--line-strong,#d2d7df);background:var(--panel,#fff);
+  color:var(--ink-soft,#5b6472);font:700 13px/1 var(--f-body,inherit);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;opacity:.55}
+.month-cell:hover .m-add,.m-add:focus-visible{opacity:1}
+.m-add:hover{border-color:var(--accent);color:var(--ink)}
+@media (pointer:coarse){
+  .m-add{width:26px;height:26px;opacity:.8}
+  /* on a finger the small marks are marks: the touch goes to the day, and the day to its session */
+  .month-cell .doc-dot{pointer-events:none}
+  .month-cell.has-sess .m-entry{pointer-events:none}
+}
+/* THE SESSION ON AN IPAD STANDING UP (Oriol, 8/11/2026: "en session se ve todo roto ... en
+   vertical"). Under 1000 px the availability panel asks for the whole line, but the row never
+   wrapped above a phone's width, so the session sheet - the reason for the page - was left
+   35 px between the days and the availability. The row wraps now: the days on the left, the
+   sheet beside them at full height, the availability under both. */
+@media (max-width:1000px) and (min-width:761px){
+  .ssv-main{flex-wrap:wrap}
+  .ssv-main > .ssv-paper{flex:1 1 calc(100% - 140px);min-width:0}
+  .ssv-main > .ssv-avail-right{order:3;flex:1 1 100%}
+}
+/* GAME PLAN · OUR TEAM, THE SCORE, THEIR TEAM ACROSS (Oriol, 8/11/2026: "en ipad vertical hay
+   suficiente pantalla para mantener our team, their team y el resumen en medio", and the same
+   on a phone on its side). Between 700 and 1060 px the three stay in one row as on an iPad on
+   its side, and the two tables keep what the bench reads at a glance - the man, his minutes,
+   his fouls, his points and his valoración; the plan, the stint, their history, the assists
+   and the offensive rebounds are in the full table on a wider screen. Under 700 px (a phone
+   upright) the three stack, the same compact tables, the score in two short lines. */
+@media (max-width:1060px){
+  .gp5:not(.gm) .gp5-teams .gp5-t .pl,.gp5:not(.gm) .gp5-teams .gp5-t .st,.gp5:not(.gm) .gp5-teams .gp5-t .hist,
+  .gp5:not(.gm) .gp5-teams .gp5-t .bx-ast,.gp5:not(.gm) .gp5-teams .gp5-t .bx-or{display:none}
+  .gp5:not(.gm) .gp5-teams .gp5-t td.nm{max-width:none}
+  .gp5:not(.gm) .gp5-teams .gp5-t td,.gp5:not(.gm) .gp5-teams .gp5-t th{padding-left:3px;padding-right:3px}
+}
+@media (min-width:700px) and (max-width:1060px){
+  .gp5:not(.gm) .gp5-row2.gp5-teams{grid-template-columns:minmax(0,1fr) 132px minmax(0,1fr)}
+  .gp5:not(.gm) .gp5-sb{position:-webkit-sticky;position:sticky;top:60px;grid-template-columns:minmax(0,1fr);padding:8px 6px;gap:6px}
+  .gp5:not(.gm) .gp5-sb-sc b{font-size:23px}
+  .gp5:not(.gm) .gp5-sb-nt>span{font-size:10.5px;padding:3px 5px}
+  .gp5:not(.gm) .gp5-teams .gp5-t td.nm{font-size:10.5px}
+}
+@media (max-width:699px){
+  .gp5:not(.gm) .gp5-sb{grid-template-columns:auto minmax(0,1fr);gap:6px 10px;padding:8px 10px}
+  .gp5:not(.gm) .gp5-sb > *{grid-column:auto}
+  .gp5:not(.gm) .gp5-sb-sc b{font-size:24px}
+  .gp5:not(.gm) .gp5-sb-nt{grid-column:1 / -1;flex-direction:row;flex-wrap:wrap}
+}
+/* OUR ROTATION ON A PHONE UPRIGHT, WHOLE: the board was 640 px and slid. It takes the screen's
+   width now - ten minutes of 31 px - and a name is its first five letters in a type where every
+   letter is as wide as the next (SHELD, DAEDA, FERDI); the whole name is on the hover. */
+@media (max-width:560px){
+  .gp5 .gp5-board{overflow-x:visible}
+  .gp5 .gp5-board .gp2-wrap{min-width:0!important}
+  .gp5 .gp2-lbl,.gp5 .gp2-pos{width:24px!important;font-size:9.5px!important;letter-spacing:0!important}
+  .gp5 .gp2-st{height:30px}
+  .gp5 .gp2-st .gp2-nm{font:700 9.5px/1 'IBM Plex Mono',ui-monospace,monospace!important;letter-spacing:-.03em!important;
+    max-width:5ch;margin:0 auto;padding:0!important;text-overflow:clip!important}
+  .gp5 .gp2-tick{font-size:9.5px!important}
+  .gp5 .gp2-rl{font-size:9px!important;padding:2px 3px!important;letter-spacing:0!important}
+}
+/* PRE GAME · THE FIVE POSITIONS ON A TABLET UPRIGHT (Oriol, 8/11/2026: "se come algunos jugadores
+   ... 1-2 no aparece ... crea un espacio debajo muy grande"). From 601 to 1100 px the board was
+   either five columns of 150 px or, at 820 and under, a strip sliding sideways that opened on
+   the third position with the first two squeezed to a line each; and every column was as tall
+   as the tallest. The positions wrap now - three a row on a big iPad, two on an 820 one (the
+   report's own rules for that width win, and two read better there) - each as tall as its cards. */
+@media (min-width:601px) and (max-width:1100px){
+  .phx.pre-phx .roster-columns{display:grid!important;grid-auto-flow:row!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    grid-auto-columns:auto!important;overflow:visible!important;scroll-snap-type:none!important;align-items:start!important;padding-bottom:0!important}
+  .phx.pre-phx:not(.pre-cm) .pos-col{max-width:none!important;margin:0!important}
+}
+/* THE SHOT CHARTS IN ONE SCALE (Oriol, 8/11/2026: "hay varios colores pero no se entiende. Pon
+   una sola gama cromática"). Blue for below the league, grey for level and red for above were
+   three colours to learn; it is one heat now, pale sand to deep red - the darker, the better
+   they shoot from there against the league - and the size of the hexagon is how often they
+   shoot from there, as before. A patch with too few shots to say is plain grey, off the scale. */
+.sc-hex.mn2{fill:#f1dcc6}.sc-hex.mn1{fill:#ebbd93}.sc-hex.m0{fill:#e1925d}.sc-hex.mp1{fill:#c95a33}.sc-hex.mp2{fill:#9c2a1d}
+.sc-hex.mx{fill:#dcdfe4}
+.sc-kz.mn2::before{background:#f1dcc6}.sc-kz.mn1::before{background:#ebbd93}.sc-kz.m0::before{background:#e1925d}
+.sc-kz.mp1::before{background:#c95a33}.sc-kz.mp2::before{background:#9c2a1d}
+.sc-kz.mx{margin-left:12px}.sc-kz.mx::before{background:#dcdfe4}
+.sc-zone.zn2{fill:rgba(241,220,198,.75)}.sc-zone.zn1{fill:rgba(235,189,147,.7)}.sc-zone.z0{fill:rgba(225,146,93,.6)}
+.sc-zone.zp1{fill:rgba(201,90,51,.6)}.sc-zone.zp2{fill:rgba(156,42,29,.6)}
+.sc-arc.zn2{stroke:rgba(241,220,198,.75)}.sc-arc.zn1{stroke:rgba(235,189,147,.7)}.sc-arc.z0{stroke:rgba(225,146,93,.6)}
+.sc-arc.zp1{stroke:rgba(201,90,51,.6)}.sc-arc.zp2{stroke:rgba(156,42,29,.6)}
+.sc-kz.zn2::before{background:#f1dcc6}.sc-kz.z0::before{background:#e1925d}.sc-kz.zp2::before{background:#9c2a1d}
+body.dark .sc-hex.mn2{fill:#5a4637}body.dark .sc-hex.mn1{fill:#8a5d3d}body.dark .sc-hex.m0{fill:#c07443}
+body.dark .sc-hex.mp1{fill:#e0663a}body.dark .sc-hex.mp2{fill:#ff8a66}body.dark .sc-hex.mx{fill:#3a414d}
+body.dark .sc-kz.mn2::before{background:#5a4637}body.dark .sc-kz.mn1::before{background:#8a5d3d}body.dark .sc-kz.m0::before{background:#c07443}
+body.dark .sc-kz.mp1::before{background:#e0663a}body.dark .sc-kz.mp2::before{background:#ff8a66}body.dark .sc-kz.mx::before{background:#3a414d}
+/* ONE HEAT FOR EVERY AMOUNT, EVERYWHERE (Oriol, 8/11/2026: "se aplica a todo el hub, también a
+   las de pregame y las fichas al acceder al vídeo. A todo. Ahora este será el formato"). The
+   scale of the shot charts - pale sand, sand, orange, red, deep red - is the one scale for how
+   much and how well: the chips of the pre game tables (PERF9), the volumes and rates of Trends
+   and the post game (stats.js), the PPP of the sets and of each man, and the lit boxes of the
+   cards, on the board and beside the video. Dark type on the pale steps, white on the deep. */
+.sxp-v.chip.on{color:#12161d!important}.sxp-v.chip.hot{color:#fff!important}
+.pbx-ppp.on{color:#12161d}.pbx-ppp.hot{color:#fff}
+/* the key over every report, and the roster table's highest and lowest in each column */
+.pre-grad{background:linear-gradient(90deg,#f7ecdf,#ebc9a8,#e6b991 40%,#f2f2f0 48%,#f2f2f0 52%,#e2a073,#b5452b,#9c2a1d)!important}
+.pre-k.them{color:#9a6b45}.pre-k.us{color:#9c2a1d}
+.lg-rost td.pos{color:#b5452b!important;font-weight:700}.lg-rost td.neg{color:#a8896d!important}
+body.dark .lg-rost td.pos{color:#ff8a66!important}body.dark .lg-rost td.neg{color:#b9a48f!important}
+/* the cards: the lit box deep red, the next one sand, a poor shooter the palest */
+.phx .card .stat-cell.hl-hot{background:#b5452b!important}
+.phx .card .stat-cell.hl-hot *{color:#fff!important}
+.phx .card .stat-cell.hl-warm{background:#ebc9a8!important}
+.phx .card .stat-cell.hl-warm *{color:#3b1a10!important}
+.phx .card .stat-cell.hl-low{background:#f7ecdf!important;box-shadow:inset 0 0 0 1px #ead7c2}
+.phx .card .stat-cell.hl-low .stat-value,.phx .card .stat-cell.hl-low .hl-why,.phx .card .stat-cell.hl-low .sv-pc{color:#8a5a3a!important}
+.modal-stats .modal-stat-cell.hl-hot{background:#b5452b!important}
+.modal-stats .modal-stat-cell.hl-hot *{color:#fff!important}
+.modal-stats .modal-stat-cell.hl-warm{background:#ebc9a8!important}
+.modal-stats .modal-stat-cell.hl-warm *{color:#3b1a10!important}
+.modal-stats .modal-stat-cell.hl-low{background:#f7ecdf!important;box-shadow:inset 0 0 0 1px #ead7c2;border-radius:6px}
+.modal-stats .modal-stat-cell.hl-low *{color:#8a5a3a!important}
+/* each man's PPP in the roster table, and how much he ends in each role */
+.rt-chip.rt-p0{background:#f1dcc6;color:#3b1a10}.rt-chip.rt-p1{background:#ebc9a8;color:#3b1a10}.rt-chip.rt-p2{background:#e6b991;color:#3b1a10}
+.rt-chip.rt-p3{background:#e2a073;color:#2a120a}.rt-chip.rt-p4{background:#b5452b;color:#fff}.rt-chip.rt-p5{background:#9c2a1d;color:#fff}
+.rt-heat.h1{background:#f7ecdf}.rt-heat.h2{background:#f1dcc6}.rt-heat.h3{background:#e6b991}
+.rt-heat.h4{background:#d98352;color:#fff}.rt-heat.h5{background:#9c2a1d;color:#fff}
+/* the dashboard: a set's PPP, a man's PPP against their average */
+.dash-ks em.hi{background:#9c2a1d;color:#fff}.dash-ks em.lo{background:#f1dcc6;color:#5a3a22}
+.dash-kp .c.hot{background:#f0cfb4;color:#8a2216}.dash-kp .c.cold{background:#f7ecdf;color:#8a5a3a}
+/* where the shots come from: the rim deepest, the three next, the middle sand */
+.gp-sq .sq-s.in{background:#9c2a1d}.gp-sq .sq-s.th{background:#c95a33}
+.gp-sq .sq-s.mid{background:#ebc9a8;color:#3b1a10}.gp-sq .sq-s.mid.warn{background:#e2a073;color:#2a120a}
+/* the shot chart's dots: a make in deep red, a miss a sand ring */
+.sc-dot.made{fill:#b5452b}.sc-dot.miss{stroke:#d9b28c}
+body.dark .sc-dot.made{fill:#e0663a}body.dark .sc-dot.miss{stroke:#8a6a4f}
+/* the Trends screen on a phone: the charts say they show the last five games */
+.tl-l5t{font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);margin:-2px 0 6px}
+/* the rotation strip on a phone: the names fixed, the minutes sliding (_lgRotStrip) */
+.rt-split{display:flex;align-items:flex-start;width:max-content}
+.rt-nl{position:-webkit-sticky;position:sticky;left:0;z-index:2;flex:none;width:98px;background:var(--panel,#fff);box-shadow:7px 0 9px -7px rgba(16,24,40,.25)}
+.rt-nlr{font:600 10.5px 'Inter',system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 7px 0 4px;text-align:right;color:var(--ink,#141821)}
+.rt-nlr.z{background:rgba(20,24,33,.035)}
+body.dark .rt-nlr.z{background:rgba(255,255,255,.04)}
+.rt-split .rt-svg.rt-c{min-width:0!important;width:720px!important;flex:none}
+/* minute by minute: a quarter at a time on a phone (_postMinutes) */
+.pgmc-qp{display:none}
+@media (max-width:600px){
+  .pgmc-qp{display:flex;gap:4px;margin:0 0 6px}
+  .pgmc-qp button{flex:1;min-height:34px;border:1px solid var(--line-strong,#d2d7df);border-radius:8px;background:var(--panel,#fff);
+    font:700 12px Oswald,sans-serif;letter-spacing:.08em;color:var(--ink-soft,#5b6472);cursor:pointer}
+  .pgmc-qp button.on{background:var(--ink,#141821);border-color:var(--ink,#141821);color:#fff}
+  body.dark .pgmc-qp button.on{background:var(--accent);border-color:var(--accent);color:#16181d}
+  .pgmc.one{min-width:0;--pgmc-l:58px;font-size:10.5px}
+  .pgmc.one .pgmc-c{height:22px}
+  .pgmc.one .pgmc-c.on{height:auto}
+}
+.dash-mixkey .k.l5{font-weight:700;color:var(--ink-soft,#5b6472)}
+/* the three blocks under the scouting notes: on a tablet the sets take a line of their own */
+@media (max-width:1100px) and (min-width:701px){
+  .dash-3c > .dash-sub:nth-child(2){grid-column:1 / -1;order:3;border-left:0!important;padding-left:0!important;border-top:1px solid var(--line,#e4e7ec);padding-top:10px}
+  .dash-3c > .dash-sub:nth-child(3){grid-column:auto;border-left:1px solid var(--line,#e4e7ec)!important;padding-left:14px!important}
+}
 </style>
 
 <script defer src="/stats.js"></script>

@@ -2596,10 +2596,20 @@
   }
 
   /* points: [{d, label, kind, s}]  ·  series: [{name, color, get(s), fmt(v)}] */
+  var TR_LAST5 = false;   /* set while the Trends screen is drawn on a phone (renderTrendsDash) */
   function timelineChart(title, sub, points, series, opts) {
     opts = opts || {};
-    var wrap = el("div", "sx-sec tl");
+    /* THE TRENDS SCREEN ON A PHONE: THE LAST FIVE GAMES (Oriol, 8/11/2026, as on the dashboard).
+       A season of games and trainings across a phone is a knot; from the fifth game from the
+       end on - the trainings between them included - it reads. Any wider screen has it all. */
+    var last5 = false;
+    if (TR_LAST5 && points.length) {
+      var gIx = []; points.forEach(function (p, i) { if (p.kind === "game") gIx.push(i); });
+      if (gIx.length > 5) { points = points.slice(gIx[gIx.length - 5]); last5 = true; }
+    }
+    var wrap = el("div", "sx-sec tl" + (last5 ? " tl-l5" : ""));
     wrap.appendChild(el("div", "sx-h", title));
+    if (last5) wrap.appendChild(el("div", "tl-l5t", "Last 5 games · the whole season on a wider screen"));
     if (!points.length) { wrap.appendChild(el("div", "sx-empty", "Nothing in this range.")); return wrap; }
 
     /* legend — always present for two series or more, identity never colour alone; a page
@@ -4149,7 +4159,8 @@
      built off the page now and put in in one piece, top to bottom. */
   function renderTrendsDash(root, sets, noDate, folder) {
     var stage0 = document.createElement("div");
-    renderTrendsDashInner(stage0, sets, noDate, folder);
+    try { TR_LAST5 = window.matchMedia("(max-width:600px)").matches; } catch (e) { TR_LAST5 = false; }
+    try { renderTrendsDashInner(stage0, sets, noDate, folder); } finally { TR_LAST5 = false; }
     root.innerHTML = "";
     root.appendChild(stage0);
   }
@@ -4523,7 +4534,9 @@
         var glance = sets4.slice().sort(function (a, b) { return b.n - a.n; }).slice(0, 28);
         if (glance.length) {
           var gbox = el("div", "tr-glance");
-          gbox.appendChild(el("div", "tr-rank-h", "Sets at a glance — volume, return, and game by game"));
+          /* on a phone the squares are the last five games, as the charts */
+          var gFrom = TR_LAST5 ? Math.max(0, games.length - 5) : 0;
+          gbox.appendChild(el("div", "tr-rank-h", "Sets at a glance — volume, return, and game by game" + (gFrom ? " · last 5 games" : "")));
           var gMax = glance[0].n || 1;
           /* two columns, the most run first down the left one */
           var gcols = el("div", "tr-gl-cols");
@@ -4538,6 +4551,7 @@
             row.appendChild(el("span", "tr-gl-p sx-cell " + pppStep(pv), f2(pv)));
             var sq = el("span", "tr-gl-s");
             games.forEach(function (gm, gi) {
+              if (gi < gFrom) return;
               var c = x.per[gi], d = el("i", c ? ("sx-cell " + pppStep(c.pts / c.n)) : "none");
               if (c) { var sz = Math.max(8, Math.min(20, 6 + 3 * c.n)); d.style.width = sz + "px"; d.style.height = sz + "px";
                 d.title = gm.label + " · " + c.n + " runs · " + f2(c.pts / c.n) + " per possession"; }
@@ -4983,12 +4997,15 @@
          The one exception is the tables that start from our defense - what we concede,
          transition defense, the half of the play types that is theirs - where those
          points are theirs and a high PPP is red. See pppStepD. */
-      ".sx{--s0:#C53727;--s1:#d4705f;--s2:#e7a596;--s3:#d6e5dc;--s4:#8fc0a9;--s5:#17805A;",
-      "--b0:#eef1f6;--b1:#dbe2ee;--b2:#c2cfe2;--b3:#a3b6d2;--b4:#7f97bd;--b5:#5b77a6;",
+      /* ONE HEAT FOR EVERY AMOUNT (Oriol, 8/11/2026): a rate and a volume on the hub's one scale,
+         pale sand for the least, deep red for the most - as the shot charts (index.html PERF9) */
+      ".sx{--s0:#f1dcc6;--s1:#ebc9a8;--s2:#e6b991;--s3:#e2a073;--s4:#b5452b;--s5:#9c2a1d;",
+      "--b0:#f7ecdf;--b1:#f1dcc6;--b2:#ebc9a8;--b3:#e2a073;--b4:#b5452b;--b5:#9c2a1d;",
       "font-size:13px;color:var(--ink)}",
 
       /* white type only where the fill is dark enough to need it */
-      ".sx-cell.s0,.sx-cell.s5{color:#fff}",
+      ".sx-cell.s4,.sx-cell.s5{color:#fff}",
+      ".sx-vol.b4{color:#fff}",
 
       ".sx-meta{font-size:12px;color:var(--ink-soft);margin-bottom:14px}",
       /* Blocks, not one running sheet. A group lays its sections side by side and a
