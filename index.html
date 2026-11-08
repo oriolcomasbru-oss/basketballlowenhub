@@ -11894,7 +11894,7 @@ function _preShotFor(L, tid, pid){
    steps of size, the floor cut just behind the arc, and only the percentages that matter, big
    enough to read: the zone he shoots most from, and his main zone at the other range (a two
    if the first is a three, and the other way round). Fifteen shots or no chart. */
-const PRE_SC_MIN=15, PRE_SC_VB=[0, 420, 1500, 980];
+const PRE_SC_MIN=15, PRE_SC_VB=[-30, 395, 1560, 1015];   /* the floor with a margin all round: nothing touches the edge */
 const _preScFit={};
 function _preShotMini(L, tid, pid){
   const d=(L.players||{})[tid];
@@ -11920,7 +11920,7 @@ function _preShotMini(L, tid, pid){
   const pick=zs.length? [zs[0]] : [];
   if(zs.length){ const other=zs.filter(e=>is3(e.k)!==is3(zs[0].k))[0] || zs[1]; if(other) pick.push(other); }
   const at=k=>{ const p=LG_ZONE_AT[k]||[750,900];
-    return [Math.max(250, Math.min(1250, p[0])), Math.max(PRE_SC_VB[1]+170, Math.min(1370, p[1]+60))]; };
+    return [Math.max(250, Math.min(1250, p[0])), Math.max(PRE_SC_VB[1]+205, Math.min(1360, p[1]+60))]; };
   const spots=[];
   pick.forEach((e,i)=>{ const p=at(e.k);
     /* two labels on top of each other are none: the second gives way */
@@ -45842,15 +45842,16 @@ body.dark .modal-stats .modal-stat-cell.hl-hot *,body.dark .modal-stats .modal-s
    cut in two - the portrait on top, the chart below it as wide as the column - and whatever sat
    on the photo's bottom edge moves up onto the portrait. The chart's height follows the column's
    width (.68 of it, the cut floor's shape) (no line of text under it: too few shots, no chart). */
-.phx.phx .card.has-sc > .photo{container-type:inline-size;--sch:calc(100cqw * .654);
-  height:auto!important;min-height:calc(108px + 30cqw * .654)!important;align-self:stretch!important}
+.phx.phx .card.has-sc > .photo{container-type:inline-size;--sch:calc(100cqw * .6506 + 4px);
+  height:auto!important;min-height:calc(108px + 30cqw * .6506 + 4px)!important;align-self:stretch!important}
 /* on a phone the card is one to a row: a little more of the portrait over the chart (Oriol: "algo más, pero no te pases") */
-@media (max-width:560px){ .phx.phx .card.has-sc > .photo{min-height:calc(130px + 30cqw * .654)!important} }
+@media (max-width:560px){ .phx.phx .card.has-sc > .photo{min-height:calc(130px + 30cqw * .6506 + 4px)!important} }
 .phx.phx .card.has-sc > .photo > .photo-img{bottom:var(--sch)!important}
 .phx.phx .card.has-sc > .photo::before,.phx.phx .card.has-sc > .photo::after{bottom:var(--sch)!important}
 .phx.phx .card.has-sc > .photo > .hand-badge,.phx.phx .card.has-sc > .photo > .photo-lock-btn{bottom:calc(var(--sch) + 3px)!important}
 .phx .photo-sc{position:absolute;left:0;right:0;bottom:0;height:var(--sch);z-index:4;display:flex;flex-direction:column;
-  background:#fff;border-top:1px solid #e7e9ee;--sc-halo:#f8f9fb;--sc-ink:#141821}
+  box-sizing:border-box;padding-top:4px;   /* a breath of the card between the portrait and the chart */
+  background:#fff;--sc-halo:#f8f9fb;--sc-ink:#141821}
 .phx .photo-sc .sc-pcard{flex:1 1 auto;min-height:0;width:100%;height:auto}
 .sc-pcard .sc-line{stroke-width:1px;vector-effect:non-scaling-stroke;opacity:.5}
 .sc-pcard .sc-floor{stroke:none}
@@ -45858,7 +45859,7 @@ body.dark .modal-stats .modal-stat-cell.hl-hot *,body.dark .modal-stats .modal-s
 .sc-ck{font-family:'Oswald',sans-serif;font-weight:700;font-size:215px;text-anchor:middle;fill:var(--sc-ink,#141821);
   stroke:var(--sc-halo,#f8f9fb);stroke-width:50px;stroke-linejoin:round;paint-order:stroke}
 .sc-ck.k2{font-size:172px;stroke-width:42px}
-body.dark .phx .photo-sc{background:#2a313b;border-top-color:#3a4250;--sc-halo:#242a33;--sc-ink:#eef1f5}
+body.dark .phx .photo-sc{background:#2a313b;--sc-halo:#242a33;--sc-ink:#eef1f5}
 @media print{ .phx .photo-sc{background:#fff!important} }
 /* pre game playbook · the key sets by phase, by use or by category */
 .pbb-key-h{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
