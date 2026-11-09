@@ -30128,7 +30128,7 @@ async function _playerDash(root, who){
    A reference player has 40% of his club's games and 10 minutes a game (the leaders' rule); a
    position is the league's, or the staff's where they set one (TRG_POS_STAFF). Each finished league
    game is read once and its sums kept in this browser, so a week adds only its own games. */
-const RG_KEY="lw_rgoal_v1", RG_POSKEY="lw_rgpos_v1", RG_POS=["PG","SG","SF","PF","C"];
+const RG_KEY="lw_rgoal_v2", RG_POSKEY="lw_rgpos_v1", RG_POS=["PG","SG","SF","PF","C"];
 const _rgPosOf=s=>{ s=String(s||"").toUpperCase().trim(); return /CENT|^C$|^5$/.test(s)? "C" : /POWER|^PF$|^4$/.test(s)? "PF" : /SMALL|^SF$|^3$/.test(s)? "SF" : /SHOOT|^SG$|^2$/.test(s)? "SG" : /POINT|^PG$|^1$/.test(s)? "PG" : ""; };
 function _rgLS(k, v){ try{ if(v===undefined){ const s=localStorage.getItem(k); return s? JSON.parse(s) : null; } localStorage.setItem(k, JSON.stringify(v)); }catch(e){ return null; } return v; }
 /* one league game in sums: per club its rebounds, the rebounds there were, its points and
@@ -30141,7 +30141,7 @@ function _rgGameAgg(G, j, us){
   [[hc, String(G.homeId)],[ac, String(G.awayId)]].forEach(([c, tid])=>{
     const R=_rebGame(j.feed, c), W=_gpLiveWin(j.feed, c, ()=>true, {});
     out.T[tid]={ or:R.u.or, dr:R.u.dr, oC:R.u.or+R.t.dr, dC:R.u.dr+R.t.or, pts:W.u.pts, poss:r1(poss(W.u)), op:W.t.pts, opPoss:r1(poss(W.t)) };
-    Object.keys(R.pl).forEach(id=>{ const p=R.pl[id]; if(p.s!=="u") return; out.P[tid+"|"+id]=[p.sec, p.or, p.dr, p.oOn[1], p.dOn[1]]; });
+    Object.keys(R.pl).forEach(id=>{ const p=R.pl[id]; if(p.s!=="u") return; out.P[tid+"|"+id]=[p.sec, p.or, p.dr, p.oOn[1], p.dOn[1], p.oOn[0], p.dOn[0]]; });
     if(tid===us){ let CT={}; try{ CT=_gpCourt(j.feed, c, 1e9)||{}; }catch(e){_quiet(e)}
       Object.keys(CT).forEach(id=>{ const segs=CT[id].segs||[]; if(!segs.length) return;
         const Wp=_gpLiveWin(j.feed, c, o=>segs.some(g=>o.t>=g[0] && o.t<g[1]), {});
@@ -30188,9 +30188,9 @@ function _rgPct(a, p){ const s=a.filter(v=>v!=null && isFinite(v)).sort((x,y)=>x
 function _rgCompute(D, man){
   const us=D.us;
   /* the play by play of the season, per man (feed ids are the roster's id or pid) */
-  const S={}; D.games.forEach(g=>{ const A=D.C[g.id]; Object.keys(A.P||{}).forEach(k=>{ const a=A.P[k], s=S[k]||(S[k]=[0,0,0,0,0]); for(let i=0;i<5;i++) s[i]+=a[i]||0; }); });
+  const S={}; D.games.forEach(g=>{ const A=D.C[g.id]; Object.keys(A.P||{}).forEach(k=>{ const a=A.P[k], s=S[k]||(S[k]=[0,0,0,0,0,0,0]); for(let i=0;i<7;i++) s[i]+=a[i]||0; }); });
   /* (a man's id and pid are often the same number: each counted once) */
-  const pbpOf=p=>{ const s=[0,0,0,0,0]; Array.from(new Set(p.ids)).forEach(id=>{ const x=S[p.tid+"|"+id]; if(x) for(let i=0;i<5;i++) s[i]+=x[i]; }); return s; };
+  const pbpOf=p=>{ const s=[0,0,0,0,0,0,0]; Array.from(new Set(p.ids)).forEach(id=>{ const x=S[p.tid+"|"+id]; if(x) for(let i=0;i<7;i++) s[i]+=x[i]||0; }); return s; };
   /* the reference: the men of each position who count */
   const clubG={}; D.list.forEach(p=>{ clubG[p.tid]=Math.max(clubG[p.tid]||0, p.gp||0); });
   const ref={}; RG_POS.forEach(k=>{ ref[k]={ o40:[], d40:[], orp:[], drp:[] }; });
@@ -30218,6 +30218,12 @@ function _rgCompute(D, man){
   const me={ man:man, pos:pos, posStaff:!!stf, gp:man.gp, mpg:man.gp? man.sec/60/man.gp : 0,
     o40:man.sec? 2400*man.or/man.sec : null, d40:man.sec? 2400*man.dr/man.sec : null };
   const s=pbpOf(man); me.orp=s[3]? 100*s[1]/s[3] : null; me.drp=s[4]? 100*s[2]/s[4] : null; me.pbp=s;
+  /* THE TEAM'S REBOUNDING WITH HIM ON THE FLOOR (Oriol, 9/11/2026: "a veces bloqueas pero no lo coges
+     tú"): the share of the rebounds there were that the five got while he played, and without him -
+     a box-out shows here, not in his own line; measured against the team's goals, not a position */
+  const Tu=T[us]||null;
+  me.tdr=s[4]? 100*s[6]/s[4] : null; me.tor=s[3]? 100*s[5]/s[3] : null;
+  me.tdrOff=(Tu && Tu.dC-s[4]>=20)? 100*(Tu.dr-s[6])/(Tu.dC-s[4]) : null; me.torOff=(Tu && Tu.oC-s[3]>=20)? 100*(Tu.or-s[5])/(Tu.oC-s[3]) : null;
   let dp=0, dpts=0; const rows=[];
   D.games.filter(g=>String(g.homeId)===us || String(g.awayId)===us).sort((a,b)=>a.date<b.date? -1 : 1).forEach(g=>{
     const A=D.C[g.id]; let p=null, u=null;
@@ -30225,7 +30231,7 @@ function _rgCompute(D, man){
     const home=A.h===us, our=home? A.hs : A.as, their=home? A.as : A.hs;
     const opp=home? g.away : g.home;
     if(u){ dp+=u[0]; dpts+=u[1]; }
-    rows.push({ g:g, opp:opp, home:home, w:our>their, sc:our+"–"+their, min:p? p[0]/60 : 0, or:p? p[1] : 0, dr:p? p[2] : 0, oA:p? p[3] : 0, dA:p? p[4] : 0,
+    rows.push({ g:g, opp:opp, home:home, w:our>their, sc:our+"–"+their, min:p? p[0]/60 : 0, or:p? p[1] : 0, dr:p? p[2] : 0, oA:p? p[3] : 0, dA:p? p[4] : 0, oT:p? (p[5]||0) : 0, dT:p? (p[6]||0) : 0,
       dp:u? u[0] : 0, dpts:u? u[1] : 0 }); });
   me.der=dp? 100*dpts/dp : null; me.derPoss=dp; me.rows=rows;
   out.me=me;
@@ -30281,16 +30287,20 @@ function _rgBlock(nm){
       P.appendChild(_rgKey("goal 1 · BBL median", "goal 2 · top 25%"));
       P.appendChild(_rgRow("Def. rebounds", "per 40′", me.d40, Lp.d40[0], Lp.d40[1], f2, false, pg(me.d40)));
       P.appendChild(_rgRow("Off. rebounds", "per 40′", me.o40, Lp.o40[0], Lp.o40[1], f2, false, pg(me.o40)));
-      P.appendChild(_rgRow("DREB%", "their misses", me.drp, Lp.drp[0], Lp.drp[1], fp, false));
-      P.appendChild(_rgRow("OREB%", "our misses", me.orp, Lp.orp[0], Lp.orp[1], fp, false));
+      P.appendChild(_rgRow("Your DREB%", "their misses you grab", me.drp, Lp.drp[0], Lp.drp[1], fp, false));
+      P.appendChild(_rgRow("Your OREB%", "our misses you grab", me.orp, Lp.orp[0], Lp.orp[1], fp, false));
       /* goal 1 in his own minutes and every five minutes on the floor */
       if(me.mpg && Lp.d40[0]!=null){ const c=(n, t)=>h("span",{class:"rg-chip"}, h("b",{}, n), t);
         P.appendChild(h("div",{class:"rg-chips"}, h("i",{},"Goal 1 for you"),
           c(f1(Lp.d40[0]*me.mpg/40), " def. reb a game"), c(f1(Lp.o40[0]*me.mpg/40), " off. reb a game"),
           c(f2(Lp.d40[0]/8), " def. every 5′"), c(f2(Lp.o40[0]/8), " off. every 5′"))); }
+      /* the team with him on the floor: his box-outs show here; the team's goals, no position */
       P.appendChild(h("div",{class:"rg-sep"}));
+      P.appendChild(h("div",{class:"rg-who"}, "The team with you on court"));
       P.appendChild(_rgKey("goal 1 · BBL average", "goal 2 · playoff level"));
-      P.appendChild(_rgRow("DER", "with you on", me.der, X.team.der.avg, X.team.der.top, f1, true, "↓ = better"));
+      P.appendChild(_rgRow("Team DREB%", "you on court", me.tdr, X.team.drp.avg, X.team.drp.top, fp, false, me.tdrOff!=null? "without you "+fp(me.tdrOff) : null));
+      P.appendChild(_rgRow("Team OREB%", "you on court", me.tor, X.team.orp.avg, X.team.orp.top, fp, false, me.torOff!=null? "without you "+fp(me.torOff) : null));
+      P.appendChild(_rgRow("DER", "you on court", me.der, X.team.der.avg, X.team.der.top, f1, true, "↓ = better"));
       /* ---- game by game: one square a game, its colour where he stood that night */
       const rows=me.rows.filter(r=>r.min>0), N=rows.length;
       if(N){
@@ -30319,6 +30329,8 @@ function _rgBlock(nm){
           me.drp, sum("dA")? 100*sum("dr")/sum("dA") : null, 3, false, fp);
         line("OREB%", r=>{ const v=r.oA? 100*r.or/r.oA : null; return { v:v==null? "–" : String(Math.round(v)), st:r.oA>=10? _rgSt(v, Lp.orp[0], Lp.orp[1]) : "", t:fp(v)+" · "+r.or+" of "+r.oA }; },
           me.orp, sum("oA")? 100*sum("or")/sum("oA") : null, 3, false, fp);
+        line("Team DREB", r=>{ const v=r.dA? 100*r.dT/r.dA : null; return { v:v==null? "–" : String(Math.round(v)), st:r.dA>=10? _rgSt(v, X.team.drp.avg, X.team.drp.top) : "", t:"the team’s DREB% with you on: "+fp(v)+" · "+r.dT+" of "+r.dA }; },
+          me.tdr, sum("dA")? 100*sum("dT")/sum("dA") : null, 3, false, fp);
         line("DER on", r=>{ const v=r.dp>=15? 100*r.dpts/r.dp : null; return { v:v==null? "–" : String(Math.round(v)), st:v==null? "" : _rgSt(v, X.team.der.avg, X.team.der.top, true), t:v==null? "too few possessions" : f1(v)+" in "+Math.round(r.dp)+" possessions" }; },
           me.der, sum("dp")? 100*sum("dpts")/sum("dp") : null, 5, true, f1);
       }
@@ -41374,7 +41386,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .rg-lb b{display:block;font:700 13.5px 'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.05em;color:var(--ink,#141821)}
 .rg-lb i{font:500 10.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
 .rg-v{text-align:right}.rg-v b{display:block;font:700 24px/1.05 'Oswald',sans-serif;color:var(--ink,#141821)}
-.rg-v i{font:500 10.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);white-space:nowrap}
+.rg-v i{display:block;font:500 10.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);line-height:1.25}
 .rg-v.u b{color:#c0403c}.rg-v.t b{color:#a9812f}
 .rg-ok{font:700 15px Inter,system-ui,sans-serif;text-align:center;white-space:nowrap}.rg-ok.u{color:#c0403c}.rg-ok.a{color:var(--ink,#141821)}.rg-ok.t{color:#a9812f}
 .rg-na{color:var(--ink-faint,#8a93a2)}
