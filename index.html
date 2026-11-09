@@ -20149,7 +20149,7 @@ function _trendsDashDraw(R, TD){
   return out;
 }
 /* where the staff plays one of ours somewhere else than the league's roster says, by surname: the staff wins */
-const TRG_POS_STAFF={ thiers:"C" };
+const TRG_POS_STAFF={ thiers:"C", askew:"SG" };   /* Askew: a combo, the staff plays him at the 2 (Oriol, 9/11/2026) */
 /* a row of tabs over panes, as the pre game's team stats: the first open, "Everything" shows all */
 function _trgTabs(){
   const el=h("div",{class:"pg-uni trg-tabs"}), bar=h("div",{class:"sxp-tabs pg-tabs"}), panes=h("div",{});
