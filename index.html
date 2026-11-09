@@ -30250,62 +30250,45 @@ const RG_STW={ u:"Under goal 1", a:"Goal 1 reached", t:"Goal 2 reached" };
 /* A ROW: the number, a bar with its two goals, a mark. Players read it at a glance (Oriol, 9/11/2026:
    "más visual y simple, demasiado texto; son jugadores"): a longer bar is better whichever way the
    number runs, the goals are two ticks with their numbers, and the mark says where he is */
-function _rgBar(v, g1, g2, low, fmt, off, st0, nm){
+function _rgBar(v, g1, g2, low, fmt, off, st0){
   const vals=[v, g1, g2, off].filter(x=>x!=null);
   let lo=0, hi=Math.max(...vals)*1.3;
   if(low){ hi=Math.max(...vals)+12; lo=Math.max(0, Math.min(...vals)-12); }
   const x=t=>{ const f=low? (hi-t)/(hi-lo) : (t-lo)/(hi-lo); return Math.max(0, Math.min(100, 100*f)); };
   const st=st0!==undefined? st0 : _rgSt(v, g1, g2, low), a=Math.min(x(g1), x(g2)), b=Math.max(x(g1), x(g2));
   const at=p=>p>55? "right:"+(100-p)+"%" : "left:"+p+"%";
-  const lab=(g, n)=>[fmt(g), n? h("em",{}, " "+n) : null];
   return h("div",{class:"rg-bar"},
     h("span",{class:"tr"}), h("span",{class:"zn", style:"left:"+a+"%;width:"+(b-a)+"%"}),
     v!=null? h("span",{class:"me "+st, style:"width:"+x(v)+"%"}) : null,
     /* the team without him: a dashed mark, the first step is to be past it */
     off!=null? h("span",{class:"off", style:"left:"+x(off)+"%"}) : null,
     h("span",{class:"g1", style:"left:"+x(g1)+"%"}), h("span",{class:"g2", style:"left:"+x(g2)+"%"}),
-    h("span",{class:"l2", style:at(x(g2))}, ...lab(g2, nm && nm[1])), h("span",{class:"l1", style:at(x(g1))}, ...lab(g1, nm && nm[0])));
+    h("span",{class:"l2", style:at(x(g2))}, fmt(g2)), h("span",{class:"l1", style:at(x(g1))}, fmt(g1)));
 }
-/* THE GOALS GO UP WITH HIM (Oriol, 9/11/2026: "no puede ser que los objetivos de mejora sean
-   menores de lo que ya hace nunca"). The levels of his position - the median, the top 25% (7-10
-   players), the top 10% (3-4) - are a ladder; his two goals are always the next two rungs above him;
-   in the top 10% already, 5% and 10% more than he does. Not "the best": one man, often a few games
-   or 12 minutes a game (Voigtmann 10.2 offensive a 40', the next 7.0), was no goal (9/11/2026). The
-   mark says the rung he stands on */
-function _rgLadder(v, levels, low){
-  const past=(a, b)=>low? a<=b : a>=b;
-  /* a rung no higher than the one under it (a short list: the top 10% may be the best) is dropped */
-  const ok=[]; levels.forEach(l=>{ if(!l || l.v==null) return; const p=ok[ok.length-1]; if(!p || !past(p.v, l.v)) ok.push(l); });
-  const reached=v==null? 0 : ok.filter(l=>past(v, l.v)).length;
-  const next=v==null? ok.slice(0, 2) : ok.filter(l=>!past(v, l.v));
-  /* one rung left: that rung, then 5% past it; none left (he is on the top rung): 5% and 10% more
-     than he does */
-  const more=k=>({ v:low? v*(1-k) : v*(1+k), name:(low? "−" : "+")+Math.round(100*k)+"%" });
-  let out=next.slice(0, 2);
-  if(v!=null && out.length===1) out=[out[0], { v:low? out[0].v*0.95 : out[0].v*1.05, name:(low? "−" : "+")+"5%" }];
-  if(v!=null && !out.length) out=[more(0.05), more(0.10)];
-  return { reached:reached, n1:out[0]||null, n2:out[1]||null };
-}
-function _rgLevels(L){ return L? [{ v:L[0], name:"median" }, { v:L[1], name:"top 25%" }, { v:L[3], name:"top 10%" }] : []; }
-/* his own numbers: ✕ under the median, ✓ median, ✓✓ top 25%, ✓✓✓ top 10% - none while the sample
-   is small (under 5 games) */
+/* TWO GOALS, LIKE THE LEAGUE'S, THEN HIMSELF (Oriol, 9/11/2026: "quita lo de los porcentajes, todo es
+   como la liga: media, playoff y el siguiente ya es suyo; barra negra, barra amarilla y ya compite
+   consigo mismo"). The black mark is goal 1 - the BBL average of his position (its middle man); the
+   gold mark goal 2 - the top level of his position (its best quarter: the players of the clubs in
+   playoff places rebound no better than the rest, so "playoff" is no level for one man). Past both,
+   his goal is to beat himself. Never a goal under what he does: a goal passed is shown passed */
+function _rgReached(v, g1, g2, low){ if(v==null) return 0; const past=(a, b)=>b!=null && (low? a<=b : a>=b); return past(v, g2)? 2 : past(v, g1)? 1 : 0; }
+/* his own numbers: ✕ not yet, ✓ goal 1, ✓✓ goal 2 - none while the sample is small (under 5 games) */
 function _rgRow(lab, unit, v, L, fmt, sub, small){
-  const R=_rgLadder(v, _rgLevels(L));
-  const st=small? "" : R.reached===0? "u" : R.reached===1? "a" : "t";
-  const mark=small? "·" : ["✕", "✓", "✓✓", "✓✓✓"][Math.min(3, R.reached)];
-  const tip=small? "Small sample: the marks start at 5 games" : ["Under the median of your position", "At the median of your position", "Top 25% of your position", "Top 10% of your position"][Math.min(3, R.reached)]+(R.n1? " · next: "+R.n1.name : "");
+  const g1=L && L[0], g2=L && L[1], r=_rgReached(v, g1, g2);
+  const st=small? "" : ["u", "a", "t"][r];
+  const mark=small? "·" : ["✕", "✓", "✓✓"][r];
+  const tip=small? "Small sample: the marks start at 5 games" : ["Under the BBL average of your position", "Over the BBL average of your position · next: the top level", "At the top level of your position · now beat yourself"][r];
   return h("div",{class:"rg-row", title:tip},
     h("div",{class:"rg-lb"}, h("b",{}, lab), unit? h("i",{}, unit) : null),
-    (R.n1 && R.n2)? _rgBar(v, R.n1.v, R.n2.v, false, fmt, null, st, [R.n1.name, R.n2.name]) : h("span",{class:"rg-na"},"–"),
+    (g1!=null && g2!=null)? _rgBar(v, g1, g2, false, fmt, null, st) : h("span",{class:"rg-na"},"–"),
     h("div",{class:"rg-v "+st}, h("b",{}, v==null? "–" : fmt(v)), sub? h("i",{}, sub) : null),
     h("span",{class:"rg-ok "+(st||"n")}, mark));
 }
 /* THE TEAM WITH HIM ON COURT, FAIR TO HIM (Oriol, 9/11/2026: "¿crees que es justo?"). The team is
    18th in DREB% and 17th in DER, so against the BBL alone nearly everybody was red whatever he did.
    The first step is his own: the team is better with him than without him (✓); then the BBL average
-   (✓✓) and the playoff level (✓✓✓). Without enough minutes without him, the first step is not judged.
-   The two goals on the bar are the next two rungs above the team with him: the BBL average, the
-   playoff level (6th), the top 3 - not the best, Bayern's 92.6 DER 14 points from the next */
+   (✓✓, the black mark) and the playoff level (✓✓✓, the gold mark). Without enough minutes without him,
+   the first step is not judged */
 /* (a difference smaller than tol - a point of a share, two of DER - is "about the same": no ✕ for noise) */
 function _rgSt3(v, off, g1, g2, low, tol){ if(v==null) return "";
   const ge=(a, b)=>b!=null && (low? a<=b : a>=b);
@@ -30315,18 +30298,16 @@ function _rgRowT(lab, unit, v, off, T, fmt, low, small){
   let st=_rgSt3(v, off, T.avg, T.top, low, low? 2 : 1); if(small) st="n";
   const cls=st==="t3"||st==="t2"? "t" : st==="e"? "n" : st;
   const mark={ t3:"✓✓✓", t2:"✓✓", a:"✓", u:"✕", n:"·", e:"=" }[st]||"";
-  const tip={ t3:"Playoff level with you on court", t2:"BBL average with you on court", a:"The team is better with you than without you", u:"The team is not better with you yet", e:"About the same with you and without you", n:"Not enough minutes to compare yet" }[st]||"";
-  const R=_rgLadder(v, [{ v:T.avg, name:"BBL avg" }, { v:T.top, name:"playoff" }, { v:T.top3, name:"top 3" }], low);
+  const tip={ t3:"Playoff level with you on court · now beat yourself", t2:"BBL average with you on court", a:"The team is better with you than without you", u:"The team is not better with you yet", e:"About the same with you and without you", n:"Not enough minutes to compare yet" }[st]||"";
   return h("div",{class:"rg-row", title:tip},
     h("div",{class:"rg-lb"}, h("b",{}, lab), unit? h("i",{}, unit) : null),
-    (R.n1 && R.n2)? _rgBar(v, R.n1.v, R.n2.v, low, fmt, off, cls, [R.n1.name, R.n2.name]) : h("span",{class:"rg-na"},"–"),
+    _rgBar(v, T.avg, T.top, low, fmt, off, cls),
     h("div",{class:"rg-v "+cls}, h("b",{}, v==null? "–" : fmt(v)), h("i",{}, off!=null? "without you "+fmt(off) : "")),
     h("span",{class:"rg-ok "+(cls||"n")}, mark));
 }
-const _rgKey=()=>h("div",{class:"rg-key"}, h("span",{}, h("s",{class:"k1"}), h("s",{class:"k2"}), " your next two goals"),
-  h("span",{}, h("em",{class:"u"},"✕"), " under median"), h("span",{}, h("em",{class:"a"},"✓"), " median"), h("span",{}, h("em",{class:"t"},"✓✓"), " top 25%"),
-  h("span",{}, h("em",{class:"t"},"✓✓✓"), " top 10%"));
-const _rgKeyT=()=>h("div",{class:"rg-key"}, h("span",{}, h("s",{class:"ko"}), "without you"), h("span",{}, h("s",{class:"k1"}), h("s",{class:"k2"}), " next two goals"),
+const _rgKey=()=>h("div",{class:"rg-key"}, h("span",{}, h("s",{class:"k1"}), " BBL average"), h("span",{}, h("s",{class:"k2"}), " top level"),
+  h("span",{}, h("em",{class:"u"},"✕"), " not yet"), h("span",{}, h("em",{class:"a"},"✓"), " BBL average"), h("span",{}, h("em",{class:"t"},"✓✓"), " top level · then beat yourself"));
+const _rgKeyT=()=>h("div",{class:"rg-key"}, h("span",{}, h("s",{class:"ko"}), "without you"), h("span",{}, h("s",{class:"k1"}), " BBL average"), h("span",{}, h("s",{class:"k2"}), " playoff"),
   h("span",{}, h("em",{class:"a"},"✓"), " better with you"), h("span",{}, h("em",{class:"t"},"✓✓"), " BBL average"), h("span",{}, h("em",{class:"t"},"✓✓✓"), " playoff"), h("span",{}, h("em",{class:"n"},"="), " same"));
 /* THE PLAYER'S GOALS, in the dashboard's own sections - a tag and a white panel each, like the
    others: his goals, game by game, the team */
@@ -30360,14 +30341,14 @@ function _rgBlock(nm){
         const balls=(v, cls)=>{ const n=Math.max(1, Math.ceil(v-1e-9)), out=h("span",{class:"rg-balls"});
           for(let i=0;i<n;i++){ const fr=Math.max(0, Math.min(1, v-i)); out.appendChild(h("span",{class:"rg-ball "+cls}, h("u",{style:"width:"+Math.round(100*fr)+"%"}))); }
           return out; };
-        /* his two goals are the next two rungs above him (never under what he does), named */
-        const grp=(lab, mine40, L)=>{ const R=_rgLadder(mine40, _rgLevels(L)), mine=mine40*k;
-          const st=me.small? "" : R.reached===0? "u" : R.reached===1? "a" : "t";
-          const cap=t=>String(t||"").charAt(0).toUpperCase()+String(t||"").slice(1);
+        /* only the goals still ahead of him: both, the top level alone, or - past both - himself */
+        const grp=(lab, mine40, L)=>{ const r=_rgReached(mine40, L[0], L[1]), mine=mine40*k;
+          const st=me.small? "" : ["u", "a", "t"][r];
           const row=(who, v, cls, ncls)=>h("div",{class:"rg-br"}, h("i",{}, who), balls(v, cls), h("b",{class:ncls||""}, f1(v)));
           return h("div",{class:"rg-bg"}, h("div",{class:"rg-bt"}, lab),
             row("You", mine, "me "+(st||"a"), st),
-            R.n1? row(cap(R.n1.name), R.n1.v*k, "g1") : null, R.n2? row(cap(R.n2.name), R.n2.v*k, "g2", "t") : null); };
+            r<1? row("BBL avg", L[0]*k, "g1") : null,
+            r<2? row("Top level", L[1]*k, "g2", "t") : row("Beat it", mine, "g2", "t")); };
         P.appendChild(h("div",{class:"rg-who rg-bh"}, "A game in your "+Math.round(me.mpg)+"′ · one ball = one rebound"));
         P.appendChild(h("div",{class:"rg-bw"},
           grp("Def. rebounds", me.d40, Lp.d40),
@@ -30418,13 +30399,13 @@ function _rgBlock(nm){
       const ord=n=>n+(n%10===1&&n%100!==11? "st" : n%10===2&&n%100!==12? "nd" : n%10===3&&n%100!==13? "rd" : "th");
       wrap.appendChild(tag("The team"));
       const T=h("div",{class:"rg-p"}); wrap.appendChild(T);
-      const tRow=(lab, v, G, fmt, low)=>{ const R=_rgLadder(v, [{ v:G.avg, name:"BBL avg" }, { v:G.top, name:"playoff" }, { v:G.top3, name:"top 3" }], low);
-        const st=R.reached===0? "u" : R.reached===1? "a" : "t", mark=["✕", "✓", "✓✓", "✓✓✓"][Math.min(3, R.reached)];
+      const tRow=(lab, v, G, fmt, low)=>{ const r=_rgReached(v, G.avg, G.top, low);
+        const st=["u", "a", "t"][r], mark=["✕", "✓", "✓✓"][r];
         return h("div",{class:"rg-row"}, h("div",{class:"rg-lb"}, h("b",{}, lab), h("i",{},"team")),
-          (R.n1 && R.n2)? _rgBar(v, R.n1.v, R.n2.v, low, fmt, null, st, [R.n1.name, R.n2.name]) : h("span",{class:"rg-na"},"–"),
+          _rgBar(v, G.avg, G.top, low, fmt, null, st),
           h("div",{class:"rg-v "+st}, h("b",{}, fmt(v)), h("i",{}, ord(G.rank)+" of "+tm.n)), h("span",{class:"rg-ok "+st}, mark)); };
-      T.appendChild(h("div",{class:"rg-key"}, h("span",{}, h("s",{class:"k1"}), h("s",{class:"k2"}), " next two goals"),
-        h("span",{}, h("em",{class:"u"},"✕"), " under the BBL average"), h("span",{}, h("em",{class:"a"},"✓"), " BBL average"), h("span",{}, h("em",{class:"t"},"✓✓"), " playoff"), h("span",{}, h("em",{class:"t"},"✓✓✓"), " top 3")));
+      T.appendChild(h("div",{class:"rg-key"}, h("span",{}, h("s",{class:"k1"}), " BBL average"), h("span",{}, h("s",{class:"k2"}), " playoff"),
+        h("span",{}, h("em",{class:"u"},"✕"), " not yet"), h("span",{}, h("em",{class:"a"},"✓"), " BBL average"), h("span",{}, h("em",{class:"t"},"✓✓"), " playoff · then beat it")));
       T.appendChild(tRow("DREB%", tm.us.drp, tm.drp, fp, false));
       T.appendChild(tRow("OREB%", tm.us.orp, tm.orp, fp, false));
       T.appendChild(tRow("DER", tm.us.der, tm.der, f1, true));
@@ -41480,7 +41461,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .rg-bh{margin-top:8px}
 .rg-bw{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px 28px;padding:4px 0 8px}
 .rg-bt{font:700 12.5px 'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.05em;color:var(--ink,#141821);margin-bottom:4px}
-.rg-br{display:grid;grid-template-columns:52px minmax(0,1fr) 34px;gap:8px;align-items:center;padding:2px 0}
+.rg-br{display:grid;grid-template-columns:66px minmax(0,1fr) 34px;gap:8px;align-items:center;padding:2px 0}
 .rg-br > i{font:500 11px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);white-space:nowrap}
 .rg-br > b{font:700 15px 'Oswald',sans-serif;text-align:right;color:var(--ink,#141821)}.rg-br > b.u{color:#c0403c}.rg-br > b.t{color:#a9812f}
 .rg-balls{display:flex;flex-wrap:wrap;gap:4px}
