@@ -30200,7 +30200,7 @@ function _rgCompute(D, man){
     r.o40.push(2400*p.or/p.sec); r.d40.push(2400*p.dr/p.sec);
     if(s[3]>=30) r.orp.push(100*s[1]/s[3]); if(s[4]>=30) r.drp.push(100*s[2]/s[4]); });
   const lines={}; RG_POS.forEach(k=>{ const r=ref[k]; lines[k]={ n:r.o40.length };
-    ["o40","d40","orp","drp"].forEach(m=>{ lines[k][m]=[_rgPct(r[m], .5), _rgPct(r[m], .75), r[m]]; }); });
+    ["o40","d40","orp","drp"].forEach(m=>{ lines[k][m]=[_rgPct(r[m], .5), _rgPct(r[m], .75), r[m], _rgPct(r[m], .9), r[m].length? Math.max(...r[m]) : null]; }); });
   /* the teams: rebounding and defence of the season, the BBL's average and its top-six line */
   const T={}; D.games.forEach(g=>{ const A=D.C[g.id]; Object.keys(A.T||{}).forEach(tid=>{ const a=A.T[tid], t=T[tid]||(T[tid]={ or:0, dr:0, oC:0, dC:0, op:0, opPoss:0, g:0 });
     t.or+=a.or; t.dr+=a.dr; t.oC+=a.oC; t.dC+=a.dC; t.op+=a.op; t.opPoss+=a.opPoss; t.g++; }); });
@@ -30208,7 +30208,8 @@ function _rgCompute(D, man){
   const mean=a=>a.reduce((x,y)=>x+y,0)/Math.max(1,a.length);
   const top6=(a, low)=>{ const s=a.slice().sort((x,y)=>low? x-y : y-x); return s[Math.min(5, s.length-1)]; };
   const team={ us:tv.filter(x=>x.tid===us)[0]||null, n:tv.length };
-  ["orp","drp","der"].forEach(m=>{ const a=tv.map(x=>x[m]); team[m]={ avg:mean(a), top:top6(a, m==="der"), rank:null };
+  ["orp","drp","der"].forEach(m=>{ const a=tv.map(x=>x[m]), srt=a.slice().sort((x,y)=>m==="der"? x-y : y-x);
+    team[m]={ avg:mean(a), top:top6(a, m==="der"), top3:srt[Math.min(2, srt.length-1)], best:srt[0], rank:null };
     if(team.us){ const v=team.us[m]; team[m].rank=1+a.filter(x=>m==="der"? x<v : x>v).length; } });
   const out={ lines:lines, team:team, games:D.games, last:D.games.length? D.games.map(g=>g.date).sort().slice(-1)[0] : "" };
   if(!man) return out;
@@ -30249,53 +30250,82 @@ const RG_STW={ u:"Under goal 1", a:"Goal 1 reached", t:"Goal 2 reached" };
 /* A ROW: the number, a bar with its two goals, a mark. Players read it at a glance (Oriol, 9/11/2026:
    "más visual y simple, demasiado texto; son jugadores"): a longer bar is better whichever way the
    number runs, the goals are two ticks with their numbers, and the mark says where he is */
-function _rgBar(v, g1, g2, low, fmt, off, st0){
+function _rgBar(v, g1, g2, low, fmt, off, st0, nm){
   const vals=[v, g1, g2, off].filter(x=>x!=null);
   let lo=0, hi=Math.max(...vals)*1.3;
   if(low){ hi=Math.max(...vals)+12; lo=Math.max(0, Math.min(...vals)-12); }
   const x=t=>{ const f=low? (hi-t)/(hi-lo) : (t-lo)/(hi-lo); return Math.max(0, Math.min(100, 100*f)); };
   const st=st0!==undefined? st0 : _rgSt(v, g1, g2, low), a=Math.min(x(g1), x(g2)), b=Math.max(x(g1), x(g2));
   const at=p=>p>55? "right:"+(100-p)+"%" : "left:"+p+"%";
+  const lab=(g, n)=>[fmt(g), n? h("em",{}, " "+n) : null];
   return h("div",{class:"rg-bar"},
     h("span",{class:"tr"}), h("span",{class:"zn", style:"left:"+a+"%;width:"+(b-a)+"%"}),
     v!=null? h("span",{class:"me "+st, style:"width:"+x(v)+"%"}) : null,
     /* the team without him: a dashed mark, the first step is to be past it */
     off!=null? h("span",{class:"off", style:"left:"+x(off)+"%"}) : null,
     h("span",{class:"g1", style:"left:"+x(g1)+"%"}), h("span",{class:"g2", style:"left:"+x(g2)+"%"}),
-    h("span",{class:"l2", style:at(x(g2))}, fmt(g2)), h("span",{class:"l1", style:at(x(g1))}, fmt(g1)));
+    h("span",{class:"l2", style:at(x(g2))}, ...lab(g2, nm && nm[1])), h("span",{class:"l1", style:at(x(g1))}, ...lab(g1, nm && nm[0])));
 }
-/* his own numbers: ✓✓ goal 2, ✓ goal 1, ✕ not yet - none while the sample is small (under 5 games) */
-function _rgRow(lab, unit, v, g1, g2, fmt, low, sub, small){
-  const st=small? "" : _rgSt(v, g1, g2, low);
-  return h("div",{class:"rg-row", title:st? RG_STW[st] : (small? "Small sample: the marks start at 5 games" : "")},
+/* THE GOALS GO UP WITH HIM (Oriol, 9/11/2026: "no puede ser que los objetivos de mejora sean
+   menores de lo que ya hace nunca"). The levels of his position - the median, the top 25%, the top
+   10%, the best - are a ladder; his two goals are always the next two rungs above him, and past the
+   best of his position, 5% and 10% more than he does. The mark says the rung he stands on */
+const RG_RUNG=["median", "top 25%", "top 10%", "best"];
+function _rgLadder(v, levels, low){
+  const past=(a, b)=>low? a<=b : a>=b;
+  /* a rung no higher than the one under it (a short list: the top 10% may be the best) is dropped */
+  const ok=[]; levels.forEach(l=>{ if(!l || l.v==null) return; const p=ok[ok.length-1]; if(!p || !past(p.v, l.v)) ok.push(l); });
+  const reached=v==null? 0 : ok.filter(l=>past(v, l.v)).length;
+  const next=v==null? ok.slice(0, 2) : ok.filter(l=>!past(v, l.v));
+  /* one rung left (he is in the top 10%): first 10% more than he does, then the best - unless 10% more
+     is already past it; none left (he is the best): 5% and 10% more */
+  const more=k=>({ v:low? v*(1-k) : v*(1+k), name:(low? "−" : "+")+Math.round(100*k)+"%" });
+  let out=next.slice(0, 2);
+  if(v!=null && out.length===1){ const m=more(0.10); out=past(m.v, out[0].v)? [out[0], { v:low? out[0].v*0.95 : out[0].v*1.05, name:(low? "−" : "+")+"5%" }] : [m, out[0]]; }
+  if(v!=null && !out.length) out=[more(0.05), more(0.10)];
+  return { reached:reached, n1:out[0]||null, n2:out[1]||null };
+}
+function _rgLevels(L){ return L? [{ v:L[0], name:"median" }, { v:L[1], name:"top 25%" }, { v:L[3], name:"top 10%" }, { v:L[4], name:"best" }] : []; }
+/* his own numbers: ✕ under the median, ✓ median, ✓✓ top 25%, ✓✓✓ top 10%, ★ the best - none while
+   the sample is small (under 5 games) */
+function _rgRow(lab, unit, v, L, fmt, sub, small){
+  const R=_rgLadder(v, _rgLevels(L));
+  const st=small? "" : R.reached===0? "u" : R.reached===1? "a" : "t";
+  const mark=small? "·" : ["✕", "✓", "✓✓", "✓✓✓", "★"][Math.min(4, R.reached)];
+  const tip=small? "Small sample: the marks start at 5 games" : ["Under the median of your position", "At the median of your position", "Top 25% of your position", "Top 10% of your position", "The best of your position"][Math.min(4, R.reached)]+(R.n1? " · next: "+R.n1.name : "");
+  return h("div",{class:"rg-row", title:tip},
     h("div",{class:"rg-lb"}, h("b",{}, lab), unit? h("i",{}, unit) : null),
-    (g1!=null && g2!=null)? _rgBar(v, g1, g2, low, fmt, null, st) : h("span",{class:"rg-na"},"–"),
+    (R.n1 && R.n2)? _rgBar(v, R.n1.v, R.n2.v, false, fmt, null, st, [R.n1.name, R.n2.name]) : h("span",{class:"rg-na"},"–"),
     h("div",{class:"rg-v "+st}, h("b",{}, v==null? "–" : fmt(v)), sub? h("i",{}, sub) : null),
-    h("span",{class:"rg-ok "+(st||"n")}, st==="t"? "✓✓" : st==="a"? "✓" : st==="u"? "✕" : "·"));
+    h("span",{class:"rg-ok "+(st||"n")}, mark));
 }
 /* THE TEAM WITH HIM ON COURT, FAIR TO HIM (Oriol, 9/11/2026: "¿crees que es justo?"). The team is
    18th in DREB% and 17th in DER, so against the BBL alone nearly everybody was red whatever he did.
    The first step is his own: the team is better with him than without him (✓); then the BBL average
-   (✓✓) and the playoff level (✓✓✓). Without enough minutes without him, the first step is not judged */
+   (✓✓) and the playoff level (✓✓✓). Without enough minutes without him, the first step is not judged.
+   The two goals on the bar are the next two rungs above the team with him: the BBL average, the
+   playoff level, the top 3, the best */
 /* (a difference smaller than tol - a point of a share, two of DER - is "about the same": no ✕ for noise) */
 function _rgSt3(v, off, g1, g2, low, tol){ if(v==null) return "";
   const ge=(a, b)=>b!=null && (low? a<=b : a>=b);
   if(ge(v, g2)) return "t3"; if(ge(v, g1)) return "t2"; if(off==null) return "n";
   const d=low? off-v : v-off; return d>=(tol||0)? "a" : d<=-(tol||0)? "u" : "e"; }
-function _rgRowT(lab, unit, v, off, g1, g2, fmt, low, small){
-  let st=_rgSt3(v, off, g1, g2, low, low? 2 : 1); if(small) st="n";
+function _rgRowT(lab, unit, v, off, T, fmt, low, small){
+  let st=_rgSt3(v, off, T.avg, T.top, low, low? 2 : 1); if(small) st="n";
   const cls=st==="t3"||st==="t2"? "t" : st==="e"? "n" : st;
   const mark={ t3:"✓✓✓", t2:"✓✓", a:"✓", u:"✕", n:"·", e:"=" }[st]||"";
   const tip={ t3:"Playoff level with you on court", t2:"BBL average with you on court", a:"The team is better with you than without you", u:"The team is not better with you yet", e:"About the same with you and without you", n:"Not enough minutes to compare yet" }[st]||"";
+  const R=_rgLadder(v, [{ v:T.avg, name:"BBL avg" }, { v:T.top, name:"playoff" }, { v:T.top3, name:"top 3" }, { v:T.best, name:"best" }], low);
   return h("div",{class:"rg-row", title:tip},
     h("div",{class:"rg-lb"}, h("b",{}, lab), unit? h("i",{}, unit) : null),
-    (g1!=null && g2!=null)? _rgBar(v, g1, g2, low, fmt, off, cls) : h("span",{class:"rg-na"},"–"),
+    (R.n1 && R.n2)? _rgBar(v, R.n1.v, R.n2.v, low, fmt, off, cls, [R.n1.name, R.n2.name]) : h("span",{class:"rg-na"},"–"),
     h("div",{class:"rg-v "+cls}, h("b",{}, v==null? "–" : fmt(v)), h("i",{}, off!=null? "without you "+fmt(off) : "")),
     h("span",{class:"rg-ok "+(cls||"n")}, mark));
 }
-const _rgKey=(k1, k2)=>h("div",{class:"rg-key"}, h("span",{}, h("s",{class:"k1"}), k1), h("span",{}, h("s",{class:"k2"}), k2),
-  h("span",{}, h("em",{class:"t"},"✓✓"), " goal 2"), h("span",{}, h("em",{class:"a"},"✓"), " goal 1"), h("span",{}, h("em",{class:"u"},"✕"), " not yet"));
-const _rgKeyT=()=>h("div",{class:"rg-key"}, h("span",{}, h("s",{class:"ko"}), "without you"), h("span",{}, h("s",{class:"k1"}), "BBL average"), h("span",{}, h("s",{class:"k2"}), "playoff level"),
+const _rgKey=()=>h("div",{class:"rg-key"}, h("span",{}, h("s",{class:"k1"}), h("s",{class:"k2"}), " your next two goals"),
+  h("span",{}, h("em",{class:"u"},"✕"), " under median"), h("span",{}, h("em",{class:"a"},"✓"), " median"), h("span",{}, h("em",{class:"t"},"✓✓"), " top 25%"),
+  h("span",{}, h("em",{class:"t"},"✓✓✓"), " top 10%"), h("span",{}, h("em",{class:"t"},"★"), " best"));
+const _rgKeyT=()=>h("div",{class:"rg-key"}, h("span",{}, h("s",{class:"ko"}), "without you"), h("span",{}, h("s",{class:"k1"}), h("s",{class:"k2"}), " next two goals"),
   h("span",{}, h("em",{class:"a"},"✓"), " better with you"), h("span",{}, h("em",{class:"t"},"✓✓"), " BBL average"), h("span",{}, h("em",{class:"t"},"✓✓✓"), " playoff"), h("span",{}, h("em",{class:"n"},"="), " same"));
 /* THE PLAYER'S GOALS, in the dashboard's own sections - a tag and a white panel each, like the
    others: his goals, game by game, the team */
@@ -30317,11 +30347,11 @@ function _rgBlock(nm){
       /* few games yet: the numbers are there, the marks wait (the minimum-sample rule: 5 games) */
       if(me.small) P.appendChild(h("div",{class:"rg-small"}, h("b",{}, String(me.gp||0)+" games"), " · small sample, the ✓ and ✕ start at 5 games"));
       P.appendChild(h("div",{class:"rg-who"}, "What you grab · vs the BBL’s "+(POSN[me.pos]||"players")));
-      P.appendChild(_rgKey("goal 1 · BBL median", "goal 2 · top 25%"));
-      P.appendChild(_rgRow("Def. rebounds", "per 40′", me.d40, Lp.d40[0], Lp.d40[1], f2, false, pg(me.d40), me.small));
-      P.appendChild(_rgRow("Off. rebounds", "per 40′", me.o40, Lp.o40[0], Lp.o40[1], f2, false, pg(me.o40), me.small));
-      P.appendChild(_rgRow("Your DREB%", "their misses you grab", me.drp, Lp.drp[0], Lp.drp[1], fp, false, null, me.small));
-      P.appendChild(_rgRow("Your OREB%", "our misses you grab", me.orp, Lp.orp[0], Lp.orp[1], fp, false, null, me.small));
+      P.appendChild(_rgKey());
+      P.appendChild(_rgRow("Def. rebounds", "per 40′", me.d40, Lp.d40, f2, pg(me.d40), me.small));
+      P.appendChild(_rgRow("Off. rebounds", "per 40′", me.o40, Lp.o40, f2, pg(me.o40), me.small));
+      P.appendChild(_rgRow("Your DREB%", "their misses you grab", me.drp, Lp.drp, fp, null, me.small));
+      P.appendChild(_rgRow("Your OREB%", "our misses you grab", me.orp, Lp.orp, fp, null, me.small));
       /* A GAME IN BALLS (Oriol, 9/11/2026: "Goal 1 for you" with its decimals a 5′ was not understood).
          His rebounds a game in his own minutes against the two goals in the same minutes: one ball one
          rebound, a part of a ball a part of one - he sees at once whether he is short or past it */
@@ -30329,21 +30359,25 @@ function _rgBlock(nm){
         const balls=(v, cls)=>{ const n=Math.max(1, Math.ceil(v-1e-9)), out=h("span",{class:"rg-balls"});
           for(let i=0;i<n;i++){ const fr=Math.max(0, Math.min(1, v-i)); out.appendChild(h("span",{class:"rg-ball "+cls}, h("u",{style:"width:"+Math.round(100*fr)+"%"}))); }
           return out; };
-        const grp=(lab, mine, g1, g2)=>{ const st=me.small? "" : _rgSt(mine, g1, g2);
+        /* his two goals are the next two rungs above him (never under what he does), named */
+        const grp=(lab, mine40, L)=>{ const R=_rgLadder(mine40, _rgLevels(L)), mine=mine40*k;
+          const st=me.small? "" : R.reached===0? "u" : R.reached===1? "a" : "t";
+          const cap=t=>String(t||"").charAt(0).toUpperCase()+String(t||"").slice(1);
           const row=(who, v, cls, ncls)=>h("div",{class:"rg-br"}, h("i",{}, who), balls(v, cls), h("b",{class:ncls||""}, f1(v)));
           return h("div",{class:"rg-bg"}, h("div",{class:"rg-bt"}, lab),
-            row("You", mine, "me "+(st||"a"), st), row("Goal 1", g1, "g1"), row("Goal 2", g2, "g2", "t")); };
+            row("You", mine, "me "+(st||"a"), st),
+            R.n1? row(cap(R.n1.name), R.n1.v*k, "g1") : null, R.n2? row(cap(R.n2.name), R.n2.v*k, "g2", "t") : null); };
         P.appendChild(h("div",{class:"rg-who rg-bh"}, "A game in your "+Math.round(me.mpg)+"′ · one ball = one rebound"));
         P.appendChild(h("div",{class:"rg-bw"},
-          grp("Def. rebounds", me.d40*k, Lp.d40[0]*k, Lp.d40[1]*k),
-          grp("Off. rebounds", me.o40*k, Lp.o40[0]*k, Lp.o40[1]*k))); }
+          grp("Def. rebounds", me.d40, Lp.d40),
+          grp("Off. rebounds", me.o40, Lp.o40))); }
       /* the team with him on the floor: his box-outs show here; the team's goals, no position */
       P.appendChild(h("div",{class:"rg-sep"}));
       P.appendChild(h("div",{class:"rg-who"}, "The team with you on court · better with you?"));
       P.appendChild(_rgKeyT());
-      P.appendChild(_rgRowT("Team DREB%", "box out: we grab it", me.tdr, me.tdrOff, X.team.drp.avg, X.team.drp.top, fp, false, me.small));
-      P.appendChild(_rgRowT("Team OREB%", "we get it back", me.tor, me.torOff, X.team.orp.avg, X.team.orp.top, fp, false, me.small));
-      P.appendChild(_rgRowT("DER", "points we allow · ↓ better", me.der, me.derOff, X.team.der.avg, X.team.der.top, f1, true, me.small));
+      P.appendChild(_rgRowT("Team DREB%", "box out: we grab it", me.tdr, me.tdrOff, X.team.drp, fp, false, me.small));
+      P.appendChild(_rgRowT("Team OREB%", "we get it back", me.tor, me.torOff, X.team.orp, fp, false, me.small));
+      P.appendChild(_rgRowT("DER", "points we allow · ↓ better", me.der, me.derOff, X.team.der, f1, true, me.small));
       /* ---- game by game: one square a game, its colour where he stood that night */
       const rows=me.rows.filter(r=>r.min>0), N=rows.length;
       if(N){
@@ -30383,10 +30417,16 @@ function _rgBlock(nm){
       const ord=n=>n+(n%10===1&&n%100!==11? "st" : n%10===2&&n%100!==12? "nd" : n%10===3&&n%100!==13? "rd" : "th");
       wrap.appendChild(tag("The team"));
       const T=h("div",{class:"rg-p"}); wrap.appendChild(T);
-      T.appendChild(_rgKey("goal 1 · BBL average", "goal 2 · playoff level"));
-      T.appendChild(_rgRow("DREB%", "team", tm.us.drp, tm.drp.avg, tm.drp.top, fp, false, ord(tm.drp.rank)+" of "+tm.n));
-      T.appendChild(_rgRow("OREB%", "team", tm.us.orp, tm.orp.avg, tm.orp.top, fp, false, ord(tm.orp.rank)+" of "+tm.n));
-      T.appendChild(_rgRow("DER", "team", tm.us.der, tm.der.avg, tm.der.top, f1, true, ord(tm.der.rank)+" of "+tm.n));
+      const tRow=(lab, v, G, fmt, low)=>{ const R=_rgLadder(v, [{ v:G.avg, name:"BBL avg" }, { v:G.top, name:"playoff" }, { v:G.top3, name:"top 3" }, { v:G.best, name:"best" }], low);
+        const st=R.reached===0? "u" : R.reached===1? "a" : "t", mark=["✕", "✓", "✓✓", "✓✓✓", "★"][Math.min(4, R.reached)];
+        return h("div",{class:"rg-row"}, h("div",{class:"rg-lb"}, h("b",{}, lab), h("i",{},"team")),
+          (R.n1 && R.n2)? _rgBar(v, R.n1.v, R.n2.v, low, fmt, null, st, [R.n1.name, R.n2.name]) : h("span",{class:"rg-na"},"–"),
+          h("div",{class:"rg-v "+st}, h("b",{}, fmt(v)), h("i",{}, ord(G.rank)+" of "+tm.n)), h("span",{class:"rg-ok "+st}, mark)); };
+      T.appendChild(h("div",{class:"rg-key"}, h("span",{}, h("s",{class:"k1"}), h("s",{class:"k2"}), " next two goals"),
+        h("span",{}, h("em",{class:"u"},"✕"), " under the BBL average"), h("span",{}, h("em",{class:"a"},"✓"), " BBL average"), h("span",{}, h("em",{class:"t"},"✓✓"), " playoff"), h("span",{}, h("em",{class:"t"},"✓✓✓"), " top 3")));
+      T.appendChild(tRow("DREB%", tm.us.drp, tm.drp, fp, false));
+      T.appendChild(tRow("OREB%", tm.us.orp, tm.orp, fp, false));
+      T.appendChild(tRow("DER", tm.us.der, tm.der, f1, true));
     }
     wrap.appendChild(h("div",{class:"dash-src rg-src"}, "BBL data, updated after every game · "+X.games.length+" games · last "+_dashFmt(X.last)+" · per 40′ from the league’s season lines, the % and DER from the play by play · goal 1 the median of your position (DER: the BBL average), goal 2 its top 25% (DER: the 6th best defence)"));
   }).catch(e=>{ _quiet(e); first.innerHTML=""; first.appendChild(h("div",{class:"dash-miss"},"The league’s games could not be read.")); });
@@ -40380,8 +40420,15 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-mini .rs-rich{min-height:0;padding:4px 8px;font-size:11.5px;line-height:1.35}
 .dash-mini .rs-rich ul{margin:0;padding-left:15px}
 /* scouting notes: one tab a concept, How to defend and How to attack under it */
-.dash-pk{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));border:1px solid #d9dce2;border-radius:10px;overflow:hidden;background:var(--panel,#fff)}
-.dash-pk .col{padding:9px 14px;min-width:0;border-left:1px solid #e6ebf2}.dash-pk .col:first-child{border-left:0}
+/* THE POST GAME'S KEY IDEAS RUN ON FROM COLUMN TO COLUMN (Oriol, 9/11/2026: "individual offense
+   y defense ocupan muy poco y lo otro mucho en altura, queda fatal"): one box a column made our
+   offense and defense three times the height of the individual boxes beside them, with white under
+   those. Now the boxes flow in order through columns of the same height, a box broken between two
+   columns keeping its colour on both sides, a title never left at the foot of a column */
+.dash-pk{display:block;column-width:280px;column-gap:0;column-rule:1px solid #e6ebf2;border:1px solid #d9dce2;border-radius:10px;overflow:hidden;background:var(--panel,#fff)}
+.dash-pk .col{display:block;padding:9px 14px;min-width:0;break-inside:auto;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.dash-pk .sl,.dash-pk .gh{break-after:avoid;page-break-after:avoid}
+.dash-pk li,.dash-pk .solo{break-inside:avoid;page-break-inside:avoid}
 .dash-pk .col.o{background:#f5f8fc}.dash-pk .col.d{background:#fdf6f4}
 .dash-pk .sl{font:700 11px Oswald,sans-serif;letter-spacing:.14em;text-transform:uppercase;margin-bottom:5px;color:#141821}
 .dash-pk .col.o .sl{color:#2f5c8f}.dash-pk .col.d .sl{color:#b6472e}
@@ -41425,6 +41472,9 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .rg-key s{display:inline-block;width:3px;height:12px;border-radius:1px;background:#5b6472}.rg-key s.k2{width:4px;background:#a9812f}
 .rg-key em{font-style:normal;font-weight:700}.rg-key em.t{color:#a9812f}.rg-key em.a{color:var(--ink,#141821)}.rg-key em.u{color:#c0403c}
 .rg-key s.ko{width:0;background:none;border-left:2px dashed #8a93a2}
+.rg-key s + s{margin-left:-2px}
+.rg-bar .l1 em,.rg-bar .l2 em{font-style:normal;font-weight:500;opacity:.85}
+@media (max-width:600px){ .rg-bar .l1 em,.rg-bar .l2 em{display:none} }
 /* a game in balls: one ball one rebound, in his own minutes */
 .rg-bh{margin-top:8px}
 .rg-bw{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px 28px;padding:4px 0 8px}
