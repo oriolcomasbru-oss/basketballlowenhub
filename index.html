@@ -12827,7 +12827,10 @@ function _preFindBox(pos, C, redraw){
    The league is the pool its leaders are drawn from; a man outside it is judged against it. */
 const PRE_HL_STAT={ "PTS/G":["pts",false,1], "AST/G":["ast",false,1], "OREB/G":["oreb",false,1], "STL/G":["stl",false,1], "SHOT%":["shot",false,1], "2PT/G":["p2",true,15], "3PT/G":["p3",true,15], "FT%":["ft",true,10] };
 const PRE_HL_SHOT={ p3:{ m:"p3m", a:"p3a", min:10, perG:1.5, low:0.30, good:34, what:"threes", tag:"3P%" },
-  p2:{ m:"p2m", a:"p2a", min:12, perG:2, low:0.45, good:56, what:"twos", tag:"2P%" },
+  /* a big is asked more from two (Oriol, 9/11/2026: "pide más para un pívot"): the BBL's PF and C
+     shoot 59-61% from two against 52% for its guards and 56% for the whole league (official lines,
+     40% of the games and 10 minutes, 12 twos and 2 a game) - a PF or C on the card from 60% */
+  p2:{ m:"p2m", a:"p2a", min:12, perG:2, low:0.45, good:56, goodBig:60, what:"twos", tag:"2P%" },
   ft:{ m:"ftm", a:"fta", min:8, perG:0, low:0.65, what:"free throws", tag:"FT%" } };
 const _preHlShotOk=(t, S)=>(t.gp||0)>=3 && (t[S.a]||0)>=S.min && (t[S.a]||0)/(t.gp||1)>=S.perG;
 /* his line: in the league's pool, or - with too few games or minutes for it - his club's own */
@@ -12870,8 +12873,9 @@ function _preHlRanks(L, c, tid){
         if(rb<=10 && (!best || rb<best.score)) best={ score:rb, hot:true, why:ord(rb)+" BBL · in "+S.tag+", "+pc(mine)+" on "+t[S.a]+" "+S.what };
         else if(!best && S.good!=null){
           /* judged on the percentage the card shows, rounded as it is: a 34% that reads 34% is in */
-          if(Math.round(100*mine)>=S.good){ const s=ref.concat([mine]).sort((a,b)=>a-b), mid=s[Math.floor(s.length/2)];
-            best={ score:30, warm:true, why:"GOOD · "+pc(mine)+" on "+t[S.a]+" "+S.what+" · marked from "+S.good+"%, the BBL's middle man shoots "+pc(mid) }; } }
+          const big=S.goodBig!=null && /^(PF|C)$/i.test(String(c.pos||"").trim()), line=big? S.goodBig : S.good;
+          if(Math.round(100*mine)>=line){ const s=ref.concat([mine]).sort((a,b)=>a-b), mid=s[Math.floor(s.length/2)];
+            best={ score:30, warm:true, why:"GOOD · "+pc(mine)+" on "+t[S.a]+" "+S.what+" · "+(big? "a PF or C is marked from "+line+"%, the BBL's bigs shoot about 60%" : "marked from "+line+"%, the BBL's middle man shoots "+pc(mid)) }; } }
         else if(!best && top!=null && mine>=top) best={ score:30, warm:true, why:"TOP 25% · "+pc(mine)+" on "+t[S.a]+" "+S.what+" · the BBL's top quarter starts at "+pc(top) }; }
       return best; }
     if(!counts) return null;
