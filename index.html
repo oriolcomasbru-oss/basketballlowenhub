@@ -30044,7 +30044,8 @@ async function _playerDash(root, who){
         h("span",{class:"lg-month"}, new Date(ym+"-01T00:00:00").toLocaleDateString("en-GB",{month:"long",year:"numeric"})),
         h("button",{type:"button", class:"btn sm", "aria-label":"Month after", onclick:()=>go(1)},"›"),
         ym!==now? h("button",{type:"button", class:"btn sm", onclick:()=>{ _pdCalMonth=""; drawCal(); }},"This month") : null);
-      try{ bCal.appendChild(_lgCalBody(L, tid, ym, _lgPanel("Calendar & results", nav))); }
+      /* (the section's dark band already says "Calendar & results": the panel keeps only its months) */
+      try{ bCal.appendChild(_lgCalBody(L, tid, ym, _lgPanel("", nav))); }
       catch(e){ bCal.innerHTML=""; bCal.appendChild(h("div",{class:"dash-miss"},"The league's calendar could not be read.")); }
       return true; };
     if(!drawCal()){ try{ Promise.resolve(syncLeague(false)).then(()=>{ if(bCal.isConnected && !drawCal()) { bCal.innerHTML=""; bCal.appendChild(h("div",{class:"dash-miss"},"The league's calendar is not in yet.")); } }).catch(()=>{}); }catch(e){_quiet(e)} } }
@@ -41516,6 +41517,14 @@ body.dark .rg-bar .me.u{background:#e06a64}body.dark .rg-bar .me.t{background:#d
 body.dark .rg-bar .l2{color:#e3c27a}body.dark .rg-bar .l1{color:#aab1bd}
 body.dark .rg-gg .c.u{background:#4a2624;color:#ff9c95}body.dark .rg-gg .c.a{background:#333a45;color:#e8eaee}body.dark .rg-gg .c.t{background:#4a3d22;color:#e3c27a}
 .p3-tag{font:600 11px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint,#8a93a2);margin:16px 2px 6px}
+/* THE PLAYER'S SECTIONS AS THE STAFF'S CARDS (Oriol, 9/11/2026: "separa las secciones más claras, como
+   con Ramón o con Oriol"): each title is the cards' dark band, its section the white body under it */
+.pd3 .p3-tag{display:flex;align-items:center;min-height:34px;margin:22px 0 0;padding:8px 14px;background:#141821;color:#fff;
+  font:700 12px 'Oswald',sans-serif;letter-spacing:.17em;border-radius:12px 12px 0 0}
+.pd3 .p3-tag + *{margin-top:0!important;border:1px solid var(--line,#e4e7ec);border-top:0!important;border-radius:0 0 12px 12px!important;background:var(--panel,#fff)}
+.pd3 .p3-tag + .p3-games,.pd3 .p3-tag + .p3-cal{padding:12px}
+.pd3 .p3-cal .lg-panel{border:0;box-shadow:none;padding:0;margin:0;background:transparent}
+.pd3 .p3-cal .lg-h > span:empty{display:none}
 .p3-now{background:var(--panel,#fff);border-radius:14px;padding:16px 18px;border-top:5px solid #8a2f2b;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 18px;align-items:center}
 .p3-now > i{grid-column:1/-1;font:600 11px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
 .p3-now .big{font:700 52px/1 'Oswald',sans-serif}
