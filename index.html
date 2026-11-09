@@ -6086,7 +6086,15 @@ let SB_SCOPE=null;
    network may be down, the row may not exist yet. That direction matters: a failure
    leaves a player with less, never with more. */
 const PLAYER_VIEW_KEY="settings:playerview";
-const PLAYER_VIEW_DEFAULT={ sects:["oppscout"], blocks:["stats","positions","roles"] };
+const PLAYER_VIEW_DEFAULT={ sects:["oppscout"], blocks:["stats","positions","roles"], dash:[] };
+/* THE PARTS OF A PLAYER'S OWN DASHBOARD THE STAFF CAN HOLD BACK (Oriol, 9/11/2026: the rebounding and
+   defense goals off for the players for now - the staff, looking at a player's dashboard, still sees
+   them, marked). Not in the saved setting = hidden from players */
+const PLAYER_DASH=[
+  ["goals","Your goals · rebounding and defense"],
+  ["gbg","Game by game"],
+  ["team","The team"]
+];
 /* EVERY PART OF A PRE-GAME REPORT, in the order it is drawn. The first version of this
    list had the five parts that seemed likely and quietly decided the rest for him, which
    is not a setting, it is a preference of mine with a checkbox next to it. The whole
@@ -6104,7 +6112,7 @@ const PLAYER_BLOCKS=[
   ["tagging","Opponent tagging"],
   ["colourkey","Colour key"]
 ];
-let PLAYER_VIEW={ sects:PLAYER_VIEW_DEFAULT.sects.slice(), blocks:PLAYER_VIEW_DEFAULT.blocks.slice() };
+let PLAYER_VIEW={ sects:PLAYER_VIEW_DEFAULT.sects.slice(), blocks:PLAYER_VIEW_DEFAULT.blocks.slice(), dash:PLAYER_VIEW_DEFAULT.dash.slice() };
 function isPlayerUser(){ return SB_SCOPE==="player"; }
 /* may a player see this part of a pre-game report */
 /* READERS: staff who read the club and its opponents but do not work on the reports.
@@ -6116,6 +6124,10 @@ const READERS={ Fabienne:{ sects:["league","oppscout"] } };
 function isReader(){ return !isPlayerUser() && !!(currentUser && READERS[currentUser]); }
 function viewsAsPlayer(){ return isPlayerUser() || isReader(); }
 function playerBlockOk(id){ return !viewsAsPlayer() || PLAYER_VIEW.blocks.indexOf(id)>=0; }
+/* may this part of the player's own dashboard be shown: to a player (or the staff viewing as one) only when
+   switched on; the staff always see it */
+function playerDashOn(id){ return (PLAYER_VIEW.dash||[]).indexOf(id)>=0; }
+function playerDashOk(id){ return !isPlayerUser() || playerDashOn(id); }
 function applyRoleFloor(u){
   if(SB_SCOPE!=="player") return;
   ensurePerms();
@@ -6132,7 +6144,8 @@ async function loadPlayerView(){
     const d=r&&r.ok&&r.report&&r.report.data;
     if(d&&Array.isArray(d.sects)&&Array.isArray(d.blocks))
       got={ sects:d.sects.filter(k=>SECT_KEYS.indexOf(k)>=0),
-            blocks:d.blocks.filter(k=>PLAYER_BLOCKS.some(b=>b[0]===k)) };
+            blocks:d.blocks.filter(k=>PLAYER_BLOCKS.some(b=>b[0]===k)),
+            dash:(Array.isArray(d.dash)? d.dash : []).filter(k=>PLAYER_DASH.some(b=>b[0]===k)) };
   }catch(e){_quiet(e)}
   if(!got) return false;
   PLAYER_VIEW=got;
@@ -6143,8 +6156,8 @@ async function loadPlayerView(){
   }
   return true;
 }
-async function savePlayerView(sects, blocks){
-  const body={ sects:sects.slice(), blocks:blocks.slice() };
+async function savePlayerView(sects, blocks, dash){
+  const body={ sects:sects.slice(), blocks:blocks.slice(), dash:(dash||PLAYER_VIEW.dash||[]).slice() };
   const r=await sbrpc("save_report",{p_token:SB_TOKEN,p_key:PLAYER_VIEW_KEY,p_kind:"settings",
     p_opponent:"",p_date:null,p_data:body,p_html:null});
   if(!r||r.ok!==true) throw new Error((r&&r.error)||"Could not save");
@@ -6346,7 +6359,7 @@ async function refreshAdmin(body){
     body.appendChild(s); }
 
   /* ---- PLAYERS: the same for every player, one setting for the squad */
-  { const sects=PLAYER_VIEW.sects.slice(), blocks=PLAYER_VIEW.blocks.slice();
+  { const sects=PLAYER_VIEW.sects.slice(), blocks=PLAYER_VIEW.blocks.slice(), dash=(PLAYER_VIEW.dash||[]).slice();
     const btn=h("button",{class:"btn sm primary"},"Save for all players"); btn.disabled=true;
     const note=h("span",{class:"adm-pv-note"},"");
     const s=sec("Players · what every player sees", "the same for all of them · each one picks it up the next time he signs in", h("span",{}, note, btn));
@@ -6357,8 +6370,9 @@ async function refreshAdmin(body){
         return h("label",{class:"adm-chip"}, cb, h("span",{}, "👁 "+l)); }));
     s.appendChild(tbl("Screens", SECT_KEYS.filter(k=>!sectHidden(k)).map(k=>[k,SECT_LABELS[k]||k]), sects));
     s.appendChild(tbl("Inside a published pre game", PLAYER_BLOCKS, blocks));
+    s.appendChild(tbl("Inside the player's dashboard", PLAYER_DASH, dash));
     btn.onclick=async ()=>{ btn.disabled=true; note.textContent="Saving…";
-      try{ await savePlayerView(sects, blocks); note.textContent="Saved"; note.className="adm-pv-note ok"; }
+      try{ await savePlayerView(sects, blocks, dash); note.textContent="Saved"; note.className="adm-pv-note ok"; }
       catch(e){ note.textContent="Could not save: "+((e&&e.message)||e); note.className="adm-pv-note bad"; btn.disabled=false; } };
     body.appendChild(s); }
 
@@ -30314,17 +30328,23 @@ const _rgKeyT=()=>h("div",{class:"rg-key"}, h("span",{}, h("s",{class:"ko"}), "w
    others: his goals, game by game, the team */
 function _rgBlock(nm){
   const wrap=h("div",{class:"rg"});
-  const tag=t=>h("div",{class:"p3-tag"}, t);
+  /* each section only where it may be shown: a player sees it when the staff switched it on in Players ·
+     what every player sees; the staff always see it, the band saying when the players do not */
+  const tag=(t, id)=>h("div",{class:"p3-tag"}, t, (id && !isPlayerUser() && !playerDashOn(id))? h("span",{class:"p3-hid", title:"Switched off in Settings › Players · what every player sees"}, "hidden from players") : null);
+  const into=id=>playerDashOk(id)? wrap : h("div",{});
+  const shown=PLAYER_DASH.filter(([k])=>playerDashOk(k));
+  if(!shown.length) return wrap;
   const first=h("div",{class:"rg-p"}, h("div",{class:"ld dash-ld"},"Reading the league’s games…", h("span",{class:"ld-bar"})));
-  wrap.appendChild(tag("Your goals · rebounding and defense")); wrap.appendChild(first);
+  wrap.appendChild(tag(shown[0][1], shown[0][0])); wrap.appendChild(first);
   _rgLoad().then(D=>{ wrap.innerHTML="";
     const man=_gpNickMan(nm, D.list.filter(p=>p.tid===D.us));
     const X=_rgCompute(D, man);
     const f1=v=>v==null? "–" : (Math.round(v*10)/10).toFixed(1), f2=v=>v==null? "–" : (Math.round(v*100)/100).toFixed(2), fp=v=>v==null? "–" : f1(v)+"%";
     const POSN={ PG:"point guards", SG:"shooting guards", SF:"small forwards", PF:"power forwards", C:"centers" };
     /* ---- his goals */
-    wrap.appendChild(tag("Your goals · rebounding and defense"));
-    const P=h("div",{class:"rg-p"}); wrap.appendChild(P);
+    const W1=into("goals");
+    W1.appendChild(tag("Your goals · rebounding and defense", "goals"));
+    const P=h("div",{class:"rg-p"}); W1.appendChild(P);
     if(!X.me){ P.appendChild(h("div",{class:"dash-miss"},"Your line in the league could not be found.")); }
     else { const me=X.me, Lp=X.lines[me.pos]||{ d40:[], o40:[], drp:[], orp:[] }, pg=v=>v==null || !me.mpg? null : f1(v*me.mpg/40)+" a game";
       /* few games yet: the numbers are there, the marks wait (the minimum-sample rule: 5 games) */
@@ -30364,8 +30384,9 @@ function _rgBlock(nm){
       /* ---- game by game: one square a game, its colour where he stood that night */
       const rows=me.rows.filter(r=>r.min>0), N=rows.length;
       if(N){
-        wrap.appendChild(tag("Game by game"));
-        const G=h("div",{class:"rg-gg", style:"--n:"+N}); wrap.appendChild(h("div",{class:"rg-p rg-ggw"}, G));
+        const W2=into("gbg");
+        W2.appendChild(tag("Game by game", "gbg"));
+        const G=h("div",{class:"rg-gg", style:"--n:"+N}); W2.appendChild(h("div",{class:"rg-p rg-ggw"}, G));
         G.appendChild(h("span",{class:"hd"}));
         rows.forEach(r=>{ const t=r.home? (r.g.awayTlc||r.g.away||"") : (r.g.homeTlc||r.g.home||"");
           G.appendChild(h("span",{class:"hd "+(r.w? "w" : "l"), title:(r.home? "vs " : "@ ")+r.opp+" · "+_dashFmt(r.g.date)+" · "+r.sc}, String(t).slice(0,3).toUpperCase())); });
@@ -30398,8 +30419,9 @@ function _rgBlock(nm){
     /* ---- the team */
     const tm=X.team; if(tm.us){
       const ord=n=>n+(n%10===1&&n%100!==11? "st" : n%10===2&&n%100!==12? "nd" : n%10===3&&n%100!==13? "rd" : "th");
-      wrap.appendChild(tag("The team"));
-      const T=h("div",{class:"rg-p"}); wrap.appendChild(T);
+      const W3=into("team");
+      W3.appendChild(tag("The team", "team"));
+      const T=h("div",{class:"rg-p"}); W3.appendChild(T);
       const tRow=(lab, v, G, fmt, low)=>{ const r=_rgReached(v, G.avg, G.top, low);
         const st=["u", "a", "t"][r], mark=["✕", "✓", "✓✓"][r];
         return h("div",{class:"rg-row"}, h("div",{class:"rg-lb"}, h("b",{}, lab), h("i",{},"team")),
@@ -41525,6 +41547,7 @@ body.dark .rg-gg .c.u{background:#4a2624;color:#ff9c95}body.dark .rg-gg .c.a{bac
 .pd3 .p3-tag + .p3-games,.pd3 .p3-tag + .p3-cal{padding:12px}
 .pd3 .p3-cal .lg-panel{border:0;box-shadow:none;padding:0;margin:0;background:transparent}
 .pd3 .p3-cal .lg-h > span:empty{display:none}
+.pd3 .p3-hid{margin-left:auto;font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.04em;text-transform:none;background:rgba(243,217,142,.16);color:#f3d98e;border-radius:999px;padding:2px 9px;white-space:nowrap}
 .p3-now{background:var(--panel,#fff);border-radius:14px;padding:16px 18px;border-top:5px solid #8a2f2b;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 18px;align-items:center}
 .p3-now > i{grid-column:1/-1;font:600 11px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
 .p3-now .big{font:700 52px/1 'Oswald',sans-serif}
