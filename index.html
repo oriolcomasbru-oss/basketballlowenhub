@@ -30223,7 +30223,11 @@ function _rgCompute(D, man){
      a box-out shows here, not in his own line; measured against the team's goals, not a position */
   const Tu=T[us]||null;
   me.tdr=s[4]? 100*s[6]/s[4] : null; me.tor=s[3]? 100*s[5]/s[3] : null;
-  me.tdrOff=(Tu && Tu.dC-s[4]>=20)? 100*(Tu.dr-s[6])/(Tu.dC-s[4]) : null; me.torOff=(Tu && Tu.oC-s[3]>=20)? 100*(Tu.or-s[5])/(Tu.oC-s[3]) : null;
+  /* "without you" only on a sample that says something: 40 rebounds there were without him (a starter's
+     bench minutes are few) */
+  me.tdrOff=(Tu && Tu.dC-s[4]>=40)? 100*(Tu.dr-s[6])/(Tu.dC-s[4]) : null; me.torOff=(Tu && Tu.oC-s[3]>=40)? 100*(Tu.or-s[5])/(Tu.oC-s[3]) : null;
+  me.teamSeason=Tu? { drp:100*Tu.dr/Tu.dC, orp:100*Tu.or/Tu.oC, der:100*Tu.op/Tu.opPoss } : null;
+  me.small=(man.gp||0)<5;
   let dp=0, dpts=0; const rows=[];
   D.games.filter(g=>String(g.homeId)===us || String(g.awayId)===us).sort((a,b)=>a.date<b.date? -1 : 1).forEach(g=>{
     const A=D.C[g.id]; let p=null, u=null;
@@ -30234,6 +30238,8 @@ function _rgCompute(D, man){
     rows.push({ g:g, opp:opp, home:home, w:our>their, sc:our+"–"+their, min:p? p[0]/60 : 0, or:p? p[1] : 0, dr:p? p[2] : 0, oA:p? p[3] : 0, dA:p? p[4] : 0, oT:p? (p[5]||0) : 0, dT:p? (p[6]||0) : 0,
       dp:u? u[0] : 0, dpts:u? u[1] : 0 }); });
   me.der=dp? 100*dpts/dp : null; me.derPoss=dp; me.rows=rows;
+  /* the team's defence without him: 60 possessions at least */
+  me.derOff=(Tu && Tu.opPoss-dp>=60)? 100*(Tu.op-dpts)/(Tu.opPoss-dp) : null;
   out.me=me;
   return out;
 }
@@ -30243,29 +30249,54 @@ const RG_STW={ u:"Under goal 1", a:"Goal 1 reached", t:"Goal 2 reached" };
 /* A ROW: the number, a bar with its two goals, a mark. Players read it at a glance (Oriol, 9/11/2026:
    "más visual y simple, demasiado texto; son jugadores"): a longer bar is better whichever way the
    number runs, the goals are two ticks with their numbers, and the mark says where he is */
-function _rgBar(v, g1, g2, low, fmt){
-  const vals=[v, g1, g2].filter(x=>x!=null);
+function _rgBar(v, g1, g2, low, fmt, off, st0){
+  const vals=[v, g1, g2, off].filter(x=>x!=null);
   let lo=0, hi=Math.max(...vals)*1.3;
   if(low){ hi=Math.max(...vals)+12; lo=Math.max(0, Math.min(...vals)-12); }
   const x=t=>{ const f=low? (hi-t)/(hi-lo) : (t-lo)/(hi-lo); return Math.max(0, Math.min(100, 100*f)); };
-  const st=_rgSt(v, g1, g2, low), a=Math.min(x(g1), x(g2)), b=Math.max(x(g1), x(g2));
+  const st=st0!==undefined? st0 : _rgSt(v, g1, g2, low), a=Math.min(x(g1), x(g2)), b=Math.max(x(g1), x(g2));
   const at=p=>p>55? "right:"+(100-p)+"%" : "left:"+p+"%";
   return h("div",{class:"rg-bar"},
     h("span",{class:"tr"}), h("span",{class:"zn", style:"left:"+a+"%;width:"+(b-a)+"%"}),
     v!=null? h("span",{class:"me "+st, style:"width:"+x(v)+"%"}) : null,
+    /* the team without him: a dashed mark, the first step is to be past it */
+    off!=null? h("span",{class:"off", style:"left:"+x(off)+"%"}) : null,
     h("span",{class:"g1", style:"left:"+x(g1)+"%"}), h("span",{class:"g2", style:"left:"+x(g2)+"%"}),
     h("span",{class:"l2", style:at(x(g2))}, fmt(g2)), h("span",{class:"l1", style:at(x(g1))}, fmt(g1)));
 }
-function _rgRow(lab, unit, v, g1, g2, fmt, low, sub){
-  const st=_rgSt(v, g1, g2, low);
-  return h("div",{class:"rg-row", title:st? RG_STW[st] : ""},
+/* his own numbers: ✓✓ goal 2, ✓ goal 1, ✕ not yet - none while the sample is small (under 5 games) */
+function _rgRow(lab, unit, v, g1, g2, fmt, low, sub, small){
+  const st=small? "" : _rgSt(v, g1, g2, low);
+  return h("div",{class:"rg-row", title:st? RG_STW[st] : (small? "Small sample: the marks start at 5 games" : "")},
     h("div",{class:"rg-lb"}, h("b",{}, lab), unit? h("i",{}, unit) : null),
-    (g1!=null && g2!=null)? _rgBar(v, g1, g2, low, fmt) : h("span",{class:"rg-na"},"–"),
+    (g1!=null && g2!=null)? _rgBar(v, g1, g2, low, fmt, null, st) : h("span",{class:"rg-na"},"–"),
     h("div",{class:"rg-v "+st}, h("b",{}, v==null? "–" : fmt(v)), sub? h("i",{}, sub) : null),
-    h("span",{class:"rg-ok "+st}, st==="t"? "✓✓" : st==="a"? "✓" : st==="u"? "✕" : ""));
+    h("span",{class:"rg-ok "+(st||"n")}, st==="t"? "✓✓" : st==="a"? "✓" : st==="u"? "✕" : "·"));
+}
+/* THE TEAM WITH HIM ON COURT, FAIR TO HIM (Oriol, 9/11/2026: "¿crees que es justo?"). The team is
+   18th in DREB% and 17th in DER, so against the BBL alone nearly everybody was red whatever he did.
+   The first step is his own: the team is better with him than without him (✓); then the BBL average
+   (✓✓) and the playoff level (✓✓✓). Without enough minutes without him, the first step is not judged */
+/* (a difference smaller than tol - a point of a share, two of DER - is "about the same": no ✕ for noise) */
+function _rgSt3(v, off, g1, g2, low, tol){ if(v==null) return "";
+  const ge=(a, b)=>b!=null && (low? a<=b : a>=b);
+  if(ge(v, g2)) return "t3"; if(ge(v, g1)) return "t2"; if(off==null) return "n";
+  const d=low? off-v : v-off; return d>=(tol||0)? "a" : d<=-(tol||0)? "u" : "e"; }
+function _rgRowT(lab, unit, v, off, g1, g2, fmt, low, small){
+  let st=_rgSt3(v, off, g1, g2, low, low? 2 : 1); if(small) st="n";
+  const cls=st==="t3"||st==="t2"? "t" : st==="e"? "n" : st;
+  const mark={ t3:"✓✓✓", t2:"✓✓", a:"✓", u:"✕", n:"·", e:"=" }[st]||"";
+  const tip={ t3:"Playoff level with you on court", t2:"BBL average with you on court", a:"The team is better with you than without you", u:"The team is not better with you yet", e:"About the same with you and without you", n:"Not enough minutes to compare yet" }[st]||"";
+  return h("div",{class:"rg-row", title:tip},
+    h("div",{class:"rg-lb"}, h("b",{}, lab), unit? h("i",{}, unit) : null),
+    (g1!=null && g2!=null)? _rgBar(v, g1, g2, low, fmt, off, cls) : h("span",{class:"rg-na"},"–"),
+    h("div",{class:"rg-v "+cls}, h("b",{}, v==null? "–" : fmt(v)), h("i",{}, off!=null? "without you "+fmt(off) : "")),
+    h("span",{class:"rg-ok "+(cls||"n")}, mark));
 }
 const _rgKey=(k1, k2)=>h("div",{class:"rg-key"}, h("span",{}, h("s",{class:"k1"}), k1), h("span",{}, h("s",{class:"k2"}), k2),
   h("span",{}, h("em",{class:"t"},"✓✓"), " goal 2"), h("span",{}, h("em",{class:"a"},"✓"), " goal 1"), h("span",{}, h("em",{class:"u"},"✕"), " not yet"));
+const _rgKeyT=()=>h("div",{class:"rg-key"}, h("span",{}, h("s",{class:"ko"}), "without you"), h("span",{}, h("s",{class:"k1"}), "BBL average"), h("span",{}, h("s",{class:"k2"}), "playoff level"),
+  h("span",{}, h("em",{class:"a"},"✓"), " better with you"), h("span",{}, h("em",{class:"t"},"✓✓"), " BBL average"), h("span",{}, h("em",{class:"t"},"✓✓✓"), " playoff"), h("span",{}, h("em",{class:"n"},"="), " same"));
 /* THE PLAYER'S GOALS, in the dashboard's own sections - a tag and a white panel each, like the
    others: his goals, game by game, the team */
 function _rgBlock(nm){
@@ -30283,12 +30314,14 @@ function _rgBlock(nm){
     const P=h("div",{class:"rg-p"}); wrap.appendChild(P);
     if(!X.me){ P.appendChild(h("div",{class:"dash-miss"},"Your line in the league could not be found.")); }
     else { const me=X.me, Lp=X.lines[me.pos]||{ d40:[], o40:[], drp:[], orp:[] }, pg=v=>v==null || !me.mpg? null : f1(v*me.mpg/40)+" a game";
-      P.appendChild(h("div",{class:"rg-who"}, "vs the BBL’s "+(POSN[me.pos]||"players")));
+      /* few games yet: the numbers are there, the marks wait (the minimum-sample rule: 5 games) */
+      if(me.small) P.appendChild(h("div",{class:"rg-small"}, h("b",{}, String(me.gp||0)+" games"), " · small sample, the ✓ and ✕ start at 5 games"));
+      P.appendChild(h("div",{class:"rg-who"}, "What you grab · vs the BBL’s "+(POSN[me.pos]||"players")));
       P.appendChild(_rgKey("goal 1 · BBL median", "goal 2 · top 25%"));
-      P.appendChild(_rgRow("Def. rebounds", "per 40′", me.d40, Lp.d40[0], Lp.d40[1], f2, false, pg(me.d40)));
-      P.appendChild(_rgRow("Off. rebounds", "per 40′", me.o40, Lp.o40[0], Lp.o40[1], f2, false, pg(me.o40)));
-      P.appendChild(_rgRow("Your DREB%", "their misses you grab", me.drp, Lp.drp[0], Lp.drp[1], fp, false));
-      P.appendChild(_rgRow("Your OREB%", "our misses you grab", me.orp, Lp.orp[0], Lp.orp[1], fp, false));
+      P.appendChild(_rgRow("Def. rebounds", "per 40′", me.d40, Lp.d40[0], Lp.d40[1], f2, false, pg(me.d40), me.small));
+      P.appendChild(_rgRow("Off. rebounds", "per 40′", me.o40, Lp.o40[0], Lp.o40[1], f2, false, pg(me.o40), me.small));
+      P.appendChild(_rgRow("Your DREB%", "their misses you grab", me.drp, Lp.drp[0], Lp.drp[1], fp, false, null, me.small));
+      P.appendChild(_rgRow("Your OREB%", "our misses you grab", me.orp, Lp.orp[0], Lp.orp[1], fp, false, null, me.small));
       /* goal 1 in his own minutes and every five minutes on the floor */
       if(me.mpg && Lp.d40[0]!=null){ const c=(n, t)=>h("span",{class:"rg-chip"}, h("b",{}, n), t);
         P.appendChild(h("div",{class:"rg-chips"}, h("i",{},"Goal 1 for you"),
@@ -30296,11 +30329,11 @@ function _rgBlock(nm){
           c(f2(Lp.d40[0]/8), " def. every 5′"), c(f2(Lp.o40[0]/8), " off. every 5′"))); }
       /* the team with him on the floor: his box-outs show here; the team's goals, no position */
       P.appendChild(h("div",{class:"rg-sep"}));
-      P.appendChild(h("div",{class:"rg-who"}, "The team with you on court"));
-      P.appendChild(_rgKey("goal 1 · BBL average", "goal 2 · playoff level"));
-      P.appendChild(_rgRow("Team DREB%", "you on court", me.tdr, X.team.drp.avg, X.team.drp.top, fp, false, me.tdrOff!=null? "without you "+fp(me.tdrOff) : null));
-      P.appendChild(_rgRow("Team OREB%", "you on court", me.tor, X.team.orp.avg, X.team.orp.top, fp, false, me.torOff!=null? "without you "+fp(me.torOff) : null));
-      P.appendChild(_rgRow("DER", "you on court", me.der, X.team.der.avg, X.team.der.top, f1, true, "↓ = better"));
+      P.appendChild(h("div",{class:"rg-who"}, "The team with you on court · better with you?"));
+      P.appendChild(_rgKeyT());
+      P.appendChild(_rgRowT("Team DREB%", "box out: we grab it", me.tdr, me.tdrOff, X.team.drp.avg, X.team.drp.top, fp, false, me.small));
+      P.appendChild(_rgRowT("Team OREB%", "we get it back", me.tor, me.torOff, X.team.orp.avg, X.team.orp.top, fp, false, me.small));
+      P.appendChild(_rgRowT("DER", "points we allow · ↓ better", me.der, me.derOff, X.team.der.avg, X.team.der.top, f1, true, me.small));
       /* ---- game by game: one square a game, its colour where he stood that night */
       const rows=me.rows.filter(r=>r.min>0), N=rows.length;
       if(N){
@@ -30329,9 +30362,9 @@ function _rgBlock(nm){
           me.drp, sum("dA")? 100*sum("dr")/sum("dA") : null, 3, false, fp);
         line("OREB%", r=>{ const v=r.oA? 100*r.or/r.oA : null; return { v:v==null? "–" : String(Math.round(v)), st:r.oA>=10? _rgSt(v, Lp.orp[0], Lp.orp[1]) : "", t:fp(v)+" · "+r.or+" of "+r.oA }; },
           me.orp, sum("oA")? 100*sum("or")/sum("oA") : null, 3, false, fp);
-        line("Team DREB", r=>{ const v=r.dA? 100*r.dT/r.dA : null; return { v:v==null? "–" : String(Math.round(v)), st:r.dA>=10? _rgSt(v, X.team.drp.avg, X.team.drp.top) : "", t:"the team’s DREB% with you on: "+fp(v)+" · "+r.dT+" of "+r.dA }; },
+        line("Team DREB", r=>{ const v=r.dA? 100*r.dT/r.dA : null; return { v:v==null? "–" : String(Math.round(v)), st:r.dA>=10? _rgSt(v, me.teamSeason? me.teamSeason.drp : null, X.team.drp.avg) : "", t:"the team’s DREB% with you on: "+fp(v)+" · "+r.dT+" of "+r.dA+" · gold: BBL average or better, grey: better than we usually do" }; },
           me.tdr, sum("dA")? 100*sum("dT")/sum("dA") : null, 3, false, fp);
-        line("DER on", r=>{ const v=r.dp>=15? 100*r.dpts/r.dp : null; return { v:v==null? "–" : String(Math.round(v)), st:v==null? "" : _rgSt(v, X.team.der.avg, X.team.der.top, true), t:v==null? "too few possessions" : f1(v)+" in "+Math.round(r.dp)+" possessions" }; },
+        line("DER on", r=>{ const v=r.dp>=15? 100*r.dpts/r.dp : null; return { v:v==null? "–" : String(Math.round(v)), st:v==null? "" : _rgSt(v, me.teamSeason? me.teamSeason.der : null, X.team.der.avg, true), t:v==null? "too few possessions" : f1(v)+" in "+Math.round(r.dp)+" possessions · gold: BBL average or better, grey: better than we usually do" }; },
           me.der, sum("dp")? 100*sum("dpts")/sum("dp") : null, 5, true, f1);
       }
     }
@@ -41381,7 +41414,12 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .rg-key span{display:inline-flex;align-items:center;gap:5px}
 .rg-key s{display:inline-block;width:3px;height:12px;border-radius:1px;background:#5b6472}.rg-key s.k2{width:4px;background:#a9812f}
 .rg-key em{font-style:normal;font-weight:700}.rg-key em.t{color:#a9812f}.rg-key em.a{color:var(--ink,#141821)}.rg-key em.u{color:#c0403c}
-.rg-row{display:grid;grid-template-columns:118px minmax(0,1fr) 86px 30px;gap:12px;align-items:center;padding:7px 0;border-top:1px solid var(--line,#e4e7ec)}
+.rg-key s.ko{width:0;background:none;border-left:2px dashed #8a93a2}
+.rg-bar .off{position:absolute;top:8px;height:28px;width:0;margin-left:-1px;border-left:2px dashed #8a93a2}
+.rg-ok.n{color:var(--ink-faint,#8a93a2)}.rg-key em.n{color:var(--ink-faint,#8a93a2)}
+.rg-small{font-size:12.5px;color:#7a5c12;background:#f6efe0;border-radius:8px;padding:6px 10px;margin-bottom:4px}.rg-small b{font-weight:700}
+body.dark .rg-small{background:#4a3d22;color:#e3c27a}
+.rg-row{display:grid;grid-template-columns:118px minmax(0,1fr) 92px 34px;gap:12px;align-items:center;padding:7px 0;border-top:1px solid var(--line,#e4e7ec)}
 .rg-key + .rg-row{border-top:0}
 .rg-lb b{display:block;font:700 13.5px 'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.05em;color:var(--ink,#141821)}
 .rg-lb i{font:500 10.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
