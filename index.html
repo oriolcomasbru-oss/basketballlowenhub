@@ -28973,7 +28973,7 @@ function _dashRosterInto(box, g, wide){
           (p.last===false)? h("em",{title:"Did not play their last game"},"?") : null,
           cd && cd.badge==="NEW"? h("span",{class:"new"},"NEW") : null,
           (cd && cd.hl==="stop")? h("span",{class:"hlb stop"},"STOP HIM") : (cd && cd.hl==="key")? h("span",{class:"hlb key"},"KEY") : null,
-          p.min? h("i",{}, Math.round(p.min)+"′"+(start && R? " · S "+p.st+"/"+R.n : "")) : null),
+          p.min? h("i",{}, Math.round(p.min)+"′"+(start && R? " · S "+p.st+"/"+R.n : "")) : null),
         (cd && _cardTxt(cd.tag))? h("div",{class:"tg"}, _cardTxt(cd.tag)) : null,
         ideas.length? h("div",{class:"id"}, ideas.join(" · ")) : null)); };
     const wrap=h("div",{class:wide? "dash-ros5" : ""}); box.appendChild(wrap);
@@ -29155,43 +29155,50 @@ function _dashOppPrint(card, title){
       /* a box that scrolls on the screen is cut by the printer to what fits: on paper it is not there at all */
       el.querySelectorAll(".dash-kpw").forEach(w=>{ while(w.firstChild) w.parentNode.insertBefore(w.firstChild, w); w.remove(); });
       return el; };
-    /* THE CARD ON TWO SHEETS, EACH FILLED (Oriol, 9/11/2026: "al imprimir no se ajusta al papel, que se vea
-       mejor y más grande"). On one sheet it came out at half size with half the paper white. Now the first
-       sheet is who they are - their numbers, the roster, the ball screen and the form side by side - and the
-       second their playbook and their key players; the scouting notes stay on the third */
+    /* THE WHOLE CARD ON ONE SHEET, THE NOTES ON THE BACK (Oriol, 9/11/2026: "al imprimir no se ajusta al
+       papel, que se vea mejor y más grande" and then "debe estar todo en una página, no en dos; detrás va la
+       parte del texto"). Down one column the card came out at half size with half the paper white. Now it is
+       in two columns under their numbers, laid out one of two ways, whichever leaves the letters largest:
+       (a) their numbers beside the recent form; their playbook and the key players on the left, the roster
+       and the ball screen on the right; (b) their numbers across; the roster and their playbook on the left,
+       the form and the ball screen on the right, the key players across the foot. Width and split of the
+       columns are tried too. The red band says who and when, so the card's own title line stays off */
     const parts=[...body.children].filter(ch=>ch!==notesBlk).map(ch=>clean(ch.cloneNode(true)));
     const pf=parts.filter(x=>x.matches && x.matches(".dash-pf"))[0];
-    let p1, p1b=null;
+    let p1;
     if(pf){
-      const col=pf.querySelector(".dash-col"), side=col? [...col.children] : [], ks=[...pf.children].filter(x=>x!==col);
-      const at=parts.indexOf(pf), before=parts.slice(0, at), after=parts.slice(at+1);
-      /* the first sheet in bands, so it fills the width: their numbers; the roster beside the recent form;
-         the ball screen with its half court and transition tables side by side */
       const h4=x=>((x && x.querySelector && x.querySelector("h4"))||{}).textContent||"";
-      const cover=side.filter(x=>/Pick & roll/i.test(h4(x)))[0], form=side.filter(x=>/Recent form/i.test(h4(x)))[0];
-      const roster=before.filter(x=>/Roster summary/i.test(h4(x)))[0];
-      if(cover){ const b=cover.lastElementChild, kids=b? [...b.children] : [], hs=kids.filter(x=>x.matches(".dash-covh"));
-        if(hs.length>=2 && kids.indexOf(hs[1])>0){ const cut=kids.indexOf(hs[1]), end=hs[2]? kids.indexOf(hs[2]) : kids.length;
-          const colA=h("div",{}, ...kids.slice(0, cut)), colB=h("div",{}, ...kids.slice(cut, end)), rest=kids.slice(end);
-          b.innerHTML=""; b.appendChild(h("div",{class:"dop-cov2"}, colA, colB)); rest.forEach(x=>b.appendChild(x)); } }
-      const band1=before.map(x=>(x===roster && form)? h("div",{class:"dop-opp-r2"}, roster, form) : x);
-      p1=h("div",{class:"dop-fit"}, top(title), ...band1, cover || null, (!roster && form)? form : null,
-        ...side.filter(x=>x!==cover && x!==form));
-      p1b=h("div",{class:"dop-fit"}, top(title+" · their playbook and key players"), ...ks, ...after);
+      const col=pf.querySelector(".dash-col"), side=col? [...col.children] : [], ks=[...pf.children].filter(x=>x!==col);
+      const at=parts.indexOf(pf), before=parts.slice(0, at).filter(x=>!x.matches(".dash-hero")), after=parts.slice(at+1);
+      const form=side.filter(x=>/Recent form/i.test(h4(x)))[0], roster=before.filter(x=>/Roster summary/i.test(h4(x)))[0];
+      const stats=before.filter(x=>/Team stats/i.test(h4(x)))[0], others=side.filter(x=>x!==form), head=before.filter(x=>x!==roster);
+      const cl=k=>h("div",{class:"dop-col"}, ...k.filter(Boolean));
+      p1=h("div",{class:"dop-fit"});
+      const put1=k=>{ p1.innerHTML=""; k.filter(Boolean).forEach(x=>p1.appendChild(x)); };
+      p1.__lay=[
+        ()=>put1([top(title), ...head.map(x=>(x===stats && form)? h("div",{class:"dop-r1"}, stats, form) : x),
+          h("div",{class:"dop-2c"}, cl([...ks, ...after]), cl([roster, (form && !stats)? form : null, ...others]))]),
+        ()=>put1([top(title), ...head, h("div",{class:"dop-2c"}, cl([roster, ...ks]), cl([form, ...others])), ...after]),
+        ()=>put1([top(title), ...head.map(x=>(x===stats && roster)? h("div",{class:"dop-r1 b"}, stats, roster) : x),
+          h("div",{class:"dop-2c"}, cl([...ks, ...after]), cl([(roster && !stats)? roster : null, form, ...others]))]) ];
+      p1.__lay[0]();
     } else p1=h("div",{class:"dop-fit"}, top(title), ...parts);
     const all=(notesBox && notesBox.__printAll)? notesBox.__printAll() : h("div",{class:"dash-miss"},"No key ideas marked in the pre game.");
     const p2=h("div",{class:"dop-fit dop-notes"}, top(title+" · scouting notes"), all);
-    const pages=[p1, p1b, p2].filter(Boolean).map(p=>h("div",{class:"dop-page"}, p));
+    const pages=[p1, p2].map(p=>h("div",{class:"dop-page"}, p));
     pages.forEach(x=>area.appendChild(x));
     document.body.classList.add("dop-measure");
     /* measured once the faces have come in, so a picture arriving late cannot push the page */
     const imgs=[...area.querySelectorAll("img")].filter(i=>!i.complete);
-    Promise.race([ Promise.all(imgs.map(i=>new Promise(r=>{ i.addEventListener("load", r); i.addEventListener("error", r); }))), new Promise(r=>setTimeout(r, 2500)) ]).then(()=>measure([p1, p1b].filter(Boolean), p2));
+    Promise.race([ Promise.all(imgs.map(i=>new Promise(r=>{ i.addEventListener("load", r); i.addEventListener("error", r); }))), new Promise(r=>setTimeout(r, 2500)) ]).then(()=>measure(p1, p2));
   };
-  const measure=(cards, p2)=>{
+  const measure=(p1, p2)=>{
     const area=$("#print-area");
     const PW=1058, PH=715;   /* the printable box of a landscape A4 at 7 mm margins, in CSS px, less a little */
-    const fit=(p, W)=>{ p.style.width=W+"px"; p.style.transform="none"; p.style.zoom="1"; const s=Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); return s; };
+    /* a hair short of the sheet: filled to the very edge, the rounding of the scaled letters can push the last
+       column or the last row past it, and the sheet cuts them */
+    const SAFE=0.985;
+    const fit=(p, W)=>{ p.style.width=W+"px"; p.style.transform="none"; p.style.zoom="1"; const s=Math.min(PW/W, PH/Math.max(1, p.scrollHeight))*SAFE; return s; };
     /* the scale is a real zoom, not a transform: a browser that prints the box at its unscaled height (Safari) would cut what lies below the first sheet */
     const put=(p, s)=>{ p.style.transform="none"; p.style.zoom=s.toFixed(4); };
     /* THE SHEETS ARE MEASURED AGAIN ON PAPER. A landscape A4 is a window about 1070 px wide, so
@@ -29200,8 +29207,16 @@ function _dashOppPrint(card, title){
        the fit is worked out once here and once more as the page goes to the printer, with the
        layout the printer has. */
     const refit=()=>{
-      /* each sheet of the card at the width that leaves the letters largest */
-      cards.forEach(p=>{ let b={ s:0, w:1400 }; [1100,1250,1400,1550,1700,1900].forEach(w=>{ const s=fit(p, w); if(s>b.s) b={ s:s, w:w }; }); fit(p, b.w); put(p, b.s); });
+      /* the card in the layout, the width and the split of its two columns that leave the letters largest */
+      let b={ s:0, w:1400, lc:"1fr", k:0 };
+      /* a layout where a table runs out of its column is no layout: it would print over its neighbour */
+      const spill=()=>[...p1.querySelectorAll(".dop-col")].some(c=>c.scrollWidth>c.clientWidth+2) || p1.scrollWidth>p1.clientWidth+2;
+      const lays=p1.__lay||[null];
+      lays.forEach((L, k)=>{ if(L) L();
+        /* a width that could not beat the best even filled to the edge is not tried */
+        [1150,1200,1250,1300,1350,1400,1450,1500,1550,1600,1700,1800].forEach(w=>{ if(PW*SAFE/w<=b.s) return; ["0.9fr","1fr","1.15fr","1.3fr"].forEach(lc=>{ p1.style.setProperty("--lc", lc); const s=fit(p1, w)*(spill()? 0.5 : 1); if(s>b.s) b={ s:s, w:w, lc:lc, k:k }; }); }); });
+      if(lays[b.k]) lays[b.k]();
+      p1.style.setProperty("--lc", b.lc); fit(p1, b.w); put(p1, b.s);
       /* the notes in two to five columns of one of four widths: the one that leaves the letters largest */
       let best={ s:0, c:3, cw:380 };
       [300,340,380,420].forEach(cw=>[2,3,4,5].forEach(c=>{ p2.style.setProperty("--cols", String(c)); const s=fit(p2, cw*c); if(s>best.s) best={ s:s, c:c, cw:cw }; }));
@@ -40189,11 +40204,19 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dop-top{display:flex;align-items:baseline;gap:12px;background:#8a2f2b;color:#fff;padding:6px 14px;border-radius:8px}
 .dop-top b{font:700 13px Oswald,sans-serif;letter-spacing:.18em;text-transform:uppercase}
 .dop-top span{font:600 12px 'IBM Plex Mono',monospace}
-.dop-opp-b1{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:22px;align-items:start}
-.dop-opp-r2{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:22px;align-items:start}
-.dop-opp-r2 > .dash-sub{border-left:1px solid #e4e7ec;padding-left:16px}
-.dop-cov2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px;align-items:start}
-.dop-opp-b1 > .dash-sub + .dash-sub{border-left:1px solid #e4e7ec;padding-left:16px;border-top:0!important;padding-top:0!important}
+/* the card on one sheet: their numbers (beside the form), two columns, perhaps the key players across the foot */
+.dop-r1{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(0,1fr);gap:20px;align-items:start}
+.dop-r1.b{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}
+/* on paper their numbers keep the tag on one line and the league line whole, run onto a second line if it must */
+.dop-fit .dash-t .t1 em{white-space:nowrap}
+.dop-fit .dash-t .t4{white-space:normal;overflow:visible;text-overflow:clip}
+.dop-r1 > :nth-child(2){border-left:1px solid #e4e7ec;padding-left:16px;border-top:0!important;padding-top:0!important;margin-top:0!important}
+.dop-2c > .dop-col > :first-child{border-top:0!important;padding-top:0!important;margin-top:0!important}
+/* on paper the key players' columns are as wide as their numbers, so the table fits a column of the sheet */
+.dop-fit .dash-kp{grid-template-columns:minmax(140px,1.2fr) repeat(11,auto) minmax(max-content,1.6fr);gap:2px 6px}
+.dop-fit .dash-kp .c.rl{white-space:nowrap}
+.dop-2c{display:grid;grid-template-columns:minmax(0,var(--lc,1.25fr)) minmax(0,1fr);gap:20px;align-items:start}
+.dop-2c > .dop-col + .dop-col{border-left:1px solid #e4e7ec;padding-left:18px}
 .dop-fit .dash-blk,.dop-fit .dash-3c{margin-top:0}
 .dop-two{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:18px;align-items:start}
 .dop-band{display:grid;gap:16px;align-items:start}
