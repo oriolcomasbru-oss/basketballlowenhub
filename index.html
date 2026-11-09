@@ -16010,6 +16010,14 @@ function _gpNickFace(nick, redraw, cls){
         if(tid) _lgAvailX(tid).then(()=>{ try{ redraw&&redraw(); }catch(e){_quiet(e)} }); }catch(e){_quiet(e)} }
     return null;
   }
+  const best=_gpNickMan(nick, men);
+  if(!best) return null;
+  try{ return _lgFace(leagueState(), {n:best.num, name:best.name, photo:best.photo, pid:best.pid, id:best.id}, cls||"gpf"); }catch(e){ return null; }
+}
+/* the man of ours a nickname names: by his first name, then his surname, then the first three
+   letters, and only when one man answers (shared by the faces and the player's goals) */
+function _gpNickMan(nick, men){
+  if(!men) return null;
   const n=_lgNorm(nick).split(" ")[0]||"";
   if(n.length<2) return null;
   const ALIAS={ benny:"benjamin", ferdi:"ferdinand", chris:"christopher", eddy:"eddy", zaba:"zaba", dejour:"de jour", daedae:"de jour", dae:"de jour" };
@@ -16027,8 +16035,7 @@ function _gpNickFace(nick, redraw, cls){
     else if(n.length>=3 && first.slice(0,3)===n.slice(0,3)) s=1;
     if(s>bestS){ best=p; bestS=s; tie=false; } else if(s && s===bestS) tie=true;
   });
-  if(!best || tie) return null;
-  try{ return _lgFace(leagueState(), {n:best.num, name:best.name, photo:best.photo, pid:best.pid, id:best.id}, cls||"gpf"); }catch(e){ return null; }
+  return (!best || tie)? null : best;
 }
 /* THEIR FIVE, AND WHO COMES IN FOR WHOM - BY POSITION.
    Read from the play by play of their last five games: who was on the floor at the tip,
@@ -30004,6 +30011,9 @@ async function _playerDash(root, who){
     const fill=()=>{ let f=null; try{ f=_gpNickFace(nm, fill, "pdash-f"); }catch(e){_quiet(e)} if(f){ slot.innerHTML=""; slot.appendChild(f); slot.classList.add("on"); } };
     if(hi){ hi.insertBefore(slot, hi.firstChild); fill(); } }
   page.appendChild(top);
+  /* HIS GOALS FIRST (Oriol, 9/11/2026): the team's aim is defence and rebounding */
+  page.appendChild(h("div",{class:"p3-tag"},"Your goals · rebounding and defense"));
+  page.appendChild(_rgBlock(nm));
   const ph=g=>{ try{ return _gamePlaceholder(g.opponent); }catch(e){ return false; } };
   const crest=g=>{ try{ return _lgOppCrest(g, "opp big")||h("span",{class:"dash-crest"}, String(g.opponent||"?").slice(0,3).toUpperCase()); }catch(e){ return null; } };
   const bNow=h("div",{class:"p3-now"}, h("div",{class:"ld dash-ld"},"Reading your time…", h("span",{class:"ld-bar"})));
@@ -30103,6 +30113,219 @@ async function _playerDash(root, who){
   const hm=Math.max(1, ...hist.map(s=>s.sec));
   hist.slice().reverse().forEach(s=>bHist.appendChild(h("div",{class:"p3-row", title:s.days+" days · "+s.vids+" videos · "+(s.old? "old hub" : "this app")},
     h("b",{}, s.x.g.opponent), h("span",{class:"t"}, h("u",{style:"width:"+Math.round(100*s.sec/hm)+"%"})), h("em",{}, clock(s.sec)))));
+}
+/* ==== THE PLAYER'S GOALS: REBOUNDING AND DEFENSE (Oriol, 9/11/2026: "el objetivo del equipo es
+   mejorar en defensa y en rebote") ================================================================
+   On his own dashboard each player sees where he is and where he should be, from the league's data,
+   new with every game played:
+   - his offensive and defensive rebounds per 40 minutes (the league's official season line) and his
+     share of the rebounds there were while he was on the floor (OREB%, DREB%, from the play by play),
+     against the BBL players of his position: goal 1 the median (P50), goal 2 the top quarter (P75);
+     the rebound goals also as rebounds every 5 minutes on the floor and in his own minutes a game;
+   - the team's DER (points allowed per 100 possessions) while he is on the floor, against the BBL's
+     average team DER (goal 1) and the line of its six best defences (goal 2, playoff level);
+   - the team's OREB%, DREB% and DER against the BBL average and the top-six line;
+   - game by game, so he sees it going up or down.
+   A reference player has 40% of his club's games and 10 minutes a game (the leaders' rule); a
+   position is the league's, or the staff's where they set one (TRG_POS_STAFF). Each finished league
+   game is read once and its sums kept in this browser, so a week adds only its own games. */
+const RG_KEY="lw_rgoal_v1", RG_POSKEY="lw_rgpos_v1", RG_POS=["PG","SG","SF","PF","C"];
+const _rgPosOf=s=>{ s=String(s||"").toUpperCase().trim(); return /CENT|^C$|^5$/.test(s)? "C" : /POWER|^PF$|^4$/.test(s)? "PF" : /SMALL|^SF$|^3$/.test(s)? "SF" : /SHOOT|^SG$|^2$/.test(s)? "SG" : /POINT|^PG$|^1$/.test(s)? "PG" : ""; };
+function _rgLS(k, v){ try{ if(v===undefined){ const s=localStorage.getItem(k); return s? JSON.parse(s) : null; } localStorage.setItem(k, JSON.stringify(v)); }catch(e){ return null; } return v; }
+/* one league game in sums: per club its rebounds, the rebounds there were, its points and
+   possessions and the other side's; per man his minutes, rebounds and the rebounds there were
+   while he played; and for each of ours the other side's possessions and points with him on */
+function _rgGameAgg(G, j, us){
+  const M=_lgGameModel(G, j, null), hc=M.hc, ac=hc==="A"? "B" : "A";
+  const poss=x=>x.fga-x.or+x.tov+0.44*x.fta, r1=v=>Math.round(v*10)/10;
+  const out={ d:G.date, h:String(G.homeId), a:String(G.awayId), hs:Number(G.hs), as:Number(G.as), us:us, T:{}, P:{}, U:{} };
+  [[hc, String(G.homeId)],[ac, String(G.awayId)]].forEach(([c, tid])=>{
+    const R=_rebGame(j.feed, c), W=_gpLiveWin(j.feed, c, ()=>true, {});
+    out.T[tid]={ or:R.u.or, dr:R.u.dr, oC:R.u.or+R.t.dr, dC:R.u.dr+R.t.or, pts:W.u.pts, poss:r1(poss(W.u)), op:W.t.pts, opPoss:r1(poss(W.t)) };
+    Object.keys(R.pl).forEach(id=>{ const p=R.pl[id]; if(p.s!=="u") return; out.P[tid+"|"+id]=[p.sec, p.or, p.dr, p.oOn[1], p.dOn[1]]; });
+    if(tid===us){ let CT={}; try{ CT=_gpCourt(j.feed, c, 1e9)||{}; }catch(e){_quiet(e)}
+      Object.keys(CT).forEach(id=>{ const segs=CT[id].segs||[]; if(!segs.length) return;
+        const Wp=_gpLiveWin(j.feed, c, o=>segs.some(g=>o.t>=g[0] && o.t<g[1]), {});
+        out.U[id]=[r1(poss(Wp.t)), Wp.t.pts]; }); }
+  });
+  return out;
+}
+let _rgRun=null;
+async function _rgLoad(){
+  if(_rgRun) return _rgRun;
+  _rgRun=(async ()=>{
+    if(!(leagueState().games||[]).length){ try{ await syncLeague(false); }catch(e){_quiet(e)} }
+    const L=leagueState(), us=String(_lgOurTeamId(L)||""), today=todayISO();
+    const games=(L.games||[]).filter(g=>g && g.phase!=="cup" && !/pokal|cup/i.test(String(g.competition||""))
+      && g.hs!=null && (Number(g.hs)+Number(g.as))>0 && String(g.date||"")<=today);
+    /* the league's rosters: every man's position and official season line, read twice a day */
+    let R=_rgLS(RG_POSKEY);
+    if(!R || !R.at || Date.now()-R.at>6*3600e3 || !(R.list||[]).length){
+      const teams=(L.teams||[]).filter(t=>t && t.id);
+      const rows=await Promise.all(teams.map(t=>fetch("/.netlify/functions/bbl?res=roster&id="+encodeURIComponent(t.id)).then(r=>r.json()).catch(()=>null)));
+      const list=[];
+      rows.forEach((j, i)=>{ const tid=String(teams[i].id); ((j && j.players)||[]).forEach(p=>{ const o=p.off||{};
+        list.push({ tid:tid, ids:[String(p.id||""), String(p.pid||"")].filter(Boolean), name:String(p.name||"").replace(/\s+/g," ").trim(), num:p.num,
+          pos:_rgPosOf(p.pos), gp:o.gp||0, sec:o.sec||0, or:o.oreb||0, dr:o.dreb||0 }); }); });
+      if(list.length){ R={ at:Date.now(), list:list }; _rgLS(RG_POSKEY, R); } else if(!R) R={ at:0, list:[] };
+    }
+    /* every finished game, read once; a sheet that is not ours is let go after it is summed */
+    const C=_rgLS(RG_KEY)||{ v:1, g:{} };
+    const need=games.filter(g=>{ const a=C.g[g.id]; return !a || ((String(g.homeId)===us || String(g.awayId)===us) && a.us!==us); });
+    for(let i=0;i<need.length;i+=8){ const part=need.slice(i, i+8);
+      await Promise.all(part.map(async G=>{ try{
+        const j=await (_lgGameMemo[G.id]||(_lgGameMemo[G.id]=fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(G.id)).then(r=>r.json())));
+        if(j && j.feed && (j.feed.actions||[]).length) C.g[G.id]=_rgGameAgg(G, j, us);
+      }catch(e){ delete _lgGameMemo[G.id]; _quiet(e); } }));
+      part.forEach(G=>{ if(String(G.homeId)!==us && String(G.awayId)!==us) delete _lgGameMemo[G.id]; }); }
+    if(need.length) _rgLS(RG_KEY, C);
+    return { L:L, us:us, games:games.filter(g=>C.g[g.id]), list:R.list||[], C:C.g };
+  })();
+  try{ return await _rgRun; }catch(e){ _rgRun=null; throw e; }
+}
+/* the median and the quarter line of a list, between ranks as the analysts' tables do */
+function _rgPct(a, p){ const s=a.filter(v=>v!=null && isFinite(v)).sort((x,y)=>x-y); if(!s.length) return null;
+  const i=p*(s.length-1), lo=Math.floor(i), hi=Math.min(s.length-1, lo+1); return s[lo]+(s[hi]-s[lo])*(i-lo); }
+function _rgCompute(D, man){
+  const us=D.us;
+  /* the play by play of the season, per man (feed ids are the roster's id or pid) */
+  const S={}; D.games.forEach(g=>{ const A=D.C[g.id]; Object.keys(A.P||{}).forEach(k=>{ const a=A.P[k], s=S[k]||(S[k]=[0,0,0,0,0]); for(let i=0;i<5;i++) s[i]+=a[i]||0; }); });
+  /* (a man's id and pid are often the same number: each counted once) */
+  const pbpOf=p=>{ const s=[0,0,0,0,0]; Array.from(new Set(p.ids)).forEach(id=>{ const x=S[p.tid+"|"+id]; if(x) for(let i=0;i<5;i++) s[i]+=x[i]; }); return s; };
+  /* the reference: the men of each position who count */
+  const clubG={}; D.list.forEach(p=>{ clubG[p.tid]=Math.max(clubG[p.tid]||0, p.gp||0); });
+  const ref={}; RG_POS.forEach(k=>{ ref[k]={ o40:[], d40:[], orp:[], drp:[] }; });
+  D.list.forEach(p=>{ const need=Math.max(3, Math.ceil(0.4*(clubG[p.tid]||0)));
+    if(!p.pos || !ref[p.pos] || p.gp<need || p.sec/60/p.gp<10) return;
+    const r=ref[p.pos], s=pbpOf(p);
+    r.o40.push(2400*p.or/p.sec); r.d40.push(2400*p.dr/p.sec);
+    if(s[3]>=30) r.orp.push(100*s[1]/s[3]); if(s[4]>=30) r.drp.push(100*s[2]/s[4]); });
+  const lines={}; RG_POS.forEach(k=>{ const r=ref[k]; lines[k]={ n:r.o40.length };
+    ["o40","d40","orp","drp"].forEach(m=>{ lines[k][m]=[_rgPct(r[m], .5), _rgPct(r[m], .75), r[m]]; }); });
+  /* the teams: rebounding and defence of the season, the BBL's average and its top-six line */
+  const T={}; D.games.forEach(g=>{ const A=D.C[g.id]; Object.keys(A.T||{}).forEach(tid=>{ const a=A.T[tid], t=T[tid]||(T[tid]={ or:0, dr:0, oC:0, dC:0, op:0, opPoss:0, g:0 });
+    t.or+=a.or; t.dr+=a.dr; t.oC+=a.oC; t.dC+=a.dC; t.op+=a.op; t.opPoss+=a.opPoss; t.g++; }); });
+  const tv=Object.keys(T).map(tid=>{ const t=T[tid]; return { tid:tid, orp:100*t.or/t.oC, drp:100*t.dr/t.dC, der:100*t.op/t.opPoss }; });
+  const mean=a=>a.reduce((x,y)=>x+y,0)/Math.max(1,a.length);
+  const top6=(a, low)=>{ const s=a.slice().sort((x,y)=>low? x-y : y-x); return s[Math.min(5, s.length-1)]; };
+  const team={ us:tv.filter(x=>x.tid===us)[0]||null, n:tv.length };
+  ["orp","drp","der"].forEach(m=>{ const a=tv.map(x=>x[m]); team[m]={ avg:mean(a), top:top6(a, m==="der"), rank:null };
+    if(team.us){ const v=team.us[m]; team[m].rank=1+a.filter(x=>m==="der"? x<v : x>v).length; } });
+  const out={ lines:lines, team:team, games:D.games, last:D.games.length? D.games.map(g=>g.date).sort().slice(-1)[0] : "" };
+  if(!man) return out;
+  /* him: his position (the staff's first), his official line, his play by play, the team with him on */
+  const stf=TRG_POS_STAFF[String(_lgLastName(man.name||"")).toLowerCase()];
+  const pos=_rgPosOf(stf)||man.pos||"";
+  const me={ man:man, pos:pos, posStaff:!!stf, gp:man.gp, mpg:man.gp? man.sec/60/man.gp : 0,
+    o40:man.sec? 2400*man.or/man.sec : null, d40:man.sec? 2400*man.dr/man.sec : null };
+  const s=pbpOf(man); me.orp=s[3]? 100*s[1]/s[3] : null; me.drp=s[4]? 100*s[2]/s[4] : null; me.pbp=s;
+  let dp=0, dpts=0; const rows=[];
+  D.games.filter(g=>String(g.homeId)===us || String(g.awayId)===us).sort((a,b)=>a.date<b.date? -1 : 1).forEach(g=>{
+    const A=D.C[g.id]; let p=null, u=null;
+    man.ids.forEach(id=>{ p=p||A.P[us+"|"+id]; u=u||(A.U||{})[id]; });
+    const home=A.h===us, our=home? A.hs : A.as, their=home? A.as : A.hs;
+    const opp=home? g.away : g.home;
+    if(u){ dp+=u[0]; dpts+=u[1]; }
+    rows.push({ g:g, opp:opp, home:home, w:our>their, sc:our+"–"+their, min:p? p[0]/60 : 0, or:p? p[1] : 0, dr:p? p[2] : 0, oA:p? p[3] : 0, dA:p? p[4] : 0,
+      dp:u? u[0] : 0, dpts:u? u[1] : 0 }); });
+  me.der=dp? 100*dpts/dp : null; me.derPoss=dp; me.rows=rows;
+  out.me=me;
+  return out;
+}
+/* where a value stands against its two goals: under the first, between, at the second */
+function _rgSt(v, g1, g2, low){ if(v==null || g1==null) return ""; const b=low? v<=g2 : v>=g2, a=low? v<=g1 : v>=g1; return b? "t" : a? "a" : "u"; }
+const RG_STW={ u:"Under goal 1", a:"Goal 1 reached", t:"Goal 2 reached" };
+function _rgBar(v, g1, g2, low, fmt){
+  /* a longer bar is better, whichever way the number runs */
+  const vals=[v, g1, g2].filter(x=>x!=null);
+  let lo=0, hi=Math.max(...vals)*1.3;
+  if(low){ hi=Math.max(...vals)+12; lo=Math.max(0, Math.min(...vals)-12); }
+  const x=t=>{ const f=low? (hi-t)/(hi-lo) : (t-lo)/(hi-lo); return Math.max(0, Math.min(100, 100*f)); };
+  const st=_rgSt(v, g1, g2, low), a=Math.min(x(g1), x(g2)), b=Math.max(x(g1), x(g2));
+  return h("div",{class:"rg-bar"},
+    h("span",{class:"tr"}), h("span",{class:"zn", style:"left:"+a+"%;width:"+(b-a)+"%"}),
+    v!=null? h("span",{class:"me "+st, style:"width:"+x(v)+"%"}) : null,
+    h("span",{class:"g1", style:"left:"+x(g1)+"%"}), h("span",{class:"g2", style:"left:"+x(g2)+"%"}),
+    /* a label past the middle ends at its mark, so it never runs out of the card */
+    h("span",{class:"l2", style:x(g2)>55? "right:"+(100-x(g2))+"%" : "left:"+x(g2)+"%"}, "Goal 2 · "+fmt(g2)),
+    h("span",{class:"l1", style:x(g1)>55? "right:"+(100-x(g1))+"%" : "left:"+x(g1)+"%"}, "Goal 1 · "+fmt(g1)));
+}
+function _rgBlock(nm){
+  const box=h("div",{class:"rg"}, h("div",{class:"ld dash-ld"},"Reading the league’s games…", h("span",{class:"ld-bar"})));
+  _rgLoad().then(D=>{ box.innerHTML="";
+    const ours=D.list.filter(p=>p.tid===D.us);
+    const man=_gpNickMan(nm, ours);
+    const X=_rgCompute(D, man);
+    if(!man || !X.me){ box.appendChild(h("div",{class:"dash-miss"}, "Your line in the league could not be found.")); }
+    const f1=v=>v==null? "–" : (Math.round(v*10)/10).toFixed(1), f2=v=>v==null? "–" : (Math.round(v*100)/100).toFixed(2), fp=v=>v==null? "–" : f1(v)+"%";
+    if(X.me){ const me=X.me, Lp=X.lines[me.pos]||null;
+      const POSN={ PG:"point guards", SG:"shooting guards", SF:"small forwards", PF:"power forwards", C:"centers" };
+      box.appendChild(h("div",{class:"rg-sub"}, "You against the BBL’s "+(POSN[me.pos]||"players")+(me.posStaff? " (the staff’s position)" : "")+" · "+(me.gp||0)+" games · "+f1(me.mpg)+" min a game"));
+      const tiles=h("div",{class:"rg-tiles"});
+      const tile=(lab, sub, v, g1, g2, fmt, low, foot)=>{ const st=_rgSt(v, g1, g2, low);
+        return h("div",{class:"rg-t"},
+          h("div",{class:"lb"}, lab, h("i",{}, sub)),
+          h("div",{class:"v"}, h("b",{class:st}, fmt(v)), st? h("span",{class:"rg-st "+st}, RG_STW[st]) : null),
+          (g1!=null && g2!=null)? _rgBar(v, g1, g2, low, fmt) : h("div",{class:"dash-miss"},"Not enough games in the league yet."),
+          foot? h("div",{class:"ft"}, foot) : null); };
+      /* the rebound goals in his own minutes and every five minutes on the floor */
+      const inMin=(v, g1, g2)=>(g1==null || !me.mpg)? null : h("span",{},
+        "In your ", h("b",{}, f1(me.mpg)+" min"), ": you ", h("b",{}, f1(v*me.mpg/40)), " a game · goal 1 ", h("b",{}, f1(g1*me.mpg/40)), " · goal 2 ", h("b",{}, f1(g2*me.mpg/40)),
+        h("br",{}), "Every 5 min on the floor: goal 1 ", h("b",{}, f2(g1/8)), " · goal 2 ", h("b",{}, f2(g2/8)));
+      if(Lp){
+        tiles.appendChild(tile("Defensive rebounds", "per 40 minutes", me.d40, Lp.d40[0], Lp.d40[1], f2, false, inMin(me.d40, Lp.d40[0], Lp.d40[1])));
+        tiles.appendChild(tile("Offensive rebounds", "per 40 minutes", me.o40, Lp.o40[0], Lp.o40[1], f2, false, inMin(me.o40, Lp.o40[0], Lp.o40[1])));
+        tiles.appendChild(tile("DREB%", "their misses you grab, on the floor", me.drp, Lp.drp[0], Lp.drp[1], fp, false,
+          h("span",{}, h("b",{}, String(me.pbp[2])), " of the ", h("b",{}, String(me.pbp[4])), " defensive rebounds there were while you played")));
+        tiles.appendChild(tile("OREB%", "our misses you grab, on the floor", me.orp, Lp.orp[0], Lp.orp[1], fp, false,
+          h("span",{}, h("b",{}, String(me.pbp[1])), " of the ", h("b",{}, String(me.pbp[3])), " offensive rebounds there were while you played")));
+      }
+      tiles.appendChild(tile("Team DER with you on", "points we allow per 100 possessions", me.der, X.team.der.avg, X.team.der.top, f1, true,
+        h("span",{}, "Lower is better · goal 1 the BBL’s average defence, goal 2 its 6th best (playoff level) · ", h("b",{}, String(Math.round(me.derPoss))), " possessions")));
+      box.appendChild(tiles);
+      /* game by game */
+      const rows=me.rows.filter(r=>r.min>0), N=rows.length;
+      if(N){
+        const cls=(v, g1, g2, low)=>"c "+_rgSt(v, g1, g2, low);
+        const t=h("table",{class:"rg-gt"}, h("thead",{}, h("tr",{},
+          h("th",{class:"l"},"Game"), h("th",{},"Min"), h("th",{},"Def reb"), h("th",{},"Off reb"), h("th",{title:"his share of their misses while he played"},"DREB%"), h("th",{title:"his share of our misses while he played"},"OREB%"), h("th",{title:"points we allowed per 100 possessions while he played"},"DER on"))));
+        const tb=h("tbody",{}); t.appendChild(tb);
+        rows.slice().reverse().forEach(r=>{ const d40=r.min? 40*r.dr/r.min : null, o40=r.min? 40*r.or/r.min : null, drp=r.dA? 100*r.dr/r.dA : null, orp=r.oA? 100*r.or/r.oA : null, der=r.dp>=15? 100*r.dpts/r.dp : null;
+          tb.appendChild(h("tr",{},
+            h("td",{class:"l"}, h("span",{class:"rg-wl "+(r.w? "w" : "l")}, r.w? "W" : "L"), " ", (r.home? "vs " : "@ ")+_lgShort(r.opp||""), h("em",{}, " "+_dashFmt(r.g.date)+" · "+r.sc)),
+            h("td",{}, f1(r.min)),
+            h("td",{class:Lp? cls(d40, Lp.d40[0], Lp.d40[1]) : "c"}, String(r.dr)),
+            h("td",{class:Lp? cls(o40, Lp.o40[0], Lp.o40[1]) : "c"}, String(r.or)),
+            h("td",{class:Lp? cls(drp, Lp.drp[0], Lp.drp[1]) : "c"}, fp(drp)),
+            h("td",{class:Lp? cls(orp, Lp.orp[0], Lp.orp[1]) : "c"}, fp(orp)),
+            h("td",{class:der!=null? cls(der, X.team.der.avg, X.team.der.top, true) : "c"}, der!=null? f1(der) : "–"))); });
+        /* the last three games against the whole season: from five games, a change of 3 points in a
+           share or 5 in DER (the staff's thresholds) */
+        if(N>=5){ const l3=rows.slice(-3), sum=(k)=>l3.reduce((a,r)=>a+r[k],0);
+          const L3={ drp:sum("dA")? 100*sum("dr")/sum("dA") : null, orp:sum("oA")? 100*sum("or")/sum("oA") : null, der:sum("dp")? 100*sum("dpts")/sum("dp") : null,
+            d40:sum("min")? 40*sum("dr")/sum("min") : null, o40:sum("min")? 40*sum("or")/sum("min") : null };
+          const ar=(a, b, th, low)=>{ if(a==null || b==null) return h("td",{},"–"); const d=low? b-a : a-b; return h("td",{class:"tr "+(d>=th? "up" : d<=-th? "dn" : "")}, (d>=th? "▲ " : d<=-th? "▼ " : "= ")+(th>=1? f1(a) : f2(a))); };
+          tb.appendChild(h("tr",{class:"l3"}, h("td",{class:"l"},"Last 3 games vs the season"), h("td",{}),
+            ar(L3.d40, me.d40, 0.5), ar(L3.o40, me.o40, 0.5), ar(L3.drp, me.drp, 3), ar(L3.orp, me.orp, 3), ar(L3.der, me.der, 5, true))); }
+        box.appendChild(h("div",{class:"rg-gh"}, "Game by game", h("span",{}, "Def reb and Off reb coloured by what they make per 40 minutes · last game "+_dashFmt(X.last))));
+        box.appendChild(h("div",{class:"rg-gw"}, t));
+      }
+    }
+    /* the team */
+    const tm=X.team; if(tm.us){
+      const item=(lab, v, g, fmt, low)=>{ const st=_rgSt(v, g.avg, g.top, low);
+        return h("div",{class:"rg-tm"}, h("i",{}, lab), h("b",{class:st}, fmt(v)), h("span",{}, "BBL average ", h("b",{}, fmt(g.avg)), " · playoff level ", h("b",{}, fmt(g.top))),
+          h("em",{}, ord(g.rank)+" of "+tm.n+" in the BBL"+(st? " · "+(st==="t"? "at playoff level" : st==="a"? "above the average" : "under the average") : ""))); };
+      const ord=n=>n+(n%10===1&&n%100!==11? "st" : n%10===2&&n%100!==12? "nd" : n%10===3&&n%100!==13? "rd" : "th");
+      box.appendChild(h("div",{class:"rg-gh"}, "The team’s goals", h("span",{}, "Goal 1 the BBL average · goal 2 playoff level, the line of the six best")));
+      box.appendChild(h("div",{class:"rg-team"},
+        item("Defensive rebound %", tm.us.drp, tm.drp, v=>f1(v)+"%"),
+        item("Offensive rebound %", tm.us.orp, tm.orp, v=>f1(v)+"%"),
+        item("DER · points allowed per 100", tm.us.der, tm.der, f1, true)));
+    }
+    box.appendChild(h("div",{class:"dash-src"}, "From the league: official season lines for rebounds per 40 minutes, the play by play of the "+X.games.length+" BBL games played for the shares and DER · reference: BBL players of your position with 40% of their team’s games and 10 minutes a game · goal 1 their median, goal 2 their top quarter"));
+  }).catch(e=>{ _quiet(e); box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"The league’s games could not be read.")); });
+  return box;
 }
 function renderDashboard(){
   const root=$("#viewDash"); if(!root) return;
@@ -41128,6 +41351,50 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .lg-eust-n{font-size:11px;color:var(--ink-faint,#8a93a2)}
 /* a player's first screen, in three blocks */
 .pd3{max-width:860px}
+/* the player's goals: rebounding and defense (9/11/2026) */
+.rg{display:grid;gap:10px}
+.rg-sub{font-size:13px;color:var(--ink-soft,#5b6472)}
+.rg-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}
+.rg-t{background:var(--panel,#fff);border-radius:14px;padding:14px 16px 12px;border-top:4px solid #c6a15b;display:grid;gap:8px;align-content:start;min-width:0}
+.rg-t .lb{font:700 13px 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--ink,#141821);display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline}
+.rg-t .lb i{font:500 11px 'IBM Plex Mono',monospace;font-style:normal;letter-spacing:0;text-transform:none;color:var(--ink-faint,#8a93a2)}
+.rg-t .v{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.rg-t .v b{font:700 38px/1 'Oswald',sans-serif;color:var(--ink,#141821)}
+.rg-t .v b.u,.rg-tm b.u{color:#c0403c}.rg-t .v b.t,.rg-tm b.t{color:#a9812f}
+.rg-st{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;padding:2px 9px;border-radius:999px;white-space:nowrap}
+.rg-st.u{background:#fbe3e1;color:#a8322d}.rg-st.a{background:#eceef2;color:#141821}.rg-st.t{background:#f6efe0;color:#7a5c12}
+.rg-bar{position:relative;height:46px;margin:2px 0}
+.rg-bar .tr{position:absolute;left:0;right:0;top:18px;height:8px;border-radius:4px;background:#ebe7de}
+.rg-bar .zn{position:absolute;top:18px;height:8px;background:#ead9b0}
+.rg-bar .me{position:absolute;left:0;top:15px;height:14px;border-radius:4px;background:#141821}
+.rg-bar .me.u{background:#c0403c}.rg-bar .me.t{background:#c6a15b}
+.rg-bar .g1{position:absolute;top:10px;height:24px;width:2px;margin-left:-1px;background:#5b6472}
+.rg-bar .g2{position:absolute;top:7px;height:30px;width:3px;margin-left:-1px;background:#a9812f}
+.rg-bar .l1,.rg-bar .l2{position:absolute;font:600 10.5px 'IBM Plex Mono',monospace;white-space:nowrap}
+.rg-bar .l2{top:-6px;color:#8a6a22}.rg-bar .l1{bottom:-4px;color:#5b6472}
+.rg-t .ft{font-size:12px;line-height:1.45;color:var(--ink-soft,#5b6472)}.rg-t .ft b{color:var(--ink,#141821)}
+.rg-gh{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;font:700 13px 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase;margin-top:8px}
+.rg-gh span{font:500 11px 'IBM Plex Mono',monospace;letter-spacing:0;text-transform:none;color:var(--ink-faint,#8a93a2)}
+.rg-gw{background:var(--panel,#fff);border-radius:14px;padding:8px 12px;overflow-x:auto}
+.rg-gt{width:100%;border-collapse:collapse;font-size:12.5px}
+.rg-gt th{font:600 10.5px 'IBM Plex Mono',monospace;text-transform:uppercase;color:var(--ink-faint,#8a93a2);text-align:right;padding:6px 8px;border-bottom:1px solid var(--line,#e4e7ec);white-space:nowrap}
+.rg-gt td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--line,#e4e7ec);font:600 12.5px 'IBM Plex Mono',monospace;white-space:nowrap}
+.rg-gt .l{text-align:left;font-family:Inter,system-ui,sans-serif}.rg-gt td.l em{font-style:normal;font-weight:500;color:var(--ink-faint,#8a93a2);font-size:11.5px}
+@media (max-width:600px){ .rg-gt td.l em{display:block} .rg-gt td,.rg-gt th{padding:5px 6px} }
+.rg-gt td.c.u{color:#c0403c}.rg-gt td.c.t{color:#a9812f;background:rgba(198,161,91,.12)}
+.rg-gt tr.l3 td{border-bottom:0;background:var(--bg,#f4f5f7)}.rg-gt td.tr.up{color:#2f9e86}.rg-gt td.tr.dn{color:#c0403c}
+.rg-wl{display:inline-block;width:18px;text-align:center;border-radius:4px;font:700 10.5px 'Oswald',sans-serif}
+.rg-wl.w{background:#dff3ec;color:#17805a}.rg-wl.l{background:#fbe3e1;color:#a8322d}
+.rg-team{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.rg-tm{background:var(--panel,#fff);border-radius:14px;padding:12px 14px;display:grid;gap:3px;border-left:4px solid #141821}
+.rg-tm i{font:600 11px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.rg-tm b{font:700 30px/1.1 'Oswald',sans-serif}
+.rg-tm span{font-size:12px;color:var(--ink-soft,#5b6472)}.rg-tm span b{font:600 12px Inter,system-ui,sans-serif;color:var(--ink,#141821)}
+.rg-tm em{font-style:normal;font-size:11.5px;color:var(--ink-faint,#8a93a2)}
+body.dark .rg-bar .tr{background:#3a404b}body.dark .rg-bar .zn{background:#5a4a28}body.dark .rg-bar .me{background:#e8eaee}
+body.dark .rg-bar .me.u{background:#e06a64}body.dark .rg-bar .me.t{background:#d8b877}
+body.dark .rg-st.u{background:#4a2624;color:#ff9c95}body.dark .rg-st.a{background:#333a45;color:#e8eaee}body.dark .rg-st.t{background:#4a3d22;color:#e3c27a}
+body.dark .rg-bar .l2{color:#e3c27a}body.dark .rg-bar .l1{color:#aab1bd}
 .p3-tag{font:600 11px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint,#8a93a2);margin:16px 2px 6px}
 .p3-now{background:var(--panel,#fff);border-radius:14px;padding:16px 18px;border-top:5px solid #8a2f2b;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 18px;align-items:center}
 .p3-now > i{grid-column:1/-1;font:600 11px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
