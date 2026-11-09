@@ -7489,7 +7489,11 @@ function reportSectionHead(title){
 const SUM_SLOTS_PRE  = ["offense", "defense", "ato", "special", "attack"];
 const SUM_SLOTS_POST = ["offense", "defense"];
 const SUM_TITLES_PRE = ["Our offense · 5 keys", "Our defense · 5 keys", "ATO's", "Special defenses", "Players to attack"];
-const SUM_TITLES_POST= ["Our offense · 5 keys", "Our defense · 5 keys"];
+/* the post game's two key blocks are "Keys in offense" and "Keys in defense", not "5 keys" (Oriol,
+   9/11/2026); a post game written under the old names shows and keeps the new ones */
+const SUM_TITLES_POST= ["Keys in offense", "Keys in defense"];
+const SUM_POST_OLD={ "our offense · 5 keys":"Keys in offense", "our defense · 5 keys":"Keys in defense" };
+function _sumTitle(t){ return SUM_POST_OLD[String(t||"").trim().toLowerCase()] || t || ""; }
 const SUM_W_PRE      = [2, 2, 1, 1, 2];
 function summarySlots(kind){ return kind==="postgame" ? SUM_SLOTS_POST : SUM_SLOTS_PRE; }
 function summaryTitles(kind){ return kind==="postgame" ? SUM_TITLES_POST : SUM_TITLES_PRE; }
@@ -7570,8 +7574,8 @@ function defaultPostSections(){
   const mk=(t)=>({t:t, v:""});
   return [
     {id:uid(), title:"Game Summary", role:"summary", items:[
-      {t:"Our offense · 5 keys", v:"", w:2},
-      {t:"Our defense · 5 keys", v:"", w:2}
+      {t:SUM_TITLES_POST[0], v:"", w:2},
+      {t:SUM_TITLES_POST[1], v:"", w:2}
     ]},
     {id:uid(), title:"Other", items:POST_OTHER_PTS.map(mk)},
     teamStatsPostSection()
@@ -7598,6 +7602,9 @@ function ensureCanonical(secs, kind){
   migratePlaybook(secs);
   if(kind==="postgame") ensureTeamStatsPost(secs);
   else ensureTeamStats(secs);
+  /* the old "5 keys" names of the post game take the new ones; a name the staff wrote stays */
+  if(kind==="postgame"){ const sum=secs.find(s=>s && (s.role==="summary" || String(s.title||"").trim()==="Game Summary"));
+    if(sum) (sum.items||[]).forEach(it=>{ if(it && SUM_POST_OLD[String(it.t||"").trim().toLowerCase()]) it.t=_sumTitle(it.t); }); }
 }
 /* ---- one-off migrations ------------------------------------------------
    Reports written under the old shape are already in the database. Nothing is
@@ -8505,8 +8512,8 @@ function importPlanJSON(sec,raw){
   return null;
 }
 const SUMMARY_ALIASES=[
-  {i:0, keys:["offense","our offense","offense 5 keys","off","5 keys offense"]},
-  {i:1, keys:["defense","our defense","defense 5 keys","def","5 keys defense"]},
+  {i:0, keys:["offense","our offense","offense 5 keys","off","5 keys offense","keys in offense","offense keys"]},
+  {i:1, keys:["defense","our defense","defense 5 keys","def","5 keys defense","keys in defense","defense keys"]},
   {i:2, keys:["ato","ato's","atos","after timeout"]},
   {i:3, keys:["special","special defenses","specials","special defense"]},
   {i:4, keys:["attack","players to attack","targets","to attack"]}
@@ -8729,8 +8736,8 @@ function _riMatchSlot(k) {
   k = (k == null ? "" : String(k)).trim().toLowerCase();
   if (!k) return -1;
   const A = [
-    ["offense", "our offense", "off", "offense 5 keys", "5 keys offense", "our offense · 5 keys", "attack keys"],
-    ["defense", "our defense", "def", "defense 5 keys", "5 keys defense", "our defense · 5 keys"],
+    ["offense", "our offense", "off", "offense 5 keys", "5 keys offense", "our offense · 5 keys", "attack keys", "keys in offense", "offense keys"],
+    ["defense", "our defense", "def", "defense 5 keys", "5 keys defense", "our defense · 5 keys", "keys in defense", "defense keys"],
     ["ato", "ato's", "atos", "after timeout", "after time out"],
     ["special", "special defenses", "specials", "special defense"],
     ["attack", "players to attack", "targets", "to attack", "key moments", "keymoments", "turning points"]
@@ -15641,7 +15648,7 @@ function renderSummarySection(sec,canEd,save){
   const box=h("div",{class:"rs-summary"}); const items=sec.items||[];
   const mkBox=(it)=>{ const c=h("div",{class:"rs-sum-card"});
     if(canEd){ const lab=h("input",{class:"rs-card-title-in"}); lab.value=it.t||""; lab.addEventListener("input",()=>{it.t=lab.value; save();}); c.appendChild(lab); }
-    else c.appendChild(h("div",{class:"rs-card-title"}, it.t||""));
+    else c.appendChild(h("div",{class:"rs-card-title"}, _sumTitle(it.t)));
     c.appendChild(makeRichBox(canEd,it.v,(html)=>{it.v=html;save();},"…")); return c; };
   const row1=h("div",{class:"rs-sum-row two"}); [items[0],items[1]].forEach(it=>{ if(it) row1.appendChild(mkBox(it)); });
   const row2=h("div",{class:"rs-sum-row three"}); [items[2],items[3],items[4]].forEach(it=>{ if(it) row2.appendChild(mkBox(it)); });
