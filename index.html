@@ -12817,14 +12817,17 @@ function _preFindBox(pos, C, redraw){
      3 games and 10 minutes a game: solid red in the league's top 10, light red ("TOP 25%") in its
      top quarter;
    - a shot by its PERCENTAGE, among the men who shoot it enough - threes 10 attempts and 1.5 a game,
-     twos 12 and 2 a game, free throws 8 - solid in the top 10, light in the top quarter; a man who
-     makes more threes or twos a game than all but nine of the league stays solid as before;
+     twos 12 and 2 a game, free throws 8 - solid in the top 10; light ("GOOD") from 34% from three
+     (Oriol: "un 34% para arriba debería salir en rojo") and from 56% from two, both just over the BBL's
+     middle man (33% and 56% on 9/11/2026), as the percentage on the card reads; the free throws
+     light in the league's top quarter ("TOP 25%"); a man who makes more threes or twos a game than all
+     but nine of the league stays solid as before;
    - LOW in green on the same attempts, from 3 games and whatever his minutes: under 30% from three,
      45% from two, 65% at the line (_preHlLow).
    The league is the pool its leaders are drawn from; a man outside it is judged against it. */
 const PRE_HL_STAT={ "PTS/G":["pts",false,1], "AST/G":["ast",false,1], "OREB/G":["oreb",false,1], "STL/G":["stl",false,1], "SHOT%":["shot",false,1], "2PT/G":["p2",true,15], "3PT/G":["p3",true,15], "FT%":["ft",true,10] };
-const PRE_HL_SHOT={ p3:{ m:"p3m", a:"p3a", min:10, perG:1.5, low:0.30, what:"threes", tag:"3P%" },
-  p2:{ m:"p2m", a:"p2a", min:12, perG:2, low:0.45, what:"twos", tag:"2P%" },
+const PRE_HL_SHOT={ p3:{ m:"p3m", a:"p3a", min:10, perG:1.5, low:0.30, good:34, what:"threes", tag:"3P%" },
+  p2:{ m:"p2m", a:"p2a", min:12, perG:2, low:0.45, good:56, what:"twos", tag:"2P%" },
   ft:{ m:"ftm", a:"fta", min:8, perG:0, low:0.65, what:"free throws", tag:"FT%" } };
 const _preHlShotOk=(t, S)=>(t.gp||0)>=3 && (t[S.a]||0)>=S.min && (t[S.a]||0)/(t.gp||1)>=S.perG;
 /* his line: in the league's pool, or - with too few games or minutes for it - his club's own */
@@ -12865,6 +12868,10 @@ function _preHlRanks(L, c, tid){
         const mine=t[S.m]/t[S.a], ref=pool.filter(y=>y!==me && _preHlShotOk(y.t||{}, S)).map(y=>y.t[S.m]/y.t[S.a]);
         const rb=1+ref.filter(v=>v>mine).length, top=q75(ref.concat([mine]));
         if(rb<=10 && (!best || rb<best.score)) best={ score:rb, hot:true, why:ord(rb)+" BBL · in "+S.tag+", "+pc(mine)+" on "+t[S.a]+" "+S.what };
+        else if(!best && S.good!=null){
+          /* judged on the percentage the card shows, rounded as it is: a 34% that reads 34% is in */
+          if(Math.round(100*mine)>=S.good){ const s=ref.concat([mine]).sort((a,b)=>a-b), mid=s[Math.floor(s.length/2)];
+            best={ score:30, warm:true, why:"GOOD · "+pc(mine)+" on "+t[S.a]+" "+S.what+" · marked from "+S.good+"%, the BBL's middle man shoots "+pc(mid) }; } }
         else if(!best && top!=null && mine>=top) best={ score:30, warm:true, why:"TOP 25% · "+pc(mine)+" on "+t[S.a]+" "+S.what+" · the BBL's top quarter starts at "+pc(top) }; }
       return best; }
     if(!counts) return null;
