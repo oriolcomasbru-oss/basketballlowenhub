@@ -30322,11 +30322,21 @@ function _rgBlock(nm){
       P.appendChild(_rgRow("Off. rebounds", "per 40′", me.o40, Lp.o40[0], Lp.o40[1], f2, false, pg(me.o40), me.small));
       P.appendChild(_rgRow("Your DREB%", "their misses you grab", me.drp, Lp.drp[0], Lp.drp[1], fp, false, null, me.small));
       P.appendChild(_rgRow("Your OREB%", "our misses you grab", me.orp, Lp.orp[0], Lp.orp[1], fp, false, null, me.small));
-      /* goal 1 in his own minutes and every five minutes on the floor */
-      if(me.mpg && Lp.d40[0]!=null){ const c=(n, t)=>h("span",{class:"rg-chip"}, h("b",{}, n), t);
-        P.appendChild(h("div",{class:"rg-chips"}, h("i",{},"Goal 1 for you"),
-          c(f1(Lp.d40[0]*me.mpg/40), " def. reb a game"), c(f1(Lp.o40[0]*me.mpg/40), " off. reb a game"),
-          c(f2(Lp.d40[0]/8), " def. every 5′"), c(f2(Lp.o40[0]/8), " off. every 5′"))); }
+      /* A GAME IN BALLS (Oriol, 9/11/2026: "Goal 1 for you" with its decimals a 5′ was not understood).
+         His rebounds a game in his own minutes against the two goals in the same minutes: one ball one
+         rebound, a part of a ball a part of one - he sees at once whether he is short or past it */
+      if(me.mpg && Lp.d40[0]!=null && me.d40!=null){ const k=me.mpg/40;
+        const balls=(v, cls)=>{ const n=Math.max(1, Math.ceil(v-1e-9)), out=h("span",{class:"rg-balls"});
+          for(let i=0;i<n;i++){ const fr=Math.max(0, Math.min(1, v-i)); out.appendChild(h("span",{class:"rg-ball "+cls}, h("u",{style:"width:"+Math.round(100*fr)+"%"}))); }
+          return out; };
+        const grp=(lab, mine, g1, g2)=>{ const st=me.small? "" : _rgSt(mine, g1, g2);
+          const row=(who, v, cls, ncls)=>h("div",{class:"rg-br"}, h("i",{}, who), balls(v, cls), h("b",{class:ncls||""}, f1(v)));
+          return h("div",{class:"rg-bg"}, h("div",{class:"rg-bt"}, lab),
+            row("You", mine, "me "+(st||"a"), st), row("Goal 1", g1, "g1"), row("Goal 2", g2, "g2", "t")); };
+        P.appendChild(h("div",{class:"rg-who rg-bh"}, "A game in your "+Math.round(me.mpg)+"′ · one ball = one rebound"));
+        P.appendChild(h("div",{class:"rg-bw"},
+          grp("Def. rebounds", me.d40*k, Lp.d40[0]*k, Lp.d40[1]*k),
+          grp("Off. rebounds", me.o40*k, Lp.o40[0]*k, Lp.o40[1]*k))); }
       /* the team with him on the floor: his box-outs show here; the team's goals, no position */
       P.appendChild(h("div",{class:"rg-sep"}));
       P.appendChild(h("div",{class:"rg-who"}, "The team with you on court · better with you?"));
@@ -41415,6 +41425,23 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .rg-key s{display:inline-block;width:3px;height:12px;border-radius:1px;background:#5b6472}.rg-key s.k2{width:4px;background:#a9812f}
 .rg-key em{font-style:normal;font-weight:700}.rg-key em.t{color:#a9812f}.rg-key em.a{color:var(--ink,#141821)}.rg-key em.u{color:#c0403c}
 .rg-key s.ko{width:0;background:none;border-left:2px dashed #8a93a2}
+/* a game in balls: one ball one rebound, in his own minutes */
+.rg-bh{margin-top:8px}
+.rg-bw{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px 28px;padding:4px 0 8px}
+.rg-bt{font:700 12.5px 'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.05em;color:var(--ink,#141821);margin-bottom:4px}
+.rg-br{display:grid;grid-template-columns:52px minmax(0,1fr) 34px;gap:8px;align-items:center;padding:2px 0}
+.rg-br > i{font:500 11px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);white-space:nowrap}
+.rg-br > b{font:700 15px 'Oswald',sans-serif;text-align:right;color:var(--ink,#141821)}.rg-br > b.u{color:#c0403c}.rg-br > b.t{color:#a9812f}
+.rg-balls{display:flex;flex-wrap:wrap;gap:4px}
+.rg-ball{position:relative;width:18px;height:18px;border-radius:50%;border:2px solid #8a93a2;overflow:hidden;box-sizing:border-box;flex:none}
+.rg-ball u{position:absolute;left:0;top:0;bottom:0;display:block}
+.rg-ball.me.u{border-color:#c0403c}.rg-ball.me.u u{background:#c0403c}
+.rg-ball.me.a{border-color:#141821}.rg-ball.me.a u{background:#141821}
+.rg-ball.me.t{border-color:#c6a15b}.rg-ball.me.t u{background:#c6a15b}
+.rg-ball.g1{border-color:#5b6472}.rg-ball.g1 u{background:#cfd4dc}
+.rg-ball.g2{border-color:#a9812f}.rg-ball.g2 u{background:#ead9b0}
+body.dark .rg-ball.me.a{border-color:#e8eaee}body.dark .rg-ball.me.a u{background:#e8eaee}
+body.dark .rg-ball.g1 u{background:#4a515c}body.dark .rg-ball.g2 u{background:#5a4a28}
 .rg-bar .off{position:absolute;top:8px;height:28px;width:0;margin-left:-1px;border-left:2px dashed #8a93a2}
 .rg-ok.n{color:var(--ink-faint,#8a93a2)}.rg-key em.n{color:var(--ink-faint,#8a93a2)}
 .rg-small{font-size:12.5px;color:#7a5c12;background:#f6efe0;border-radius:8px;padding:6px 10px;margin-bottom:4px}.rg-small b{font-weight:700}
