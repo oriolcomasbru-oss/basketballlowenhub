@@ -30308,13 +30308,16 @@ function _rgBlock(nm){
             G.appendChild(h("span",{class:"tr "+(d>=th? "up" : d<=-th? "dn" : ""), title:"last 3 games "+fmt(last3)+" · season "+fmt(season)}, d>=th? "▲" : d<=-th? "▼" : "=")); }
           else G.appendChild(h("span",{class:"tr"}));
         };
-        line("Def. reb", r=>({ v:String(r.dr), st:_rgSt(r.min? 40*r.dr/r.min : null, Lp.d40[0], Lp.d40[1]), t:r.dr+" in "+f1(r.min)+" min" }),
+        /* a night is coloured only on a sample that says something: 10 minutes for the rebounds a
+           40', 10 rebounds there were for a share, 15 possessions for DER - one rebound in three
+           minutes is 13 a 40' and was painted gold (review of 9/11/2026); the number is still shown */
+        line("Def. reb", r=>({ v:String(r.dr), st:r.min>=10? _rgSt(40*r.dr/r.min, Lp.d40[0], Lp.d40[1]) : "", t:r.dr+" in "+f1(r.min)+" min" }),
           me.d40, sum("min")? 40*sum("dr")/sum("min") : null, 0.5, false, f2);
-        line("Off. reb", r=>({ v:String(r.or), st:_rgSt(r.min? 40*r.or/r.min : null, Lp.o40[0], Lp.o40[1]), t:r.or+" in "+f1(r.min)+" min" }),
+        line("Off. reb", r=>({ v:String(r.or), st:r.min>=10? _rgSt(40*r.or/r.min, Lp.o40[0], Lp.o40[1]) : "", t:r.or+" in "+f1(r.min)+" min" }),
           me.o40, sum("min")? 40*sum("or")/sum("min") : null, 0.5, false, f2);
-        line("DREB%", r=>{ const v=r.dA? 100*r.dr/r.dA : null; return { v:v==null? "–" : String(Math.round(v)), st:_rgSt(v, Lp.drp[0], Lp.drp[1]), t:fp(v) }; },
+        line("DREB%", r=>{ const v=r.dA? 100*r.dr/r.dA : null; return { v:v==null? "–" : String(Math.round(v)), st:r.dA>=10? _rgSt(v, Lp.drp[0], Lp.drp[1]) : "", t:fp(v)+" · "+r.dr+" of "+r.dA }; },
           me.drp, sum("dA")? 100*sum("dr")/sum("dA") : null, 3, false, fp);
-        line("OREB%", r=>{ const v=r.oA? 100*r.or/r.oA : null; return { v:v==null? "–" : String(Math.round(v)), st:_rgSt(v, Lp.orp[0], Lp.orp[1]), t:fp(v) }; },
+        line("OREB%", r=>{ const v=r.oA? 100*r.or/r.oA : null; return { v:v==null? "–" : String(Math.round(v)), st:r.oA>=10? _rgSt(v, Lp.orp[0], Lp.orp[1]) : "", t:fp(v)+" · "+r.or+" of "+r.oA }; },
           me.orp, sum("oA")? 100*sum("or")/sum("oA") : null, 3, false, fp);
         line("DER on", r=>{ const v=r.dp>=15? 100*r.dpts/r.dp : null; return { v:v==null? "–" : String(Math.round(v)), st:v==null? "" : _rgSt(v, X.team.der.avg, X.team.der.top, true), t:v==null? "too few possessions" : f1(v)+" in "+Math.round(r.dp)+" possessions" }; },
           me.der, sum("dp")? 100*sum("dpts")/sum("dp") : null, 5, true, f1);
