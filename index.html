@@ -30143,24 +30143,38 @@ async function _playerDash(root, who){
    A reference player has 40% of his club's games and 10 minutes a game (the leaders' rule); a
    position is the league's, or the staff's where they set one (TRG_POS_STAFF). Each finished league
    game is read once and its sums kept in this browser, so a week adds only its own games. */
-const RG_KEY="lw_rgoal_v2", RG_POSKEY="lw_rgpos_v1", RG_POS=["PG","SG","SF","PF","C"];
+const RG_KEY="lw_rgoal_v3", RG_POSKEY="lw_rgpos_v1", RG_POS=["PG","SG","SF","PF","C"];
 const _rgPosOf=s=>{ s=String(s||"").toUpperCase().trim(); return /CENT|^C$|^5$/.test(s)? "C" : /POWER|^PF$|^4$/.test(s)? "PF" : /SMALL|^SF$|^3$/.test(s)? "SF" : /SHOOT|^SG$|^2$/.test(s)? "SG" : /POINT|^PG$|^1$/.test(s)? "PG" : ""; };
 function _rgLS(k, v){ try{ if(v===undefined){ const s=localStorage.getItem(k); return s? JSON.parse(s) : null; } localStorage.setItem(k, JSON.stringify(v)); }catch(e){ return null; } return v; }
 /* one league game in sums: per club its rebounds, the rebounds there were, its points and
    possessions and the other side's; per man his minutes, rebounds and the rebounds there were
    while he played; and for each of ours the other side's possessions and points with him on */
+/* GARBAGE TIME OUT (Oriol, 9/11/2026): the fourth quarter and overtime while one side leads by more than
+   20 - a Bayern 66-108 ending counted as much as a close one. The events of those minutes go; the
+   substitutions stay, so who is on the floor is still known */
+function _rgNoGarbage(feed){
+  const all=(feed.actions||[]).map((a, i)=>({ a:a, i:i, e:_lgGameElapsed(a.quarter, a.time) })).sort((x, y)=>(x.e.t-y.e.t)||(x.i-y.i));
+  let p1=0, p2=0; const drop=new Set();
+  all.forEach(o=>{ const a=o.a;
+    if(o.e.qi>=3 && Math.abs(p1-p2)>20 && a.action!=="SUBST") drop.add(a);
+    const n1=Number(a.points1), n2=Number(a.points2);
+    if(a.points1!=null && a.points1!=="" && isFinite(n1)) p1=n1; if(a.points2!=null && a.points2!=="" && isFinite(n2)) p2=n2; });
+  return drop.size? Object.assign({}, feed, { actions:(feed.actions||[]).filter(a=>!drop.has(a)) }) : feed;
+}
 function _rgGameAgg(G, j, us){
   const M=_lgGameModel(G, j, null), hc=M.hc, ac=hc==="A"? "B" : "A";
+  const feed=_rgNoGarbage(j.feed);
   const poss=x=>x.fga-x.or+x.tov+0.44*x.fta, r1=v=>Math.round(v*10)/10;
   const out={ d:G.date, h:String(G.homeId), a:String(G.awayId), hs:Number(G.hs), as:Number(G.as), us:us, T:{}, P:{}, U:{} };
   [[hc, String(G.homeId)],[ac, String(G.awayId)]].forEach(([c, tid])=>{
-    const R=_rebGame(j.feed, c), W=_gpLiveWin(j.feed, c, ()=>true, {});
-    out.T[tid]={ or:R.u.or, dr:R.u.dr, oC:R.u.or+R.t.dr, dC:R.u.dr+R.t.or, pts:W.u.pts, poss:r1(poss(W.u)), op:W.t.pts, opPoss:r1(poss(W.t)) };
+    const R=_rebGame(feed, c), W=_gpLiveWin(feed, c, ()=>true, {});
+    /* osc: the other side's second-chance points, the points after their offensive rebounds */
+    out.T[tid]={ or:R.u.or, dr:R.u.dr, oC:R.u.or+R.t.dr, dC:R.u.dr+R.t.or, pts:W.u.pts, poss:r1(poss(W.u)), op:W.t.pts, opPoss:r1(poss(W.t)), osc:W.t.sc };
     Object.keys(R.pl).forEach(id=>{ const p=R.pl[id]; if(p.s!=="u") return; out.P[tid+"|"+id]=[p.sec, p.or, p.dr, p.oOn[1], p.dOn[1], p.oOn[0], p.dOn[0]]; });
-    if(tid===us){ let CT={}; try{ CT=_gpCourt(j.feed, c, 1e9)||{}; }catch(e){_quiet(e)}
+    if(tid===us){ let CT={}; try{ CT=_gpCourt(feed, c, 1e9)||{}; }catch(e){_quiet(e)}
       Object.keys(CT).forEach(id=>{ const segs=CT[id].segs||[]; if(!segs.length) return;
-        const Wp=_gpLiveWin(j.feed, c, o=>segs.some(g=>o.t>=g[0] && o.t<g[1]), {});
-        out.U[id]=[r1(poss(Wp.t)), Wp.t.pts]; }); }
+        const Wp=_gpLiveWin(feed, c, o=>segs.some(g=>o.t>=g[0] && o.t<g[1]), {});
+        out.U[id]=[r1(poss(Wp.t)), Wp.t.pts, Wp.t.sc]; }); }
   });
   return out;
 }
@@ -30217,15 +30231,16 @@ function _rgCompute(D, man){
   const lines={}; RG_POS.forEach(k=>{ const r=ref[k]; lines[k]={ n:r.o40.length };
     ["o40","d40","orp","drp"].forEach(m=>{ lines[k][m]=[_rgPct(r[m], .5), _rgPct(r[m], .75), r[m], _rgPct(r[m], .9), r[m].length? Math.max(...r[m]) : null]; }); });
   /* the teams: rebounding and defence of the season, the BBL's average and its top-six line */
-  const T={}; D.games.forEach(g=>{ const A=D.C[g.id]; Object.keys(A.T||{}).forEach(tid=>{ const a=A.T[tid], t=T[tid]||(T[tid]={ or:0, dr:0, oC:0, dC:0, op:0, opPoss:0, g:0 });
-    t.or+=a.or; t.dr+=a.dr; t.oC+=a.oC; t.dC+=a.dC; t.op+=a.op; t.opPoss+=a.opPoss; t.g++; }); });
-  const tv=Object.keys(T).map(tid=>{ const t=T[tid]; return { tid:tid, orp:100*t.or/t.oC, drp:100*t.dr/t.dC, der:100*t.op/t.opPoss }; });
+  const T={}; D.games.forEach(g=>{ const A=D.C[g.id]; Object.keys(A.T||{}).forEach(tid=>{ const a=A.T[tid], t=T[tid]||(T[tid]={ or:0, dr:0, oC:0, dC:0, op:0, opPoss:0, osc:0, g:0 });
+    t.or+=a.or; t.dr+=a.dr; t.oC+=a.oC; t.dC+=a.dC; t.op+=a.op; t.opPoss+=a.opPoss; t.osc+=a.osc||0; t.g++; }); });
+  /* sc2: the second-chance points a team gives up, per 100 of the other side's possessions */
+  const tv=Object.keys(T).map(tid=>{ const t=T[tid]; return { tid:tid, orp:100*t.or/t.oC, drp:100*t.dr/t.dC, der:100*t.op/t.opPoss, sc2:100*t.osc/t.opPoss }; });
   const mean=a=>a.reduce((x,y)=>x+y,0)/Math.max(1,a.length);
   const top6=(a, low)=>{ const s=a.slice().sort((x,y)=>low? x-y : y-x); return s[Math.min(5, s.length-1)]; };
   const team={ us:tv.filter(x=>x.tid===us)[0]||null, n:tv.length };
-  ["orp","drp","der"].forEach(m=>{ const a=tv.map(x=>x[m]), srt=a.slice().sort((x,y)=>m==="der"? x-y : y-x);
-    team[m]={ avg:mean(a), top:top6(a, m==="der"), top3:srt[Math.min(2, srt.length-1)], best:srt[0], rank:null };
-    if(team.us){ const v=team.us[m]; team[m].rank=1+a.filter(x=>m==="der"? x<v : x>v).length; } });
+  ["orp","drp","der","sc2"].forEach(m=>{ const low=m==="der"||m==="sc2", a=tv.map(x=>x[m]);
+    team[m]={ avg:mean(a), top:top6(a, low), rank:null };
+    if(team.us){ const v=team.us[m]; team[m].rank=1+a.filter(x=>low? x<v : x>v).length; } });
   const out={ lines:lines, team:team, games:D.games, last:D.games.length? D.games.map(g=>g.date).sort().slice(-1)[0] : "" };
   if(!man) return out;
   /* him: his position (the staff's first), his official line, his play by play, the team with him on */
@@ -30242,20 +30257,26 @@ function _rgCompute(D, man){
   /* "without you" only on a sample that says something: 40 rebounds there were without him (a starter's
      bench minutes are few) */
   me.tdrOff=(Tu && Tu.dC-s[4]>=40)? 100*(Tu.dr-s[6])/(Tu.dC-s[4]) : null; me.torOff=(Tu && Tu.oC-s[3]>=40)? 100*(Tu.or-s[5])/(Tu.oC-s[3]) : null;
-  me.teamSeason=Tu? { drp:100*Tu.dr/Tu.dC, orp:100*Tu.or/Tu.oC, der:100*Tu.op/Tu.opPoss } : null;
+  me.teamSeason=Tu? { drp:100*Tu.dr/Tu.dC, orp:100*Tu.or/Tu.oC, der:100*Tu.op/Tu.opPoss, sc2:100*Tu.osc/Tu.opPoss } : null;
   me.small=(man.gp||0)<5;
-  let dp=0, dpts=0; const rows=[];
+  let dp=0, dpts=0, dsc=0; const rows=[];
   D.games.filter(g=>String(g.homeId)===us || String(g.awayId)===us).sort((a,b)=>a.date<b.date? -1 : 1).forEach(g=>{
     const A=D.C[g.id]; let p=null, u=null;
     man.ids.forEach(id=>{ p=p||A.P[us+"|"+id]; u=u||(A.U||{})[id]; });
     const home=A.h===us, our=home? A.hs : A.as, their=home? A.as : A.hs;
     const opp=home? g.away : g.home;
-    if(u){ dp+=u[0]; dpts+=u[1]; }
+    if(u){ dp+=u[0]; dpts+=u[1]; dsc+=u[2]||0; }
     rows.push({ g:g, opp:opp, home:home, w:our>their, sc:our+"–"+their, min:p? p[0]/60 : 0, or:p? p[1] : 0, dr:p? p[2] : 0, oA:p? p[3] : 0, dA:p? p[4] : 0, oT:p? (p[5]||0) : 0, dT:p? (p[6]||0) : 0,
-      dp:u? u[0] : 0, dpts:u? u[1] : 0 }); });
+      dp:u? u[0] : 0, dpts:u? u[1] : 0, dsc:u? (u[2]||0) : 0 }); });
   me.der=dp? 100*dpts/dp : null; me.derPoss=dp; me.rows=rows;
   /* the team's defence without him: 60 possessions at least */
   me.derOff=(Tu && Tu.opPoss-dp>=60)? 100*(Tu.op-dpts)/(Tu.opPoss-dp) : null;
+  /* the other side's second-chance points with him on, per 100 possessions, and without him */
+  me.sc2=dp? 100*dsc/dp : null; me.sc2Off=(Tu && Tu.opPoss-dp>=60)? 100*(Tu.osc-dsc)/(Tu.opPoss-dp) : null;
+  /* HIS REBOUNDS A GAME FROM HIS OWN CHANCES (Oriol, 9/11/2026): judged by his share, shown as rebounds a
+     game - the rebounds there are a game while he plays, times his share or the goal's share */
+  const gp=rows.filter(r=>r.min>0).length;
+  me.gpP=gp; me.dAg=gp? s[4]/gp : null; me.oAg=gp? s[3]/gp : null; me.drG=gp? s[2]/gp : null; me.orG=gp? s[1]/gp : null;
   out.me=me;
   return out;
 }
@@ -30309,8 +30330,10 @@ function _rgSt3(v, off, g1, g2, low, tol){ if(v==null) return "";
   const ge=(a, b)=>b!=null && (low? a<=b : a>=b);
   if(ge(v, g2)) return "t3"; if(ge(v, g1)) return "t2"; if(off==null) return "n";
   const d=low? off-v : v-off; return d>=(tol||0)? "a" : d<=-(tol||0)? "u" : "e"; }
-function _rgRowT(lab, unit, v, off, T, fmt, low, small){
+function _rgRowT(lab, unit, v, off, T, fmt, low, small, info){
   let st=_rgSt3(v, off, T.avg, T.top, low, low? 2 : 1); if(small) st="n";
+  /* DER is the five's, not his (Oriol, 9/11/2026): information, never a ✕ */
+  if(info && (st==="u" || st==="e")) st="n";
   const cls=st==="t3"||st==="t2"? "t" : st==="e"? "n" : st;
   const mark={ t3:"✓✓✓", t2:"✓✓", a:"✓", u:"✕", n:"·", e:"=" }[st]||"";
   const tip={ t3:"Playoff level with you on court · now beat yourself", t2:"BBL average with you on court", a:"The team is better with you than without you", u:"The team is not better with you yet", e:"About the same with you and without you", n:"Not enough minutes to compare yet" }[st]||"";
@@ -30351,36 +30374,39 @@ function _rgBlock(nm){
       if(me.small) P.appendChild(h("div",{class:"rg-small"}, h("b",{}, String(me.gp||0)+" games"), " · small sample, the ✓ and ✕ start at 5 games"));
       P.appendChild(h("div",{class:"rg-who"}, "What you grab · vs the BBL’s "+(POSN[me.pos]||"players")));
       P.appendChild(_rgKey());
-      P.appendChild(_rgRow("Def. rebounds", "per 40′", me.d40, Lp.d40, f2, pg(me.d40), me.small));
-      P.appendChild(_rgRow("Off. rebounds", "per 40′", me.o40, Lp.o40, f2, pg(me.o40), me.small));
-      P.appendChild(_rgRow("Your DREB%", "their misses you grab", me.drp, Lp.drp, fp, null, me.small));
-      P.appendChild(_rgRow("Your OREB%", "our misses you grab", me.orp, Lp.orp, fp, null, me.small));
+      /* JUDGED BY HIS SHARE ONLY (Oriol, 9/11/2026): the share counts his minutes and the rebounds there
+         were; the rebounds a 40′ did not, and said the same thing twice in another number */
+      const pgR=v=>v==null? null : f1(v)+" a game";
+      P.appendChild(_rgRow("Def. rebounds", "% of their misses you grab", me.drp, Lp.drp, fp, pgR(me.drG), me.small));
+      P.appendChild(_rgRow("Off. rebounds", "% of our misses you grab", me.orp, Lp.orp, fp, pgR(me.orG), me.small));
       /* A GAME IN BALLS (Oriol, 9/11/2026: "Goal 1 for you" with its decimals a 5′ was not understood).
          His rebounds a game in his own minutes against the two goals in the same minutes: one ball one
          rebound, a part of a ball a part of one - he sees at once whether he is short or past it */
-      if(me.mpg && Lp.d40[0]!=null && me.d40!=null){ const k=me.mpg/40;
+      if(me.dAg!=null && Lp.drp[0]!=null && me.drp!=null){
         const balls=(v, cls)=>{ const n=Math.max(1, Math.ceil(v-1e-9)), out=h("span",{class:"rg-balls"});
           for(let i=0;i<n;i++){ const fr=Math.max(0, Math.min(1, v-i)); out.appendChild(h("span",{class:"rg-ball "+cls}, h("u",{style:"width:"+Math.round(100*fr)+"%"}))); }
           return out; };
-        /* only the goals still ahead of him: both, the top level alone, or - past both - himself */
-        const grp=(lab, mine40, L)=>{ const r=_rgReached(mine40, L[0], L[1]), mine=mine40*k;
+        /* only the goals still ahead of him: both, the top level alone, or - past both - himself; a goal
+           in balls is the share of the goal times the rebounds there are a game while he plays */
+        const grp=(lab, share, L, chances, mineG)=>{ const r=_rgReached(share, L[0], L[1]);
           const st=me.small? "" : ["u", "a", "t"][r];
           const row=(who, v, cls, ncls)=>h("div",{class:"rg-br"}, h("i",{}, who), balls(v, cls), h("b",{class:ncls||""}, f1(v)));
-          return h("div",{class:"rg-bg"}, h("div",{class:"rg-bt"}, lab),
-            row("You", mine, "me "+(st||"a"), st),
-            r<1? row("BBL avg", L[0]*k, "g1") : null,
-            r<2? row("Top level", L[1]*k, "g2", "t") : row("Beat it", mine, "g2", "t")); };
-        P.appendChild(h("div",{class:"rg-who rg-bh"}, "A game in your "+Math.round(me.mpg)+"′ · one ball = one rebound"));
+          return h("div",{class:"rg-bg"}, h("div",{class:"rg-bt"}, lab, h("i",{}, " · "+Math.round(chances)+" there are a game while you play")),
+            row("You", mineG, "me "+(st||"a"), st),
+            r<1? row("BBL avg", L[0]/100*chances, "g1") : null,
+            r<2? row("Top level", L[1]/100*chances, "g2", "t") : row("Beat it", mineG, "g2", "t")); };
+        P.appendChild(h("div",{class:"rg-who rg-bh"}, "A game · one ball = one rebound"));
         P.appendChild(h("div",{class:"rg-bw"},
-          grp("Def. rebounds", me.d40, Lp.d40),
-          grp("Off. rebounds", me.o40, Lp.o40))); }
+          grp("Def. rebounds", me.drp, Lp.drp, me.dAg, me.drG),
+          me.orp!=null && me.oAg!=null? grp("Off. rebounds", me.orp, Lp.orp, me.oAg, me.orG) : null)); }
       /* the team with him on the floor: his box-outs show here; the team's goals, no position */
       P.appendChild(h("div",{class:"rg-sep"}));
       P.appendChild(h("div",{class:"rg-who"}, "The team with you on court · better with you?"));
       P.appendChild(_rgKeyT());
       P.appendChild(_rgRowT("Team DREB%", "box out: we grab it", me.tdr, me.tdrOff, X.team.drp, fp, false, me.small));
       P.appendChild(_rgRowT("Team OREB%", "we get it back", me.tor, me.torOff, X.team.orp, fp, false, me.small));
-      P.appendChild(_rgRowT("DER", "points we allow · ↓ better", me.der, me.derOff, X.team.der, f1, true, me.small));
+      P.appendChild(_rgRowT("2nd chance", "points after their off. rebound · ↓ better", me.sc2, me.sc2Off, X.team.sc2, f1, true, me.small));
+      P.appendChild(_rgRowT("DER", "points we allow · ↓ better · the five’s, not yours", me.der, me.derOff, X.team.der, f1, true, me.small, true));
       /* ---- game by game: one square a game, its colour where he stood that night */
       const rows=me.rows.filter(r=>r.min>0), N=rows.length;
       if(N){
@@ -30402,17 +30428,14 @@ function _rgBlock(nm){
         /* a night is coloured only on a sample that says something: 10 minutes for the rebounds a
            40', 10 rebounds there were for a share, 15 possessions for DER - one rebound in three
            minutes is 13 a 40' and was painted gold (review of 9/11/2026); the number is still shown */
-        line("Def. reb", r=>({ v:String(r.dr), st:r.min>=10? _rgSt(40*r.dr/r.min, Lp.d40[0], Lp.d40[1]) : "", t:r.dr+" in "+f1(r.min)+" min" }),
-          me.d40, sum("min")? 40*sum("dr")/sum("min") : null, 0.5, false, f2);
-        line("Off. reb", r=>({ v:String(r.or), st:r.min>=10? _rgSt(40*r.or/r.min, Lp.o40[0], Lp.o40[1]) : "", t:r.or+" in "+f1(r.min)+" min" }),
-          me.o40, sum("min")? 40*sum("or")/sum("min") : null, 0.5, false, f2);
-        line("DREB%", r=>{ const v=r.dA? 100*r.dr/r.dA : null; return { v:v==null? "–" : String(Math.round(v)), st:r.dA>=10? _rgSt(v, Lp.drp[0], Lp.drp[1]) : "", t:fp(v)+" · "+r.dr+" of "+r.dA }; },
+        /* his rebounds that night, coloured by his share of the ones there were (10 at least) */
+        line("Def. reb", r=>{ const v=r.dA? 100*r.dr/r.dA : null; return { v:String(r.dr), st:r.dA>=10? _rgSt(v, Lp.drp[0], Lp.drp[1]) : "", t:r.dr+" of "+r.dA+" there were · "+fp(v) }; },
           me.drp, sum("dA")? 100*sum("dr")/sum("dA") : null, 3, false, fp);
-        line("OREB%", r=>{ const v=r.oA? 100*r.or/r.oA : null; return { v:v==null? "–" : String(Math.round(v)), st:r.oA>=10? _rgSt(v, Lp.orp[0], Lp.orp[1]) : "", t:fp(v)+" · "+r.or+" of "+r.oA }; },
+        line("Off. reb", r=>{ const v=r.oA? 100*r.or/r.oA : null; return { v:String(r.or), st:r.oA>=10? _rgSt(v, Lp.orp[0], Lp.orp[1]) : "", t:r.or+" of "+r.oA+" there were · "+fp(v) }; },
           me.orp, sum("oA")? 100*sum("or")/sum("oA") : null, 3, false, fp);
         line("Team DREB", r=>{ const v=r.dA? 100*r.dT/r.dA : null; return { v:v==null? "–" : String(Math.round(v)), st:r.dA>=10? _rgSt(v, me.teamSeason? me.teamSeason.drp : null, X.team.drp.avg) : "", t:"the team’s DREB% with you on: "+fp(v)+" · "+r.dT+" of "+r.dA+" · gold: BBL average or better, grey: better than we usually do" }; },
           me.tdr, sum("dA")? 100*sum("dT")/sum("dA") : null, 3, false, fp);
-        line("DER on", r=>{ const v=r.dp>=15? 100*r.dpts/r.dp : null; return { v:v==null? "–" : String(Math.round(v)), st:v==null? "" : _rgSt(v, me.teamSeason? me.teamSeason.der : null, X.team.der.avg, true), t:v==null? "too few possessions" : f1(v)+" in "+Math.round(r.dp)+" possessions · gold: BBL average or better, grey: better than we usually do" }; },
+        line("DER on", r=>{ const v=r.dp>=15? 100*r.dpts/r.dp : null; return { v:v==null? "–" : String(Math.round(v)), st:v==null? "" : ({ t:"t", a:"a" }[_rgSt(v, me.teamSeason? me.teamSeason.der : null, X.team.der.avg, true)]||""), t:v==null? "too few possessions" : f1(v)+" in "+Math.round(r.dp)+" possessions · gold: BBL average or better, grey: better than we usually do" }; },
           me.der, sum("dp")? 100*sum("dpts")/sum("dp") : null, 5, true, f1);
       }
     }
@@ -30431,9 +30454,10 @@ function _rgBlock(nm){
         h("span",{}, h("em",{class:"u"},"✕"), " not yet"), h("span",{}, h("em",{class:"a"},"✓"), " BBL average"), h("span",{}, h("em",{class:"t"},"✓✓"), " playoff · then beat it")));
       T.appendChild(tRow("DREB%", tm.us.drp, tm.drp, fp, false));
       T.appendChild(tRow("OREB%", tm.us.orp, tm.orp, fp, false));
+      T.appendChild(tRow("2nd chance", tm.us.sc2, tm.sc2, f1, true));
       T.appendChild(tRow("DER", tm.us.der, tm.der, f1, true));
     }
-    wrap.appendChild(h("div",{class:"dash-src rg-src"}, "BBL data, updated after every game · "+X.games.length+" games · last "+_dashFmt(X.last)+" · per 40′ from the league’s season lines, the % and DER from the play by play · goal 1 the median of your position (DER: the BBL average), goal 2 its top 25% (DER: the 6th best defence)"));
+    wrap.appendChild(h("div",{class:"dash-src rg-src"}, "BBL data, updated after every game · "+X.games.length+" games · last "+_dashFmt(X.last)+" · from the play by play, garbage time out (4th quarter and overtime with more than 20 between the teams) · your rebounds: your share of the ones there were while you played, against the BBL players of your position (black: their average, gold: their top level) · the team with you: better than without you, then the BBL average and the playoff level"));
   }).catch(e=>{ _quiet(e); first.innerHTML=""; first.appendChild(h("div",{class:"dash-miss"},"The league’s games could not be read.")); });
   return wrap;
 }
@@ -41482,6 +41506,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 @media (max-width:600px){ .rg-bar .l1 em,.rg-bar .l2 em{display:none} }
 /* a game in balls: one ball one rebound, in his own minutes */
 .rg-bh{margin-top:8px}
+.rg-bt i{font:500 11px 'IBM Plex Mono',monospace;font-style:normal;text-transform:none;letter-spacing:0;color:var(--ink-faint,#8a93a2)}
 .rg-bw{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px 28px;padding:4px 0 8px}
 .rg-bt{font:700 12.5px 'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.05em;color:var(--ink,#141821);margin-bottom:4px}
 .rg-br{display:grid;grid-template-columns:66px minmax(0,1fr) 34px;gap:8px;align-items:center;padding:2px 0}
