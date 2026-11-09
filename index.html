@@ -12808,47 +12808,71 @@ function _preFindBox(pos, C, redraw){
    light red, each with where he ranks - in the BBL when he is among its 25 best, in his
    team otherwise. The staff can mark the card KEY (gold frame) or STOP HIM (red frame),
    and choose the lit numbers by hand; both are kept on the card in the report. */
+/* HOW A NUMBER IS JUDGED (Oriol, 9/11/2026, on Chemnitz: "veo porcentajes o números muy altos que
+   no se marcan ... los criterios no me gustan"). King's 41% from three, von Seckendorff's 75% from
+   two, Mikesell's 67%, a 9/9 at the line, Rödl's 1 of 14 from three: none was marked, because a shot
+   was ranked by what he makes a game, the line asked 10 attempts, and a man under ten minutes or in
+   fewer than four in ten of his club's games was not looked at. Now, against the whole BBL:
+   - a counting number (points, assists, offensive rebounds, steals, share of the shots) a game, from
+     3 games and 10 minutes a game: solid red in the league's top 10, light red ("TOP 25%") in its
+     top quarter;
+   - a shot by its PERCENTAGE, among the men who shoot it enough - threes 10 attempts and 1.5 a game,
+     twos 12 and 2 a game, free throws 8 - solid in the top 10, light in the top quarter; a man who
+     makes more threes or twos a game than all but nine of the league stays solid as before;
+   - LOW in green on the same attempts, from 3 games and whatever his minutes: under 30% from three,
+     45% from two, 65% at the line (_preHlLow).
+   The league is the pool its leaders are drawn from; a man outside it is judged against it. */
 const PRE_HL_STAT={ "PTS/G":["pts",false,1], "AST/G":["ast",false,1], "OREB/G":["oreb",false,1], "STL/G":["stl",false,1], "SHOT%":["shot",false,1], "2PT/G":["p2",true,15], "3PT/G":["p3",true,15], "FT%":["ft",true,10] };
-function _preHlRanks(L, c, tid){
+const PRE_HL_SHOT={ p3:{ m:"p3m", a:"p3a", min:10, perG:1.5, low:0.30, what:"threes", tag:"3P%" },
+  p2:{ m:"p2m", a:"p2a", min:12, perG:2, low:0.45, what:"twos", tag:"2P%" },
+  ft:{ m:"ftm", a:"fta", min:8, perG:0, low:0.65, what:"free throws", tag:"FT%" } };
+const _preHlShotOk=(t, S)=>(t.gp||0)>=3 && (t[S.a]||0)>=S.min && (t[S.a]||0)/(t.gp||1)>=S.perG;
+/* his line: in the league's pool, or - with too few games or minutes for it - his club's own */
+function _preHlMe(L, c, tid){
   const pool=(_lgLeadPool(L).pool||[]);
-  const id=String(c.pid||"");
+  const id=String(c.pid||""), k=_lgNorm(_lgLastName(c.name||""));
   let me=id? pool.filter(x=>String(x.id)===id || String(x.pid||"")===id)[0] : null;
-  if(!me){ const k=_lgNorm(_lgLastName(c.name||"")); me=pool.filter(x=>String(x.tid)===String(tid) && _lgNorm(_lgLastName(x.name||""))===k)[0]||null; }
-  if(!me) return null;
-  const team=pool.filter(x=>String(x.tid)===String(me.tid));
+  if(!me) me=pool.filter(x=>String(x.tid)===String(tid) && _lgNorm(_lgLastName(x.name||""))===k)[0]||null;
+  if(me) return { me:me, pool:pool };
+  const full=(L.players||{})[tid], list=((full && (full.players||[]).length)? full.players : (((L.lead||{})[tid]||{}).players))||[];
+  const p=list.filter(x=>(id && String(x.id)===id) || _lgNorm(_lgLastName(x.name||""))===k)[0];
+  return (p && p.all && p.all.gp)? { me:{ id:p.id, tid:tid, name:p.name, t:p.all }, pool:pool } : { me:null, pool:pool };
+}
+function _preHlRanks(L, c, tid){
+  const W=_preHlMe(L, c, tid), me=W.me, pool=W.pool;
+  if(!me || !pool.length) return null;
+  const T=me.t||{}, counts=(T.gp||0)>=3 && (T.sec||0)/60/(T.gp||1)>=10;
   /* the share of his team's shots, over the men of the team who count */
   const tfa={}; pool.forEach(y=>{ const t=y.t||{}; tfa[y.tid]=(tfa[y.tid]||0)+(t.p2a||0)+(t.p3a||0); });
-  const val=(x,s)=>{ const t=x.t, g=t.gp||1;
-    if(s[0]==="pts") return t.pts/g; if(s[0]==="ast") return (t.ast||0)/g; if(s[0]==="oreb") return (t.oreb||0)/g;
-    if(s[0]==="stl") return (t.stl||0)/g;
-    if(s[0]==="shot") return tfa[x.tid]? ((t.p2a||0)+(t.p3a||0))/tfa[x.tid] : null;
-    /* A SHOT IS A THREAT BY WHAT GOES IN. Ranked by percentage alone, a man at 38% on 16 threes
-       came out 2nd of Hagen ahead of men who make twice as many, and the card lit him red while
-       it still showed his 25% of a game before. So the threes and the twos are ranked by what
-       he makes a game, among the men with 15 attempts who shoot it decently - 33% from three,
-       50% from two; under that a shot is not lit, whatever its volume. */
-    if(s[0]==="p2") return ((t.p2a||0)>=s[2] && t.p2m/t.p2a>=0.5)? t.p2m/g : null;
-    if(s[0]==="p3") return ((t.p3a||0)>=s[2] && t.p3m/t.p3a>=0.33)? t.p3m/g : null;
-    if(s[0]==="ft") return (t.fta||0)>=s[2]? t.ftm/t.fta : null; return null; };
-  const rank=(s, list)=>{ const v=val(me,s); if(v==null) return null; return 1+list.filter(y=>{ const w=val(y,s); return w!=null && w>v; }).length; };
+  const per=(x,k)=>{ const t=x.t||{}; return (t[k]||0)/(t.gp||1); };
+  const val=(x,k)=>{ const t=x.t||{};
+    if(k==="shot") return tfa[x.tid]? ((t.p2a||0)+(t.p3a||0))/tfa[x.tid] : null;
+    return per(x,k); };
   const ord=n=>n+(n%10===1&&n%100!==11? "st" : n%10===2&&n%100!==12? "nd" : n%10===3&&n%100!==13? "rd" : "th");
-  const short=_lgShort((L.teams||[]).filter(t=>String(t.id)===String(me.tid)).map(t=>t.name)[0]||"").slice(0,3).toUpperCase()||"TEAM";
+  const q75=a=>{ const s=a.slice().sort((x,y)=>x-y); return s.length? s[Math.floor(0.75*s.length)] : null; };
+  const pc=v=>Math.round(100*v)+"%";
   return (c.stats||[]).map(s=>{ const d=PRE_HL_STAT[String(s[1]||"").toUpperCase()]; if(!d) return null;
-    const rb=rank(d, pool), rt=rank(d, team); if(rb==null && rt==null) return null;
-    /* third in his team is a strength only when it is above the league's middle: a 64% free
-       throw shooter was lit "#3 WÜR" because his team shoots them worse */
-    const vs=pool.map(y=>val(y,d)).filter(w=>w!=null).sort((a,b)=>a-b), med=vs.length? vs[Math.floor(vs.length/2)] : null, mine=val(me,d);
-    if(!(rb!=null && rb<=25) && rt!==1 && (med==null || mine==null || mine<med)) return null;
-    /* the season's numbers the rank stands on, when the card may show older ones */
-    const t=me.t||{}, basis=d[0]==="p3"? " · "+(t.p3m||0)+"/"+(t.p3a||0) : d[0]==="p2"? " · "+(t.p2m||0)+"/"+(t.p2a||0) : d[0]==="ft"? " · "+(t.ftm||0)+"/"+(t.fta||0) : "";
-    /* the leader of his team is always solid and says so - "#1 WÜR" - unless he is top 10 of
-       the BBL: Wishart, first of Würzburg in assists and 19th of the league, was lit lighter
-       than it reads beside Dye's "2nd WÜR" */
-    /* ONLY WHAT STANDS OUT IN THE LEAGUE (Oriol, 8/11/2026: "ponme solamente si están destacados a
-       nivel BBL ... quita lo de Chemnitz dentro del equipo"). The ranks inside his own team and the
-       11th-25th of the league were most of the colour on a card and said little: top 10 of the BBL
-       or nothing. (What is very poor is marked apart, by _preHlLow.) */
-    if(rb!=null && rb<=10) return { score:rb, hot:true, why:ord(rb)+" BBL"+basis };
+    const k=d[0], S=PRE_HL_SHOT[k];
+    if(S){
+      const t=T, basis=" · "+(t[S.m]||0)+"/"+(t[S.a]||0);
+      let best=null;
+      /* a shooter who makes a lot of them a game, decently (33% from three, 50% from two) */
+      if(k!=="ft" && (t[S.a]||0)>=15 && (t[S.m]||0)/(t[S.a]||1)>=(k==="p3"? 0.33 : 0.5)){
+        const mine=per(me,S.m), rb=1+pool.filter(y=>{ const yt=y.t||{}; return y!==me && (yt[S.a]||0)>=15 && (yt[S.m]||0)/(yt[S.a]||1)>=(k==="p3"? 0.33 : 0.5) && per(y,S.m)>mine; }).length;
+        if(rb<=10) best={ score:rb, hot:true, why:ord(rb)+" BBL · "+S.what+" made a game"+basis }; }
+      /* and by the percentage, among the men who shoot it enough */
+      if(_preHlShotOk(t, S)){
+        const mine=t[S.m]/t[S.a], ref=pool.filter(y=>y!==me && _preHlShotOk(y.t||{}, S)).map(y=>y.t[S.m]/y.t[S.a]);
+        const rb=1+ref.filter(v=>v>mine).length, top=q75(ref.concat([mine]));
+        if(rb<=10 && (!best || rb<best.score)) best={ score:rb, hot:true, why:ord(rb)+" BBL · in "+S.tag+", "+pc(mine)+" on "+t[S.a]+" "+S.what };
+        else if(!best && top!=null && mine>=top) best={ score:30, warm:true, why:"TOP 25% · "+pc(mine)+" on "+t[S.a]+" "+S.what+" · the BBL's top quarter starts at "+pc(top) }; }
+      return best; }
+    if(!counts) return null;
+    const mine=val(me,k); if(mine==null || mine<=0) return null;
+    const vs=pool.filter(y=>y!==me).map(y=>val(y,k)).filter(w=>w!=null);
+    const rb=1+vs.filter(w=>w>mine).length, top=q75(vs.concat([mine]));
+    if(rb<=10) return { score:rb, hot:true, why:ord(rb)+" BBL" };
+    if(top!=null && mine>=top) return { score:30, warm:true, why:"TOP 25% · the BBL's top quarter starts at "+(k==="shot"? pc(top)+" of his team's shots" : (Math.round(top*10)/10).toFixed(1)+" a game") };
     return null; });
 }
 /* A FIFTH BOX. The card asks each position its own four questions - a wing is never
@@ -12888,17 +12912,13 @@ function _preHlExtra(L, c, tid, ranks){
    already has, in green, with LOW under it and the reason under the pointer. On the season's
    numbers, with the attempts the lines asked for */
 function _preHlLow(L, c, tid){
-  const pool=(_lgLeadPool(L).pool||[]);
-  const id=String(c.pid||"");
-  let me=id? pool.filter(x=>String(x.id)===id || String(x.pid||"")===id)[0] : null;
-  if(!me){ const k=_lgNorm(_lgLastName(c.name||"")); me=pool.filter(x=>String(x.tid)===String(tid) && _lgNorm(_lgLastName(x.name||""))===k)[0]||null; }
-  if(!me) return null;
+  /* any man with 3 games, whatever his minutes: the sample of a shot is its attempts (Rödl, 1 of 14
+     from three in 7 minutes a game, was not looked at) */
+  const me=_preHlMe(L, c, tid).me; if(!me) return null;
   const t=me.t||{}, pc=(m,a)=>a? Math.round(100*(m||0)/a) : null;
-  return (c.stats||[]).map(s=>{ const lab=String((s&&s[1])||"").toUpperCase();
-    if(lab==="3PT/G" && (t.p3a||0)>=12 && pc(t.p3m,t.p3a)<30) return pc(t.p3m,t.p3a)+"% on "+t.p3a+" threes - let him shoot it";
-    if(lab==="2PT/G" && (t.p2a||0)>=20 && pc(t.p2m,t.p2a)<45) return pc(t.p2m,t.p2a)+"% on "+t.p2a+" twos - contest and live with it";
-    if(lab==="FT%" && (t.fta||0)>=10 && pc(t.ftm,t.fta)<65) return pc(t.ftm,t.fta)+"% on "+t.fta+" free throws - foul him late";
-    return null; });
+  const say={ p3:" - let him shoot it", p2:" - contest and live with it", ft:" - foul him late" };
+  return (c.stats||[]).map(s=>{ const d=PRE_HL_STAT[String((s&&s[1])||"").toUpperCase()], S=d && PRE_HL_SHOT[d[0]]; if(!S) return null;
+    return (_preHlShotOk(t, S) && (t[S.m]||0)/t[S.a]<S.low)? pc(t[S.m],t[S.a])+"% on "+t[S.a]+" "+S.what+say[d[0]] : null; });
 }
 function _preHl(L, card, c, canEd, save, tid){
   /* he will not play: the card stays where it is, in grey, the badge saying OUT */
@@ -12941,9 +12961,9 @@ function _preHl(L, card, c, canEd, save, tid){
   let pick={};
   const man=c.hlStats && typeof c.hlStats==="object" && Object.keys(c.hlStats).length;
   if(man){ Object.keys(c.hlStats).forEach(k=>{ if(c.hlStats[k]==="hot"||c.hlStats[k]==="warm") pick[k]=c.hlStats[k]; }); }
-  /* every number in the top 10 of the BBL is lit, not only the best two (since 8/11/2026 only those:
-     no team ranks, no 11th-25th) */
-  else if(ranks){ ranks.forEach((r,i)=>{ if(r) pick[i]="hot"; }); }
+  /* every number in the top 10 of the BBL solid, every one in its top quarter light (9/11/2026; no
+     team ranks) */
+  else if(ranks){ ranks.forEach((r,i)=>{ if(r) pick[i]=r.warm? "warm" : "hot"; }); }
   /* the poor shooting, on a box nothing else lights - and never against the staff's own choice */
   let low=null; if(!man){ try{ low=_preHlLow(L, c, tid); }catch(e){ low=null; } }
   cells.forEach((cell,i)=>{
@@ -46211,6 +46231,9 @@ html body .phx.phx .card .stat-cell.hl-hot .sv-sep,html body .phx.phx .card .sta
 html body .phx.phx .card .stat-cell.hl-hot .hl-why,html body .phx.phx .card .stat-cell.hl-warm .hl-why{color:#c0403c!important;font-weight:700!important;opacity:1!important}
 html body .phx.phx .card .stat-cell.hl-low .hl-why{color:#17805a!important;font-weight:700!important;opacity:1!important}
 html body .phx.phx .card .stat-cell.hl-hot .hl-cell,html body .phx.phx .card .stat-cell.hl-warm .hl-cell{color:#c0403c!important}
+/* the league's top quarter (9/11/2026): the same mark, one step quieter than its top 10 */
+html body .phx.phx .card .stat-cell.hl-warm{background:rgba(216,82,78,.045)!important}
+html body .phx.phx .card .stat-cell.hl-warm .hl-why{color:#cf6d68!important;font-weight:600!important}
 body.dark .phx.phx .card .stat-cell.hl-hot,body.dark .phx.phx .card .stat-cell.hl-warm{background:rgba(224,107,98,.14)!important;box-shadow:inset 0 2.5px 0 #e06b62!important}
 body.dark .phx.phx .card .stat-cell.hl-low{background:rgba(79,195,161,.14)!important;box-shadow:inset 0 2.5px 0 #4fc3a1!important}
 body.dark .phx.phx .card .stat-cell.hl-hot .stat-value,body.dark .phx.phx .card .stat-cell.hl-warm .stat-value,body.dark .phx.phx .card .stat-cell.hl-low .stat-value{color:#eef1f5!important}
