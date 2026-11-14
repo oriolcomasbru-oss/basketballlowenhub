@@ -12186,49 +12186,70 @@ function _preCardHero(card, colPos){
     if(co) card.style.setProperty("--pcv-co", co.c);
     /* THE PHOTOGRAPH AS A STRIP DOWN THE LEFT (Oriol, 15/11/2026, with an all-conference team graphic as
        the idea: "en vez de tener la foto arriba tenerla en el lateral... y así ganar todo el lateral
-       restante para lo demás; añadir el nombre del jugador y alguna info básica en la misma foto").
-       The strip: number on top, the name written up its side - first name light, surname bold - and the
-       passport at its foot. Beside it: second position, hand, DOUBT, KEY / STOP HIM and the usage; role
-       and minutes with the small shot chart; the numbers in three columns. Under both, the full width:
-       the role line, the ideas, the closeout band. */
+       restante para lo demás; añadir el nombre del jugador y alguna info básica en la misma foto"),
+       AND EACH THING IN ITS OWN PLACE (Oriol, same day: "mucho ruido, mucha información en un solo
+       espacio"). The strip: the number top left with his second position under it, the hand he favours
+       top right, the name written up its side - first name light, surname bold - and the passport at
+       its foot. Beside it, two zones split by a hairline: the usage with the role, the minutes and
+       DOUBT; then the shot chart alone. The numbers run as one row the full width under both. KEY
+       PLAYER / STOP HIM hangs as a tab from the coloured line that frames the card. */
     const strip=h("div",{class:"pcv-strip"});
     if(img) strip.appendChild(img);
-    if(num) strip.appendChild(num);
+    /* his second position when he plays one (the column says the first; beside the video there is no
+       column, so it is always said) */
+    const pt=((posB && posB.textContent)||"").trim();
+    const pos2=!!pt && (colPos==null || pt.toUpperCase()!==String(colPos).toUpperCase());
+    if(num || pos2){ const tl=h("div",{class:"pcv-stl"});
+      if(num) tl.appendChild(num);
+      if(pos2) tl.appendChild(h("span",{class:"pcv-pos", title:"Plays "+pt+" too"}, pt));
+      strip.appendChild(tl); }
+    if(pos2) strip.classList.add("has-pos");
+    const hd=((hand && hand.textContent)||"").trim().toUpperCase();
+    if(hd==="L" || hd==="R") strip.appendChild(h("span",{class:"pcv-hand pcv-shand", title:hd==="L"? "Left-handed" : "Right-handed"}, hd));
     if(name){ const n=_pcvName(name.textContent); name.textContent="";
-      name.appendChild(h("span",{class:"fn"}, n.f||"")); name.appendChild(h("span",{class:"ln"}, n.l));
-      strip.appendChild(h("div",{class:"pcv-vname"}, name)); }
+      /* the surname never breaks inside a word: a long one comes down in size to fit the strip (about
+         8 letters fit, 6 when his second position sits under the number) */
+      const ln=h("span",{class:"ln"}, n.l), fn=h("span",{class:"fn"}, n.f||"");
+      const lw=Math.max(0, ...String(n.l||"").split(/\s+/).map(w=>w.length)), room=pos2? 5.6 : 7.4;
+      if(lw>room) ln.style.fontSize="calc(clamp(17px,9cqw,25px)*"+Math.max(.55, room/lw).toFixed(2)+")";
+      name.appendChild(fn); name.appendChild(ln);
+      const vn=h("div",{class:"pcv-vname"}, name);
+      strip.appendChild(vn);
+      /* once it is on screen, measured: what is still longer than the room comes down to fit */
+      const fit=()=>{ try{
+        if(!vn.isConnected) return; const room2=vn.clientHeight; if(!(room2>0)) return;
+        [ln, fn].forEach(s=>{ const need=s.getBoundingClientRect().height, fs=parseFloat(getComputedStyle(s).fontSize)||0;
+          if(fs && need>room2+1) s.style.fontSize=Math.max(8, fs*room2/need*.97).toFixed(1)+"px"; });
+      }catch(e){} };
+      requestAnimationFrame(()=>requestAnimationFrame(fit)); }
     if(meta) strip.appendChild(meta);
     const info=h("div",{class:"pcv-info"});
-    /* his second position when he plays one (the column says the first; beside the video there is no
-       column, so it is always said), the hand he favours, DOUBT / OUT, KEY / STOP HIM, and the usage */
-    const irow=h("div",{class:"pcv-irow"});
-    const chips=h("div",{class:"pcv-chips"});
-    const pt=((posB && posB.textContent)||"").trim();
-    if(pt && (colPos==null || pt.toUpperCase()!==String(colPos).toUpperCase())) chips.appendChild(h("span",{class:"pcv-pos", title:"Plays "+pt+" too"}, pt));
-    const hd=((hand && hand.textContent)||"").trim().toUpperCase();
-    if(hd==="L" || hd==="R") chips.appendChild(h("span",{class:"pcv-hand", title:hd==="L"? "Left-handed" : "Right-handed"}, hd));
-    if(doubt) chips.appendChild(doubt);
-    if(rib){ rib.textContent=card.classList.contains("hl-stop")? "STOP HIM" : "KEY PLAYER"; chips.appendChild(rib); }
-    irow.appendChild(chips);
-    if(use){ const b=use.querySelector("b"), foc=use.classList.contains("focus");
-      irow.appendChild(h("div",{class:"pcv-usg"+(foc? " focus" : ""), title:use.title||""}, h("b",{}, (b&&b.textContent)||""), h("span",{}, foc? "FOCUS" : "USG")));
-      use.remove(); }
-    info.appendChild(irow);
-    /* role and minutes, the reason he may miss, and the shot chart small beside them */
+    /* zone 1: the usage, then the role and the minutes, then DOUBT / OUT with the reason he may miss */
     const roleTxt=((role && role.textContent)||"").trim(), minTxt=((mins && mins.textContent)||"").trim();
     const minNum=(/(\d+(?:[.,]\d+)?)/.exec(minTxt)||[])[1]||"";
     const whyTxt=(why && why.textContent.trim())||"";
-    const mid=h("div",{class:"pcv-mid"}), rlw=h("div",{class:"pcv-rlw"});
+    const zst=h("div",{class:"pcv-zst"});
+    if(use){ const b=use.querySelector("b"), foc=use.classList.contains("focus");
+      zst.appendChild(h("div",{class:"pcv-usg"+(foc? " focus" : ""), title:use.title||""}, h("b",{}, (b&&b.textContent)||""), h("span",{}, foc? "FOCUS" : "USG")));
+      use.remove(); }
+    const zl=h("div",{class:"pcv-zl"});
     if(roleTxt || minNum){ const rl=h("div",{class:"pcv-rl"});
       if(roleTxt) rl.appendChild(h("b",{class:roleTxt.toLowerCase()}, roleTxt.toUpperCase()));
       if(minNum) rl.appendChild(h("span",{}, minNum.replace(",",".")+" min"));
-      rlw.appendChild(rl); }
-    if(whyTxt) rlw.appendChild(h("div",{class:"pcv-why"}, whyTxt));
-    mid.appendChild(rlw);
-    if(sc) mid.appendChild(h("div",{class:"pcv-hsc"}, sc));
-    if(mid.textContent.trim() || sc) info.appendChild(mid);
-    if(stats) info.appendChild(h("div",{class:"pcv-stats"}, stats));
+      zl.appendChild(rl); }
+    if(doubt || whyTxt){ const dr=h("div",{class:"pcv-dr"});
+      if(doubt) dr.appendChild(doubt);
+      if(whyTxt) dr.appendChild(h("div",{class:"pcv-why"}, whyTxt));
+      zl.appendChild(dr); }
+    if(zl.childNodes.length) zst.appendChild(zl);
+    if(zst.childNodes.length) info.appendChild(zst);
+    /* zone 2: the shot chart, alone */
+    if(sc) info.appendChild(h("div",{class:"pcv-hsc"}, sc));
     const hero=h("div",{class:"pcv-top2"}, strip, info);
+    /* zone 3: the numbers, one row the full width */
+    const nums=(stats && stats.querySelector(".stat-cell"))? h("div",{class:"pcv-stats"}, stats) : null;
+    /* KEY PLAYER / STOP HIM: a tab hanging from the line that frames the card */
+    if(rib){ rib.textContent=card.classList.contains("hl-stop")? "STOP HIM" : "KEY PLAYER"; rib.classList.add("pcv-tab"); rib.remove(); card.classList.add("has-tab"); }
     /* the body: the role and the 3-5 ideas the staff writes - the room on the card is theirs */
     const body=h("div",{class:"pcv-body"});
     if(tagw) body.appendChild(tagw);
@@ -12236,8 +12257,8 @@ function _preCardHero(card, colPos){
     if(extra && extra.textContent.trim()) body.appendChild(extra);
     /* the closeout closes the card, a band of its colour with its word (unrated: black) */
     const band=h("div",{class:"pcv-band "+(co? st : "neutral"), title:(coBar && coBar.title)||""}, co? co.k : "");
-    /* put together: the strip and its column, the body, the closeout */
-    const frag=[hero, body, band];
+    /* put together: the tab, the strip and its column, the numbers, the body, the closeout */
+    const frag=[rib, hero, nums, body.textContent.trim()? body : null, band].filter(Boolean);
     const keep=[...card.children].filter(x=>x.classList.contains("hl-tog"));
     [...card.children].forEach(x=>{ if(keep.indexOf(x)<0) x.classList.add("pcv-old"); });
     frag.forEach(x=>card.appendChild(x));
@@ -47180,48 +47201,59 @@ html body .phx.phx.pre-phx .card.pcv .pcv-sc .photo-sc svg{display:block!importa
 html body .phx.phx.pre-phx .card.pcv .pcv-sc .sc-floor{fill:#222833!important}
 html body .phx.phx.pre-phx .card.pcv .pcv-sc .sc-line{stroke:#c9ced6!important;opacity:.28!important}
 
-/* THE PHOTOGRAPH AS A STRIP DOWN THE LEFT (Oriol, 15/11/2026): the strip with the number on top, the
-   name written up its side and the passport at its foot; beside it chips and usage, role and minutes with
-   the small shot chart, the numbers in three columns; under both, the ideas and the closeout band */
+/* THE PHOTOGRAPH AS A STRIP DOWN THE LEFT (Oriol, 15/11/2026), EACH THING IN ITS OWN PLACE (same day:
+   "mucho ruido, mucha información en un solo espacio"): the strip with the number top left, the hand top
+   right, the name up its side and the passport at its foot; beside it the usage with role, minutes and
+   DOUBT, a hairline, then the shot chart alone; the numbers one row the full width under both; KEY
+   PLAYER / STOP HIM a tab hanging from the coloured line that frames the card */
+html body .phx.phx.pre-phx .roster-columns .card.pcv.hl-key,html body .phx.phx.pre-phx .roster-columns .card.pcv.hl-stop{padding-top:0!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-top2{display:grid;grid-template-columns:36% minmax(0,1fr);align-items:stretch;background:#1b2029}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-strip{position:relative;overflow:hidden;min-height:clamp(150px,66cqw,205px);background:radial-gradient(140% 80% at 50% 10%,#2e3545 0%,#151922 70%)}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-info:not(:has(.pcv-hsc)){justify-content:center}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .photo-img{position:absolute!important;left:0!important;right:0!important;top:0!important;bottom:0!important;width:auto!important;height:auto!important;margin:0!important;border-radius:0!important;
   background-size:cover!important;background-position:50% 6%!important;background-repeat:no-repeat!important;transform:none!important;z-index:1}
+html body .phx.phx.pre-phx .card.pcv-side.is-out .pcv-strip .photo-img{filter:grayscale(1) opacity(.55)!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-strip::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
   background:linear-gradient(180deg,rgba(12,15,20,0) 34%,rgba(12,15,20,.55) 60%,rgba(12,15,20,.93) 100%)}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .num-badge{position:absolute!important;top:6px!important;left:6px!important;z-index:3!important;font-size:clamp(13px,7cqw,19px)!important;padding:3px 7px 4px!important;border-radius:8px!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-stl{position:absolute;top:6px;left:6px;z-index:3;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .num-badge{position:static!important;font-size:clamp(13px,7cqw,19px)!important;padding:3px 7px 4px!important;border-radius:8px!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-stl .pcv-pos{height:clamp(16px,7.6cqw,19px);padding:0 5px;border-radius:5px;font-size:clamp(9px,4.3cqw,10.5px);box-shadow:none}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-shand{position:absolute;top:6px;right:6px;z-index:3;width:clamp(18px,8.6cqw,23px);height:clamp(18px,8.6cqw,23px);font-size:clamp(9.5px,4.6cqw,12px);
+  border-width:1px;background:rgba(12,15,20,.78);border-color:rgba(255,255,255,.6);color:#fff;box-shadow:none}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-vname{position:absolute;left:5px;right:2px;top:clamp(34px,15cqw,46px);bottom:clamp(30px,13cqw,40px);z-index:3;pointer-events:none}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip.has-pos .pcv-vname{top:clamp(56px,25cqw,70px)}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name{writing-mode:vertical-rl!important;transform:rotate(180deg);display:flex!important;flex-direction:column!important;align-items:flex-start!important;gap:0!important;
   height:100%!important;margin:0!important;padding:0!important;line-height:1!important;font-size:inherit!important;text-transform:uppercase!important;color:#fff!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .fn{font:500 clamp(8.5px,4.2cqw,11.5px)/1.15 'Inter',sans-serif;letter-spacing:.14em;color:#d5dae2;white-space:nowrap}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .ln{font:700 clamp(17px,9cqw,25px)/.95 'Oswald',sans-serif;letter-spacing:.02em;color:#fff;margin:0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .ln{font:700 clamp(17px,9cqw,25px)/.95 'Oswald',sans-serif;letter-spacing:.02em;color:#fff;margin:0;white-space:normal;overflow-wrap:normal!important;word-break:keep-all!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .fn:empty{display:none}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .meta{position:absolute!important;left:6px!important;right:5px!important;bottom:6px!important;z-index:3!important;margin:0!important;padding:0!important;
   font:600 clamp(7px,3.3cqw,9px)/1.25 'IBM Plex Mono',monospace!important;color:#d5dae2!important;letter-spacing:.01em!important}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-info{display:flex;flex-direction:column;gap:7px;padding:8px 9px 8px;min-width:0}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-irow{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;min-height:clamp(34px,16cqw,44px)}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-chips{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-pos{height:20px;padding:0 6px;border-radius:6px;font-size:10.5px;box-shadow:none}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-hand{width:20px;height:20px;font-size:10.5px;border-width:1px;background:#2a303b;box-shadow:none}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-chips .doubt-badge.on{height:20px!important;padding:0 7px!important;box-shadow:none!important}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-chips .hl-rib{padding:3px 7px!important;font-size:8.5px!important;box-shadow:none!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-info{display:flex;flex-direction:column;min-width:0;padding:0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-zst{display:flex;align-items:center;gap:9px;padding:9px 10px 9px;min-width:0}
+html body .phx.phx.pre-phx .card.pcv-side.has-tab .pcv-zst{padding-top:21px}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-usg{flex:none;width:clamp(36px,17cqw,46px);background:#2a303b;box-shadow:none}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-usg.focus{background:#e0453b;box-shadow:0 3px 10px rgba(224,69,59,.35)}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-mid{display:flex;align-items:center;justify-content:space-between;gap:6px}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-rlw{display:flex;flex-direction:column;gap:3px;min-width:0}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-rl{margin:0;flex-direction:column;align-items:flex-start;gap:2px}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-why{font:italic 500 clamp(8.5px,4.2cqw,10.5px)/1.25 'Inter',sans-serif;color:#f3c14b}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-mid .pcv-hsc{position:static;flex:none;width:54%;max-width:118px}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-stats{padding:0!important;background:transparent!important}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-stats .stat-bar{grid-auto-flow:row!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;grid-auto-columns:auto!important;gap:3px 2px!important;padding:6px 0 0!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-zl{display:flex;flex-direction:column;align-items:flex-start;gap:5px;min-width:0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-rl{margin:0;display:flex;align-items:baseline;flex-wrap:wrap;gap:1px 7px}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-dr{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-dr .doubt-badge.on{height:17px!important;padding:0 7px!important;font-size:8px!important;box-shadow:none!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-why{font:italic 500 clamp(8.5px,4.2cqw,10px)/1.25 'Inter',sans-serif;color:#f3c14b}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-info .pcv-hsc{position:static;flex:1 1 auto;width:auto;z-index:auto;display:flex;align-items:center;justify-content:center;padding:8px 10px 9px}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-zst + .pcv-hsc{border-top:1px solid rgba(255,255,255,.07)}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-info .pcv-hsc .photo-sc{max-width:150px!important;background:#222833!important;border-color:rgba(255,255,255,.06)!important;box-shadow:none!important}
+html body .phx.phx.pre-phx .card.pcv-side > .hl-rib.pcv-tab{position:absolute!important;top:0!important;left:68%!important;right:auto!important;transform:translateX(-50%)!important;z-index:7!important;display:block!important;
+  border-radius:0 0 7px 7px!important;padding:2px 10px 3px!important;font:800 clamp(7.5px,3.7cqw,9px)/1.3 'Inter',sans-serif!important;letter-spacing:.16em!important;white-space:nowrap!important;box-shadow:none!important}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-top2{background:#fff!important}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-strip{background:radial-gradient(140% 80% at 50% 10%,#f4f5f8 0%,#e1e5eb 70%)}
-html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-hand{background:#eef0f3;color:#141821;border-color:#c9ced8}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-usg:not(.focus){background:#eef0f3;color:#141821;border-color:#dfe3e8}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-why{color:#8a6608!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-zst + .pcv-hsc{border-top-color:#edf0f3}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-info .pcv-hsc .photo-sc{background:#f4f5f8!important;border-color:#e3e6eb!important;box-shadow:none!important}
 html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-top2{background:#fff!important}
 html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-usg:not(.focus){background:#fff!important;color:#141821!important;border:1px solid #d5d9e0!important}
-html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-hand{background:#fff!important;color:#141821!important;border-color:#5b6472!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-zst + .pcv-hsc{border-top-color:#e3e6eb!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-info .pcv-hsc .photo-sc{background:#eef1f5!important}
 
 /* THE LIGHT HUB (Oriol: "hay una versión oscura de la web y una clara, así que se verán ambas"): with
    the light theme the lanes are light grey and the cards white, ink on white; the dark theme keeps the
