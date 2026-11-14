@@ -12141,6 +12141,18 @@ function _preCardUse(card, L, tid, c){
     if(mn && mn.nextSibling) row.insertBefore(chip, mn.nextSibling); else row.appendChild(chip);
   }catch(e){_quiet(e)}
 }
+/* TIDY A CARD FOR READING (the board and the card beside the video): a man with nothing but zeros
+   and dashes in his numbers gets no row of them (CSS hides .no-stats outside editing), and the
+   meta keeps "1.88 m" and "86 kg" whole instead of leaving "kg" alone on the next line - the text
+   is only touched when nobody is editing it */
+function _preCardTidy(card, reading){
+  try{
+    if(!card) return;
+    const vals=[...card.querySelectorAll(".stat-bar .stat-value")].map(v=>{ const k=v.cloneNode(true); k.querySelectorAll(".sv-pc,.sv-sep").forEach(x=>x.remove()); return k.textContent.trim(); });
+    if(vals.length && vals.every(v=>!v || /^[—–-]$/.test(v) || /^0+(?:[.,]0+)?$/.test(v))) card.classList.add("no-stats");
+    if(reading){ const mt=card.querySelector(".meta"); if(mt && mt.childElementCount===0) mt.textContent=mt.textContent.replace(/(\d)\s+(m|kg|cm)\b/g, "$1 $2"); }
+  }catch(e){_quiet(e)}
+}
 /* the chart into the photo's column, under the photograph */
 function _preCardShots(card, L, tid, c){
   try{
@@ -12264,8 +12276,9 @@ function _preOpenCard(L, tid, c, canEd, save){
     /* THE SAME CARD AS ON THE BOARD: the KEY / STOP HIM band and frame, OUT, the lit boxes with
        their rank - the board's card had them and the one opened beside the video did not */
     try{ _preHl(L, card, c, false, ()=>{}, _preClub()); }catch(e){_quiet(e)}
-    /* and its usage, the same chip as on the board */
+    /* and its usage, the same chip as on the board, and the same tidying */
     _preCardUse(card, L, tid, c);
+    _preCardTidy(card, !mayWrite);
     col.appendChild(card);
   }
   cols.appendChild(col);
@@ -13082,6 +13095,7 @@ function _prePhxBoard(L, C, canEd, redraw){
       try{ _preHl(L, card, c, canEd, redraw, _preClub()); }catch(e){_quiet(e)}
       _preCardShots(card, L, _preTidForCards, c);
       _preCardUse(card, L, _preTidForCards, c);
+      _preCardTidy(card, !canEd);
       if(!canEd){
         card.querySelectorAll(".idea-row").forEach(r=>{
           const t=r.querySelector(".idea-line");
@@ -13851,7 +13865,7 @@ function _preCardsBlock(L, tid, rep, canEd, save){
   const blk=h("div",{class:"rs-block rs-block-lg"});
   const ban=h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"},"ROSTER POSITIONS"));
   /* what the cards do, said above them */
-  blk.appendChild(h("div",{class:"pc-hint"}, "▶ Click on any card to open its video summary."));
+  blk.appendChild(h("div",{class:"pc-hint"}, "Click on any card to open its video summary."));
   blk.appendChild(ban);
   let C=_preCardsStore(rep);
   const ros=(L.roster||{})[tid];
@@ -46933,6 +46947,87 @@ body.dark .rt-nlr.z{background:rgba(255,255,255,.04)}
   .dash-pf > .dash-col{grid-template-columns:minmax(0,1fr)}
   .dash-pf > .dash-col > .dash-sub + .dash-sub{border-left:0;padding-left:0;border-top:1px solid var(--line,#e4e7ec);padding-top:10px}
 }
+</style>
+
+<style id="cardCalm">
+/* ROSTER POSITIONS, WITH THE NOISE TAKEN OUT (Oriol, 14/11/2026: "veo mucho ruido, mejora la maquetación
+   general para integrarlo todo mejor y hacerlo más visual y claro"). The same facts, said once each:
+   - the column is a heading over the cards, not a second card around them, and loses its gold strip;
+   - the position is the column's, so the badge that repeated it on the photograph goes (the card beside
+     the video, which has no column, keeps it);
+   - role, minutes and usage are one line of words, not four pills; FOCUS is the only colour on it;
+   - the role line is set in ink, without the gold rule beside it;
+   - the numbers sit on one quiet row: a lit number is coloured, the top-ten ones on a pale ground, and
+     nothing carries a stripe on top any more;
+   - the closeout is a slim tinted strip with its word and a 2 px edge of its colour, not a slab, and an
+     unrated one is not drawn outside editing;
+   - a man with no numbers yet (0.0 everywhere) shows no row of zeros.
+   The same card opens beside the video, so every rule is written for both (.phx.pre-phx covers the two). */
+html body .phx.phx.pre-phx .pos-col::before{display:none!important}
+html body .phx.phx.pre-phx .roster-columns .pos-col{background:transparent!important;border:0!important;box-shadow:none!important;padding:0 4px!important}
+html body .phx.phx.pre-phx .pos-col-head{color:#141821!important;font-size:20px!important;letter-spacing:.08em!important;padding:0 2px 6px!important;margin:0 0 10px!important;border-bottom:2px solid #141821!important}
+html body .phx.phx.pre-phx .roster-columns .card{border:1px solid #e3e6eb!important;border-radius:10px!important;box-shadow:0 1px 2px rgba(16,24,40,.06)!important}
+html body .phx.phx.pre-phx .roster-columns .card .pos-badge{display:none!important}
+html body .phx.phx.pre-phx .card .meta{color:#687180!important}
+/* the status line */
+html body .phx.phx.pre-phx .card .row2{gap:3px 10px!important;margin:3px 0 7px!important;align-items:center!important}
+html body .phx.phx.pre-phx .card .roster-badge{background:none!important;border:0!important;padding:0!important;border-radius:0!important;letter-spacing:.06em!important;font-weight:800!important;color:#141821!important}
+html body .phx.phx.pre-phx .card .roster-badge.outline{color:#687180!important;font-weight:700!important}
+html body .phx.phx.pre-phx .card .minutes{background:none!important;padding:0!important;border-radius:0!important;color:#4b5563!important;font-weight:600!important}
+html body .phx.phx.pre-phx .card .use-chip:not(.focus){background:none!important;padding:0!important;color:#4b5563!important}
+html body .phx.phx.pre-phx .card .use-chip.focus{padding:3px 7px!important}
+/* the role, the coach's line */
+html body .phx.phx.pre-phx .card .tagline{border-left:0!important;padding:0!important;color:#141821!important;letter-spacing:.015em!important}
+html body .phx.phx.pre-phx .card .tagline-wrap{margin:2px 0 8px!important}
+/* the numbers */
+html body .phx.phx.pre-phx .card .stat-bar{background:#fff!important;border-top:1px solid #edf0f3!important;gap:0 2px!important;padding:5px 4px 6px!important}
+html body .phx.phx.pre-phx .card .stat-cell{background:transparent!important;box-shadow:none!important;border:0!important;border-radius:6px!important}
+html body .phx.phx.pre-phx .card .stat-cell .stat-value{color:#141821!important}
+html body .phx.phx.pre-phx .card .stat-cell .stat-label{color:#687180!important}
+html body .phx.phx.pre-phx .card .stat-cell.hl-hot{background:rgba(216,82,78,.11)!important}
+html body .phx.phx.pre-phx .card .stat-cell.hl-hot .stat-value,html body .phx.phx.pre-phx .card .stat-cell.hl-hot .sv-pc,
+html body .phx.phx.pre-phx .card .stat-cell.hl-warm .stat-value,html body .phx.phx.pre-phx .card .stat-cell.hl-warm .sv-pc{color:#b8322a!important}
+html body .phx.phx.pre-phx .card .stat-cell.hl-hot .hl-why,html body .phx.phx.pre-phx .card .stat-cell.hl-warm .hl-why{color:#b8322a!important;opacity:1!important;font-weight:700!important}
+html body .phx.phx.pre-phx .card .stat-cell.hl-low .stat-value,html body .phx.phx.pre-phx .card .stat-cell.hl-low .sv-pc,
+html body .phx.phx.pre-phx .card .stat-cell.hl-low .hl-why{color:#14704f!important;opacity:1!important}
+html body .phx.phx.pre-phx .card .stat-cell.hl-low .hl-why{font-weight:700!important}
+html body .phx.phx.pre-phx .card .stat-cell.hl-hot .stat-label,html body .phx.phx.pre-phx .card .stat-cell.hl-warm .stat-label,
+html body .phx.phx.pre-phx .card .stat-cell.hl-low .stat-label{color:#687180!important}
+body:not(.edit-mode) .phx.phx.pre-phx .card.no-stats .stat-bar{display:none!important}
+/* the closeout */
+html body .phx.phx.pre-phx .card .closeout-bar{padding:4px 0 3px!important;letter-spacing:.22em!important;font-size:9.5px!important;font-weight:700!important}
+html body .phx.phx.pre-phx .card .closeout-bar[data-state="red"]{background:#fdeceb!important;color:#b3332b!important;box-shadow:inset 0 2px 0 #d8524e!important}
+html body .phx.phx.pre-phx .card .closeout-bar[data-state="green"]{background:#e4f4ee!important;color:#14704f!important;box-shadow:inset 0 2px 0 #2f9e86!important}
+html body .phx.phx.pre-phx .card .closeout-bar[data-state="yellow"]{background:#fbf2da!important;color:#7a5a06!important;box-shadow:inset 0 2px 0 #d9a521!important}
+html body .phx.phx.pre-phx .card .closeout-bar[data-state="neutral"]{background:#f3f4f6!important;color:#8a919c!important}
+body:not(.edit-mode) .phx.phx.pre-phx .card .closeout-bar[data-state="neutral"]{display:none!important}
+/* the line above the board */
+.pc-hint{background:none!important;border:0!important;padding:0!important;margin:0 0 12px!important;color:#5b6472!important;font:500 12.5px Inter,system-ui,sans-serif!important}
+body.dark .pc-hint{color:#aeb5c0!important}
+body.dark .phx.phx.pre-phx .pos-col-head{color:#e9ebef!important;border-bottom-color:#e9ebef!important}
+/* dark: the pre game's cards are dark, so the same calm in light ink */
+body.dark .phx.phx.pre-phx .roster-columns .card{border-color:rgba(255,255,255,.10)!important;box-shadow:none!important}
+body.dark .phx.phx.pre-phx .card .meta{color:#9aa2ae!important}
+body.dark .phx.phx.pre-phx .card .roster-badge{color:#e9ebef!important}
+body.dark .phx.phx.pre-phx .card .roster-badge.outline{color:#aeb5c0!important}
+body.dark .phx.phx.pre-phx .card .minutes,body.dark .phx.phx.pre-phx .card .use-chip:not(.focus){color:#c9ced6!important}
+body.dark .phx.phx.pre-phx .card .use-chip:not(.focus) .uc-bar{background:rgba(230,234,240,.2)!important}
+body.dark .phx.phx.pre-phx .card .use-chip:not(.focus) .uc-bar i{background:#e6eaf0!important}
+body.dark .phx.phx.pre-phx .card .tagline{color:#e9ebef!important}
+body.dark .phx.phx.pre-phx .card .stat-bar{background:transparent!important;border-top-color:rgba(255,255,255,.08)!important}
+body.dark .phx.phx.pre-phx .card .stat-cell{border:0!important;box-shadow:none!important;outline:0!important}
+body.dark .phx.phx.pre-phx .card .stat-cell .stat-value{color:#e9ebef!important}
+body.dark .phx.phx.pre-phx .card .stat-cell .stat-label{color:#aeb5c0!important}
+body.dark .phx.phx.pre-phx .card .stat-cell.hl-hot{background:rgba(240,112,94,.16)!important}
+body.dark .phx.phx.pre-phx .card .stat-cell.hl-warm{background:transparent!important}
+body.dark .phx.phx.pre-phx .card .stat-cell.hl-hot .stat-value,body.dark .phx.phx.pre-phx .card .stat-cell.hl-hot .sv-pc,body.dark .phx.phx.pre-phx .card .stat-cell.hl-hot .hl-why,
+body.dark .phx.phx.pre-phx .card .stat-cell.hl-warm .stat-value,body.dark .phx.phx.pre-phx .card .stat-cell.hl-warm .sv-pc,body.dark .phx.phx.pre-phx .card .stat-cell.hl-warm .hl-why{color:#ff8f85!important}
+body.dark .phx.phx.pre-phx .card .stat-cell.hl-low{background:transparent!important}
+body.dark .phx.phx.pre-phx .card .stat-cell.hl-low .stat-value,body.dark .phx.phx.pre-phx .card .stat-cell.hl-low .sv-pc,body.dark .phx.phx.pre-phx .card .stat-cell.hl-low .hl-why{color:#5fcf9f!important}
+body.dark .phx.phx.pre-phx .card .closeout-bar[data-state="red"]{background:rgba(216,82,78,.18)!important;color:#ff8f85!important}
+body.dark .phx.phx.pre-phx .card .closeout-bar[data-state="green"]{background:rgba(47,158,134,.2)!important;color:#5fcf9f!important}
+body.dark .phx.phx.pre-phx .card .closeout-bar[data-state="yellow"]{background:rgba(217,165,33,.2)!important;color:#f0c75e!important}
+body.dark .phx.phx.pre-phx .card .closeout-bar[data-state="neutral"]{background:rgba(255,255,255,.06)!important;color:#aeb5c0!important}
 </style>
 
 <script defer src="/stats.js"></script>
