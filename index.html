@@ -12182,50 +12182,53 @@ function _preCardHero(card, colPos){
     const stats=q(".stat-bar"), coBar=q(".closeout-bar"), rib=q(".hl-rib"), use=q(".use-chip");
     const role=q(".roster-badge"), mins=q(".minutes"), doubt=q(".doubt-badge.on"), why=q(".doubt-why");
     const st=(coBar && coBar.getAttribute("data-state"))||"neutral", co=PCV_CO[st]||null;
-    card.classList.add("pcv");
+    card.classList.add("pcv", "pcv-side");
     if(co) card.style.setProperty("--pcv-co", co.c);
-    /* the hero */
-    const hero=h("div",{class:"pcv-hero"});
-    if(img) hero.appendChild(img);
-    const top=h("div",{class:"pcv-top"});
-    const tl=h("div",{class:"pcv-tl"});
-    /* number, then his second position when he plays one (the column says the first; beside the
-       video there is no column, so it is always said), then the hand he favours */
+    /* THE PHOTOGRAPH AS A STRIP DOWN THE LEFT (Oriol, 15/11/2026, with an all-conference team graphic as
+       the idea: "en vez de tener la foto arriba tenerla en el lateral... y así ganar todo el lateral
+       restante para lo demás; añadir el nombre del jugador y alguna info básica en la misma foto").
+       The strip: number on top, the name written up its side - first name light, surname bold - and the
+       passport at its foot. Beside it: second position, hand, DOUBT, KEY / STOP HIM and the usage; role
+       and minutes with the small shot chart; the numbers in three columns. Under both, the full width:
+       the role line, the ideas, the closeout band. */
+    const strip=h("div",{class:"pcv-strip"});
+    if(img) strip.appendChild(img);
+    if(num) strip.appendChild(num);
+    if(name){ const n=_pcvName(name.textContent); name.textContent="";
+      name.appendChild(h("span",{class:"fn"}, n.f||"")); name.appendChild(h("span",{class:"ln"}, n.l));
+      strip.appendChild(h("div",{class:"pcv-vname"}, name)); }
+    if(meta) strip.appendChild(meta);
+    const info=h("div",{class:"pcv-info"});
+    /* his second position when he plays one (the column says the first; beside the video there is no
+       column, so it is always said), the hand he favours, DOUBT / OUT, KEY / STOP HIM, and the usage */
+    const irow=h("div",{class:"pcv-irow"});
     const chips=h("div",{class:"pcv-chips"});
-    if(num) chips.appendChild(num);
     const pt=((posB && posB.textContent)||"").trim();
     if(pt && (colPos==null || pt.toUpperCase()!==String(colPos).toUpperCase())) chips.appendChild(h("span",{class:"pcv-pos", title:"Plays "+pt+" too"}, pt));
     const hd=((hand && hand.textContent)||"").trim().toUpperCase();
     if(hd==="L" || hd==="R") chips.appendChild(h("span",{class:"pcv-hand", title:hd==="L"? "Left-handed" : "Right-handed"}, hd));
-    /* DOUBT / OUT beside the number, where the eye starts */
     if(doubt) chips.appendChild(doubt);
-    tl.appendChild(chips);
-    if(rib){ rib.textContent=card.classList.contains("hl-stop")? "STOP HIM" : "KEY PLAYER"; tl.appendChild(rib); }
-    top.appendChild(tl);
+    if(rib){ rib.textContent=card.classList.contains("hl-stop")? "STOP HIM" : "KEY PLAYER"; chips.appendChild(rib); }
+    irow.appendChild(chips);
     if(use){ const b=use.querySelector("b"), foc=use.classList.contains("focus");
-      top.appendChild(h("div",{class:"pcv-usg"+(foc? " focus" : ""), title:use.title||""}, h("b",{}, (b&&b.textContent)||""), h("span",{}, foc? "FOCUS" : "USG")));
+      irow.appendChild(h("div",{class:"pcv-usg"+(foc? " focus" : ""), title:use.title||""}, h("b",{}, (b&&b.textContent)||""), h("span",{}, foc? "FOCUS" : "USG")));
       use.remove(); }
-    hero.appendChild(top);
-    const idb=h("div",{class:"pcv-id"});
-    if(name){ const n=_pcvName(name.textContent); name.textContent="";
-      if(n.f) name.appendChild(h("span",{class:"fn"}, n.f)); name.appendChild(h("span",{class:"ln"}, n.l)); idb.appendChild(name); }
-    if(meta) idb.appendChild(meta);
-    /* HALF THE HEIGHT (Oriol, 14/11/2026: "el tamaño de cada ficha debería reducirse en la vertical un
-       50%... integrar rotation y minutos en la fotografía, integrar el mapa de tiro en algún sitio de la
-       fotografía"): role and minutes are a line under the passport, the reason he may not play under
-       that, and the shot chart sits in the photograph's bottom right - no status row any more */
+    info.appendChild(irow);
+    /* role and minutes, the reason he may miss, and the shot chart small beside them */
     const roleTxt=((role && role.textContent)||"").trim(), minTxt=((mins && mins.textContent)||"").trim();
     const minNum=(/(\d+(?:[.,]\d+)?)/.exec(minTxt)||[])[1]||"";
+    const whyTxt=(why && why.textContent.trim())||"";
+    const mid=h("div",{class:"pcv-mid"}), rlw=h("div",{class:"pcv-rlw"});
     if(roleTxt || minNum){ const rl=h("div",{class:"pcv-rl"});
       if(roleTxt) rl.appendChild(h("b",{class:roleTxt.toLowerCase()}, roleTxt.toUpperCase()));
       if(minNum) rl.appendChild(h("span",{}, minNum.replace(",",".")+" min"));
-      idb.appendChild(rl); }
-    const whyTxt=(why && why.textContent.trim())||"";
-    if(whyTxt) idb.appendChild(h("div",{class:"pcv-why"}, whyTxt));
-    /* the chart in the photograph's bottom right, small; the name block keeps to the left of it */
-    if(sc) idb.classList.add("has-sc");
-    hero.appendChild(idb);
-    if(sc) hero.appendChild(h("div",{class:"pcv-hsc"}, sc));
+      rlw.appendChild(rl); }
+    if(whyTxt) rlw.appendChild(h("div",{class:"pcv-why"}, whyTxt));
+    mid.appendChild(rlw);
+    if(sc) mid.appendChild(h("div",{class:"pcv-hsc"}, sc));
+    if(mid.textContent.trim() || sc) info.appendChild(mid);
+    if(stats) info.appendChild(h("div",{class:"pcv-stats"}, stats));
+    const hero=h("div",{class:"pcv-top2"}, strip, info);
     /* the body: the role and the 3-5 ideas the staff writes - the room on the card is theirs */
     const body=h("div",{class:"pcv-body"});
     if(tagw) body.appendChild(tagw);
@@ -12233,10 +12236,8 @@ function _preCardHero(card, colPos){
     if(extra && extra.textContent.trim()) body.appendChild(extra);
     /* the closeout closes the card, a band of its colour with its word (unrated: black) */
     const band=h("div",{class:"pcv-band "+(co? st : "neutral"), title:(coBar && coBar.title)||""}, co? co.k : "");
-    /* put together: hero, the numbers, body, closeout */
-    const frag=[hero];
-    if(stats) frag.push(h("div",{class:"pcv-stats"}, stats));
-    frag.push(body, band);
+    /* put together: the strip and its column, the body, the closeout */
+    const frag=[hero, body, band];
     const keep=[...card.children].filter(x=>x.classList.contains("hl-tog"));
     [...card.children].forEach(x=>{ if(keep.indexOf(x)<0) x.classList.add("pcv-old"); });
     frag.forEach(x=>card.appendChild(x));
@@ -47178,6 +47179,49 @@ html body .phx.phx.pre-phx .card.pcv .pcv-sc .photo-sc svg{display:block!importa
 /* a dark floor, like the rest of the card: the lines faint, the heat as it is */
 html body .phx.phx.pre-phx .card.pcv .pcv-sc .sc-floor{fill:#222833!important}
 html body .phx.phx.pre-phx .card.pcv .pcv-sc .sc-line{stroke:#c9ced6!important;opacity:.28!important}
+
+/* THE PHOTOGRAPH AS A STRIP DOWN THE LEFT (Oriol, 15/11/2026): the strip with the number on top, the
+   name written up its side and the passport at its foot; beside it chips and usage, role and minutes with
+   the small shot chart, the numbers in three columns; under both, the ideas and the closeout band */
+html body .phx.phx.pre-phx .card.pcv-side .pcv-top2{display:grid;grid-template-columns:36% minmax(0,1fr);align-items:stretch;background:#1b2029}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip{position:relative;overflow:hidden;min-height:clamp(150px,66cqw,205px);background:radial-gradient(140% 80% at 50% 10%,#2e3545 0%,#151922 70%)}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .photo-img{position:absolute!important;left:0!important;right:0!important;top:0!important;bottom:0!important;width:auto!important;height:auto!important;margin:0!important;border-radius:0!important;
+  background-size:cover!important;background-position:50% 6%!important;background-repeat:no-repeat!important;transform:none!important;z-index:1}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
+  background:linear-gradient(180deg,rgba(12,15,20,0) 34%,rgba(12,15,20,.55) 60%,rgba(12,15,20,.93) 100%)}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .num-badge{position:absolute!important;top:6px!important;left:6px!important;z-index:3!important;font-size:clamp(13px,7cqw,19px)!important;padding:3px 7px 4px!important;border-radius:8px!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-vname{position:absolute;left:5px;right:2px;top:clamp(34px,15cqw,46px);bottom:clamp(30px,13cqw,40px);z-index:3;pointer-events:none}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name{writing-mode:vertical-rl!important;transform:rotate(180deg);display:flex!important;flex-direction:column!important;align-items:flex-start!important;gap:0!important;
+  height:100%!important;margin:0!important;padding:0!important;line-height:1!important;font-size:inherit!important;text-transform:uppercase!important;color:#fff!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .fn{font:500 clamp(8.5px,4.2cqw,11.5px)/1.15 'Inter',sans-serif;letter-spacing:.14em;color:#d5dae2;white-space:nowrap}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .ln{font:700 clamp(17px,9cqw,25px)/.95 'Oswald',sans-serif;letter-spacing:.02em;color:#fff;margin:0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .fn:empty{display:none}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .meta{position:absolute!important;left:6px!important;right:5px!important;bottom:6px!important;z-index:3!important;margin:0!important;padding:0!important;
+  font:600 clamp(7px,3.3cqw,9px)/1.25 'IBM Plex Mono',monospace!important;color:#d5dae2!important;letter-spacing:.01em!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-info{display:flex;flex-direction:column;gap:7px;padding:8px 9px 8px;min-width:0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-irow{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;min-height:clamp(34px,16cqw,44px)}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-chips{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-pos{height:20px;padding:0 6px;border-radius:6px;font-size:10.5px;box-shadow:none}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-hand{width:20px;height:20px;font-size:10.5px;border-width:1px;background:#2a303b;box-shadow:none}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-chips .doubt-badge.on{height:20px!important;padding:0 7px!important;box-shadow:none!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-chips .hl-rib{padding:3px 7px!important;font-size:8.5px!important;box-shadow:none!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-usg{flex:none;width:clamp(36px,17cqw,46px);background:#2a303b;box-shadow:none}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-usg.focus{background:#e0453b;box-shadow:0 3px 10px rgba(224,69,59,.35)}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-mid{display:flex;align-items:center;justify-content:space-between;gap:6px}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-rlw{display:flex;flex-direction:column;gap:3px;min-width:0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-rl{margin:0;flex-direction:column;align-items:flex-start;gap:2px}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-why{font:italic 500 clamp(8.5px,4.2cqw,10.5px)/1.25 'Inter',sans-serif;color:#f3c14b}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-mid .pcv-hsc{position:static;flex:none;width:54%;max-width:118px}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-stats{padding:0!important;background:transparent!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-stats .stat-bar{grid-auto-flow:row!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;grid-auto-columns:auto!important;gap:3px 2px!important;padding:6px 0 0!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-top2{background:#fff!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-strip{background:radial-gradient(140% 80% at 50% 10%,#f4f5f8 0%,#e1e5eb 70%)}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-hand{background:#eef0f3;color:#141821;border-color:#c9ced8}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-usg:not(.focus){background:#eef0f3;color:#141821;border-color:#dfe3e8}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-why{color:#8a6608!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-top2{background:#fff!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-usg:not(.focus){background:#fff!important;color:#141821!important;border:1px solid #d5d9e0!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-hand{background:#fff!important;color:#141821!important;border-color:#5b6472!important}
 
 /* THE LIGHT HUB (Oriol: "hay una versión oscura de la web y una clara, así que se verán ambas"): with
    the light theme the lanes are light grey and the cards white, ink on white; the dark theme keeps the
