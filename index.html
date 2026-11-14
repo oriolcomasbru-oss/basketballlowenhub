@@ -12104,7 +12104,10 @@ function _preShotMini(L, tid, pid){
 function _preUsage(L, tid){
   const d=((L && L.players)||{})[tid], T=d && d.team_tot && d.team_tot.all;
   if(!d || !T || !T.sec) return null;
-  const tu=(T.fga||0)+0.44*(T.fta||0)+(T.tov||0); if(!tu) return null;
+  /* the club's turnovers as the game sheets total them come out short of its own players' (Bamberg
+     105 against 124, 14/11/2026), which made every usage read high: never fewer than the players' */
+  const ptov=(d.players||[]).reduce((a,p)=>a+(((p.all||{}).tov)||0),0);
+  const tu=(T.fga||0)+0.44*(T.fta||0)+Math.max(T.tov||0, ptov); if(!tu) return null;
   const games=d.games||T.gp||0, need=Math.max(3, Math.ceil(0.4*games));
   const rows=(d.players||[]).map(p=>{ const t=p.all||{}, pl=(t.p2a||0)+(t.p3a||0)+0.44*(t.fta||0)+(t.tov||0), mpg=t.gp? (t.sec||0)/60/t.gp : 0;
     return { id:String(p.id||""), num:String(parseInt(p.num,10)), name:p.name||"", gp:t.gp||0, mpg:mpg,
@@ -25789,7 +25792,7 @@ function _lgRoster(L){
      make everybody look smaller); season, his shots, free-throw trips and turnovers over the team's,
      from the league's game sheets. The bar is the tagging, the dark mark the season, and an arrow
      says when they are 4 points apart on 15 tagged possessions or more. */
-  const tmU=tmT? (tmT.fga||0)+0.44*(tmT.fta||0)+(tmT.tov||0) : 0;
+  const tmU=tmT? (tmT.fga||0)+0.44*(tmT.fta||0)+Math.max(tmT.tov||0, (d.players||[]).reduce((a,p)=>a+(((p.all||{}).tov)||0),0)) : 0;
   const tgTot=tgRows.reduce((a,x)=>a+(x.n||0),0);
   const useCell=(r, p)=>{
     const tg=(r && tgTot)? 100*r.n/tgTot : null, ta=p && p.all;
