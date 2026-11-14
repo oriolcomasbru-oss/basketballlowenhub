@@ -1976,6 +1976,17 @@
 
     /* what the tables below say, before the tables */
     try { root.appendChild(tabBar(root)); } catch(e){_quiet(e)}
+    /* THE BALL SCREEN WITH THEIR 4 AND THEIR 5 FIRST - the dashboard's block, the same drawing
+       (Oriol, 14/11/2026: "aplica esto tb en pregame ... en el resumen de stats al principio") */
+    try {
+      if (typeof window._dashCoverDraw === "function" && (D.covbybig || D.covbybigTr || D.covbig)) {
+        var pnr = el("div", "sxp-pnr");
+        pnr.appendChild(el("div", "sxp-pnr-h", "Pick & roll · their 4 and their 5 on the ball screen"));
+        var pnrB = el("div", "sxp-pnr-b"); pnr.appendChild(pnrB);
+        window._dashCoverDraw(pnrB, D);
+        root.appendChild(tabOf(pnr, "over"));
+      }
+    } catch(e){_quiet(e)}
     try { var dashT = teamDash(D); if (dashT) root.appendChild(tabOf(dashT, "over")); } catch(e){_quiet(e)}
 
     /* Said loudly and at the top: a category nobody taught the parser is a
