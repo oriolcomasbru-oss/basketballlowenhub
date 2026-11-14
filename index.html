@@ -12173,6 +12173,27 @@ function _pcvName(t){
   while(w.length>1 && /^(von|van|de|del|der|da|di|la|le|dos|du)$/i.test(w[w.length-1])) last.unshift(w.pop());
   return { f:w.join(" "), l:last.join(" ") };
 }
+/* THE NAME UP THE STRIP, AS LARGE AS IT FITS: the first name comes down if it is longer than the room;
+   the surname takes the largest size (up to 44px) at which it fits the length of the strip and the
+   width beside the first name, and never breaks inside a word. Measured, so it runs once the card is
+   on screen (and again on paper, where the cards are another width). */
+function _pcvFitName(vn){
+  try{
+    if(!vn || !vn.isConnected) return;
+    const room=vn.clientHeight, wide=vn.clientWidth; if(!(room>16) || !(wide>16)) return;
+    const fn=vn.querySelector(".fn"), ln=vn.querySelector(".ln");
+    if(fn && fn.textContent){ fn.style.fontSize=""; const r=fn.getBoundingClientRect();
+      if(r.height>room){ const fs=parseFloat(getComputedStyle(fn).fontSize)||10; fn.style.fontSize=Math.max(7, fs*room/r.height*.97).toFixed(1)+"px"; } }
+    if(!ln) return;
+    const fw=(fn && fn.textContent)? fn.getBoundingClientRect().width : 0;
+    const ok=px=>{ ln.style.fontSize=px+"px"; const r=ln.getBoundingClientRect(); return r.height<=room+.5 && r.width<=wide-fw-2; };
+    let lo=9, hi=44;
+    if(ok(hi)) return;
+    if(!ok(lo)) return;
+    while(hi-lo>.5){ const m=(lo+hi)/2; if(ok(m)) lo=m; else hi=m; }
+    ln.style.fontSize=lo.toFixed(1)+"px";
+  }catch(e){_quiet(e)}
+}
 function _preCardHero(card, colPos){
   try{
     if(!card || card.classList.contains("pcv")) return;
@@ -12184,15 +12205,15 @@ function _preCardHero(card, colPos){
     const st=(coBar && coBar.getAttribute("data-state"))||"neutral", co=PCV_CO[st]||null;
     card.classList.add("pcv", "pcv-side");
     if(co) card.style.setProperty("--pcv-co", co.c);
-    /* THE PHOTOGRAPH AS A STRIP DOWN THE LEFT (Oriol, 15/11/2026, with an all-conference team graphic as
-       the idea: "en vez de tener la foto arriba tenerla en el lateral... y así ganar todo el lateral
-       restante para lo demás; añadir el nombre del jugador y alguna info básica en la misma foto"),
-       AND EACH THING IN ITS OWN PLACE (Oriol, same day: "mucho ruido, mucha información en un solo
-       espacio"). The strip: the number top left with his second position under it, the hand he favours
-       top right, the name written up its side - first name light, surname bold - and the passport at
-       its foot. Beside it, two zones split by a hairline: the usage with the role, the minutes and
-       DOUBT; then the shot chart alone. The numbers run as one row the full width under both. KEY
-       PLAYER / STOP HIM hangs as a tab from the coloured line that frames the card. */
+    /* THE PHOTOGRAPH DOWN THE WHOLE LEFT SIDE (Oriol, 15/11/2026: "en vez de tener la foto arriba tenerla
+       en el lateral", then "quiero que la foto ocupe toda la vertical", after "mucho ruido, mucha
+       información en un solo espacio"). The strip runs the full height of the card above the closeout:
+       the photograph fills it (up to a height where it would only be a face), the number top left with
+       his second position under it, the hand he favours top right, the name written up its side -
+       first name light, surname bold and as large as the strip allows - and the passport at its foot.
+       Beside it, one column of zones split by hairlines: the usage with the role, the minutes and
+       DOUBT; the numbers; the role and the staff's ideas; the shot chart last and small. KEY PLAYER /
+       STOP HIM hangs as a tab from the coloured line that frames the card. */
     const strip=h("div",{class:"pcv-strip"});
     if(img) strip.appendChild(img);
     /* his second position when he plays one (the column says the first; beside the video there is no
@@ -12207,23 +12228,18 @@ function _preCardHero(card, colPos){
     const hd=((hand && hand.textContent)||"").trim().toUpperCase();
     if(hd==="L" || hd==="R") strip.appendChild(h("span",{class:"pcv-hand pcv-shand", title:hd==="L"? "Left-handed" : "Right-handed"}, hd));
     if(name){ const n=_pcvName(name.textContent); name.textContent="";
-      /* the surname never breaks inside a word: a long one comes down in size to fit the strip (about
-         8 letters fit, 6 when his second position sits under the number) */
-      const ln=h("span",{class:"ln"}, n.l), fn=h("span",{class:"fn"}, n.f||"");
-      const lw=Math.max(0, ...String(n.l||"").split(/\s+/).map(w=>w.length)), room=pos2? 5.6 : 7.4;
-      if(lw>room) ln.style.fontSize="calc(clamp(17px,9cqw,25px)*"+Math.max(.55, room/lw).toFixed(2)+")";
-      name.appendChild(fn); name.appendChild(ln);
+      name.appendChild(h("span",{class:"fn"}, n.f||"")); name.appendChild(h("span",{class:"ln"}, n.l));
       const vn=h("div",{class:"pcv-vname"}, name);
       strip.appendChild(vn);
-      /* once it is on screen, measured: what is still longer than the room comes down to fit */
-      const fit=()=>{ try{
-        if(!vn.isConnected) return; const room2=vn.clientHeight; if(!(room2>0)) return;
-        [ln, fn].forEach(s=>{ const need=s.getBoundingClientRect().height, fs=parseFloat(getComputedStyle(s).fontSize)||0;
-          if(fs && need>room2+1) s.style.fontSize=Math.max(8, fs*room2/need*.97).toFixed(1)+"px"; });
-      }catch(e){} };
-      requestAnimationFrame(()=>requestAnimationFrame(fit)); }
-    if(meta) strip.appendChild(meta);
-    const info=h("div",{class:"pcv-info"});
+      /* the surname is sized once the card is on screen: as large as the strip allows, never broken */
+      requestAnimationFrame(()=>requestAnimationFrame(()=>_pcvFitName(vn))); }
+    /* the passport in two set lines - where he is from and his age, then height and weight - so the
+       narrow strip never breaks it in three */
+    if(meta){ if(!meta.childElementCount){ const parts=meta.textContent.split(/\s*·\s*/).map(x=>x.trim()).filter(Boolean);
+        if(parts.length>2){ meta.textContent=""; meta.classList.add("pcv-meta2");
+          meta.appendChild(h("span",{}, parts.slice(0,2).join(" · "))); meta.appendChild(h("span",{}, parts.slice(2).join(" · "))); } }
+      strip.appendChild(meta); }
+    const col=h("div",{class:"pcv-col"});
     /* zone 1: the usage, then the role and the minutes, then DOUBT / OUT with the reason he may miss */
     const roleTxt=((role && role.textContent)||"").trim(), minTxt=((mins && mins.textContent)||"").trim();
     const minNum=(/(\d+(?:[.,]\d+)?)/.exec(minTxt)||[])[1]||"";
@@ -12242,23 +12258,27 @@ function _preCardHero(card, colPos){
       if(whyTxt) dr.appendChild(h("div",{class:"pcv-why"}, whyTxt));
       zl.appendChild(dr); }
     if(zl.childNodes.length) zst.appendChild(zl);
-    if(zst.childNodes.length) info.appendChild(zst);
-    /* zone 2: the shot chart, alone */
-    if(sc) info.appendChild(h("div",{class:"pcv-hsc"}, sc));
-    const hero=h("div",{class:"pcv-top2"}, strip, info);
-    /* zone 3: the numbers, one row the full width */
-    const nums=(stats && stats.querySelector(".stat-cell"))? h("div",{class:"pcv-stats"}, stats) : null;
-    /* KEY PLAYER / STOP HIM: a tab hanging from the line that frames the card */
-    if(rib){ rib.textContent=card.classList.contains("hl-stop")? "STOP HIM" : "KEY PLAYER"; rib.classList.add("pcv-tab"); rib.remove(); card.classList.add("has-tab"); }
-    /* the body: the role and the 3-5 ideas the staff writes - the room on the card is theirs */
+    if(zst.childNodes.length) col.appendChild(zst);
+    /* zone 2: the numbers, in rows of three (four as two and two) */
+    const nCells=stats? stats.querySelectorAll(".stat-cell").length : 0;
+    if(nCells){ const box=h("div",{class:"pcv-stats"}, stats);
+      box.style.setProperty("--sc", String(nCells<=3? nCells : nCells===4? 2 : 3));
+      col.appendChild(box); }
+    /* zone 3: the role and the 3-5 ideas the staff writes - the room on the card is theirs */
     const body=h("div",{class:"pcv-body"});
     if(tagw) body.appendChild(tagw);
     if(ideas) body.appendChild(ideas);
     if(extra && extra.textContent.trim()) body.appendChild(extra);
+    if(body.textContent.trim()) col.appendChild(body);
+    /* zone 4: the shot chart, small and last (the full one is beside the video) */
+    if(sc) col.appendChild(h("div",{class:"pcv-hsc"}, sc));
+    const hero=h("div",{class:"pcv-top2"}, strip, col);
+    /* KEY PLAYER / STOP HIM: a tab hanging from the line that frames the card */
+    if(rib){ rib.textContent=card.classList.contains("hl-stop")? "STOP HIM" : "KEY PLAYER"; rib.classList.add("pcv-tab"); rib.remove(); card.classList.add("has-tab"); }
     /* the closeout closes the card, a band of its colour with its word (unrated: black) */
     const band=h("div",{class:"pcv-band "+(co? st : "neutral"), title:(coBar && coBar.title)||""}, co? co.k : "");
-    /* put together: the tab, the strip and its column, the numbers, the body, the closeout */
-    const frag=[rib, hero, nums, body.textContent.trim()? body : null, band].filter(Boolean);
+    /* put together: the tab, the strip and its column, the closeout */
+    const frag=[rib, hero, band].filter(Boolean);
     const keep=[...card.children].filter(x=>x.classList.contains("hl-tog"));
     [...card.children].forEach(x=>{ if(keep.indexOf(x)<0) x.classList.add("pcv-old"); });
     frag.forEach(x=>card.appendChild(x));
@@ -13954,11 +13974,8 @@ function _prePrintBoard(src, what){
   copy.querySelectorAll(".idea-row").forEach(r=>{ const t=r.querySelector(".idea-line"); if(!t || !t.textContent.trim()) r.remove(); });
   copy.querySelectorAll(".tagline").forEach(t=>{ if(!t.textContent.trim()){ const w=t.closest(".tagline-wrap"); (w||t).remove(); } });
   copy.querySelectorAll(".vb-note").forEach(n=>{ if(!n.textContent.trim()) n.remove(); });
-  /* the player card is laid out sideways on paper - photograph left, name, numbers and status
-     beside it - so the board fits one sheet at a size that reads: the name leaves the photograph */
-  copy.querySelectorAll(".card.pcv").forEach(cd=>{ const hero=cd.querySelector(".pcv-hero"), id=hero && hero.querySelector(".pcv-id");
-    if(id){ const row=h("div",{class:"pcv-ph"}); hero.before(row); row.appendChild(hero); row.appendChild(id); id.classList.add("pcv-id-p");
-      const hs=hero.querySelector(".pcv-hsc"); if(hs) row.appendChild(hs); } });
+  /* the player card goes on paper as it is on screen (Oriol, 15/11/2026: "todos los ajustes que
+     hacemos también para el botón de imprimir, que tenga el mismo formato"), in its light dress */
   /* a board with nothing on it is not sent to the printer */
   if(!copy.querySelector(what==="roles"? ".vb-area" : ".card")){ toast(what==="roles"? "No roles written yet for this club" : "No cards on the roster yet"); return; }
   const p=h("div",{class:"dop-fit prb prb-"+what}, h("div",{class:"dop-top"}, h("b",{}, "Pre game"), h("span",{}, title)), copy);
@@ -13968,7 +13985,7 @@ function _prePrintBoard(src, what){
   const widths=what==="roles"? [700,800,900,1050,1200,1350,1500,1700,1900,2150,2400,2700,3000] : [900,1000,1100,1200,1350,1500,1650,1800,2000];
   const at=W=>{ p.style.zoom="1"; p.style.width=W+"px"; return Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); };
   const refit=()=>{ let best={ s:0, w:widths[0] }; widths.forEach(W=>{ const sc=at(W); if(sc>best.s) best={ s:sc, w:W }; });
-    at(best.w); p.style.zoom=best.s.toFixed(4); };
+    at(best.w); copy.querySelectorAll(".pcv-vname").forEach(_pcvFitName); p.style.zoom=best.s.toFixed(4); };
   document.body.classList.add("dop-measure");
   refit();
   const mq=window.matchMedia? window.matchMedia("print") : null, onMq=e=>{ if(e.matches) refit(); };
@@ -40941,9 +40958,9 @@ body.dark .phx .card .use-chip:not(.focus) .uc-bar{background:rgba(230,234,240,.
 body.dark .phx .card .use-chip:not(.focus) .uc-bar i{background:#e6eaf0}
 /* the tagging's Use beside the season's, in the roster table: the bar is the games we tagged,
    the mark the whole season */
-.lg-rost .rt-use2{min-width:96px;text-align:left}
-.lg-rost .rt-use2 .u-w{display:flex;flex-direction:column;gap:3px}
-.lg-rost .rt-use2 .u-bar{position:relative;display:block;height:7px;border-radius:4px;background:var(--panel-2,#eef0f4)}
+.lg-rost .rt-use2{width:1%;min-width:0;text-align:left;white-space:nowrap}
+.lg-rost .rt-use2 .u-w{display:inline-flex;flex-direction:row;align-items:center;gap:6px}
+.lg-rost .rt-use2 .u-bar{position:relative;display:block;flex:none;width:40px;height:6px;border-radius:4px;background:var(--panel-2,#eef0f4)}
 .lg-rost .rt-use2 .u-tg{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:#8a93a2}
 .lg-rost .rt-use2 .u-sea{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:var(--ink,#141821);border-radius:1px}
 .lg-rost .rt-use2 .u-n{display:flex;align-items:baseline;gap:5px;font:600 11px 'IBM Plex Mono',monospace;white-space:nowrap}
@@ -47201,59 +47218,6 @@ html body .phx.phx.pre-phx .card.pcv .pcv-sc .photo-sc svg{display:block!importa
 html body .phx.phx.pre-phx .card.pcv .pcv-sc .sc-floor{fill:#222833!important}
 html body .phx.phx.pre-phx .card.pcv .pcv-sc .sc-line{stroke:#c9ced6!important;opacity:.28!important}
 
-/* THE PHOTOGRAPH AS A STRIP DOWN THE LEFT (Oriol, 15/11/2026), EACH THING IN ITS OWN PLACE (same day:
-   "mucho ruido, mucha información en un solo espacio"): the strip with the number top left, the hand top
-   right, the name up its side and the passport at its foot; beside it the usage with role, minutes and
-   DOUBT, a hairline, then the shot chart alone; the numbers one row the full width under both; KEY
-   PLAYER / STOP HIM a tab hanging from the coloured line that frames the card */
-html body .phx.phx.pre-phx .roster-columns .card.pcv.hl-key,html body .phx.phx.pre-phx .roster-columns .card.pcv.hl-stop{padding-top:0!important}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-top2{display:grid;grid-template-columns:36% minmax(0,1fr);align-items:stretch;background:#1b2029}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-strip{position:relative;overflow:hidden;min-height:clamp(150px,66cqw,205px);background:radial-gradient(140% 80% at 50% 10%,#2e3545 0%,#151922 70%)}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-info:not(:has(.pcv-hsc)){justify-content:center}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .photo-img{position:absolute!important;left:0!important;right:0!important;top:0!important;bottom:0!important;width:auto!important;height:auto!important;margin:0!important;border-radius:0!important;
-  background-size:cover!important;background-position:50% 6%!important;background-repeat:no-repeat!important;transform:none!important;z-index:1}
-html body .phx.phx.pre-phx .card.pcv-side.is-out .pcv-strip .photo-img{filter:grayscale(1) opacity(.55)!important}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-strip::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
-  background:linear-gradient(180deg,rgba(12,15,20,0) 34%,rgba(12,15,20,.55) 60%,rgba(12,15,20,.93) 100%)}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-stl{position:absolute;top:6px;left:6px;z-index:3;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .num-badge{position:static!important;font-size:clamp(13px,7cqw,19px)!important;padding:3px 7px 4px!important;border-radius:8px!important}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-stl .pcv-pos{height:clamp(16px,7.6cqw,19px);padding:0 5px;border-radius:5px;font-size:clamp(9px,4.3cqw,10.5px);box-shadow:none}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-shand{position:absolute;top:6px;right:6px;z-index:3;width:clamp(18px,8.6cqw,23px);height:clamp(18px,8.6cqw,23px);font-size:clamp(9.5px,4.6cqw,12px);
-  border-width:1px;background:rgba(12,15,20,.78);border-color:rgba(255,255,255,.6);color:#fff;box-shadow:none}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-vname{position:absolute;left:5px;right:2px;top:clamp(34px,15cqw,46px);bottom:clamp(30px,13cqw,40px);z-index:3;pointer-events:none}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-strip.has-pos .pcv-vname{top:clamp(56px,25cqw,70px)}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name{writing-mode:vertical-rl!important;transform:rotate(180deg);display:flex!important;flex-direction:column!important;align-items:flex-start!important;gap:0!important;
-  height:100%!important;margin:0!important;padding:0!important;line-height:1!important;font-size:inherit!important;text-transform:uppercase!important;color:#fff!important}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .fn{font:500 clamp(8.5px,4.2cqw,11.5px)/1.15 'Inter',sans-serif;letter-spacing:.14em;color:#d5dae2;white-space:nowrap}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .ln{font:700 clamp(17px,9cqw,25px)/.95 'Oswald',sans-serif;letter-spacing:.02em;color:#fff;margin:0;white-space:normal;overflow-wrap:normal!important;word-break:keep-all!important}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .fn:empty{display:none}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .meta{position:absolute!important;left:6px!important;right:5px!important;bottom:6px!important;z-index:3!important;margin:0!important;padding:0!important;
-  font:600 clamp(7px,3.3cqw,9px)/1.25 'IBM Plex Mono',monospace!important;color:#d5dae2!important;letter-spacing:.01em!important}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-info{display:flex;flex-direction:column;min-width:0;padding:0}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-zst{display:flex;align-items:center;gap:9px;padding:9px 10px 9px;min-width:0}
-html body .phx.phx.pre-phx .card.pcv-side.has-tab .pcv-zst{padding-top:21px}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-usg{flex:none;width:clamp(36px,17cqw,46px);background:#2a303b;box-shadow:none}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-usg.focus{background:#e0453b;box-shadow:0 3px 10px rgba(224,69,59,.35)}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-zl{display:flex;flex-direction:column;align-items:flex-start;gap:5px;min-width:0}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-rl{margin:0;display:flex;align-items:baseline;flex-wrap:wrap;gap:1px 7px}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-dr{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-dr .doubt-badge.on{height:17px!important;padding:0 7px!important;font-size:8px!important;box-shadow:none!important}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-why{font:italic 500 clamp(8.5px,4.2cqw,10px)/1.25 'Inter',sans-serif;color:#f3c14b}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-info .pcv-hsc{position:static;flex:1 1 auto;width:auto;z-index:auto;display:flex;align-items:center;justify-content:center;padding:8px 10px 9px}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-zst + .pcv-hsc{border-top:1px solid rgba(255,255,255,.07)}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-info .pcv-hsc .photo-sc{max-width:150px!important;background:#222833!important;border-color:rgba(255,255,255,.06)!important;box-shadow:none!important}
-html body .phx.phx.pre-phx .card.pcv-side > .hl-rib.pcv-tab{position:absolute!important;top:0!important;left:68%!important;right:auto!important;transform:translateX(-50%)!important;z-index:7!important;display:block!important;
-  border-radius:0 0 7px 7px!important;padding:2px 10px 3px!important;font:800 clamp(7.5px,3.7cqw,9px)/1.3 'Inter',sans-serif!important;letter-spacing:.16em!important;white-space:nowrap!important;box-shadow:none!important}
-html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-top2{background:#fff!important}
-html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-strip{background:radial-gradient(140% 80% at 50% 10%,#f4f5f8 0%,#e1e5eb 70%)}
-html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-usg:not(.focus){background:#eef0f3;color:#141821;border-color:#dfe3e8}
-html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-why{color:#8a6608!important}
-html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-zst + .pcv-hsc{border-top-color:#edf0f3}
-html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-info .pcv-hsc .photo-sc{background:#f4f5f8!important;border-color:#e3e6eb!important;box-shadow:none!important}
-html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-top2{background:#fff!important}
-html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-usg:not(.focus){background:#fff!important;color:#141821!important;border:1px solid #d5d9e0!important}
-html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-zst + .pcv-hsc{border-top-color:#e3e6eb!important}
-html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-info .pcv-hsc .photo-sc{background:#eef1f5!important}
 
 /* THE LIGHT HUB (Oriol: "hay una versión oscura de la web y una clara, así que se verán ambas"): with
    the light theme the lanes are light grey and the cards white, ink on white; the dark theme keeps the
@@ -47310,67 +47274,128 @@ html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-id .pcv-why{color:#8a6608!i
 html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-hsc .photo-sc{background:rgba(244,245,248,.94)!important;border-color:#e3e6eb!important;box-shadow:0 4px 12px rgba(16,24,40,.12)!important}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-hsc .sc-line{stroke:#5b6472!important;opacity:.5!important}
 
-/* ON PAPER: the same card in ink on white, and shorter - the face and shoulders rather than the half
-   figure, the chart narrower - so the whole board still fits one A4 at a size that can be read */
-html body .prb .phx.phx.pre-phx .roster-columns{background:#fff!important;padding:0!important;gap:8px!important}
-html body .prb .phx.phx.pre-phx .roster-columns .pos-col{background:#f4f5f7!important;border:1px solid #e3e6eb!important;padding:8px!important;gap:8px!important}
-html body .prb .phx.phx.pre-phx .roster-columns .pos-col-head{color:#141821!important;border-bottom-color:#d5d9e0!important;padding-bottom:6px!important}
-html body .prb .phx.phx.pre-phx .card.pcv,html body .prb .phx.phx.pre-phx .card.pcv .pcv-stats,html body .prb .phx.phx.pre-phx .card.pcv .pcv-st,
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-body,html body .prb .phx.phx.pre-phx .card.pcv .pcv-sc{background:#fff!important;color:#141821!important;box-shadow:none!important}
-html body .prb .phx.phx.pre-phx .card.pcv{border:1px solid #d5d9e0!important}
-html body .prb .phx.phx.pre-phx .card.pcv.hl-key{box-shadow:0 0 0 2px #3b7ddd!important}
-html body .prb .phx.phx.pre-phx .card.pcv.hl-stop{box-shadow:0 0 0 2px #e0453b!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-hero{aspect-ratio:1/.62!important;background:#eef1f5!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-hero .photo-img{background-position:50% 8%!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-hero::after{background:linear-gradient(180deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.9) 58%,#fff 100%)!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-id .name .ln,html body .prb .phx.phx.pre-phx .card.pcv .stat-cell .stat-value,html body .prb .phx.phx.pre-phx .card.pcv .roster-badge{color:#141821!important;text-shadow:none!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-id .name .fn,html body .prb .phx.phx.pre-phx .card.pcv .pcv-id .meta,html body .prb .phx.phx.pre-phx .card.pcv .minutes,
-html body .prb .phx.phx.pre-phx .card.pcv .stat-cell .stat-label,html body .prb .phx.phx.pre-phx .card.pcv .stat-cell .sv-pc,html body .prb .phx.phx.pre-phx .card.pcv .roster-badge.outline{color:#5b6472!important}
-html body .prb .phx.phx.pre-phx .card.pcv .stat-cell.hl-hot{background:rgba(229,84,75,.14)!important}
+/* THE PHOTOGRAPH DOWN THE WHOLE LEFT SIDE (Oriol, 15/11/2026: "quiero que la foto ocupe toda la
+   vertical"): the strip runs the full height of the card above the closeout; the photograph fills it up
+   to a height where it would only be a face, then fades into the strip's ground; the number top left
+   with the second position under it, the hand top right, the name written up the side as large as it
+   fits, the passport at the foot. Beside it one column of zones split by hairlines: usage with role,
+   minutes and DOUBT; the numbers in rows of three; the role and the ideas; the shot chart last, small.
+   KEY PLAYER / STOP HIM is a tab hanging from the coloured line that frames the card. */
+html body .phx.phx.pre-phx .roster-columns .card.pcv.hl-key,html body .phx.phx.pre-phx .roster-columns .card.pcv.hl-stop{padding-top:0!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-top2{display:grid;grid-template-columns:30% minmax(0,1fr);align-items:stretch;background:#1b2029}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip{--ph:min(100%,clamp(200px,94cqw,300px));position:relative;overflow:hidden;min-height:clamp(190px,80cqw,240px);background:#141820}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .photo-img{position:absolute!important;left:0!important;right:0!important;top:0!important;bottom:auto!important;width:auto!important;height:var(--ph)!important;margin:0!important;border-radius:0!important;
+  background-size:cover!important;background-position:50% 0!important;background-repeat:no-repeat!important;transform:none!important;z-index:1}
+html body .phx.phx.pre-phx .card.pcv-side.is-out .pcv-strip .photo-img{filter:grayscale(1) opacity(.55)!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip::after{content:"";position:absolute;left:0;right:0;top:0;height:var(--ph);z-index:2;pointer-events:none;
+  background:linear-gradient(180deg,rgba(20,24,32,0) 38%,rgba(20,24,32,.6) 66%,#141820 100%)}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-stl{position:absolute;top:6px;left:6px;z-index:3;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .num-badge{position:static!important;font-size:clamp(13px,7cqw,19px)!important;padding:3px 7px 4px!important;border-radius:8px!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-stl .pcv-pos{height:clamp(16px,7.6cqw,19px);padding:0 5px;border-radius:5px;font-size:clamp(9px,4.3cqw,10.5px);box-shadow:none}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-shand{position:absolute;top:6px;right:6px;z-index:3;width:clamp(18px,8.6cqw,23px);height:clamp(18px,8.6cqw,23px);font-size:clamp(9.5px,4.6cqw,12px);
+  border-width:1px;background:rgba(12,15,20,.78);border-color:rgba(255,255,255,.6);color:#fff;box-shadow:none}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-vname{position:absolute;left:6px;right:4px;top:max(clamp(48px,22cqw,62px),calc(var(--ph) * .5));bottom:clamp(30px,13cqw,40px);z-index:3;pointer-events:none}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip.has-pos .pcv-vname{top:max(clamp(70px,32cqw,88px),calc(var(--ph) * .5))}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name{writing-mode:vertical-rl!important;transform:rotate(180deg);display:flex!important;flex-direction:column!important;align-items:flex-start!important;gap:0!important;
+  height:100%!important;margin:0!important;padding:0!important;line-height:1!important;font-size:inherit!important;text-transform:uppercase!important;color:#fff!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .fn{font:500 clamp(8.5px,4.2cqw,11.5px)/1.15 'Inter',sans-serif;letter-spacing:.14em;color:#d5dae2;white-space:nowrap}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .ln{font:700 clamp(17px,9cqw,25px)/.95 'Oswald',sans-serif;letter-spacing:.02em;color:#fff;margin:0;white-space:normal;overflow-wrap:normal!important;word-break:keep-all!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .fn:empty{display:none}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .meta.pcv-meta2 span{display:block;white-space:nowrap}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .meta{position:absolute!important;left:6px!important;right:5px!important;bottom:6px!important;z-index:3!important;margin:0!important;padding:0!important;
+  font:600 clamp(7px,3cqw,8.5px)/1.3 'IBM Plex Mono',monospace!important;color:#d5dae2!important;letter-spacing:.01em!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-col{display:flex;flex-direction:column;min-width:0;background:#1b2029}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-col > * + *{border-top:1px solid rgba(255,255,255,.07)!important}
+html body .phx.phx.pre-phx .card.pcv-side.has-tab .pcv-col > :first-child{padding-top:21px!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-zst{display:flex;align-items:center;gap:9px;padding:9px 10px;min-width:0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-usg{flex:none;width:clamp(36px,16cqw,44px);background:#2a303b;box-shadow:none}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-usg.focus{background:#e0453b;box-shadow:0 3px 10px rgba(224,69,59,.35)}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-zl{display:flex;flex-direction:column;align-items:flex-start;gap:5px;min-width:0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-rl{margin:0;display:flex;align-items:baseline;flex-wrap:wrap;gap:1px 7px}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-dr{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-dr .doubt-badge.on{height:17px!important;padding:0 7px!important;font-size:8px!important;box-shadow:none!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-why{font:italic 500 clamp(8.5px,4.2cqw,10px)/1.25 'Inter',sans-serif;color:#f3c14b}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-stats{padding:4px 6px 5px!important;background:transparent!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-stats .stat-bar{grid-auto-flow:row!important;grid-template-columns:repeat(var(--sc,3),minmax(0,1fr))!important;grid-auto-columns:auto!important;gap:2px!important;padding:0!important;border-top:0!important}
+html body .phx.phx.pre-phx .card.pcv-side .stat-cell .stat-value{font-size:clamp(12.5px,6cqw,16.5px)!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-body{flex:none;padding:8px 10px 9px;background:transparent}
+html body .phx.phx.pre-phx .card.pcv-side .tagline{font-size:clamp(12px,5.5cqw,15px)!important}
+html body .phx.phx.pre-phx .card.pcv-side .idea-line,html body .phx.phx.pre-phx .card.pcv-side .extra-line{font-size:clamp(11px,4.8cqw,13px)!important;line-height:1.27!important}
+html body .phx.phx.pre-phx .card.pcv-side .ideas{gap:4px!important}
+html body .phx.phx.pre-phx .card.pcv-side .idea-line,html body .phx.phx.pre-phx .card.pcv-side .tagline{display:block!important;-webkit-line-clamp:unset!important;overflow:visible!important}
+html body .phx.phx.pre-phx .card.pcv-side .idea-row{gap:6px!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc{position:static;width:auto;z-index:auto;display:flex;align-items:center;justify-content:center;padding:7px 10px 8px}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{max-width:118px!important;background:#222833!important;border-color:rgba(255,255,255,.06)!important;box-shadow:none!important}
+html body .phx.phx.pre-phx .card.pcv-side > .hl-rib.pcv-tab{position:absolute!important;top:0!important;left:65%!important;right:auto!important;transform:translateX(-50%)!important;z-index:7!important;display:block!important;
+  border-radius:0 0 7px 7px!important;padding:2px 10px 3px!important;font:800 clamp(7.5px,3.7cqw,9px)/1.3 'Inter',sans-serif!important;letter-spacing:.16em!important;white-space:nowrap!important;box-shadow:none!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-top2,html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-col{background:#fff!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-strip{background:#eef0f3}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-strip::after{background:linear-gradient(180deg,rgba(238,240,243,0) 40%,rgba(238,240,243,.86) 68%,#eef0f3 100%)}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .ln{color:#141821}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .fn{color:#4b5563}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-strip .meta{color:#4b5563!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-col > * + *{border-top-color:#edf0f3!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-usg:not(.focus){background:#eef0f3;color:#141821;border-color:#dfe3e8}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-why{color:#8a6608!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{background:#f4f5f8!important;border-color:#e3e6eb!important;box-shadow:none!important}
+
+/* ON PAPER (Oriol, 15/11/2026: "todos los ajustes que hacemos también para el botón de imprimir, que
+   tenga el mismo formato"): the card goes on paper exactly as on screen, in its light dress. The light
+   theme's own rules are written again for the paper copy where the marker stands when the CSS is
+   built; then only what paper itself needs - white lanes, a hairline instead of a shadow, and the
+   colours kept when the printer would drop backgrounds. */
+html body .prb .phx.phx.pre-phx .roster-columns{background:transparent!important;padding:0!important}
+html body .prb .phx.phx.pre-phx .roster-columns .pos-col{background:#eef0f3!important;border:1px solid #e3e6eb!important}
+html body .prb .phx.phx.pre-phx .roster-columns .pos-col-head{color:#141821!important;border-bottom-color:#d5d9e0!important}
+html body .prb .phx.phx.pre-phx .roster-columns .pos-col-head::after{color:#687180!important}
+html body .prb .phx.phx.pre-phx .card.pcv{background:#fff!important;color:#141821!important;border:1px solid #e3e6eb!important;box-shadow:0 1px 3px rgba(16,24,40,.08),0 8px 20px rgba(16,24,40,.06)!important}
+html body .prb .phx.phx.pre-phx .card.pcv.hl-key{box-shadow:0 0 0 2px #3b7ddd,0 8px 20px rgba(16,24,40,.08)!important;border-color:transparent!important}
+html body .prb .phx.phx.pre-phx .card.pcv.hl-stop{box-shadow:0 0 0 2px #e0453b,0 8px 20px rgba(16,24,40,.08)!important;border-color:transparent!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-stats,html body .prb .phx.phx.pre-phx .card.pcv .pcv-st,html body .prb .phx.phx.pre-phx .card.pcv .pcv-body{background:#fff!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-hero{background:radial-gradient(120% 90% at 50% 16%,#f4f5f8 0%,#e6e9ee 64%)!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-hero::after{background:linear-gradient(180deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.88) 56%,#fff 100%)!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-id .name .ln,html body .prb .phx.phx.pre-phx .card.pcv .stat-cell .stat-value,html body .prb .phx.phx.pre-phx .card.pcv .pcv-kv b{color:#141821!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-kv.rotation b,html body .prb .phx.phx.pre-phx .card.pcv .pcv-kv.bench b{color:#4b5563!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-id .name .fn,html body .prb .phx.phx.pre-phx .card.pcv .pcv-id .meta{color:#4b5563!important}
+html body .prb .phx.phx.pre-phx .card.pcv .stat-cell .stat-label,html body .prb .phx.phx.pre-phx .card.pcv .stat-cell .sv-pc,html body .prb .phx.phx.pre-phx .card.pcv .pcv-kv i{color:#687180!important}
+html body .prb .phx.phx.pre-phx .card.pcv .stat-cell.hl-hot{background:rgba(229,84,75,.12)!important}
 html body .prb .phx.phx.pre-phx .card.pcv .stat-cell.hl-hot .stat-value,html body .prb .phx.phx.pre-phx .card.pcv .stat-cell.hl-warm .stat-value,html body .prb .phx.phx.pre-phx .card.pcv .stat-cell .hl-why{color:#b8322a!important}
+html body .prb .phx.phx.pre-phx .card.pcv .stat-cell.hl-hot .sv-pc,html body .prb .phx.phx.pre-phx .card.pcv .stat-cell.hl-warm .sv-pc{color:#d0574e!important}
 html body .prb .phx.phx.pre-phx .card.pcv .stat-cell.hl-low .stat-value,html body .prb .phx.phx.pre-phx .card.pcv .stat-cell.hl-low .hl-why{color:#14704f!important}
-html body .prb .phx.phx.pre-phx .card.pcv .idea-line,html body .prb .phx.phx.pre-phx .card.pcv .extra-line{color:#1f2937!important}
+html body .prb .phx.phx.pre-phx .card.pcv .stat-cell.hl-low .sv-pc{color:#3f8f72!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-stats .stat-bar,html body .prb .phx.phx.pre-phx .card.pcv .pcv-st,html body .prb .phx.phx.pre-phx .card.pcv .pcv-body{border-top-color:#edf0f3!important}
 html body .prb .phx.phx.pre-phx .card.pcv .tagline{color:#8a6608!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-why{color:#8a6608!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-co{color:#141821!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-st,html body .prb .phx.phx.pre-phx .card.pcv .pcv-stats .stat-bar{border-top-color:#e3e6eb!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-dl .pcv-why{color:#8a6608!important}
+html body .prb .phx.phx.pre-phx .card.pcv .idea-line,html body .prb .phx.phx.pre-phx .card.pcv .extra-line{color:#1f2937!important}
+html body .prb .phx.phx.pre-phx .card.pcv .idea-line b,html body .prb .phx.phx.pre-phx .card.pcv .idea-line strong{color:#0b0d11!important}
+html body .prb .phx.phx.pre-phx .card.pcv .idea-row::before{background:#c9a227!important}
 html body .prb .phx.phx.pre-phx .card.pcv .pcv-sc .photo-sc{background:#eef1f5!important;border-color:#e3e6eb!important}
 html body .prb .phx.phx.pre-phx .card.pcv .pcv-sc .sc-floor{fill:#eef1f5!important}
 html body .prb .phx.phx.pre-phx .card.pcv .pcv-sc .sc-line{stroke:#5b6472!important;opacity:.5!important}
-/* on paper the head of the card is a row - a small photograph and the name beside it - and the rest
-   follows under it, so the board fits one sheet at a size that reads */
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-ph{display:flex;align-items:center;gap:8px;padding:6px 8px 4px}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-ph .pcv-hero{flex:none;width:58px!important;height:70px!important;aspect-ratio:auto!important;border-radius:8px!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-hero::after{display:none!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-hero .photo-img{background-position:50% 8%!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-top{left:3px!important;right:3px!important;top:3px!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-tl .hl-rib{display:none!important}
-html body .prb .phx.phx.pre-phx .card.pcv .num-badge{font-size:11px!important;padding:1px 4px!important;border-radius:4px!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-usg{width:24px!important;border-width:0!important;box-shadow:none!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-usg b{font-size:8px!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-usg span{display:none!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-id-p{position:static!important;left:auto!important;right:auto!important;bottom:auto!important;flex:1 1 auto;min-width:0;padding:0!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-id-p .name .ln{font-size:17px!important;color:#141821!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-id-p .name .fn{font-size:9px!important;color:#5b6472!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-id-p .meta{font-size:8.5px!important;color:#5b6472!important;margin-top:3px!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-stats{padding:0 6px 3px!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-stats .stat-bar{padding-top:4px!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-st{padding:4px 8px!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-body{padding:4px 8px 6px!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-st .pcv-sc{width:34%!important;padding:0!important;background:none!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-kv b{color:#141821!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-kv i{color:#5b6472!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-dl .pcv-why{color:#8a6608!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-body{border-top-color:#e3e6eb!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-band{-webkit-print-color-adjust:exact;print-color-adjust:exact;min-height:16px!important;padding:3px 6px!important;font-size:9px!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-band.neutral{min-height:8px!important;padding:0!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-pos,html body .prb .phx.phx.pre-phx .card.pcv .pcv-hand{height:14px!important;width:auto!important;min-width:14px!important;padding:0 3px!important;font-size:8px!important;border-width:1px!important;box-shadow:none!important}
-/* KEY / STOP HIM and the usage are said in words beside the name on paper */
-html body .prb .phx.phx.pre-phx .card.pcv.hl-key .pcv-id-p .name .ln::after{content:" · KEY";color:#3b7ddd;font-size:.62em}
-html body .prb .phx.phx.pre-phx .card.pcv.hl-stop .pcv-id-p .name .ln::after{content:" · STOP HIM";color:#e0453b;font-size:.62em}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-ph .pcv-hsc{position:static!important;flex:none;width:30%!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-hsc .photo-sc{background:#eef1f5!important;box-shadow:none!important}
-html body .prb .phx.phx.pre-phx .card.pcv .pcv-rl b,html body .prb .phx.phx.pre-phx .card.pcv .pcv-rl span{color:#141821!important;font-size:8px!important}
+html body .prb .phx.phx.pre-phx.pre-cm .roster-columns .pos-col{background:none!important;border:0!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-rl b{color:#141821!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-rl b.rotation,html body .prb .phx.phx.pre-phx .card.pcv .pcv-rl b.bench{color:#4b5563!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-rl span{color:#4b5563!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-id .pcv-why{color:#8a6608!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-hsc .photo-sc{background:rgba(244,245,248,.94)!important;border-color:#e3e6eb!important;box-shadow:0 4px 12px rgba(16,24,40,.12)!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-hsc .sc-line{stroke:#5b6472!important;opacity:.5!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-top2,html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-col{background:#fff!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-strip{background:#eef0f3}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-strip::after{background:linear-gradient(180deg,rgba(238,240,243,0) 40%,rgba(238,240,243,.86) 68%,#eef0f3 100%)}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .ln{color:#141821}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .fn{color:#4b5563}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-strip .meta{color:#4b5563!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-col > * + *{border-top-color:#edf0f3!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-usg:not(.focus){background:#eef0f3;color:#141821;border-color:#dfe3e8}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-why{color:#8a6608!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{background:#f4f5f8!important;border-color:#e3e6eb!important;box-shadow:none!important}
+html body .prb .phx.phx.pre-phx .roster-columns{background:#fff!important;padding:0!important;gap:8px!important}
+html body .prb .phx.phx.pre-phx .roster-columns .pos-col{background:#f4f5f7!important;border:1px solid #e3e6eb!important;padding:8px!important;gap:8px!important}
+html body .prb .phx.phx.pre-phx .roster-columns .pos-col-head{color:#141821!important;border-bottom-color:#d5d9e0!important;padding-bottom:6px!important}
+html body .prb .phx.phx.pre-phx .card.pcv{box-shadow:none!important;border:1px solid #d5d9e0!important}
+html body .prb .phx.phx.pre-phx .card.pcv.hl-key{box-shadow:0 0 0 2px #3b7ddd!important;border-color:transparent!important}
+html body .prb .phx.phx.pre-phx .card.pcv.hl-stop{box-shadow:0 0 0 2px #e0453b!important;border-color:transparent!important}
+html body .prb .phx.phx.pre-phx .card.pcv,html body .prb .phx.phx.pre-phx .card.pcv *,html body .prb .phx.phx.pre-phx .card.pcv *::before,html body .prb .phx.phx.pre-phx .card.pcv *::after{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
 </style>
 
 <script defer src="/stats.js"></script>
