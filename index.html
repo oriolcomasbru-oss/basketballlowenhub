@@ -12153,6 +12153,78 @@ function _preCardTidy(card, reading){
     if(reading){ const mt=card.querySelector(".meta"); if(mt && mt.childElementCount===0) mt.textContent=mt.textContent.replace(/(\d)\s+(m|kg|cm)\b/g, "$1 $2"); }
   }catch(e){_quiet(e)}
 }
+/* THE PLAYER CARD, LED BY THE PLAYER (Oriol, 14/11/2026, with NBA player-card references: "no me gusta
+   nada, parece que todo esté flotando, tampoco ha mejorado la jerarquía visual"). For reading - the
+   board and the card beside the video - the same card is laid out again from its own parts, nothing
+   recomputed: the photograph is the hero on a dark ground with the closeout's colour standing behind
+   him as a stripe; the number top left with KEY / STOP HIM under it; the usage as a bubble top right,
+   red when he is a focus; the name over the foot of the photograph, the surname large; the numbers as
+   one row of big figures; then the line of status with the closeout named; the role and the notes;
+   the shot chart last. Editing keeps the working card (the parts are only moved when nobody edits). */
+const PCV_CO={ red:{ k:"SHOOTER", c:"#e5544b" }, green:{ k:"DRIVE", c:"#2fb08f" }, yellow:{ k:"MIX", c:"#e0ac2b" } };
+function _pcvName(t){
+  const w=String(t||"").trim().split(/\s+/).filter(Boolean);
+  if(w.length<2) return { f:"", l:w.join(" ") };
+  const last=[w.pop()];
+  if(/^(jr\.?|sr\.?|ii|iii|iv)$/i.test(last[0]) && w.length>1) last.unshift(w.pop());
+  while(w.length>1 && /^(von|van|de|del|der|da|di|la|le|dos|du)$/i.test(w[w.length-1])) last.unshift(w.pop());
+  return { f:w.join(" "), l:last.join(" ") };
+}
+function _preCardHero(card){
+  try{
+    if(!card || card.classList.contains("pcv")) return;
+    const q=s=>card.querySelector(s);
+    const img=q(".photo-img"), num=q(".num-badge"), hand=q(".hand-badge"), sc=q(".photo-sc");
+    const name=q(".card-body .name"), meta=q(".card-body .meta"), tagw=q(".tagline-wrap"), ideas=q(".ideas"), extra=q(".extra-blocks");
+    const stats=q(".stat-bar"), coBar=q(".closeout-bar"), rib=q(".hl-rib"), use=q(".use-chip");
+    const role=q(".roster-badge"), mins=q(".minutes"), doubt=q(".doubt-badge.on"), why=q(".doubt-why");
+    const st=(coBar && coBar.getAttribute("data-state"))||"neutral", co=PCV_CO[st]||null;
+    card.classList.add("pcv");
+    /* the league's portraits come on a light studio ground, so the closeout's colour is the card's top
+       edge rather than a stripe behind him that no portrait would let through */
+    if(co){ card.style.setProperty("--pcv-co", co.c); card.classList.add("has-co"); }
+    /* the hero */
+    const hero=h("div",{class:"pcv-hero"});
+    if(img) hero.appendChild(img);
+    const top=h("div",{class:"pcv-top"});
+    const tl=h("div",{class:"pcv-tl"});
+    if(num) tl.appendChild(num);
+    if(rib){ rib.textContent=card.classList.contains("hl-stop")? "STOP HIM" : "KEY PLAYER"; tl.appendChild(rib); }
+    top.appendChild(tl);
+    if(use){ const b=use.querySelector("b"), foc=use.classList.contains("focus");
+      top.appendChild(h("div",{class:"pcv-usg"+(foc? " focus" : ""), title:use.title||""}, h("b",{}, (b&&b.textContent)||""), h("span",{}, foc? "FOCUS" : "USG")));
+      use.remove(); }
+    hero.appendChild(top);
+    if(hand && /^[LR]$/.test((hand.textContent||"").trim())){ hand.classList.add("pcv-hand"); hero.appendChild(hand); }
+    const idb=h("div",{class:"pcv-id"});
+    if(name){ const n=_pcvName(name.textContent); name.textContent="";
+      if(n.f) name.appendChild(h("span",{class:"fn"}, n.f)); name.appendChild(h("span",{class:"ln"}, n.l)); idb.appendChild(name); }
+    if(meta) idb.appendChild(meta);
+    hero.appendChild(idb);
+    /* the status line, the closeout named at its end */
+    const status=h("div",{class:"pcv-st"});
+    const left=h("div",{class:"pcv-stl"});
+    if(doubt) left.appendChild(doubt);
+    if(role && role.textContent.trim()) left.appendChild(role);
+    if(mins && mins.textContent.trim()) left.appendChild(mins);
+    status.appendChild(left);
+    if(co) status.appendChild(h("span",{class:"pcv-co", title:(coBar && coBar.title)||""}, co.k));
+    /* the body */
+    const body=h("div",{class:"pcv-body"});
+    if(why && why.textContent.trim()) body.appendChild(h("div",{class:"pcv-why"}, why.textContent.trim()));
+    if(tagw) body.appendChild(tagw);
+    if(ideas) body.appendChild(ideas);
+    if(extra && extra.textContent.trim()) body.appendChild(extra);
+    /* put together: hero, the numbers, status, body, shots */
+    const frag=[hero];
+    if(stats) frag.push(h("div",{class:"pcv-stats"}, stats));
+    frag.push(status, body);
+    if(sc) frag.push(h("div",{class:"pcv-sc"}, sc));
+    const keep=[...card.children].filter(x=>x.classList.contains("hl-tog"));
+    [...card.children].forEach(x=>{ if(keep.indexOf(x)<0) x.classList.add("pcv-old"); });
+    frag.forEach(x=>card.appendChild(x));
+  }catch(e){_quiet(e)}
+}
 /* the chart into the photo's column, under the photograph */
 function _preCardShots(card, L, tid, c){
   try{
@@ -12279,6 +12351,7 @@ function _preOpenCard(L, tid, c, canEd, save){
     /* and its usage, the same chip as on the board, and the same tidying */
     _preCardUse(card, L, tid, c);
     _preCardTidy(card, !mayWrite);
+    if(!mayWrite) _preCardHero(card);
     col.appendChild(card);
   }
   cols.appendChild(col);
@@ -13085,7 +13158,7 @@ function _prePhxBoard(L, C, canEd, redraw){
   const drag={ from:null, i:-1 };
   PRE_CARD_POS.forEach(pos=>{
     const col=h("div",{class:"pos-col"});
-    col.appendChild(h("div",{class:"pos-col-head"}, pos));
+    col.appendChild(h("div",{class:"pos-col-head", "data-sub":(PRE_POS_NAME[pos]||"")+" · "+((C.pos[pos]||[]).length)}, pos));
     (C.pos[pos]||[]).forEach((c,i)=>{
       const box=document.createElement("div");
       try{ box.innerHTML=mk(_preCardToPhx(L,c)); }catch(e){ return; }
@@ -13105,6 +13178,8 @@ function _prePhxBoard(L, C, canEd, redraw){
         if(tl && !tl.textContent.trim()){
           const w=tl.closest(".tagline-wrap"); if(w) w.remove(); else tl.remove();
         }
+        /* for reading, the card led by the player */
+        _preCardHero(card);
       }
       col.appendChild(card);
     });
@@ -13839,6 +13914,10 @@ function _prePrintBoard(src, what){
   copy.querySelectorAll(".idea-row").forEach(r=>{ const t=r.querySelector(".idea-line"); if(!t || !t.textContent.trim()) r.remove(); });
   copy.querySelectorAll(".tagline").forEach(t=>{ if(!t.textContent.trim()){ const w=t.closest(".tagline-wrap"); (w||t).remove(); } });
   copy.querySelectorAll(".vb-note").forEach(n=>{ if(!n.textContent.trim()) n.remove(); });
+  /* the player card is laid out sideways on paper - photograph left, name, numbers and status
+     beside it - so the board fits one sheet at a size that reads: the name leaves the photograph */
+  copy.querySelectorAll(".card.pcv").forEach(cd=>{ const hero=cd.querySelector(".pcv-hero"), id=hero && hero.querySelector(".pcv-id");
+    if(id){ const row=h("div",{class:"pcv-ph"}); hero.before(row); row.appendChild(hero); row.appendChild(id); id.classList.add("pcv-id-p"); } });
   /* a board with nothing on it is not sent to the printer */
   if(!copy.querySelector(what==="roles"? ".vb-area" : ".card")){ toast(what==="roles"? "No roles written yet for this club" : "No cards on the roster yet"); return; }
   const p=h("div",{class:"dop-fit prb prb-"+what}, h("div",{class:"dop-top"}, h("b",{}, "Pre game"), h("span",{}, title)), copy);
@@ -25702,7 +25781,13 @@ function _lgRoster(L){
     const sea=(ta && tmU)? 100*((ta.p2a||0)+(ta.p3a||0)+0.44*(ta.fta||0)+(ta.tov||0))/tmU : null;
     if(tg==null && sea==null) return h("td",{class:"rt-x"},"—");
     const sc=v=>Math.min(100, 100*v/35).toFixed(1)+"%";
-    const d=(tg!=null && sea!=null)? tg-sea : null, big=d!=null && r.n>=15 && Math.abs(d)>=4;
+    /* ONE NUMBER UNLESS IT REALLY MOVED (Oriol, 14/11/2026: "haz un promedio si los números son muy
+       parecidos; debería haber un cambio muy brusco para poner los dos, si no es ruido"): the two
+       are shown apart only at 5 points and a third of the larger, on 15 tagged possessions */
+    const d=(tg!=null && sea!=null)? tg-sea : null, big=d!=null && r.n>=15 && Math.abs(d)>=5 && Math.abs(d)>=0.3*Math.max(tg, sea);
+    if(d!=null && !big){ const av=(tg+sea)/2;
+      return h("td",{class:"rt-use2 one", title:"Tagged "+Math.round(tg)+"% · season "+Math.round(sea)+"% of their possessions: close enough to read as one, "+Math.round(av)+"%"},
+        h("span",{class:"u-w"}, h("span",{class:"u-bar"}, h("i",{class:"u-tg", style:"width:"+sc(av)})), h("span",{class:"u-n"}, h("b",{}, Math.round(av)+"%")))); }
     const tip=(tg!=null? "Games tagged: "+Math.round(tg)+"% of their possessions with a player's name ("+r.n+")" : "Not in our tagging")
       +(sea!=null? " · season: "+Math.round(sea)+"% of the team's possessions, from the league's game sheets" : "")
       +(big? " · "+(d>0? "more" : "less")+" involved in the games we tagged" : "");
@@ -25736,7 +25821,7 @@ function _lgRoster(L){
       c.t+(c.k===sort.k?(sort.dir<0?" ▾":" ▴"):"")));
   });
   if(TG){
-    [["Poss","Possessions he finished in the games tagged"],["Use","His share of their possessions. The bar and the first number: the games we tagged, among the possessions that carry a player's name. The dark mark and the grey number: the whole season, from the league's game sheets. ▲ ▼ when the two are 4 points apart"],["PPP","Points per possession he used - from the league's box score, so his turnovers are in it. Red is above their players' average, which is what hurts us"],
+    [["Poss","Possessions he finished in the games tagged"],["Use","His share of their possessions. One number when the games we tagged and the whole season agree (their average); both, with ▲ ▼, only when they are 5 points and a third apart - the bar the tagging, the dark mark and the grey number the season"],["PPP","Points per possession he used - from the league's box score, so his turnovers are in it. Red is above their players' average, which is what hurts us"],
      ["eFG","Effective field goal %"],["TO","Turnover rate"]]
       .forEach((c,i)=>hr.appendChild(h("th",{class:i===0? "grp" : "", title:c[1]}, c[0])));
     tgUsed.forEach((k,i)=>hr.appendChild(h("th",{class:(i===0? "grp " : "")+"rt-hh", title:k}, TG_SHORT[k]||k)));
@@ -46950,84 +47035,164 @@ body.dark .rt-nlr.z{background:rgba(255,255,255,.04)}
 </style>
 
 <style id="cardCalm">
-/* ROSTER POSITIONS, WITH THE NOISE TAKEN OUT (Oriol, 14/11/2026: "veo mucho ruido, mejora la maquetación
-   general para integrarlo todo mejor y hacerlo más visual y claro"). The same facts, said once each:
-   - the column is a heading over the cards, not a second card around them, and loses its gold strip;
-   - the position is the column's, so the badge that repeated it on the photograph goes (the card beside
-     the video, which has no column, keeps it);
-   - role, minutes and usage are one line of words, not four pills; FOCUS is the only colour on it;
-   - the role line is set in ink, without the gold rule beside it;
-   - the numbers sit on one quiet row: a lit number is coloured, the top-ten ones on a pale ground, and
-     nothing carries a stripe on top any more;
-   - the closeout is a slim tinted strip with its word and a 2 px edge of its colour, not a slab, and an
-     unrated one is not drawn outside editing;
-   - a man with no numbers yet (0.0 everywhere) shows no row of zeros.
-   The same card opens beside the video, so every rule is written for both (.phx.pre-phx covers the two). */
+/* ROSTER POSITIONS AS A STAGE OF PLAYER CARDS (Oriol, 14/11/2026: the calm version "no me gusta nada,
+   parece que todo esté flotando, tampoco ha mejorado la jerarquía visual", with NBA player-card and
+   game-app references as the idea). The board is a dark stage and each position a lane, so the cards
+   stand on something; for reading, each card is led by the player (_preCardHero builds .pcv from the
+   card's own parts): photograph as hero, the closeout's colour standing behind him, number and KEY /
+   STOP HIM top left, usage as a bubble top right (red = focus), name over the foot of the photograph,
+   the numbers as big figures, a status line with the closeout named, the role and the notes, the shot
+   chart. Editing keeps the working card on the same stage. Light and dark alike; paper prints light. */
+html body .phx.phx.pre-phx .roster-columns{background:#0f1218!important;border-radius:16px!important;padding:14px!important;gap:12px!important}
+html body .phx.phx.pre-phx .roster-columns .pos-col{background:#151922!important;border:1px solid rgba(255,255,255,.05)!important;border-radius:14px!important;padding:12px 10px!important;box-shadow:none!important;gap:12px!important}
 html body .phx.phx.pre-phx .pos-col::before{display:none!important}
-html body .phx.phx.pre-phx .roster-columns .pos-col{background:transparent!important;border:0!important;box-shadow:none!important;padding:0 4px!important}
-html body .phx.phx.pre-phx .pos-col-head{color:#141821!important;font-size:20px!important;letter-spacing:.08em!important;padding:0 2px 6px!important;margin:0 0 10px!important;border-bottom:2px solid #141821!important}
-html body .phx.phx.pre-phx .roster-columns .card{border:1px solid #e3e6eb!important;border-radius:10px!important;box-shadow:0 1px 2px rgba(16,24,40,.06)!important}
-html body .phx.phx.pre-phx .roster-columns .card .pos-badge{display:none!important}
-html body .phx.phx.pre-phx .card .meta{color:#687180!important}
-/* the status line */
-html body .phx.phx.pre-phx .card .row2{gap:3px 10px!important;margin:3px 0 7px!important;align-items:center!important}
-html body .phx.phx.pre-phx .card .roster-badge{background:none!important;border:0!important;padding:0!important;border-radius:0!important;letter-spacing:.06em!important;font-weight:800!important;color:#141821!important}
-html body .phx.phx.pre-phx .card .roster-badge.outline{color:#687180!important;font-weight:700!important}
-html body .phx.phx.pre-phx .card .minutes{background:none!important;padding:0!important;border-radius:0!important;color:#4b5563!important;font-weight:600!important}
-html body .phx.phx.pre-phx .card .use-chip:not(.focus){background:none!important;padding:0!important;color:#4b5563!important}
-html body .phx.phx.pre-phx .card .use-chip.focus{padding:3px 7px!important}
-/* the role, the coach's line */
-html body .phx.phx.pre-phx .card .tagline{border-left:0!important;padding:0!important;color:#141821!important;letter-spacing:.015em!important}
-html body .phx.phx.pre-phx .card .tagline-wrap{margin:2px 0 8px!important}
-/* the numbers */
-html body .phx.phx.pre-phx .card .stat-bar{background:#fff!important;border-top:1px solid #edf0f3!important;gap:0 2px!important;padding:5px 4px 6px!important}
-html body .phx.phx.pre-phx .card .stat-cell{background:transparent!important;box-shadow:none!important;border:0!important;border-radius:6px!important}
-html body .phx.phx.pre-phx .card .stat-cell .stat-value{color:#141821!important}
-html body .phx.phx.pre-phx .card .stat-cell .stat-label{color:#687180!important}
-html body .phx.phx.pre-phx .card .stat-cell.hl-hot{background:rgba(216,82,78,.11)!important}
-html body .phx.phx.pre-phx .card .stat-cell.hl-hot .stat-value,html body .phx.phx.pre-phx .card .stat-cell.hl-hot .sv-pc,
-html body .phx.phx.pre-phx .card .stat-cell.hl-warm .stat-value,html body .phx.phx.pre-phx .card .stat-cell.hl-warm .sv-pc{color:#b8322a!important}
-html body .phx.phx.pre-phx .card .stat-cell.hl-hot .hl-why,html body .phx.phx.pre-phx .card .stat-cell.hl-warm .hl-why{color:#b8322a!important;opacity:1!important;font-weight:700!important}
-html body .phx.phx.pre-phx .card .stat-cell.hl-low .stat-value,html body .phx.phx.pre-phx .card .stat-cell.hl-low .sv-pc,
-html body .phx.phx.pre-phx .card .stat-cell.hl-low .hl-why{color:#14704f!important;opacity:1!important}
-html body .phx.phx.pre-phx .card .stat-cell.hl-low .hl-why{font-weight:700!important}
-html body .phx.phx.pre-phx .card .stat-cell.hl-hot .stat-label,html body .phx.phx.pre-phx .card .stat-cell.hl-warm .stat-label,
-html body .phx.phx.pre-phx .card .stat-cell.hl-low .stat-label{color:#687180!important}
-body:not(.edit-mode) .phx.phx.pre-phx .card.no-stats .stat-bar{display:none!important}
-/* the closeout */
-html body .phx.phx.pre-phx .card .closeout-bar{padding:4px 0 3px!important;letter-spacing:.22em!important;font-size:9.5px!important;font-weight:700!important}
-html body .phx.phx.pre-phx .card .closeout-bar[data-state="red"]{background:#fdeceb!important;color:#b3332b!important;box-shadow:inset 0 2px 0 #d8524e!important}
-html body .phx.phx.pre-phx .card .closeout-bar[data-state="green"]{background:#e4f4ee!important;color:#14704f!important;box-shadow:inset 0 2px 0 #2f9e86!important}
-html body .phx.phx.pre-phx .card .closeout-bar[data-state="yellow"]{background:#fbf2da!important;color:#7a5a06!important;box-shadow:inset 0 2px 0 #d9a521!important}
-html body .phx.phx.pre-phx .card .closeout-bar[data-state="neutral"]{background:#f3f4f6!important;color:#8a919c!important}
-body:not(.edit-mode) .phx.phx.pre-phx .card .closeout-bar[data-state="neutral"]{display:none!important}
-/* the line above the board */
+html body .phx.phx.pre-phx .roster-columns .pos-col-head{display:flex!important;align-items:baseline!important;justify-content:flex-start!important;gap:10px!important;color:#f2f4f7!important;font:700 22px/1 'Oswald',sans-serif!important;letter-spacing:.06em!important;padding:2px 4px 10px!important;margin:0!important;border:0!important;border-bottom:1px solid rgba(255,255,255,.08)!important}
+html body .phx.phx.pre-phx .roster-columns .pos-col-head::after{content:attr(data-sub);font:600 10px/1 'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:#8a92a0}
+/* beside the video the card stands alone: no stage, no lane around it */
+html body .phx.phx.pre-phx.pre-cm .roster-columns{background:none!important;padding:0!important;border-radius:0!important}
+html body .phx.phx.pre-phx.pre-cm .roster-columns .pos-col{background:none!important;border:0!important;padding:0!important}
 .pc-hint{background:none!important;border:0!important;padding:0!important;margin:0 0 12px!important;color:#5b6472!important;font:500 12.5px Inter,system-ui,sans-serif!important}
 body.dark .pc-hint{color:#aeb5c0!important}
-body.dark .phx.phx.pre-phx .pos-col-head{color:#e9ebef!important;border-bottom-color:#e9ebef!important}
-/* dark: the pre game's cards are dark, so the same calm in light ink */
-body.dark .phx.phx.pre-phx .roster-columns .card{border-color:rgba(255,255,255,.10)!important;box-shadow:none!important}
-body.dark .phx.phx.pre-phx .card .meta{color:#9aa2ae!important}
-body.dark .phx.phx.pre-phx .card .roster-badge{color:#e9ebef!important}
-body.dark .phx.phx.pre-phx .card .roster-badge.outline{color:#aeb5c0!important}
-body.dark .phx.phx.pre-phx .card .minutes,body.dark .phx.phx.pre-phx .card .use-chip:not(.focus){color:#c9ced6!important}
-body.dark .phx.phx.pre-phx .card .use-chip:not(.focus) .uc-bar{background:rgba(230,234,240,.2)!important}
-body.dark .phx.phx.pre-phx .card .use-chip:not(.focus) .uc-bar i{background:#e6eaf0!important}
-body.dark .phx.phx.pre-phx .card .tagline{color:#e9ebef!important}
-body.dark .phx.phx.pre-phx .card .stat-bar{background:transparent!important;border-top-color:rgba(255,255,255,.08)!important}
-body.dark .phx.phx.pre-phx .card .stat-cell{border:0!important;box-shadow:none!important;outline:0!important}
-body.dark .phx.phx.pre-phx .card .stat-cell .stat-value{color:#e9ebef!important}
-body.dark .phx.phx.pre-phx .card .stat-cell .stat-label{color:#aeb5c0!important}
-body.dark .phx.phx.pre-phx .card .stat-cell.hl-hot{background:rgba(240,112,94,.16)!important}
-body.dark .phx.phx.pre-phx .card .stat-cell.hl-warm{background:transparent!important}
-body.dark .phx.phx.pre-phx .card .stat-cell.hl-hot .stat-value,body.dark .phx.phx.pre-phx .card .stat-cell.hl-hot .sv-pc,body.dark .phx.phx.pre-phx .card .stat-cell.hl-hot .hl-why,
-body.dark .phx.phx.pre-phx .card .stat-cell.hl-warm .stat-value,body.dark .phx.phx.pre-phx .card .stat-cell.hl-warm .sv-pc,body.dark .phx.phx.pre-phx .card .stat-cell.hl-warm .hl-why{color:#ff8f85!important}
-body.dark .phx.phx.pre-phx .card .stat-cell.hl-low{background:transparent!important}
-body.dark .phx.phx.pre-phx .card .stat-cell.hl-low .stat-value,body.dark .phx.phx.pre-phx .card .stat-cell.hl-low .sv-pc,body.dark .phx.phx.pre-phx .card .stat-cell.hl-low .hl-why{color:#5fcf9f!important}
-body.dark .phx.phx.pre-phx .card .closeout-bar[data-state="red"]{background:rgba(216,82,78,.18)!important;color:#ff8f85!important}
-body.dark .phx.phx.pre-phx .card .closeout-bar[data-state="green"]{background:rgba(47,158,134,.2)!important;color:#5fcf9f!important}
-body.dark .phx.phx.pre-phx .card .closeout-bar[data-state="yellow"]{background:rgba(217,165,33,.2)!important;color:#f0c75e!important}
-body.dark .phx.phx.pre-phx .card .closeout-bar[data-state="neutral"]{background:rgba(255,255,255,.06)!important;color:#aeb5c0!important}
+
+/* the card */
+html body .phx.phx.pre-phx .card.pcv{position:relative!important;display:flex!important;flex-direction:column!important;padding:0!important;margin:0!important;min-height:0!important;height:auto!important;
+  background:#1b2029!important;color:#f2f4f7!important;border:1px solid rgba(255,255,255,.07)!important;border-radius:16px!important;
+  box-shadow:0 8px 22px rgba(0,0,0,.35)!important;overflow:hidden!important;container-type:inline-size;cursor:pointer}
+html body .phx.phx.pre-phx .card.pcv > .pcv-old{display:none!important}
+html body .phx.phx.pre-phx .card.pcv.hl-key{box-shadow:0 0 0 2px #3b7ddd,0 8px 22px rgba(0,0,0,.35)!important;border-color:transparent!important}
+html body .phx.phx.pre-phx .card.pcv.hl-stop{box-shadow:0 0 0 2px #e0453b,0 8px 22px rgba(0,0,0,.35)!important;border-color:transparent!important}
+
+/* the hero */
+html body .phx.phx.pre-phx .card.pcv .pcv-hero{position:relative;aspect-ratio:1/1.04;overflow:hidden;background:radial-gradient(120% 90% at 50% 16%,#2e3545 0%,#1b2029 64%)}
+html body .phx.phx.pre-phx .card.pcv.has-co::before{content:"";position:absolute;left:0;right:0;top:0;height:4px;z-index:6;background:var(--pcv-co)}
+html body .phx.phx.pre-phx .card.pcv .pcv-hero .photo-img{position:absolute!important;left:0!important;right:0!important;top:0!important;bottom:0!important;width:auto!important;height:auto!important;margin:0!important;border-radius:0!important;
+  background-size:cover!important;background-position:50% 16%!important;background-repeat:no-repeat!important;transform:none!important;z-index:1}
+html body .phx.phx.pre-phx .card.pcv .pcv-hero::after{content:"";position:absolute;left:0;right:0;bottom:0;height:50%;z-index:2;pointer-events:none;
+  background:linear-gradient(180deg,rgba(27,32,41,0) 0%,rgba(27,32,41,.86) 56%,#1b2029 100%)}
+html body .phx.phx.pre-phx .card.pcv.is-out .pcv-hero .photo-img{filter:grayscale(1) opacity(.55)!important}
+html body .phx.phx.pre-phx .card.pcv .pcv-top{position:absolute;left:11px;right:11px;top:10px;z-index:3;display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+html body .phx.phx.pre-phx .card.pcv .pcv-tl{display:flex;flex-direction:column;align-items:flex-start;gap:7px;min-width:0}
+html body .phx.phx.pre-phx .card.pcv .num-badge{position:static!important;display:block!important;inset:auto!important;width:auto!important;height:auto!important;min-width:0!important;padding:4px 9px 5px!important;margin:0!important;border:0!important;border-radius:10px!important;
+  background:rgba(12,15,20,.78)!important;box-shadow:0 3px 10px rgba(0,0,0,.25)!important;font:700 clamp(17px,9.5cqw,26px)/1 'Oswald',sans-serif!important;color:#fff!important;letter-spacing:.01em!important}
+html body .phx.phx.pre-phx .card.pcv .hl-rib{position:static!important;display:inline-block!important;inset:auto!important;width:auto!important;height:auto!important;margin:0!important;transform:none!important;border-radius:999px!important;padding:3px 9px!important;
+  font:800 clamp(8.5px,4.2cqw,10px)/1.25 'Inter',sans-serif!important;letter-spacing:.12em!important;color:#fff!important;background:#3b7ddd!important;box-shadow:0 3px 10px rgba(0,0,0,.35)!important}
+html body .phx.phx.pre-phx .card.pcv.hl-stop .hl-rib{background:#e0453b!important}
+html body .phx.phx.pre-phx .card.pcv .pcv-usg{flex:none;width:clamp(42px,22cqw,56px);aspect-ratio:1;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:rgba(12,15,20,.78);border:1px solid rgba(255,255,255,.14);color:#fff;box-shadow:0 3px 10px rgba(0,0,0,.25)}
+html body .phx.phx.pre-phx .card.pcv .pcv-usg b{font:700 clamp(12px,6.6cqw,17px)/1 'Oswald',sans-serif}
+html body .phx.phx.pre-phx .card.pcv .pcv-usg span{font:700 clamp(6.5px,3.2cqw,8px)/1 'IBM Plex Mono',monospace;letter-spacing:.1em;margin-top:3px;opacity:.75}
+html body .phx.phx.pre-phx .card.pcv .pcv-usg.focus{background:#e0453b;border-color:#ff8077;box-shadow:0 4px 14px rgba(224,69,59,.5)}
+html body .phx.phx.pre-phx .card.pcv .pcv-usg.focus span{opacity:1}
+html body .phx.phx.pre-phx .card.pcv .hand-badge.pcv-hand{position:absolute!important;right:11px!important;left:auto!important;top:auto!important;bottom:12px!important;z-index:3!important;width:22px!important;height:22px!important;display:flex!important;align-items:center!important;justify-content:center!important;
+  border-radius:50%!important;background:rgba(255,255,255,.12)!important;border:1px solid rgba(255,255,255,.2)!important;color:#fff!important;font:700 11px/1 'Oswald',sans-serif!important}
+html body .phx.phx.pre-phx .card.pcv .pcv-id{position:absolute;left:12px;right:40px;bottom:11px;z-index:3}
+html body .phx.phx.pre-phx .card.pcv .pcv-id .name{display:flex!important;flex-direction:column!important;margin:0!important;padding:0!important;line-height:1!important;color:#fff!important;text-transform:uppercase!important;font-size:inherit!important}
+html body .phx.phx.pre-phx .card.pcv .pcv-id .name .fn{font:500 clamp(9.5px,5.2cqw,13px)/1.15 'Inter',sans-serif;letter-spacing:.09em;color:#c9ced8}
+html body .phx.phx.pre-phx .card.pcv .pcv-id .name .ln{font:700 clamp(19px,11.5cqw,31px)/.98 'Oswald',sans-serif;letter-spacing:.01em;color:#fff;margin-top:2px;overflow-wrap:anywhere}
+html body .phx.phx.pre-phx .card.pcv .pcv-id .meta{margin:6px 0 0!important;padding:0!important;font:500 clamp(8.5px,4.3cqw,11px)/1.25 'IBM Plex Mono',monospace!important;color:#aab1bd!important;letter-spacing:.02em!important}
+
+/* the numbers, as figures */
+html body .phx.phx.pre-phx .card.pcv .pcv-stats{padding:0 8px 8px;background:#1b2029}
+html body .phx.phx.pre-phx .card.pcv .pcv-stats .stat-bar{display:grid!important;grid-auto-flow:column!important;grid-auto-columns:minmax(0,1fr)!important;grid-template-columns:none!important;gap:2px!important;margin:0!important;padding:8px 0 0!important;
+  background:transparent!important;border:0!important;border-top:1px solid rgba(255,255,255,.07)!important;border-radius:0!important;box-shadow:none!important}
+html body .phx.phx.pre-phx .card.pcv .stat-cell{display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:flex-start!important;gap:0!important;min-width:0!important;padding:4px 0!important;margin:0!important;
+  background:transparent!important;border:0!important;box-shadow:none!important;border-radius:8px!important}
+html body .phx.phx.pre-phx .card.pcv .stat-cell .stat-label{order:-1!important;margin:0 0 3px!important;font:600 clamp(7px,3.5cqw,9.5px)/1.1 'IBM Plex Mono',monospace!important;letter-spacing:.06em!important;text-transform:uppercase!important;color:#8a92a0!important;white-space:nowrap!important}
+html body .phx.phx.pre-phx .card.pcv .stat-cell .stat-value{font:700 clamp(12.5px,7cqw,19px)/1 'Oswald',sans-serif!important;color:#f2f4f7!important;white-space:nowrap!important}
+html body .phx.phx.pre-phx .card.pcv .stat-cell .sv-sep{display:none!important}
+html body .phx.phx.pre-phx .card.pcv .stat-cell .sv-pc{font-size:.6em!important;font-style:normal!important;margin-left:2px!important;color:#aab1bd!important}
+html body .phx.phx.pre-phx .card.pcv .stat-cell .hl-why{display:block!important;margin-top:3px!important;font:700 clamp(6.5px,3.2cqw,8.5px)/1.1 'IBM Plex Mono',monospace!important;letter-spacing:.03em!important;opacity:1!important;color:#ff8a80!important;white-space:nowrap!important}
+html body .phx.phx.pre-phx .card.pcv .stat-cell.hl-hot{background:rgba(229,84,75,.17)!important}
+html body .phx.phx.pre-phx .card.pcv .stat-cell.hl-hot .stat-value,html body .phx.phx.pre-phx .card.pcv .stat-cell.hl-warm .stat-value{color:#ff8a80!important}
+html body .phx.phx.pre-phx .card.pcv .stat-cell.hl-hot .sv-pc,html body .phx.phx.pre-phx .card.pcv .stat-cell.hl-warm .sv-pc{color:#ffb4ad!important}
+html body .phx.phx.pre-phx .card.pcv .stat-cell.hl-hot .stat-label,html body .phx.phx.pre-phx .card.pcv .stat-cell.hl-warm .stat-label,html body .phx.phx.pre-phx .card.pcv .stat-cell.hl-low .stat-label{color:#8a92a0!important}
+html body .phx.phx.pre-phx .card.pcv .stat-cell.hl-low .stat-value,html body .phx.phx.pre-phx .card.pcv .stat-cell.hl-low .hl-why{color:#5fd3a8!important}
+html body .phx.phx.pre-phx .card.pcv .stat-cell.hl-low .sv-pc{color:#a6e9cf!important}
+html body .phx.phx.pre-phx .card.pcv .stat-cell .hl-cell{display:none!important}
+html body .phx.phx.pre-phx .card.pcv.no-stats .pcv-stats{display:none!important}
+
+/* the status line, the closeout named */
+html body .phx.phx.pre-phx .card.pcv .pcv-st{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;background:#1b2029;border-top:1px solid rgba(255,255,255,.07)}
+html body .phx.phx.pre-phx .card.pcv .pcv-stl{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;min-width:0}
+html body .phx.phx.pre-phx .card.pcv .roster-badge{background:none!important;border:0!important;padding:0!important;border-radius:0!important;font:800 clamp(8.5px,4.4cqw,10.5px)/1.2 'Inter',sans-serif!important;letter-spacing:.1em!important;text-transform:uppercase!important;color:#f2f4f7!important}
+html body .phx.phx.pre-phx .card.pcv .roster-badge.outline{color:#aab1bd!important;font-weight:700!important}
+html body .phx.phx.pre-phx .card.pcv .minutes{background:none!important;padding:0!important;border-radius:0!important;font:600 clamp(9px,4.4cqw,11px)/1.2 'IBM Plex Mono',monospace!important;color:#aab1bd!important}
+html body .phx.phx.pre-phx .card.pcv .doubt-badge.on{display:inline-flex!important;align-items:center!important;margin:0!important;padding:2px 8px!important;border:0!important;border-radius:999px!important;background:#f3c14b!important;color:#2a1f00!important;font:800 9px/1.25 'Inter',sans-serif!important;letter-spacing:.1em!important}
+html body .phx.phx.pre-phx .card.pcv .doubt-badge.on.out{background:#e0453b!important;color:#fff!important}
+html body .phx.phx.pre-phx .card.pcv .pcv-co{flex:none;display:inline-flex;align-items:center;gap:6px;padding:3px 9px 3px 8px;border-radius:999px;font:800 clamp(8px,4.2cqw,10px)/1.25 'Inter',sans-serif;letter-spacing:.14em;color:#fff;
+  background:color-mix(in srgb,var(--pcv-co) 28%,transparent);border:1px solid color-mix(in srgb,var(--pcv-co) 65%,transparent)}
+html body .phx.phx.pre-phx .card.pcv .pcv-co::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--pcv-co)}
+
+/* the role and the notes */
+html body .phx.phx.pre-phx .card.pcv .pcv-body{padding:3px 12px 12px;background:#1b2029}
+html body .phx.phx.pre-phx .card.pcv .pcv-why{margin:0 0 7px;font:italic 500 clamp(9.5px,4.8cqw,11.5px)/1.3 'Inter',sans-serif;color:#f3c14b}
+html body .phx.phx.pre-phx .card.pcv .tagline-wrap{margin:0 0 7px!important;padding:0!important}
+html body .phx.phx.pre-phx .card.pcv .tagline{margin:0!important;padding:0!important;border:0!important;font:700 clamp(12.5px,6.6cqw,16px)/1.15 'Oswald',sans-serif!important;letter-spacing:.03em!important;text-transform:uppercase!important;color:#e9b949!important}
+html body .phx.phx.pre-phx .card.pcv .ideas{display:flex!important;flex-direction:column!important;gap:4px!important;margin:0!important;padding:0!important}
+html body .phx.phx.pre-phx .card.pcv .idea-row{display:flex!important;align-items:flex-start!important;gap:7px!important;margin:0!important;padding:0!important;border:0!important;background:none!important}
+html body .phx.phx.pre-phx .card.pcv .idea-row::before{content:""!important;display:block!important;flex:none!important;width:5px!important;height:5px!important;margin-top:.55em!important;border-radius:50%!important;background:#e9b949!important;position:static!important}
+html body .phx.phx.pre-phx .card.pcv .idea-line,html body .phx.phx.pre-phx .card.pcv .extra-line{font:500 clamp(10.5px,5.2cqw,13px)/1.4 'Inter',sans-serif!important;color:#d5dae2!important;padding:0!important;margin:0!important}
+html body .phx.phx.pre-phx .card.pcv .extra-blocks{margin-top:7px!important}
+
+/* the shot chart, last */
+html body .phx.phx.pre-phx .card.pcv .pcv-sc{padding:0 12px 12px;background:#1b2029}
+html body .phx.phx.pre-phx .card.pcv .pcv-sc .photo-sc{position:static!important;inset:auto!important;display:block!important;width:100%!important;height:auto!important;margin:0!important;border-radius:10px!important;overflow:hidden!important;background:#222833!important;border:1px solid rgba(255,255,255,.06)!important}
+html body .phx.phx.pre-phx .card.pcv .pcv-sc .photo-sc svg{display:block!important;width:100%!important;height:auto!important}
+/* a dark floor, like the rest of the card: the lines faint, the heat as it is */
+html body .phx.phx.pre-phx .card.pcv .pcv-sc .sc-floor{fill:#222833!important}
+html body .phx.phx.pre-phx .card.pcv .pcv-sc .sc-line{stroke:#c9ced6!important;opacity:.28!important}
+
+/* ON PAPER: the same card in ink on white, and shorter - the face and shoulders rather than the half
+   figure, the chart narrower - so the whole board still fits one A4 at a size that can be read */
+html body .prb .phx.phx.pre-phx .roster-columns{background:#fff!important;padding:0!important;gap:8px!important}
+html body .prb .phx.phx.pre-phx .roster-columns .pos-col{background:#f4f5f7!important;border:1px solid #e3e6eb!important;padding:8px!important;gap:8px!important}
+html body .prb .phx.phx.pre-phx .roster-columns .pos-col-head{color:#141821!important;border-bottom-color:#d5d9e0!important;padding-bottom:6px!important}
+html body .prb .phx.phx.pre-phx .card.pcv,html body .prb .phx.phx.pre-phx .card.pcv .pcv-stats,html body .prb .phx.phx.pre-phx .card.pcv .pcv-st,
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-body,html body .prb .phx.phx.pre-phx .card.pcv .pcv-sc{background:#fff!important;color:#141821!important;box-shadow:none!important}
+html body .prb .phx.phx.pre-phx .card.pcv{border:1px solid #d5d9e0!important}
+html body .prb .phx.phx.pre-phx .card.pcv.hl-key{box-shadow:0 0 0 2px #3b7ddd!important}
+html body .prb .phx.phx.pre-phx .card.pcv.hl-stop{box-shadow:0 0 0 2px #e0453b!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-hero{aspect-ratio:1/.62!important;background:#eef1f5!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-hero .photo-img{background-position:50% 8%!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-hero::after{background:linear-gradient(180deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.9) 58%,#fff 100%)!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-id .name .ln,html body .prb .phx.phx.pre-phx .card.pcv .stat-cell .stat-value,html body .prb .phx.phx.pre-phx .card.pcv .roster-badge{color:#141821!important;text-shadow:none!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-id .name .fn,html body .prb .phx.phx.pre-phx .card.pcv .pcv-id .meta,html body .prb .phx.phx.pre-phx .card.pcv .minutes,
+html body .prb .phx.phx.pre-phx .card.pcv .stat-cell .stat-label,html body .prb .phx.phx.pre-phx .card.pcv .stat-cell .sv-pc,html body .prb .phx.phx.pre-phx .card.pcv .roster-badge.outline{color:#5b6472!important}
+html body .prb .phx.phx.pre-phx .card.pcv .stat-cell.hl-hot{background:rgba(229,84,75,.14)!important}
+html body .prb .phx.phx.pre-phx .card.pcv .stat-cell.hl-hot .stat-value,html body .prb .phx.phx.pre-phx .card.pcv .stat-cell.hl-warm .stat-value,html body .prb .phx.phx.pre-phx .card.pcv .stat-cell .hl-why{color:#b8322a!important}
+html body .prb .phx.phx.pre-phx .card.pcv .stat-cell.hl-low .stat-value,html body .prb .phx.phx.pre-phx .card.pcv .stat-cell.hl-low .hl-why{color:#14704f!important}
+html body .prb .phx.phx.pre-phx .card.pcv .idea-line,html body .prb .phx.phx.pre-phx .card.pcv .extra-line{color:#1f2937!important}
+html body .prb .phx.phx.pre-phx .card.pcv .tagline{color:#8a6608!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-why{color:#8a6608!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-co{color:#141821!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-st,html body .prb .phx.phx.pre-phx .card.pcv .pcv-stats .stat-bar{border-top-color:#e3e6eb!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-sc .photo-sc{background:#eef1f5!important;border-color:#e3e6eb!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-sc .sc-floor{fill:#eef1f5!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-sc .sc-line{stroke:#5b6472!important;opacity:.5!important}
+/* on paper the head of the card is a row - a small photograph and the name beside it - and the rest
+   follows under it, so the board fits one sheet at a size that reads */
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-ph{display:flex;align-items:center;gap:8px;padding:6px 8px 4px}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-ph .pcv-hero{flex:none;width:58px!important;height:70px!important;aspect-ratio:auto!important;border-radius:8px!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-hero::after{display:none!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-hero .photo-img{background-position:50% 8%!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-top{left:3px!important;right:3px!important;top:3px!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-tl .hl-rib{display:none!important}
+html body .prb .phx.phx.pre-phx .card.pcv .num-badge{font-size:11px!important;padding:1px 4px!important;border-radius:4px!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-usg{width:24px!important;border-width:0!important;box-shadow:none!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-usg b{font-size:8px!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-usg span{display:none!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-id-p{position:static!important;left:auto!important;right:auto!important;bottom:auto!important;flex:1 1 auto;min-width:0;padding:0!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-id-p .name .ln{font-size:17px!important;color:#141821!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-id-p .name .fn{font-size:9px!important;color:#5b6472!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-id-p .meta{font-size:8.5px!important;color:#5b6472!important;margin-top:3px!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-stats{padding:0 6px 3px!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-stats .stat-bar{padding-top:4px!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-st{padding:4px 8px!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-body{padding:4px 8px 6px!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-sc{padding:0 24% 8px!important}
+/* KEY / STOP HIM and the usage are said in words beside the name on paper */
+html body .prb .phx.phx.pre-phx .card.pcv.hl-key .pcv-id-p .name .ln::after{content:" · KEY";color:#3b7ddd;font-size:.62em}
+html body .prb .phx.phx.pre-phx .card.pcv.hl-stop .pcv-id-p .name .ln::after{content:" · STOP HIM";color:#e0453b;font-size:.62em}
 </style>
 
 <script defer src="/stats.js"></script>
