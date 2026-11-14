@@ -12210,10 +12210,17 @@ function _preCardHero(card, colPos){
        one is beside the video (Oriol: "no quiero dar tanto peso al mapa de tiro") */
     const status=h("div",{class:"pcv-st"+(sc? " has-sc" : "")});
     const left=h("div",{class:"pcv-stl"});
-    if(doubt) left.appendChild(doubt);
-    if(role && role.textContent.trim()) left.appendChild(role);
-    if(mins && mins.textContent.trim()) left.appendChild(mins);
-    if(why && why.textContent.trim()) left.appendChild(h("span",{class:"pcv-why"}, why.textContent.trim()));
+    /* said like the numbers above it - a label over a figure - so the block stands on the same
+       grid instead of floating beside the chart (Oriol: "queda todo como flotando") */
+    const roleTxt=((role && role.textContent)||"").trim(), minTxt=((mins && mins.textContent)||"").trim();
+    const minNum=(/(\d+(?:[.,]\d+)?)/.exec(minTxt)||[])[1]||"";
+    const kv=(lab, val, cls)=>h("div",{class:"pcv-kv"+(cls? " "+cls : "")}, h("i",{}, lab), h("b",{}, val));
+    const kvs=h("div",{class:"pcv-kvs"});
+    if(roleTxt) kvs.appendChild(kv("Role", roleTxt.charAt(0).toUpperCase()+roleTxt.slice(1).toLowerCase(), roleTxt.toLowerCase()));
+    if(minNum) kvs.appendChild(kv("Min/g", minNum.replace(",",".")));
+    if(kvs.childNodes.length) left.appendChild(kvs);
+    const whyTxt=(why && why.textContent.trim())||"";
+    if(doubt || whyTxt){ const dl=h("div",{class:"pcv-dl"}); if(doubt) dl.appendChild(doubt); if(whyTxt) dl.appendChild(h("span",{class:"pcv-why"}, whyTxt)); left.appendChild(dl); }
     status.appendChild(left);
     if(sc) status.appendChild(h("div",{class:"pcv-sc"}, sc));
     /* the body: the role and the 3-5 ideas the staff writes - the room on the card is theirs */
@@ -47125,9 +47132,16 @@ html body .phx.phx.pre-phx .card.pcv .stat-cell .hl-cell{display:none!important}
 html body .phx.phx.pre-phx .card.pcv.no-stats .pcv-stats{display:none!important}
 
 /* the status line, the shot chart small at its end */
-html body .phx.phx.pre-phx .card.pcv .pcv-st{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;background:#1b2029;border-top:1px solid rgba(255,255,255,.07)}
-html body .phx.phx.pre-phx .card.pcv .pcv-stl{display:flex;align-items:center;flex-wrap:wrap;gap:5px 10px;min-width:0;flex:1 1 auto}
-html body .phx.phx.pre-phx .card.pcv .pcv-st .pcv-why{flex-basis:100%;font:italic 500 clamp(9.5px,4.8cqw,11.5px)/1.3 'Inter',sans-serif;color:#f3c14b}
+html body .phx.phx.pre-phx .card.pcv .pcv-st{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:#1b2029;border-top:1px solid rgba(255,255,255,.07)}
+html body .phx.phx.pre-phx .card.pcv .pcv-stl{display:flex;flex-direction:column;justify-content:center;gap:8px;min-width:0;flex:1 1 auto}
+/* role and minutes as the figures above them are: a label over a value */
+html body .phx.phx.pre-phx .card.pcv .pcv-kvs{display:flex;align-items:flex-end;gap:16px}
+html body .phx.phx.pre-phx .card.pcv .pcv-kv{display:flex;flex-direction:column;gap:3px;min-width:0}
+html body .phx.phx.pre-phx .card.pcv .pcv-kv i{font:600 clamp(7px,3.5cqw,9.5px)/1.1 'IBM Plex Mono',monospace;font-style:normal;letter-spacing:.06em;text-transform:uppercase;color:#8a92a0}
+html body .phx.phx.pre-phx .card.pcv .pcv-kv b{font:700 clamp(13px,7cqw,18px)/1 'Oswald',sans-serif;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;color:#f2f4f7}
+html body .phx.phx.pre-phx .card.pcv .pcv-kv.rotation b,html body .phx.phx.pre-phx .card.pcv .pcv-kv.bench b{color:#c9ced8}
+html body .phx.phx.pre-phx .card.pcv .pcv-dl{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px}
+html body .phx.phx.pre-phx .card.pcv .pcv-dl .pcv-why{font:italic 500 clamp(9.5px,4.8cqw,11.5px)/1.3 'Inter',sans-serif;color:#f3c14b}
 html body .phx.phx.pre-phx .card.pcv .pcv-st .pcv-sc{flex:none;width:38%;max-width:124px}
 html body .phx.phx.pre-phx .card.pcv .roster-badge{background:none!important;border:0!important;padding:0!important;border-radius:0!important;font:800 clamp(8.5px,4.4cqw,10.5px)/1.2 'Inter',sans-serif!important;letter-spacing:.1em!important;text-transform:uppercase!important;color:#f2f4f7!important}
 html body .phx.phx.pre-phx .card.pcv .roster-badge.outline{color:#aab1bd!important;font-weight:700!important}
@@ -47160,6 +47174,39 @@ html body .phx.phx.pre-phx .card.pcv .pcv-sc .photo-sc svg{display:block!importa
 /* a dark floor, like the rest of the card: the lines faint, the heat as it is */
 html body .phx.phx.pre-phx .card.pcv .pcv-sc .sc-floor{fill:#222833!important}
 html body .phx.phx.pre-phx .card.pcv .pcv-sc .sc-line{stroke:#c9ced6!important;opacity:.28!important}
+
+/* THE LIGHT HUB (Oriol: "hay una versión oscura de la web y una clara, así que se verán ambas"): with
+   the light theme the lanes are light grey and the cards white, ink on white; the dark theme keeps the
+   dark stage above. Written before the paper rules, so paper still has the last word. */
+html body:not(.dark) .phx.phx.pre-phx .roster-columns{background:transparent!important;padding:0!important}
+html body:not(.dark) .phx.phx.pre-phx .roster-columns .pos-col{background:#eef0f3!important;border:1px solid #e3e6eb!important}
+html body:not(.dark) .phx.phx.pre-phx .roster-columns .pos-col-head{color:#141821!important;border-bottom-color:#d5d9e0!important}
+html body:not(.dark) .phx.phx.pre-phx .roster-columns .pos-col-head::after{color:#687180!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv{background:#fff!important;color:#141821!important;border:1px solid #e3e6eb!important;box-shadow:0 1px 3px rgba(16,24,40,.08),0 8px 20px rgba(16,24,40,.06)!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv.hl-key{box-shadow:0 0 0 2px #3b7ddd,0 8px 20px rgba(16,24,40,.08)!important;border-color:transparent!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv.hl-stop{box-shadow:0 0 0 2px #e0453b,0 8px 20px rgba(16,24,40,.08)!important;border-color:transparent!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-stats,html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-st,html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-body{background:#fff!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-hero{background:radial-gradient(120% 90% at 50% 16%,#f4f5f8 0%,#e6e9ee 64%)!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-hero::after{background:linear-gradient(180deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.88) 56%,#fff 100%)!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-id .name .ln,html body:not(.dark) .phx.phx.pre-phx .card.pcv .stat-cell .stat-value,html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-kv b{color:#141821!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-kv.rotation b,html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-kv.bench b{color:#4b5563!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-id .name .fn,html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-id .meta{color:#4b5563!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .stat-cell .stat-label,html body:not(.dark) .phx.phx.pre-phx .card.pcv .stat-cell .sv-pc,html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-kv i{color:#687180!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .stat-cell.hl-hot{background:rgba(229,84,75,.12)!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .stat-cell.hl-hot .stat-value,html body:not(.dark) .phx.phx.pre-phx .card.pcv .stat-cell.hl-warm .stat-value,html body:not(.dark) .phx.phx.pre-phx .card.pcv .stat-cell .hl-why{color:#b8322a!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .stat-cell.hl-hot .sv-pc,html body:not(.dark) .phx.phx.pre-phx .card.pcv .stat-cell.hl-warm .sv-pc{color:#d0574e!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .stat-cell.hl-low .stat-value,html body:not(.dark) .phx.phx.pre-phx .card.pcv .stat-cell.hl-low .hl-why{color:#14704f!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .stat-cell.hl-low .sv-pc{color:#3f8f72!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-stats .stat-bar,html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-st,html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-body{border-top-color:#edf0f3!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .tagline{color:#8a6608!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-dl .pcv-why{color:#8a6608!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .idea-line,html body:not(.dark) .phx.phx.pre-phx .card.pcv .extra-line{color:#1f2937!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .idea-line b,html body:not(.dark) .phx.phx.pre-phx .card.pcv .idea-line strong{color:#0b0d11!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .idea-row::before{background:#c9a227!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-sc .photo-sc{background:#eef1f5!important;border-color:#e3e6eb!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-sc .sc-floor{fill:#eef1f5!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv .pcv-sc .sc-line{stroke:#5b6472!important;opacity:.5!important}
+html body:not(.dark) .phx.phx.pre-phx.pre-cm .roster-columns .pos-col{background:none!important;border:0!important}
 
 /* ON PAPER: the same card in ink on white, and shorter - the face and shoulders rather than the half
    figure, the chart narrower - so the whole board still fits one A4 at a size that can be read */
@@ -47209,6 +47256,9 @@ html body .prb .phx.phx.pre-phx .card.pcv .pcv-stats .stat-bar{padding-top:4px!i
 html body .prb .phx.phx.pre-phx .card.pcv .pcv-st{padding:4px 8px!important}
 html body .prb .phx.phx.pre-phx .card.pcv .pcv-body{padding:4px 8px 6px!important}
 html body .prb .phx.phx.pre-phx .card.pcv .pcv-st .pcv-sc{width:34%!important;padding:0!important;background:none!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-kv b{color:#141821!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-kv i{color:#5b6472!important}
+html body .prb .phx.phx.pre-phx .card.pcv .pcv-dl .pcv-why{color:#8a6608!important}
 html body .prb .phx.phx.pre-phx .card.pcv .pcv-body{border-top-color:#e3e6eb!important}
 html body .prb .phx.phx.pre-phx .card.pcv .pcv-band{-webkit-print-color-adjust:exact;print-color-adjust:exact;min-height:16px!important;padding:3px 6px!important;font-size:9px!important}
 html body .prb .phx.phx.pre-phx .card.pcv .pcv-band.neutral{min-height:8px!important;padding:0!important}
