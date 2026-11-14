@@ -17,10 +17,9 @@
  * E = EuroLeague, U = EuroCup, and the number is the starting year, the same one the
  * BBL API uses: 2026 is 2026/27 on both sides.
  *
- * NOT covered: the Basketball Champions League and the FIBA Europe Cup. Those are FIBA
- * competitions, their data goes through FIBA's GDAP portal and needs a subscription.
- * Until that exists there is no open feed, and this function says so in `missing`
- * rather than letting the absence look like an empty calendar.
+ * The Basketball Champions League is FIBA's and has no open feed; its games and its group
+ * tables are read from the data its own site embeds in the games and standings pages
+ * (see viaBCL). The FIBA Europe Cup is not read.
  *
  * Output is the game shape the bbl function returns, so the panel does not care where
  * a game came from.
@@ -230,10 +229,10 @@ async function viaV1(comp, seasonCode, diag) {
  * Pages Router, a run of self.__next_f.push([1,"…"]) chunks on the App Router). The
  * JSON is worth more than the text, so it is read first.
  *
- * At the time of writing the season had not started: every record read 0/0 and there
- * were no games at all. So this cannot be verified against real data yet, and it is
- * written to fail quietly and say why — never to invent a game. Whatever it finds lands
- * in `diag`, which the panel shows when it has nothing else.
+ * The first reader was written before the 2026/27 season began and guessed the game's
+ * shape; it found nothing once games existed (Bamberg's pre game had no Europe, 14/11/2026).
+ * The games are now read in the shape FIBA really uses (fibaGame), the old guesser stays
+ * behind it, and whatever either finds lands in `diag` - never an invented game.
  */
 const BCL = { host: "https://www.championsleague.basketball", name: "Champions League" };
 
@@ -342,16 +341,103 @@ function harvestGames(roots, compName) {
   });
   return out;
 }
+/* Every whole {...} that starts with `marker`, parsed on its own: the flight text is not
+   JSON as a whole, but each game and each table inside it is. */
+function objectsAt(text, marker, max) {
+  const out = [];
+  let from = 0;
+  for (;;) {
+    const i = text.indexOf(marker, from);
+    if (i < 0) break;
+    let depth = 0, str = false, esc = false, end = -1;
+    for (let j = i; j < text.length && j - i < (max || 60000); j++) {
+      const c = text[j];
+      if (esc) { esc = false; continue; }
+      if (c === "\\") { esc = true; continue; }
+      if (c === '"') { str = !str; continue; }
+      if (str) continue;
+      if (c === "{") depth++;
+      else if (c === "}") { depth--; if (!depth) { end = j; break; } }
+    }
+    if (end < 0) { from = i + 1; continue; }
+    try { out.push(JSON.parse(text.slice(i, end + 1))); } catch (e) {}
+    from = end + 1;
+  }
+  return out;
+}
+/* THE GAME AS FIBA WRITES IT (seen on the 2026/27 pages): teamA is at home, teamB away, the
+   score sits on the game as teamAScore / teamBScore and only counts once the result is
+   VALID - a game still to play reads 0-0 with an EMPTY result. gameDateTimeUTC carries no
+   zone mark but is UTC, so it is marked as such and turned into the German clock. */
+function fibaGame(o, compName) {
+  const A = o.teamA || {}, B = o.teamB || {};
+  const home = String(A.shortName || A.officialName || "").trim();
+  const away = String(B.shortName || B.officialName || "").trim();
+  if (!home || !away) return null;
+  const utc = String(o.gameDateTimeUTC || "");
+  const w = utc ? whenParts(ZONED.test(utc) ? utc : utc + "Z") : whenParts(String(o.gameDateTime || ""));
+  const played = String(o.gameResultStatusCode || "").toUpperCase() === "VALID"
+    && typeof o.teamAScore === "number" && typeof o.teamBScore === "number";
+  const rd = o.round || {};
+  return {
+    id: "BCL_" + o.gameId, date: w.date, time: w.time, tz: w.tz,
+    round: "", competition: compName,
+    roundName: [rd.roundName, o.groupPairingCode ? "Group " + o.groupPairingCode : ""].filter(Boolean).join(" · "),
+    homeId: String(A.code || A.teamId || ""), home: home,
+    awayId: String(B.code || B.teamId || ""), away: away,
+    hs: played ? o.teamAScore : null, as: played ? o.teamBScore : null,
+    status: played ? "final" : "scheduled", venue: String(o.venueName || "")
+  };
+}
+function flightText(html) { return flightBlobs(html).map(b => typeof b === "string" ? b : "").join("\n"); }
 async function viaBCL(diag) {
-  const html = await get(BCL.host + "/en/games", false);
-  const blobs = flightBlobs(html);
-  diag.push({ comp: BCL.name, step: "page", html: html.length, blobs: blobs.map(b => b.length) });
-  if (!blobs.length) { diag.push({ comp: BCL.name, step: "parse", error: "no embedded data in the page" }); return { games: [], clubs: [] }; }
-  const objs = [];
-  blobs.forEach(b => { jsonObjects(b, ["homeTeam", "awayTeam", "local", "road", "gameCode", "scheduledTime", "startDate"]).forEach(o => objs.push(o)); });
-  const games = harvestGames(objs, BCL.name).filter(g => isGermanName(g.home) || isGermanName(g.away));
-  diag.push({ comp: BCL.name, step: "games", objects: objs.length, count: games.length });
-  return { games: games, clubs: [] };
+  /* the games page carries every game of the phase, played and to come; the standings page
+     carries the official group tables, ties already broken the competition's way */
+  const [html, stHtml] = await Promise.all([
+    get(BCL.host + "/en/games", false),
+    get(BCL.host + "/en/standings", false).catch(e => { diag.push({ comp: BCL.name, step: "standings page", error: String((e && e.message) || e) }); return ""; })
+  ]);
+  const text = flightText(html);
+  diag.push({ comp: BCL.name, step: "page", html: html.length, text: text.length });
+  if (!text) { diag.push({ comp: BCL.name, step: "parse", error: "no embedded data in the page" }); return { games: [], standings: [] }; }
+  const seen = Object.create(null), all = [], names = Object.create(null);
+  objectsAt(text, '{"gameId":').forEach(o => {
+    if (!o || seen[o.gameId] || !o.teamA || !o.teamB) return;
+    const g = fibaGame(o, BCL.name);
+    if (!g) return;
+    seen[o.gameId] = 1;
+    all.push(g);
+    if (o.teamA.teamId) names[o.teamA.teamId] = g.home;
+    if (o.teamB.teamId) names[o.teamB.teamId] = g.away;
+  });
+  let games = all.filter(g => isGermanName(g.home) || isGermanName(g.away));
+  /* the older, shape-guessing reader, for the day the page changes again */
+  if (!all.length) {
+    const objs = [];
+    flightBlobs(html).forEach(b => { jsonObjects(b, ["homeTeam", "awayTeam", "local", "road", "gameCode", "scheduledTime", "startDate"]).forEach(o => objs.push(o)); });
+    games = harvestGames(objs, BCL.name).filter(g => isGermanName(g.home) || isGermanName(g.away));
+  }
+  diag.push({ comp: BCL.name, step: "games", all: all.length, count: games.length });
+
+  const standings = [];
+  const st = stHtml ? flightText(stHtml) : "";
+  if (st) {
+    objectsAt(st, '{"teamId":', 4000).forEach(t => { if (t && t.teamId && !names[t.teamId] && t.officialName) names[t.teamId] = String(t.officialName); });
+    const seenG = Object.create(null);
+    objectsAt(st, '{"groups":[', 600000).forEach(o => (o.groups || []).forEach(gr => {
+      /* the next phase's groups are already there, empty: "$undefined" teams, no games */
+      const rows = (gr.teamsStats || []).filter(s => s && typeof s.team === "number").map(s => ({
+        code: "", name: names[s.team] || String(s.team), crest: "",
+        pos: s.rank || null, g: s.gamesPlayed || 0, w: s.gamesWon || 0, l: s.gamesLost || 0,
+        pf: s.pointsFor || 0, pa: s.pointsAgainst || 0, q: false
+      })).sort((a, b) => (a.pos || 99) - (b.pos || 99));
+      if (!rows.length || seenG[gr.groupName]) return;
+      seenG[gr.groupName] = 1;
+      standings.push({ competition: BCL.name, round: Math.max.apply(null, rows.map(r => r.g)), group: String(gr.groupName || ""), rows: rows });
+    }));
+    diag.push({ comp: BCL.name, step: "standings", groups: standings.length });
+  }
+  return { games: games, standings: standings };
 }
 
 exports.handler = async (event) => {
@@ -401,14 +487,14 @@ exports.handler = async (event) => {
 
   /* the Champions League is read from its own site; it has no feed. If it gives
      nothing, the panel says so in `diag` rather than pretending there are no games. */
+  out.standings = [];
   try {
     const r = await viaBCL(out.diag);
     if (r.games.length) {
       out.competitions.push(BCL.name);
       out.games = out.games.concat(r.games);
-      /* covered after all, so stop listing it as missing */
-
     }
+    out.standings = out.standings.concat(r.standings || []);
   } catch (e) {
     out.diag.push({ comp: BCL.name, step: "fetch", error: String((e && e.message) || e) });
   }
@@ -416,7 +502,6 @@ exports.handler = async (event) => {
   /* THE OFFICIAL TABLES. The games above are only the German clubs', so a table built from
      them would be wrong for everybody else; the competition publishes its standings by
      round, group by group. The round asked for is the last one that has started. */
-  out.standings = [];
   for (const comp of COMPS) {
     const sc = comp.code + season;
     try {

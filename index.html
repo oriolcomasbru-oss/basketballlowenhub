@@ -24744,7 +24744,7 @@ const LG_EUCOMPS=["EuroLeague","EuroCup","Champions League"];
 /* A CLUB'S EUROPEAN TABLE, the competition's own: EuroLeague and EuroCup publish their
    standings by round and group, and the euro function reads the last round started. The
    club is found by its name - as the European games of it are written, or as the BBL
-   writes it. The Champions League has no open table yet. */
+   writes it. The Champions League's official group tables come from its standings page. */
 function _lgEuroStandings(L, tid){
   if(!tid) return null;
   const T=String(tid), ST=L.euroStand||[];
