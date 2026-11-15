@@ -12253,18 +12253,21 @@ function _preCardHero(card, colPos){
     const body=h("div",{class:"pcv-body"});
     /* the head of the text: DOUBT / OUT with its reason and the role line on the left, the chip on
        the right (the minutes over the usage, so it stays narrow and the role line has its room) */
-    const bh=h("div",{class:"pcv-bh"}), bhl=h("div",{class:"pcv-bhl"});
-    if(doubt || whyTxt){ const dr=h("div",{class:"pcv-dr"});
-      if(doubt) dr.appendChild(doubt);
-      if(whyTxt) dr.appendChild(h("span",{class:"pcv-why"}, whyTxt));
-      bhl.appendChild(dr); }
+    /* the role line on the left; on the right the chip and, under it, DOUBT / OUT with its reason
+       (Oriol, 15/11/2026: "el doubt mételo debajo de USG y rotation") */
+    const bh=h("div",{class:"pcv-bh"}), bhl=h("div",{class:"pcv-bhl"}), bhr=h("div",{class:"pcv-bhr"});
     if(tagw) bhl.appendChild(tagw);
     bh.appendChild(bhl);
     if(minNum || (foc && usgTxt)){
       const mu=h("div",{class:"pcv-mu", title:"Minutes a game"+(foc && usgTxt? " · usage "+usgTxt+", among the club's highest" : "")});
       if(minNum) mu.appendChild(h("span",{class:"m"}, h("b",{}, minNum.replace(",",".")), h("i",{}, "MIN")));
       if(foc && usgTxt) mu.appendChild(h("span",{class:"u"}, h("b",{}, usgTxt), h("i",{}, "USG")));
-      bh.appendChild(mu); }
+      bhr.appendChild(mu); }
+    if(doubt || whyTxt){ const dr=h("div",{class:"pcv-dr"});
+      if(doubt) dr.appendChild(doubt);
+      if(whyTxt) dr.appendChild(h("span",{class:"pcv-why"}, whyTxt));
+      bhr.appendChild(dr); }
+    if(bhr.childNodes.length) bh.appendChild(bhr);
     if(bh.textContent.trim()) body.appendChild(bh);
     /* the 3-5 ideas the staff writes - the room on the card is theirs */
     if(ideas) body.appendChild(ideas);
@@ -47362,15 +47365,18 @@ html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-why{color:#8a6608!impo
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{background:#f4f5f8!important;border-color:#e3e6eb!important;box-shadow:none!important}
 
 /* the corner chip: the minutes (and the usage when it is high), in the dorsal's dress */
-html body .phx.phx.pre-phx .card.pcv-side .pcv-mu{flex:none;display:flex;flex-direction:column;align-items:stretch;margin:-3px -5px 0 0;border-radius:8px;overflow:hidden;font:700 clamp(13px,7cqw,19px)/1 'Oswald',sans-serif;letter-spacing:.01em;position:relative;z-index:4}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-mu{flex:none;display:flex;flex-direction:column;align-items:stretch;margin:0;border-radius:8px;overflow:hidden;font:700 clamp(13px,7cqw,19px)/1 'Oswald',sans-serif;letter-spacing:.01em;position:relative;z-index:4}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-mu > span{display:flex;align-items:baseline;justify-content:center;gap:3px;padding:3px 7px 4px;background:rgba(12,15,20,.86);color:#fff}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-mu > span.u{background:#e0453b}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-mu > span + span{border-top:1px solid rgba(255,255,255,.18)}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-mu i{font:700 clamp(6.5px,3cqw,8px)/1 'IBM Plex Mono',monospace;font-style:normal;letter-spacing:.06em;opacity:.85}
-html body .phx.phx.pre-phx .card.pcv-side.has-tab .pcv-col > .pcv-body:first-child .pcv-mu{margin-top:-18px}
+html body .phx.phx.pre-phx .card.pcv-side.has-tab .pcv-col > .pcv-body:first-child .pcv-bhr{margin-top:-18px}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-body .pcv-dr{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:3px 6px;margin:0 0 5px}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bh{display:flex;align-items:flex-start;gap:8px;margin:0 0 6px}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bhl{flex:1 1 auto;min-width:0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-bhr{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px;max-width:48%;margin:-3px -5px 0 0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-bhr .pcv-dr{flex-direction:column!important;align-items:flex-end!important;gap:2px!important;margin:0!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-bhr .pcv-why{text-align:right;font-size:clamp(8px,3.8cqw,9.5px)!important;line-height:1.2!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bhl .tagline-wrap{margin:0!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bhl .tagline{overflow-wrap:normal!important;word-break:normal!important;hyphens:manual}
 /* ON PAPER (Oriol, 15/11/2026: "todos los ajustes que hacemos también para el botón de imprimir, que
