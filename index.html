@@ -12112,7 +12112,10 @@ function _preUsage(L, tid){
   const rows=(d.players||[]).map(p=>{ const t=p.all||{}, pl=(t.p2a||0)+(t.p3a||0)+0.44*(t.fta||0)+(t.tov||0), mpg=t.gp? (t.sec||0)/60/t.gp : 0;
     return { id:String(p.id||""), num:String(parseInt(p.num,10)), name:p.name||"", gp:t.gp||0, mpg:mpg,
       usg:t.sec? 100*pl*(T.sec/5)/(t.sec*tu) : null, share:100*pl/tu, ok:(t.gp||0)>=need && mpg>=10 }; });
-  const ok=rows.filter(r=>r.ok && r.usg!=null).sort((a,b)=>b.usg-a.usg);
+  /* THE CARD SAYS WHAT THE TABLE SAYS (Oriol, 15/11/2026: "iguala el use de la tabla con el de arriba,
+     debe ser del total de jugadas del equipo"): the share of all the team's plays of the season - the
+     roster table's Use, adding up to 100% - ranks the men and is the number on the card */
+  const ok=rows.filter(r=>r.ok).sort((a,b)=>b.share-a.share);
   ok.forEach((r,i)=>{ r.rank=i+1; });
   /* THE TOP THREE, ALWAYS (Oriol, 15/11/2026: "marca el top 3 siempre en fichas"): a threshold left
      Bamberg with Wright alone at 30% and nothing on the others, which read as if they were at 0 */
@@ -12134,14 +12137,14 @@ function _preCardUse(card, L, tid, c){
     if(!card || !L || !tid || !c) return;
     const U=_preUsage(L, tid);
     if(!U){ if(!_lgPlTried[tid] && !_lgPlBusy[tid] && !L.demo) syncPlayers(tid,false); return; }
-    const r=_preUsageOf(U, c); if(!r || !r.ok || r.usg==null) return;
+    const r=_preUsageOf(U, c); if(!r || !r.ok || r.share==null) return;
     const row=card.querySelector(".row2"); if(!row || row.querySelector(".use-chip")) return;
     const ord=n=>n+(n===1? "st" : n===2? "nd" : n===3? "rd" : "th");
-    const tip="Usage "+Math.round(r.usg)+"% · "+ord(r.rank)+" of "+U.n+" on the team · the share of the possessions he ends while he is on the floor (shots, free-throw trips, turnovers), over "+r.gp+" games · 20% is one man in five"+(r.focus? " · a focus of their offense" : "");
+    const tip="Use "+Math.round(r.share)+"% · "+ord(r.rank)+" of "+U.n+" on the team · his share of all the team's plays this season (shots, free-throw trips, turnovers), the roster table's Use - all their players add up to 100%"+(r.focus? " · one of the three their offense runs through most" : "");
     const chip=h("span",{class:"use-chip"+(r.focus? " focus" : ""), title:tip},
       r.focus? h("em",{},"FOCUS") : null,
-      h("i",{class:"uc-bar"}, h("i",{style:"width:"+Math.min(100, Math.round(100*r.usg/35))+"%"})),
-      h("b",{}, Math.round(r.usg)+"%"), h("span",{class:"uc-l"},"USG"));
+      h("i",{class:"uc-bar"}, h("i",{style:"width:"+Math.min(100, Math.round(100*r.share/25))+"%"})),
+      h("b",{}, Math.round(r.share)+"%"), h("span",{class:"uc-l"},"USE"));
     const mn=row.querySelector(".minutes");
     if(mn && mn.nextSibling) row.insertBefore(chip, mn.nextSibling); else row.appendChild(chip);
   }catch(e){_quiet(e)}
@@ -12283,9 +12286,9 @@ function _preCardHero(card, colPos, editing){
       const row2=q(".row2"); if(row2){ row2.classList.add("pcv-row2"); bhr.appendChild(row2); }
     } else {
       if(minNum || (foc && usgTxt)){
-        const mu=h("div",{class:"pcv-mu", title:"Minutes a game"+(foc && usgTxt? " · usage "+usgTxt+", among the club's highest" : "")});
+        const mu=h("div",{class:"pcv-mu", title:"Minutes a game"+(foc && usgTxt? " · use "+usgTxt+" of all the team's plays, one of its three highest" : "")});
         if(minNum) mu.appendChild(h("span",{class:"m"}, h("b",{}, minNum.replace(",",".")), h("i",{}, "MIN")));
-        if(foc && usgTxt) mu.appendChild(h("span",{class:"u"}, h("b",{}, usgTxt), h("i",{}, "USG")));
+        if(foc && usgTxt) mu.appendChild(h("span",{class:"u"}, h("b",{}, usgTxt), h("i",{}, "USE")));
         bhr.appendChild(mu); }
       /* DOUBT / OUT is one compact chip with its reason inside - "1G OUT", "4G OUT", "LONG TERM" or
          the staff's own word - and nothing outside it (Oriol, 15/11/2026: "pon el doubt y dentro 1G out
@@ -12505,8 +12508,8 @@ function _preAvlLoad(tid, then){
       const one=(e, why)=>men.push({ id:String(e.id), num:String(e.num||"").trim(), name:String(e.name||""), why:why });
       /* the rotation's and everybody else's: a man off the sheet lately is a doubt on his card
          whatever his minutes (Oriol, 8/11/2026, Darion Atkins) */
-      A.out.concat(A.outMinor).forEach(e=>one(e, "missed the last "+(e.missed>1? e.missed+" games" : "game")));
-      A.long.forEach(e=>one(e, "out long term")); }
+      A.out.concat(A.outMinor).forEach(e=>one(e, (e.missed>1? e.missed : 1)+"G OUT"));
+      A.long.forEach(e=>one(e, "LONG TERM")); }
     _preAvlMemo[k]={ men:men };
     if(men.length && then) then();
   }).catch(e=>{ _quiet(e); _preAvlMemo[k]={ men:[] }; });
@@ -12519,6 +12522,14 @@ function _preAvlMan(c){
   return m.men.filter(e=>pid && e.id===pid)[0]
     || m.men.filter(e=>nm && _lgNorm(e.name)===nm)[0]
     || m.men.filter(e=>num && e.num===num && ln && _lgNorm(_lgLastName(e.name))===ln)[0] || null;
+}
+/* THE REASON ON A CARD, SHORT (Oriol, 15/11/2026: "en fichas no pongas 'missed the last game', pon 1G,
+   así compacto"): what an earlier version wrote in full is said the short way too */
+function _preWhyShort(s){
+  const t=String(s||"").trim(), w=t.toLowerCase(), m=/missed (?:the )?last (\d+ )?games?/.exec(w);
+  if(m) return (m[1]? parseInt(m[1],10) : 1)+"G OUT";
+  if(/^out long[- ]term$/.test(w)) return "LONG TERM";
+  return t;
 }
 function _preAutoDoubt(c){ return (!c || c.doubt || c.out || c.doubtNo)? null : _preAvlMan(c); }
 /* RICH TEXT ON A CARD (Oriol, 8/11/2026: "en roster positions quiero poder tener la herramienta de
@@ -12563,7 +12574,7 @@ function _preCardToPhx(L, c){
            minutes:String(c.min||""), tagline:String(c.tag||""),
            stats:(c.stats||[]).map(x=>[String(x[0]),String(x[1])]),
            closeout:c.co||"neutral", hand:String(c.hand||""),
-           doubt:!!(c.doubt||c.out||ad), doubtWhy:String(c.doubtWhy||(ad? ad.why : "")),
+           doubt:!!(c.doubt||c.out||ad), doubtWhy:_preWhyShort(c.doubtWhy||(ad? ad.why : "")),
            pub:(c.pub!==false), unlocked:!!c.unlocked,
            photo: c.pid? _lgImgUrl(L,"player",c.pid) : "", px:c.px, py:c.py, ps:c.ps,
            ideas:(c.ideas||[]).slice(), blocks:(c.blocks||[]).slice(), yt:c.yt||"" };
@@ -12908,7 +12919,7 @@ function _preWireCard(card, c, pos, i, C, canEd, redraw, drag, save){
     else { c.doubt=true; delete c.doubtNo; }
     redraw();
   });
-  put(q(".doubt-why"), ()=>c.doubtWhy||((_preAutoDoubt(c)||{}).why||""), v=>{ c.doubtWhy=v; });
+  put(q(".doubt-why"), ()=>_preWhyShort(c.doubtWhy||((_preAutoDoubt(c)||{}).why||"")), v=>{ c.doubtWhy=v; });
   /* the closeout strip: click it to walk through unrated, shooter, mix, driver */
   const co=q(".closeout-bar");
   if(co) co.addEventListener("click",e=>{
