@@ -47436,6 +47436,22 @@ html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .tagline{color:#141821!impo
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-mu > span{background:#fff;color:#3a404b}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-mu > span.u{background:rgba(229,84,75,.12);color:#b8322a}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-mu > span + span{border-top-color:#edf0f3}
+/* A TOUCH OF LIGHT ON THE TILES (Oriol, 15/11/2026: "un punto de degradado en el fondo gris, o textura,
+   como haría un diseñador gráfico"). Every grey tile - the text, the numbers, the chart - takes a soft fall
+   of light from top to bottom, a bright lip along its top edge and a hairline, so it reads as a pressed
+   card rather than a flat fill; the text tile carries a halftone - a print-poster dot screen - that rises
+   from its bottom right corner and fades away. The marked numbers keep their red, in the same fall. */
+html body .phx.phx.pre-phx .card.pcv-side .pcv-col > .pcv-body{position:relative;background:linear-gradient(180deg,#2c323e 0%,#232934 100%)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.05),inset 0 0 0 1px rgba(255,255,255,.03)}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-col > .pcv-body::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:0;background:radial-gradient(circle at 1.5px 1.5px,rgba(255,255,255,.075) 1.1px,transparent 1.5px) 0 0/6px 6px;-webkit-mask-image:radial-gradient(130% 110% at 100% 100%,#000 0%,rgba(0,0,0,.55) 30%,transparent 62%);mask-image:radial-gradient(130% 110% at 100% 100%,#000 0%,rgba(0,0,0,.55) 30%,transparent 62%)}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-col > .pcv-body > *{position:relative;z-index:1}
+html body .phx.phx.pre-phx .card.pcv-side .stat-cell:not(.hl-hot){background:linear-gradient(180deg,#2c323e 0%,#232934 100%)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.05),inset 0 0 0 1px rgba(255,255,255,.03)!important}
+html body .phx.phx.pre-phx .card.pcv-side .stat-cell.hl-hot{background:linear-gradient(180deg,rgba(229,84,75,.13) 0%,rgba(229,84,75,.22) 100%)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{background:linear-gradient(180deg,#2c323e 0%,#232934 100%)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.05),inset 0 0 0 1px rgba(255,255,255,.03)!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-col > .pcv-body{background:linear-gradient(180deg,#f7f8fa 0%,#eceff3 100%)!important;box-shadow:inset 0 1px 0 #fff,inset 0 0 0 1px rgba(16,24,40,.05)}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-col > .pcv-body::before{background:radial-gradient(circle at 1.5px 1.5px,rgba(16,24,40,.085) 1.1px,transparent 1.5px) 0 0/6px 6px}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .stat-cell:not(.hl-hot){background:linear-gradient(180deg,#f7f8fa 0%,#ecEFF3 100%)!important;box-shadow:inset 0 1px 0 #fff,inset 0 0 0 1px rgba(16,24,40,.05)!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .stat-cell.hl-hot{background:linear-gradient(180deg,rgba(229,84,75,.08) 0%,rgba(229,84,75,.16) 100%)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.7),inset 0 0 0 1px rgba(229,84,75,.10)!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{background:linear-gradient(180deg,#f7f8fa 0%,#eceff3 100%)!important;box-shadow:inset 0 1px 0 #fff,inset 0 0 0 1px rgba(16,24,40,.05)!important}
 /* ON PAPER (Oriol, 15/11/2026: "todos los ajustes que hacemos también para el botón de imprimir, que
    tenga el mismo formato"): the card goes on paper exactly as on screen, in its light dress. The light
    theme's own rules are written again for the paper copy where the marker stands when the CSS is
@@ -47491,6 +47507,11 @@ html body .prb .phx.phx.pre-phx .card.pcv-side .tagline{color:#141821!important}
 html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-mu > span{background:#fff;color:#3a404b}
 html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-mu > span.u{background:rgba(229,84,75,.12);color:#b8322a}
 html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-mu > span + span{border-top-color:#edf0f3}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-col > .pcv-body{background:linear-gradient(180deg,#f7f8fa 0%,#eceff3 100%)!important;box-shadow:inset 0 1px 0 #fff,inset 0 0 0 1px rgba(16,24,40,.05)}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-col > .pcv-body::before{background:radial-gradient(circle at 1.5px 1.5px,rgba(16,24,40,.085) 1.1px,transparent 1.5px) 0 0/6px 6px}
+html body .prb .phx.phx.pre-phx .card.pcv-side .stat-cell:not(.hl-hot){background:linear-gradient(180deg,#f7f8fa 0%,#ecEFF3 100%)!important;box-shadow:inset 0 1px 0 #fff,inset 0 0 0 1px rgba(16,24,40,.05)!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .stat-cell.hl-hot{background:linear-gradient(180deg,rgba(229,84,75,.08) 0%,rgba(229,84,75,.16) 100%)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.7),inset 0 0 0 1px rgba(229,84,75,.10)!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{background:linear-gradient(180deg,#f7f8fa 0%,#eceff3 100%)!important;box-shadow:inset 0 1px 0 #fff,inset 0 0 0 1px rgba(16,24,40,.05)!important}
 html body .prb .phx.phx.pre-phx .roster-columns{background:#fff!important;padding:0!important;gap:8px!important}
 html body .prb .phx.phx.pre-phx .roster-columns .pos-col{background:#f4f5f7!important;border:1px solid #e3e6eb!important;padding:8px!important;gap:8px!important}
 html body .prb .phx.phx.pre-phx .roster-columns .pos-col-head{color:#141821!important;border-bottom-color:#d5d9e0!important;padding-bottom:6px!important}
