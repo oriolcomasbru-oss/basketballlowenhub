@@ -13912,9 +13912,6 @@ function _preRolesBoardBlock(L, tid, C, canEd, save){
     }
     head.appendChild(title);
     if(canEd || a.note) head.appendChild(note);
-    /* how many men the area holds, a quiet count in its corner (Oriol, 15/11/2026: "mejorar las cajas") */
-    { const nIn=(a.members||[]).filter(k=>byKey[k]).length;
-      if(nIn) head.appendChild(h("span",{class:"vb-cnt", title:nIn+" player"+(nIn===1? "" : "s")+" in this area"}, String(nIn))); }
     if(canEd){
       const sws=h("div",{class:"vb-sws"});
       PRE_ROLE_COLOURS.forEach(c=>{
@@ -47616,17 +47613,15 @@ html body .prb .phx.phx.pre-phx.pre-roles .vb-min{background:rgba(255,255,255,.9
 html body .prb .phx.phx.pre-phx.pre-roles *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
 /* THE AREAS AS CARDS (Oriol, 15/11/2026: "has cambiado las fichas pero quiero mejorar también las cajas en
    roster roles"). An area is a white card with a band of its colour along the top; its name is in ink with
-   a bar of the colour at its side - the title of a player card - its note in grey and a quiet count of its
-   men in the corner; the men stand on a shaded tile with the cards' fall of light and their halftone. */
+   a bar of the colour at its side - the title of a player card - its note in grey and men; the men stand on a shaded tile with the cards' fall of light and their halftone. */
 html body .phx.phx.pre-phx.pre-roles .vb-area{position:relative;padding-top:4px;border-radius:14px!important;border:1px solid #e3e6eb!important;background:#fff!important;box-shadow:0 1px 3px rgba(16,24,40,.06),0 8px 20px rgba(16,24,40,.06)!important}
 html body .phx.phx.pre-phx.pre-roles .vb-area::before{content:"";position:absolute;left:0;right:0;top:0;height:4px;background:var(--ac);z-index:2}
 html body .phx.phx.pre-phx.pre-roles .vb-area:not(.vb-wset){width:calc(var(--wcols) * var(--tw) + (var(--wcols) - 1) * var(--tg) + 34px)}
 html body .phx.phx.pre-phx.pre-roles .vb-area.vb-over{box-shadow:0 0 0 2px var(--ac),0 8px 20px rgba(16,24,40,.1)!important}
-html body .phx.phx.pre-phx.pre-roles .vb-head{position:relative;background:none!important;border-bottom:0!important;padding:11px 46px 8px 12px!important}
+html body .phx.phx.pre-phx.pre-roles .vb-head{position:relative;background:none!important;border-bottom:0!important;padding:11px 12px 8px 12px!important}
 html body .phx.phx.pre-phx.pre-roles .vb-title{color:#141821!important;font-size:24px!important;letter-spacing:.03em!important;line-height:1.05!important;border-left:4px solid var(--ac);padding-left:8px}
 html body .phx.phx.pre-phx.pre-roles .vb-note{font-size:12.5px!important;line-height:1.35!important;color:#5b6472!important;margin-top:4px!important;padding-left:12px}
 html body .phx.phx.pre-phx.pre-roles .vb-sws{padding-left:12px}
-html body .phx.phx.pre-phx.pre-roles .vb-cnt{position:absolute;top:11px;right:12px;min-width:24px;height:24px;padding:0 7px;box-sizing:border-box;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font:700 12px/1 'Oswald',sans-serif;color:#3a404b;background:#f1f3f6;border:1px solid #e3e6eb}
 html body .phx.phx.pre-phx.pre-roles .vb-body{position:relative;margin:0 8px 8px!important;padding:8px!important;border-radius:10px;background:linear-gradient(180deg,#f7f8fa 0%,#eceff3 100%);box-shadow:inset 0 1px 0 #fff,inset 0 0 0 1px rgba(16,24,40,.05)}
 html body .phx.phx.pre-phx.pre-roles .vb-body::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:0;background:radial-gradient(circle at 1.5px 1.5px,rgba(16,24,40,.085) 1.1px,transparent 1.5px) 0 0/6px 6px;-webkit-mask-image:radial-gradient(120% 120% at 100% 100%,#000 0%,rgba(0,0,0,.5) 28%,transparent 58%);mask-image:radial-gradient(120% 120% at 100% 100%,#000 0%,rgba(0,0,0,.5) 28%,transparent 58%)}
 html body .phx.phx.pre-phx.pre-roles .vb-body > .vb-tile{z-index:1}
@@ -47635,14 +47630,12 @@ html body.dark .phx.phx.pre-phx.pre-roles .vb-area{background:#161a22!important;
 html body.dark .phx.phx.pre-phx.pre-roles .vb-head{background:none!important}
 html body.dark .phx.phx.pre-phx.pre-roles .vb-title{color:#f2f4f7!important}
 html body.dark .phx.phx.pre-phx.pre-roles .vb-note{color:#9aa3b2!important}
-html body.dark .phx.phx.pre-phx.pre-roles .vb-cnt{background:#232934;color:#d5dae2;border-color:rgba(255,255,255,.08)}
 html body.dark .phx.phx.pre-phx.pre-roles .vb-body{background:linear-gradient(180deg,#2a303c 0%,#20252f 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.04),inset 0 0 0 1px rgba(255,255,255,.03)}
 html body.dark .phx.phx.pre-phx.pre-roles .vb-body::before{background:radial-gradient(circle at 1.5px 1.5px,rgba(255,255,255,.07) 1.1px,transparent 1.5px) 0 0/6px 6px}
 html body .prb .phx.phx.pre-phx.pre-roles .vb-area{background:#fff!important;border-color:#d5d9e0!important;box-shadow:none!important}
 html body .prb .phx.phx.pre-phx.pre-roles .vb-head{background:none!important}
 html body .prb .phx.phx.pre-phx.pre-roles .vb-title{color:#141821!important}
 html body .prb .phx.phx.pre-phx.pre-roles .vb-note{color:#5b6472!important}
-html body .prb .phx.phx.pre-phx.pre-roles .vb-cnt{background:#f1f3f6!important;color:#3a404b!important;border-color:#e3e6eb!important}
 html body .prb .phx.phx.pre-phx.pre-roles .vb-body{background:linear-gradient(180deg,#f7f8fa 0%,#eceff3 100%)!important;box-shadow:inset 0 0 0 1px rgba(16,24,40,.05)!important}
 html body .prb .phx.phx.pre-phx.pre-roles .vb-body::before{background:radial-gradient(circle at 1.5px 1.5px,rgba(16,24,40,.085) 1.1px,transparent 1.5px) 0 0/6px 6px!important}
 /* ON PAPER (Oriol, 15/11/2026: "todos los ajustes que hacemos también para el botón de imprimir, que
