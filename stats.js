@@ -1014,6 +1014,8 @@
         var td = el("td", (c && c.cls) || null, c && c.v != null ? c.v : c);
         /* a small mark after the text: a rank, in the colour of what it ranks */
         if (c && typeof c === "object" && c.sup != null) td.appendChild(el("sup", c.supCls || null, String(c.sup)));
+        /* and a small second line under it - the fouls a set drew that night */
+        if (c && typeof c === "object" && c.tail) td.appendChild(el("span", c.tailCls || "sx-tail", String(c.tail)));
         /* a band row is one cell across the whole table; the page's own sorter already
            knows one of those is a heading and sorts the block under it, not the band */
         if (c && c.span > 1) td.colSpan = c.span;
@@ -3421,6 +3423,30 @@
       if (c.up) { out[c.f.id] = { d: c.up, how: "drive", opp: null, idx: null }; return; }
       out[c.f.id] = { d: null, how: null, opp: null, idx: null };
     });
+    /* THE STAFF'S OWN NUMBER IS THE SEASON'S ORDER (Oriol, 15/11/2026: "en trends hay muchos
+       partidos desordenados, repásalo todo"). G6, G7, G8 is the order the games were played in,
+       whatever a fixture match says: the files whose dates already run in that order are
+       trusted (the longest such run), and a file that breaks it is moved to the meeting with
+       that club that falls between its trusted neighbours, when there is one. */
+    try {
+      var gn = function (name) { var m = /(?:^|[^A-Za-z0-9])G(\d{1,3})(?![0-9])/i.exec(String(name || "")); return m ? +m[1] : null; };
+      var nb = cand.filter(function (c) { return gn(c.f.name) != null && out[c.f.id] && out[c.f.id].d; })
+        .sort(function (a, b) { return gn(a.f.name) - gn(b.f.name); });
+      var sq = nb.map(function (c) { return out[c.f.id].d; }), L = sq.map(function () { return 1; }), P = sq.map(function () { return -1; });
+      for (var i = 0; i < sq.length; i++) for (var j = 0; j < i; j++)
+        if (sq[j] <= sq[i] && L[j] + 1 > L[i]) { L[i] = L[j] + 1; P[i] = j; }
+      var best = -1; L.forEach(function (v, i2) { if (best < 0 || v > L[best]) best = i2; });
+      var ok = {}; for (var k2 = best; k2 >= 0; k2 = P[k2]) ok[k2] = 1;
+      nb.forEach(function (c, i3) {
+        if (ok[i3]) return;
+        var lo = null, hi = null;
+        for (var a = i3 - 1; a >= 0; a--) if (ok[a]) { lo = sq[a]; break; }
+        for (var b = i3 + 1; b < nb.length; b++) if (ok[b]) { hi = sq[b]; break; }
+        var held = {}; Object.keys(out).forEach(function (id) { if (id !== c.f.id && out[id].idx != null) held[out[id].idx] = 1; });
+        var alt = c.hits.filter(function (g) { return !held[g.idx] && (!lo || g.date >= lo) && (!hi || g.date <= hi); })[0];
+        if (alt) out[c.f.id] = { d: alt.date, opp: alt.opponent, idx: alt.idx, how: "fixture" };
+      });
+    } catch (e) { /* the order is a help; the dates stand as matched */ }
     return out;
   }
   /* -> { d, how, opp, idx } ; how: "name" | "fixture" | "drive" | null
@@ -3953,11 +3979,14 @@
         if (!SET_FAMS[fam] && !/^(early offense|transition)$/i.test(ph0)) return;
         var k = setName(q.first);
         if (!k || /defen[cs]e/i.test(k) || SET_HIDE.test(k)) return;
-        var e = bySet[k] || (bySet[k] = { k: k, fam: fam, n: 0, pts: 0, per: {} });
+        var e = bySet[k] || (bySet[k] = { k: k, fam: fam, n: 0, pts: 0, fd: 0, per: {} });
         if (!bySet[k].seen) { order.push(k); bySet[k].seen = 1; }
-        e.n++; e.pts += q.pts || 0;
-        var c = e.per[gi] || (e.per[gi] = { n: 0, pts: 0 });
-        c.n++; c.pts += q.pts || 0;
+        /* and the fouls it drew (Oriol, 15/11/2026: "las faltas que sacamos de los sets por cada partido, no
+           solamente el OER") - every Foul Drawn the possession carries */
+        var fd = count(q.tags, "Foul Drawn");
+        e.n++; e.pts += q.pts || 0; e.fd += fd;
+        var c = e.per[gi] || (e.per[gi] = { n: 0, pts: 0, fd: 0 });
+        c.n++; c.pts += q.pts || 0; c.fd += fd;
       });
     });
     var rows = order.map(function (k) { return bySet[k]; })
@@ -3966,7 +3995,7 @@
     var MIN = 5;     /* under this a season PPP is an anecdote and is left uncoloured */
     var MINGAMES = 5;  /* the hub's rule: a trend from five games */
     var head = ["Set"].concat(games.map(function (g) { return g.label; }),
-      ["Runs", "PPP", "Trend"]);
+      ["Runs", "PPP", "FD", "Trend"]);
 
     /* Thirty sets in one list sorted by volume reads as thirty unrelated rows: a half
        court set and a sideline inbound sit next to each other because they happened to
@@ -3982,11 +4011,11 @@
        that phase, named set or not - and the sets called in it are listed under it. A phase
        with no named set (transition, early offense) is its line alone. */
     var phG = games.map(function (g) { var m = {}, tot = 0;
-      (g.m && g.m.poss ? g.m.poss : []).forEach(function (q) { var k = phaseOf(q.first); var e = m[k] || (m[k] = { n: 0, pts: 0 }); e.n++; e.pts += q.pts || 0; tot++; });
+      (g.m && g.m.poss ? g.m.poss : []).forEach(function (q) { var k = phaseOf(q.first); var e = m[k] || (m[k] = { n: 0, pts: 0, fd: 0 }); e.n++; e.pts += q.pts || 0; e.fd += count(q.tags, "Foul Drawn"); tot++; });
       return { m: m, tot: tot }; });
     var PHASE_SETS = PHASE_ROW.map(function (x) { return x.k; }).concat(["Inbound — unnamed"]);
     phG.forEach(function (p) { Object.keys(p.m).forEach(function (k) { if (PHASE_SETS.indexOf(k) < 0) PHASE_SETS.push(k); }); });
-    var phTot = {}; phG.forEach(function (p) { Object.keys(p.m).forEach(function (k) { var t = phTot[k] || (phTot[k] = { n: 0, pts: 0 }); t.n += p.m[k].n; t.pts += p.m[k].pts; }); });
+    var phTot = {}; phG.forEach(function (p) { Object.keys(p.m).forEach(function (k) { var t = phTot[k] || (phTot[k] = { n: 0, pts: 0, fd: 0 }); t.n += p.m[k].n; t.pts += p.m[k].pts; t.fd += p.m[k].fd || 0; }); });
     var allPoss = phG.reduce(function (a, p) { return a + p.tot; }, 0);
     PHASE_SETS.sort(function (a, b) { return ((phTot[b] || {}).n || 0) - ((phTot[a] || {}).n || 0); });
     var grouped = [];
@@ -4017,9 +4046,10 @@
         phG.forEach(function (p) { var e = p.m[g.band];
           if (!e || !e.n) { bc.push({ v: "—", cls: "sx-band tr-none" }); return; }
           var pp = e.pts / e.n;
-          bc.push({ v: Math.round(100 * e.n / Math.max(1, p.tot)) + "% · " + f2(pp), cls: "sx-band sx-cell " + (e.n >= 4 ? pppStep(pp) : "") }); });
+          bc.push({ v: Math.round(100 * e.n / Math.max(1, p.tot)) + "% · " + f2(pp), cls: "sx-band sx-cell " + (e.n >= 4 ? pppStep(pp) : ""), tail: e.fd ? e.fd + " FD" : null }); });
         bc.push({ v: T.n + " · " + (allPoss ? Math.round(100 * T.n / allPoss) : 0) + "%", cls: "sx-band" });
         bc.push({ v: f2(tp), cls: "sx-band sx-cell " + (T.n >= 4 ? pppStep(tp) : "") });
+        bc.push({ v: T.fd ? String(T.fd) : "—", cls: "sx-band tr-fdt" });
         bc.push({ v: "", cls: "sx-band" });
         if (body.length) body.push({ cls: "tr-gaprow", cells: [{ span: head.length, v: "" }] });
         body.push({ cls: "tr-bandrow", cells: bc });
@@ -4036,12 +4066,13 @@
         var v = c.pts / c.n;
         seq.push(v);
         cells.push({ v: c.n + " · " + f2(v),
-          cls: "sx-cell " + pppStep(v) });
+          cls: "sx-cell " + pppStep(v), tail: c.fd ? c.fd + " FD" : null });
       });
       cells.push(r.n);
       cells.push(r.n >= MIN
         ? { v: f2(ppp), cls: "sx-cell " + pppStep(ppp) }
         : { v: f2(ppp), cls: "tr-thin" });
+      cells.push({ v: r.fd ? String(r.fd) : "—", cls: "tr-fdt" });
       /* the trend, over the nights it was run and no others */
       if (seq.length < MINGAMES) cells.push({ v: seq.length + " game" + (seq.length === 1 ? "" : "s"), cls: "tr-thin" });
       else {
@@ -5506,6 +5537,8 @@
                               datesWithFiles: datesWithFiles,
                               /* the folders as files (name, created), for the video staff's deadlines */
                               files: listFolder, findGameFile: findGameFile, fileDate: fileDate,
+                              /* how game files are put on their nights, for checking the order */
+                              assignGames: assignGames,
                               /* exposed so a report block can be rendered against a
                                  known file without driving the whole page */
                               buildPractice: buildPractice, buildGame: buildGame,
