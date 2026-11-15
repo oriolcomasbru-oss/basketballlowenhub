@@ -12263,23 +12263,32 @@ function _preCardHero(card, colPos){
       if(minNum) mu.appendChild(h("span",{class:"m"}, h("b",{}, minNum.replace(",",".")), h("i",{}, "MIN")));
       if(foc && usgTxt) mu.appendChild(h("span",{class:"u"}, h("b",{}, usgTxt), h("i",{}, "USG")));
       bhr.appendChild(mu); }
-    if(doubt || whyTxt){ const dr=h("div",{class:"pcv-dr"});
-      if(doubt) dr.appendChild(doubt);
-      if(whyTxt) dr.appendChild(h("span",{class:"pcv-why"}, whyTxt));
-      bhr.appendChild(dr); }
+    /* DOUBT / OUT is one compact chip with its reason inside - "1G OUT", "4G OUT", "LONG TERM" or
+       the staff's own word - and nothing outside it (Oriol, 15/11/2026: "pon el doubt y dentro 1G out
+       o algo así compacto, pero nada fuera de la ficha"); the full reason stays in its title */
+    if(doubt || whyTxt){
+      const w=whyTxt.toLowerCase(), mg=/missed (?:the )?last (\d+ )?games?/.exec(w);
+      let code=mg? ((mg[1]? parseInt(mg[1],10) : 1)+"G OUT") : /long[- ]term/.test(w)? "LONG TERM" : whyTxt.toUpperCase();
+      if(code.length>14) code=code.slice(0,13).trim()+"…";
+      const chip=doubt || h("span",{class:"doubt-badge on"}, "DOUBT");
+      const base=(chip.textContent||"").trim().toUpperCase()||"DOUBT";
+      if(/^OUT\b/.test(base)) code=code.replace(/\s*OUT$/,"");
+      chip.textContent=base+(code? " · "+code : "");
+      if(whyTxt) chip.title=base+": "+whyTxt;
+      bhr.appendChild(h("div",{class:"pcv-dr"}, chip)); }
     if(bhr.childNodes.length) bh.appendChild(bhr);
     if(bh.textContent.trim()) body.appendChild(bh);
     /* the 3-5 ideas the staff writes - the room on the card is theirs */
     if(ideas) body.appendChild(ideas);
     if(extra && extra.textContent.trim()) body.appendChild(extra);
     if(body.textContent.trim()) col.appendChild(body);
-    /* the shot chart, small (the full one is beside the video) */
-    if(sc) col.appendChild(h("div",{class:"pcv-hsc"}, sc));
-    /* the numbers at the foot, in rows of three (four as two and two) */
+    /* the numbers in the middle, in rows of three (four as two and two) - "las stats en medio" */
     const nCells=stats? stats.querySelectorAll(".stat-cell").length : 0;
     if(nCells){ const box=h("div",{class:"pcv-stats"}, stats);
       box.style.setProperty("--sc", String(nCells<=3? nCells : nCells===4? 2 : 3));
       col.appendChild(box); }
+    /* the shot chart at the foot, small (the full one is beside the video) - "mapa de tiro debajo" */
+    if(sc) col.appendChild(h("div",{class:"pcv-hsc"}, sc));
     const hero=h("div",{class:"pcv-top2"}, strip, col);
     /* KEY PLAYER / STOP HIM: a tab hanging from the line that frames the card */
     if(rib){ rib.textContent=card.classList.contains("hl-stop")? "STOP HIM" : "KEY PLAYER"; rib.classList.add("pcv-tab"); rib.remove(); card.classList.add("has-tab"); }
@@ -47337,7 +47346,7 @@ html body .phx.phx.pre-phx .card.pcv-side .pcv-usg.focus{background:#e0453b;box-
 html body .phx.phx.pre-phx .card.pcv-side .pcv-zl{display:flex;flex-direction:column;align-items:flex-start;gap:5px;min-width:0}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-rl{margin:0;display:flex;align-items:baseline;flex-wrap:wrap;gap:1px 7px}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-dr{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-dr .doubt-badge.on{height:17px!important;padding:0 7px!important;font-size:8px!important;box-shadow:none!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-dr .doubt-badge.on{height:17px!important;padding:0 7px!important;font-size:8px!important;box-shadow:none!important;white-space:nowrap!important;letter-spacing:.05em!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-why{font:italic 500 clamp(8.5px,4.2cqw,10px)/1.25 'Inter',sans-serif;color:#f3c14b}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-stats{padding:4px 6px 5px!important;background:transparent!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-stats .stat-bar{grid-auto-flow:row!important;grid-template-columns:repeat(var(--sc,3),minmax(0,1fr))!important;grid-auto-columns:auto!important;gap:2px!important;padding:0!important;border-top:0!important}
@@ -47374,7 +47383,7 @@ html body .phx.phx.pre-phx .card.pcv-side.has-tab .pcv-col > .pcv-body:first-chi
 html body .phx.phx.pre-phx .card.pcv-side .pcv-body .pcv-dr{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:3px 6px;margin:0 0 5px}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bh{display:flex;align-items:flex-start;gap:8px;margin:0 0 6px}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bhl{flex:1 1 auto;min-width:0}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-bhr{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px;max-width:48%;margin:-3px -5px 0 0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-bhr{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px;max-width:58%;margin:-3px -5px 0 0}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bhr .pcv-dr{flex-direction:column!important;align-items:flex-end!important;gap:2px!important;margin:0!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bhr .pcv-why{text-align:right;font-size:clamp(8px,3.8cqw,9.5px)!important;line-height:1.2!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bhl .tagline-wrap{margin:0!important}
