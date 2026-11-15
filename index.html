@@ -12216,6 +12216,11 @@ function _preCardHero(card, colPos){
        STOP HIM hangs as a tab from the coloured line that frames the card. */
     const strip=h("div",{class:"pcv-strip"});
     if(img) strip.appendChild(img);
+    /* the photograph carried down to the closeout band (Oriol, 15/11/2026: "integra bien el final de
+       la foto por abajo con el cartel de drive/shooter"): the same picture, blurred and darkened, lies
+       under it the whole height of the strip, so it never ends on an empty ground */
+    const bgi=img && img.style && img.style.backgroundImage;
+    if(bgi && bgi!=="none"){ strip.style.setProperty("--pimg", bgi); strip.classList.add("has-pimg"); }
     /* his second position when he plays one (the column says the first; beside the video there is no
        column, so it is always said) */
     const pt=((posB && posB.textContent)||"").trim();
@@ -47363,11 +47368,6 @@ html body .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{max-width:
 html body .phx.phx.pre-phx .card.pcv-side > .hl-rib.pcv-tab{position:absolute!important;top:0!important;left:calc(30% + 10px)!important;right:auto!important;transform:none!important;z-index:7!important;display:block!important;
   border-radius:0 0 7px 7px!important;padding:2px 10px 3px!important;font:800 clamp(7.5px,3.7cqw,9px)/1.3 'Inter',sans-serif!important;letter-spacing:.16em!important;white-space:nowrap!important;box-shadow:none!important}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-top2,html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-col{background:#fff!important}
-html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-strip{background:#eef0f3}
-html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-strip::after{background:linear-gradient(180deg,rgba(238,240,243,0) 40%,rgba(238,240,243,.86) 68%,#eef0f3 100%)}
-html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .ln{color:#141821}
-html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .fn{color:#4b5563}
-html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-strip .meta{color:#4b5563!important}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-col > * + *{border-top-color:#edf0f3!important}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-usg:not(.focus){background:#eef0f3;color:#141821;border-color:#dfe3e8}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-why{color:#8a6608!important}
@@ -47388,6 +47388,31 @@ html body .phx.phx.pre-phx .card.pcv-side .pcv-bhr .pcv-dr{flex-direction:column
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bhr .pcv-why{text-align:right;font-size:clamp(8px,3.8cqw,9.5px)!important;line-height:1.2!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bhl .tagline-wrap{margin:0!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bhl .tagline{overflow-wrap:normal!important;word-break:normal!important;hyphens:manual}
+/* THE STRIP IS PHOTOGRAPH DOWN TO THE CLOSEOUT (Oriol, 15/11/2026: "integra bien el final de la foto por
+   abajo con el cartel de drive/shooter"): the picture sharp at the top melts into itself, blurred and
+   darkened, below; a dark veil at the foot for the name - in both themes. Beside it every number is a
+   shaded pill ("las stats no pueden quedar flotando, deben tener pastillas"), the shot chart a pill the
+   width of the column sitting on the band ("que no parezca un pegote al medio"), one gutter for all. */
+html body .phx.phx.pre-phx .card.pcv-side,html body .prb .phx.phx.pre-phx .roster-columns .card.pcv-side{gap:0!important;row-gap:0!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip{background:#141820}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip.has-pimg::before{content:"";position:absolute;inset:-28px;z-index:0;pointer-events:none;background-image:var(--pimg);background-size:cover;background-position:50% 22%;background-repeat:no-repeat;filter:blur(14px) saturate(1.2) brightness(.58)}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .photo-img{-webkit-mask-image:linear-gradient(180deg,#000 56%,transparent 100%)!important;mask-image:linear-gradient(180deg,#000 56%,transparent 100%)!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip::after{top:0;bottom:0;height:auto;background:linear-gradient(180deg,rgba(10,12,16,0) 30%,rgba(10,12,16,.36) 56%,rgba(10,12,16,.8) 100%)}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-col > * + *{border-top:0!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-body{padding:8px 10px 8px}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-stats{padding:0 8px 8px!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-col > .pcv-stats:first-child,html body .phx.phx.pre-phx .card.pcv-side .pcv-col > .pcv-hsc:first-child{padding-top:8px!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-stats .stat-bar{gap:4px!important}
+html body .phx.phx.pre-phx .card.pcv-side .stat-cell{padding:5px 2px!important}
+html body .phx.phx.pre-phx .card.pcv-side .stat-cell:not(.hl-hot){background:#252b36!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-col > :last-child{flex-grow:1}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc{display:flex;align-items:stretch;justify-content:stretch;padding:0 8px 8px}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{max-width:none!important;width:100%!important;display:flex!important;align-items:center!important;border:0!important;border-radius:8px!important;background:#252b36!important;box-shadow:none!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .stat-cell:not(.hl-hot){background:#f1f3f6!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{background:#f1f3f6!important}
+/* the role line and the bullets in ink in the light theme ("el dorado no lo veo, ponlo en oscuro") */
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .tagline{color:#141821!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .idea-row::before{background:#141821!important}
 /* ON PAPER (Oriol, 15/11/2026: "todos los ajustes que hacemos también para el botón de imprimir, que
    tenga el mismo formato"): the card goes on paper exactly as on screen, in its light dress. The light
    theme's own rules are written again for the paper copy where the marker stands when the CSS is
@@ -47429,15 +47454,14 @@ html body .prb .phx.phx.pre-phx .card.pcv .pcv-id .pcv-why{color:#8a6608!importa
 html body .prb .phx.phx.pre-phx .card.pcv .pcv-hsc .photo-sc{background:rgba(244,245,248,.94)!important;border-color:#e3e6eb!important;box-shadow:0 4px 12px rgba(16,24,40,.12)!important}
 html body .prb .phx.phx.pre-phx .card.pcv .pcv-hsc .sc-line{stroke:#5b6472!important;opacity:.5!important}
 html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-top2,html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-col{background:#fff!important}
-html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-strip{background:#eef0f3}
-html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-strip::after{background:linear-gradient(180deg,rgba(238,240,243,0) 40%,rgba(238,240,243,.86) 68%,#eef0f3 100%)}
-html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .ln{color:#141821}
-html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .fn{color:#4b5563}
-html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-strip .meta{color:#4b5563!important}
 html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-col > * + *{border-top-color:#edf0f3!important}
 html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-usg:not(.focus){background:#eef0f3;color:#141821;border-color:#dfe3e8}
 html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-why{color:#8a6608!important}
 html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{background:#f4f5f8!important;border-color:#e3e6eb!important;box-shadow:none!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .stat-cell:not(.hl-hot){background:#f1f3f6!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{background:#f1f3f6!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .tagline{color:#141821!important}
+html body .prb .phx.phx.pre-phx .card.pcv-side .idea-row::before{background:#141821!important}
 html body .prb .phx.phx.pre-phx .roster-columns{background:#fff!important;padding:0!important;gap:8px!important}
 html body .prb .phx.phx.pre-phx .roster-columns .pos-col{background:#f4f5f7!important;border:1px solid #e3e6eb!important;padding:8px!important;gap:8px!important}
 html body .prb .phx.phx.pre-phx .roster-columns .pos-col-head{color:#141821!important;border-bottom-color:#d5d9e0!important;padding-bottom:6px!important}
