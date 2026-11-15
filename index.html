@@ -19818,7 +19818,8 @@ function _trendsPace(){
       /* and game by game, the pace beside what came with it */
       const gt=h("table",{class:"lg-tbl trp-t"});
       gt.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{class:"l"},"Game"), h("th",{},"Poss"), h("th",{},"1st shot"), h("th",{},"OER"), h("th",{},"DER"), h("th",{},"Net"), h("th",{},"OREB%"), h("th",{},"DREB%"), h("th",{},"TOV%"), h("th",{},"Result")));
-      rows.slice().reverse().forEach(r=>{ const o=oer(r), d=der(r);
+      /* oldest first, like every other table of Trends (Oriol, 15/11/2026: "todo lo de trends en orden cronológico") */
+      rows.slice().forEach(r=>{ const o=oer(r), d=der(r);
         gt.appendChild(h("tr",{}, h("td",{class:"l"}, (r.code||"")+" · "+String(r.d).slice(5).split("-").reverse().join("/")),
           h("td",{class:"trp-c "+((r.pu+r.pt)/2>pm+2? "fast" : (r.pu+r.pt)/2<pm-2? "slow" : "")}, f1((r.pu+r.pt)/2)), h("td",{}, f1(r.us)+" s"),
           h("td",{}, f1(o)), h("td",{}, f1(d)), h("td",{class:"trp-c "+(o!=null && d!=null? (o-d>0? "fast" : "slow") : "")}, o!=null && d!=null? ((o-d>0? "+" : "")+(o-d).toFixed(1)) : "—"),
@@ -19839,7 +19840,7 @@ function _trendsPace(){
     /* every game, every quarter: our first-shot second, against our own season */
     const t=h("table",{class:"lg-tbl trp-t"});
     t.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{class:"l"},"Game"), ...QN.slice(0,4).map(x=>h("th",{},x)), h("th",{},"Game"), h("th",{},"Poss")));
-    rows.slice().reverse().forEach(r=>{ const tr=h("tr",{}, h("td",{class:"l"}, (r.code||"")+" · "+String(r.d).slice(5).split("-").reverse().join("/")));
+    rows.slice().forEach(r=>{ const tr=h("tr",{}, h("td",{class:"l"}, (r.code||"")+" · "+String(r.d).slice(5).split("-").reverse().join("/")));
       for(let qi=0;qi<4;qi++){ const q=r.q[qi], v=q && q.u.n? q.u.s/q.u.n : null, d=v!=null && sUs!=null? v-sUs : 0;
         tr.appendChild(h("td",{class:"trp-c "+(v==null? "" : d<=-1.5? "fast2" : d<=-0.6? "fast" : d>=1.5? "slow2" : d>=0.6? "slow" : ""), title:q? QN[qi]+": "+(q.u.n||0)+" first shots, "+q.up+" possessions" : ""}, v==null? "—" : v.toFixed(1))); }
       tr.appendChild(h("td",{class:"grp"}, f1(r.us))); tr.appendChild(h("td",{}, f1(r.pu)));

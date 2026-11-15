@@ -3284,8 +3284,32 @@
     } catch (e) { /* the page's list is a help, never a need */ }
     return out;
   }
+  /* THE NAME SAYS THE COMPETITION (Oriol, 15/11/2026: "ordena los partidos de trends SETS").
+     "G11 CUP CHEMNITZ.csv" carries no date, and the last game played against Chemnitz is the
+     league's of 15/11 - so the cup night of 18/10 was filed on 15/11 and stood as the sets
+     table's last column. A name that says CUP / POKAL is a cup game, BBL a league game: only
+     fixtures of that competition are its candidates (all of them again if none is). */
+  function compOf(s) {
+    s = String(s || "").toLowerCase();
+    if (/(^|[^a-z])(cup|pokal)([^a-z]|$)/.test(s) && !/eurocup/.test(s)) return "cup";
+    if (/(^|[^a-z])bbl([^a-z]|$)/.test(s)) return "bbl";
+    if (/(^|[^a-z])bcl([^a-z]|$)|champions/.test(s)) return "bcl";
+    if (/eurocup|(^|[^a-z])fec([^a-z]|$)|fiba europe/.test(s)) return "eu";
+    if (/friendly|preseason|testspiel|amistoso/.test(s)) return "fr";
+    return "";
+  }
   function fixtureHits(name) {
     var G = fixtureList();
+    if (!G.length) return [];
+    var want = compOf(name);
+    if (want) {
+      var same = G.filter(function (g) { var c = compOf(g.competition); return !c || c === want; });
+      var hit = fixtureHitsIn(same, name);
+      if (hit.length) return hit;
+    }
+    return fixtureHitsIn(G, name);
+  }
+  function fixtureHitsIn(G, name) {
     if (!G.length) return [];
     var n = slugWord(name), tail = slugWord((String(name).match(/[A-Za-z]{4,}/g) || []).slice(-1)[0] || "");
     var keys = clubKeys(name);
