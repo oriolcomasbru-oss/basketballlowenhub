@@ -12240,38 +12240,43 @@ function _preCardHero(card, colPos){
           meta.appendChild(h("span",{}, parts.slice(0,2).join(" · "))); meta.appendChild(h("span",{}, parts.slice(2).join(" · "))); } }
       strip.appendChild(meta); }
     const col=h("div",{class:"pcv-col"});
-    /* zone 1: the usage, then the role and the minutes, then DOUBT / OUT with the reason he may miss */
-    const roleTxt=((role && role.textContent)||"").trim(), minTxt=((mins && mins.textContent)||"").trim();
+    /* THE STAFF'S TEXT ON TOP, THE NUMBERS AT THE FOOT (Oriol, 15/11/2026: "el texto que pongo yo con
+       el titular ponlo arriba, los stats abajo"). In the top right corner, in the dorsal's dress, one
+       chip with the minutes he plays and - only when it is high - his usage ("el tiempo de juego con
+       USG, integrado en una pastilla; USG solamente sale si es alto"). STARTER / ROTATION is not said
+       when reading: the column he stands in says it ("ponlo solo en modo edición"). */
+    const minTxt=((mins && mins.textContent)||"").trim();
     const minNum=(/(\d+(?:[.,]\d+)?)/.exec(minTxt)||[])[1]||"";
     const whyTxt=(why && why.textContent.trim())||"";
-    const zst=h("div",{class:"pcv-zst"});
-    if(use){ const b=use.querySelector("b"), foc=use.classList.contains("focus");
-      zst.appendChild(h("div",{class:"pcv-usg"+(foc? " focus" : ""), title:use.title||""}, h("b",{}, (b&&b.textContent)||""), h("span",{}, foc? "FOCUS" : "USG")));
-      use.remove(); }
-    const zl=h("div",{class:"pcv-zl"});
-    if(roleTxt || minNum){ const rl=h("div",{class:"pcv-rl"});
-      if(roleTxt) rl.appendChild(h("b",{class:roleTxt.toLowerCase()}, roleTxt.toUpperCase()));
-      if(minNum) rl.appendChild(h("span",{}, minNum.replace(",",".")+" min"));
-      zl.appendChild(rl); }
+    let usgTxt="", foc=false;
+    if(use){ const b=use.querySelector("b"); foc=use.classList.contains("focus"); usgTxt=((b&&b.textContent)||"").trim(); use.remove(); }
+    const body=h("div",{class:"pcv-body"});
+    /* the head of the text: DOUBT / OUT with its reason and the role line on the left, the chip on
+       the right (the minutes over the usage, so it stays narrow and the role line has its room) */
+    const bh=h("div",{class:"pcv-bh"}), bhl=h("div",{class:"pcv-bhl"});
     if(doubt || whyTxt){ const dr=h("div",{class:"pcv-dr"});
       if(doubt) dr.appendChild(doubt);
-      if(whyTxt) dr.appendChild(h("div",{class:"pcv-why"}, whyTxt));
-      zl.appendChild(dr); }
-    if(zl.childNodes.length) zst.appendChild(zl);
-    if(zst.childNodes.length) col.appendChild(zst);
-    /* zone 2: the numbers, in rows of three (four as two and two) */
+      if(whyTxt) dr.appendChild(h("span",{class:"pcv-why"}, whyTxt));
+      bhl.appendChild(dr); }
+    if(tagw) bhl.appendChild(tagw);
+    bh.appendChild(bhl);
+    if(minNum || (foc && usgTxt)){
+      const mu=h("div",{class:"pcv-mu", title:"Minutes a game"+(foc && usgTxt? " · usage "+usgTxt+", among the club's highest" : "")});
+      if(minNum) mu.appendChild(h("span",{class:"m"}, h("b",{}, minNum.replace(",",".")), h("i",{}, "MIN")));
+      if(foc && usgTxt) mu.appendChild(h("span",{class:"u"}, h("b",{}, usgTxt), h("i",{}, "USG")));
+      bh.appendChild(mu); }
+    if(bh.textContent.trim()) body.appendChild(bh);
+    /* the 3-5 ideas the staff writes - the room on the card is theirs */
+    if(ideas) body.appendChild(ideas);
+    if(extra && extra.textContent.trim()) body.appendChild(extra);
+    if(body.textContent.trim()) col.appendChild(body);
+    /* the shot chart, small (the full one is beside the video) */
+    if(sc) col.appendChild(h("div",{class:"pcv-hsc"}, sc));
+    /* the numbers at the foot, in rows of three (four as two and two) */
     const nCells=stats? stats.querySelectorAll(".stat-cell").length : 0;
     if(nCells){ const box=h("div",{class:"pcv-stats"}, stats);
       box.style.setProperty("--sc", String(nCells<=3? nCells : nCells===4? 2 : 3));
       col.appendChild(box); }
-    /* zone 3: the role and the 3-5 ideas the staff writes - the room on the card is theirs */
-    const body=h("div",{class:"pcv-body"});
-    if(tagw) body.appendChild(tagw);
-    if(ideas) body.appendChild(ideas);
-    if(extra && extra.textContent.trim()) body.appendChild(extra);
-    if(body.textContent.trim()) col.appendChild(body);
-    /* zone 4: the shot chart, small and last (the full one is beside the video) */
-    if(sc) col.appendChild(h("div",{class:"pcv-hsc"}, sc));
     const hero=h("div",{class:"pcv-top2"}, strip, col);
     /* KEY PLAYER / STOP HIM: a tab hanging from the line that frames the card */
     if(rib){ rib.textContent=card.classList.contains("hl-stop")? "STOP HIM" : "KEY PLAYER"; rib.classList.add("pcv-tab"); rib.remove(); card.classList.add("has-tab"); }
@@ -24383,6 +24388,7 @@ const LG_LEAD=[
 let _lgLeadBusy=0;
 const _lgLeadInFlight={};
 const _lgLeadTried={};
+const _lgLeadFail={};
 function _lgLeadSlim(tid, j, done){
   const tot=(j.team_tot&&j.team_tot.all)||null;
   return { games:j.games||0, done:done||0, at:Date.now(), fv:LG_FETCH_VER,
@@ -24452,11 +24458,14 @@ function _lgLeadLoad(L){
         if(j && j.partial && round<3) return new Promise(res=>setTimeout(res, 1500)).then(()=>ask(round+1));
         if(j && (j.players||[]).length){ L.lead[tid]=_lgLeadSlim(tid, j, done[tid]||0); try{ persist(); }catch(e){_quiet(e)} }
       });
-    ask(0).catch(_quiet).then(()=>{ _lgLeadBusy--; delete _lgLeadInFlight[tid];
+    /* a club the server could not read is asked again, twice, before it is left for this visit
+       (it was left at the first failure, and the boards stayed without it until a reload) */
+    ask(0).catch(e=>{ _quiet(e); _lgLeadFail[tid]=(_lgLeadFail[tid]||0)+1; if(_lgLeadFail[tid]<=2) delete _lgLeadTried[tid]; }).then(()=>{ _lgLeadBusy--; delete _lgLeadInFlight[tid];
       try{ const L2=leagueState(); _lgLeadLoad(L2);
         const v=document.getElementById("viewLeague");
-        /* while clubs are still out, only the count moves */
-        if(_lgLeadBusy>0){ if(v){ const n=v.querySelector(".lg-pace-n"); if(n){ const R=_paceLeague(L2); n.textContent=R.rows.filter(r=>r.o.eP!=null).length+" of "+(L2.teams||[]).length; } } return; }
+        /* while clubs are still out, only the counts move */
+        if(_lgLeadBusy>0){ if(v){ const n=v.querySelector(".lg-pace-n"); if(n){ const R=_paceLeague(L2); n.textContent=R.rows.filter(r=>r.o.eP!=null).length+" of "+(L2.teams||[]).length; }
+            const c=v.querySelector(".ldr-cnt"); if(c){ const P2=_lgLeadPool(L2); c.textContent=P2.clubs+" of "+P2.of+" clubs"; } } return; }
         /* the boards are drawn again once, when the last club has landed - drawing them at
            every club moved the page under the reader sixteen times in a row - and what is
            being read stays where it is on the screen */
@@ -24509,9 +24518,21 @@ function _lgLeaders(L){
   box.classList.add("ldr");
   const P=_lgLeadPool(L);
   _lgLeadLoad(L);
-  if(P.clubs<P.of) box.appendChild(h("div",{class:"lg-sumline"},
-    "Read "+P.clubs+" of "+P.of+" clubs so far — the rest are being read, one at a time, and the boards fill in as they land."));
+  /* THE WHOLE LEAGUE OR NOTHING YET (Oriol, 15/11/2026: picking a club "se vuelve loco, me empieza
+     a poner solo los equipos del scout; debería salir toda la liga"). The boards were drawn from the
+     clubs read so far - at first only the ones whose panels or pre games had been opened - and read
+     as the league's top five. While clubs are still being read only the count shows; a club that
+     could not be read is named under the boards, with a way to ask for it again. */
+  const T=_lgLeadTodo(L), reading=_lgLeadBusy>0 || T.ids.some(id=>!_lgLeadInFlight[id]);
+  if(P.clubs<P.of && reading){
+    box.appendChild(h("div",{class:"ld"},"Reading every club's players for the boards… ", h("b",{class:"ldr-cnt"}, P.clubs+" of "+P.of+" clubs"), h("span",{class:"ld-bar"})));
+    return box; }
   if(P.pool.length<10){ box.appendChild(h("div",{class:"ld"},"Reading the clubs…", h("span",{class:"ld-bar"}))); return box; }
+  const have=id=>{ const f=(L.players||{})[id], s=(L.lead||{})[id]; return !!((f && (f.players||[]).length) || (s && (s.players||[]).length)); };
+  const missing=(L.teams||[]).filter(t=>!have(t.id));
+  if(missing.length) box.appendChild(h("div",{class:"lg-sumline"},
+    "Not read from the league yet: "+missing.map(t=>t.tlc||t.short||t.name).join(", ")+" — the boards leave them out. ",
+    h("button",{class:"btn ghost sm", type:"button", onclick:()=>{ missing.forEach(t=>{ delete _lgLeadTried[t.id]; delete _lgLeadFail[t.id]; }); _lgRerender(); }}, "Read again")));
   const sel=_lgNoClub(L)? "" : _lgTeamId(L);
   const selT=(L.teams||[]).filter(t=>t.id===sel)[0]||null;
   const grid=h("div",{class:"ldr-g"});
@@ -47303,7 +47324,7 @@ html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .ln{font:700 clamp(17
 html body .phx.phx.pre-phx .card.pcv-side .pcv-vname .name .fn:empty{display:none}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .meta.pcv-meta2 span{display:block;white-space:nowrap}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .meta{position:absolute!important;left:6px!important;right:5px!important;bottom:6px!important;z-index:3!important;margin:0!important;padding:0!important;
-  font:600 clamp(7px,3cqw,8.5px)/1.3 'IBM Plex Mono',monospace!important;color:#d5dae2!important;letter-spacing:.01em!important}
+  font:600 clamp(6px,3cqw,8.5px)/1.3 'IBM Plex Mono',monospace!important;color:#d5dae2!important;letter-spacing:.01em!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-col{display:flex;flex-direction:column;min-width:0;background:#1b2029}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-col > * + *{border-top:1px solid rgba(255,255,255,.07)!important}
 html body .phx.phx.pre-phx .card.pcv-side.has-tab .pcv-col > :first-child{padding-top:21px!important}
@@ -47318,15 +47339,16 @@ html body .phx.phx.pre-phx .card.pcv-side .pcv-why{font:italic 500 clamp(8.5px,4
 html body .phx.phx.pre-phx .card.pcv-side .pcv-stats{padding:4px 6px 5px!important;background:transparent!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-stats .stat-bar{grid-auto-flow:row!important;grid-template-columns:repeat(var(--sc,3),minmax(0,1fr))!important;grid-auto-columns:auto!important;gap:2px!important;padding:0!important;border-top:0!important}
 html body .phx.phx.pre-phx .card.pcv-side .stat-cell .stat-value{font-size:clamp(12.5px,6cqw,16.5px)!important}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-body{flex:none;padding:8px 10px 9px;background:transparent}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-body{flex:none;display:flow-root;padding:8px 10px 9px;background:transparent}
 html body .phx.phx.pre-phx .card.pcv-side .tagline{font-size:clamp(12px,5.5cqw,15px)!important}
 html body .phx.phx.pre-phx .card.pcv-side .idea-line,html body .phx.phx.pre-phx .card.pcv-side .extra-line{font-size:clamp(11px,4.8cqw,13px)!important;line-height:1.27!important}
-html body .phx.phx.pre-phx .card.pcv-side .ideas{gap:4px!important}
+html body .phx.phx.pre-phx .card.pcv-side .ideas{display:block!important}
+html body .phx.phx.pre-phx .card.pcv-side .idea-row + .idea-row{margin-top:4px!important}
 html body .phx.phx.pre-phx .card.pcv-side .idea-line,html body .phx.phx.pre-phx .card.pcv-side .tagline{display:block!important;-webkit-line-clamp:unset!important;overflow:visible!important}
 html body .phx.phx.pre-phx .card.pcv-side .idea-row{gap:6px!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc{position:static;width:auto;z-index:auto;display:flex;align-items:center;justify-content:center;padding:7px 10px 8px}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{max-width:118px!important;background:#222833!important;border-color:rgba(255,255,255,.06)!important;box-shadow:none!important}
-html body .phx.phx.pre-phx .card.pcv-side > .hl-rib.pcv-tab{position:absolute!important;top:0!important;left:65%!important;right:auto!important;transform:translateX(-50%)!important;z-index:7!important;display:block!important;
+html body .phx.phx.pre-phx .card.pcv-side > .hl-rib.pcv-tab{position:absolute!important;top:0!important;left:calc(30% + 10px)!important;right:auto!important;transform:none!important;z-index:7!important;display:block!important;
   border-radius:0 0 7px 7px!important;padding:2px 10px 3px!important;font:800 clamp(7.5px,3.7cqw,9px)/1.3 'Inter',sans-serif!important;letter-spacing:.16em!important;white-space:nowrap!important;box-shadow:none!important}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-top2,html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-col{background:#fff!important}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-strip{background:#eef0f3}
@@ -47339,6 +47361,18 @@ html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-usg:not(.focus){backgr
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-why{color:#8a6608!important}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{background:#f4f5f8!important;border-color:#e3e6eb!important;box-shadow:none!important}
 
+/* the corner chip: the minutes (and the usage when it is high), in the dorsal's dress */
+html body .phx.phx.pre-phx .card.pcv-side .pcv-mu{flex:none;display:flex;flex-direction:column;align-items:stretch;margin:-3px -5px 0 0;border-radius:8px;overflow:hidden;font:700 clamp(13px,7cqw,19px)/1 'Oswald',sans-serif;letter-spacing:.01em;position:relative;z-index:4}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-mu > span{display:flex;align-items:baseline;justify-content:center;gap:3px;padding:3px 7px 4px;background:rgba(12,15,20,.86);color:#fff}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-mu > span.u{background:#e0453b}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-mu > span + span{border-top:1px solid rgba(255,255,255,.18)}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-mu i{font:700 clamp(6.5px,3cqw,8px)/1 'IBM Plex Mono',monospace;font-style:normal;letter-spacing:.06em;opacity:.85}
+html body .phx.phx.pre-phx .card.pcv-side.has-tab .pcv-col > .pcv-body:first-child .pcv-mu{margin-top:-18px}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-body .pcv-dr{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:3px 6px;margin:0 0 5px}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-bh{display:flex;align-items:flex-start;gap:8px;margin:0 0 6px}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-bhl{flex:1 1 auto;min-width:0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-bhl .tagline-wrap{margin:0!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-bhl .tagline{overflow-wrap:normal!important;word-break:normal!important;hyphens:manual}
 /* ON PAPER (Oriol, 15/11/2026: "todos los ajustes que hacemos también para el botón de imprimir, que
    tenga el mismo formato"): the card goes on paper exactly as on screen, in its light dress. The light
    theme's own rules are written again for the paper copy where the marker stands when the CSS is
