@@ -12256,8 +12256,12 @@ function _preCardHero(card, colPos, editing){
     /* the passport in two set lines - where he is from and his age, then height and weight - so the
        narrow strip never breaks it in three (left as typed when writing) */
     if(meta){ if(!editing && !meta.childElementCount){ const parts=meta.textContent.split(/\s*·\s*/).map(x=>x.trim()).filter(Boolean);
+        /* three short lines - where he is from and his age, his height, his weight - so the passport
+           can be read at a size that reads and never runs to the strip's edge (Oriol, 15/11/2026:
+           "que sea un poco más grande, cuesta de leer; vigila que no se pegue el texto a la derecha") */
         if(parts.length>2){ meta.textContent=""; meta.classList.add("pcv-meta2");
-          meta.appendChild(h("span",{}, parts.slice(0,2).join(" · "))); meta.appendChild(h("span",{}, parts.slice(2).join(" · "))); } }
+          meta.appendChild(h("span",{}, parts.slice(0,2).join(" · ")));
+          parts.slice(2).forEach(x=>meta.appendChild(h("span",{}, x))); } }
       strip.appendChild(meta); }
     /* the photograph's own controls when writing: KEY / STOP HIM, the padlock that lets it be framed,
        the cross that takes it off */
@@ -47550,6 +47554,63 @@ html body .phx.phx.pre-phx .card.pcv-edit > .add-co-btn.pcv-coedit{display:block
 html body .phx.phx.pre-phx .card.pcv-edit > .card-toolbar{position:absolute!important;top:4px!important;right:4px!important;left:auto!important;z-index:9!important;margin:0!important;border-radius:8px!important;box-shadow:0 4px 14px rgba(0,0,0,.18)}
 html body .phx.phx.pre-phx .card.pcv-edit .pcv-col{padding-top:30px}
 html body .phx.phx.pre-phx .card.pcv-edit.has-tab .pcv-col > .pcv-body:first-child{margin-top:6px}
+/* THE PASSPORT, THE NUMBER AND THE POSITION, READ ON ANY PHOTOGRAPH (Oriol, 15/11/2026: "que sea un poco
+   más grande este texto, cuesta de leer"; "el dorsal me gusta la forma pero el color a veces no se ve, que
+   se vea en fondo oscuro o claro"; "si hay varias posiciones, dorado no me gusta"; "vigila que no se pegue
+   el texto abajo a la derecha"). The passport in three short lines, larger and white; the number and the
+   hand solid ink with a light ring, so they stand on a dark head or a light wall alike; a second position
+   a white chip in ink. */
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .meta{font:600 clamp(8.5px,3.8cqw,10.5px)/1.25 'IBM Plex Mono',monospace!important;color:#fff!important;letter-spacing:0!important;left:6px!important;right:6px!important;bottom:7px!important;text-shadow:0 1px 2px rgba(0,0,0,.55)}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-vname{bottom:clamp(42px,18cqw,54px)}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-strip .num-badge{background:#141821!important;color:#fff!important;box-shadow:0 0 0 1.5px rgba(255,255,255,.72),0 2px 8px rgba(0,0,0,.35)!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-shand{background:#141821!important;color:#fff!important;border:1.5px solid rgba(255,255,255,.75)!important;box-shadow:0 2px 8px rgba(0,0,0,.35)!important}
+html body .phx.phx.pre-phx .card.pcv-edit .hand-badge.pcv-shand{background:#141821!important;border:1.5px solid rgba(255,255,255,.75)!important;box-shadow:0 2px 8px rgba(0,0,0,.35)!important}
+html body .phx.phx.pre-phx .card.pcv-edit .hand-badge.pcv-shand:empty{border-style:dashed!important;background:rgba(20,24,33,.55)!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-stl .pcv-pos{background:#fff!important;color:#141821!important;border:1px solid rgba(16,24,40,.18)!important;box-shadow:0 2px 6px rgba(0,0,0,.3)!important}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-stl .pos-badge.pcv-pos{background:#fff!important;color:#141821!important;border:1px solid rgba(16,24,40,.18)!important;box-shadow:0 2px 6px rgba(0,0,0,.3)!important}
+/* ROSTER ROLES IN THE CARDS' LINE (Oriol, 15/11/2026: "mejora el diseño en línea a las fichas, sin perder lo que
+   hay"): the same areas, colours and men, in the cards' dress - rounded tiles on a quiet ground, the photograph
+   darkening at its foot under its chips, the number and the hand in ink with a light ring, the position a white
+   chip, the minutes a soft pill, the closeout a solid band closing the tile. */
+html body .phx.phx.pre-phx.pre-roles .vb-area{border-radius:14px!important;border:1px solid color-mix(in srgb,var(--ac) 45%,transparent)!important;background:#fff!important;box-shadow:0 1px 3px rgba(16,24,40,.06),0 6px 18px rgba(16,24,40,.06)!important}
+html body .phx.phx.pre-phx.pre-roles .vb-head{background:linear-gradient(180deg,color-mix(in srgb,var(--ac) 16%,#fff) 0%,color-mix(in srgb,var(--ac) 6%,#fff) 100%)!important;border-bottom:2px solid var(--ac)!important;padding:10px 12px 9px!important}
+html body .phx.phx.pre-phx.pre-roles .vb-title{font-size:28px!important;letter-spacing:.03em!important}
+html body .phx.phx.pre-phx.pre-roles .vb-tile{border-radius:10px!important;border:1px solid #e3e6eb!important;background:#fff!important;box-shadow:0 1px 3px rgba(16,24,40,.08)!important}
+html body .phx.phx.pre-phx.pre-roles .vb-photo{background-color:#eef0f3!important}
+html body .phx.phx.pre-phx.pre-roles .vb-photo::after{content:"";position:absolute;left:0;right:0;bottom:0;height:30%;z-index:1;pointer-events:none;background:linear-gradient(180deg,rgba(12,15,20,0),rgba(12,15,20,.3))}
+html body .phx.phx.pre-phx.pre-roles .vb-photo > span{z-index:2}
+html body .phx.phx.pre-phx.pre-roles .vb-num{top:5px!important;left:5px!important;font:700 14px/1.35 'Oswald',sans-serif!important;color:#fff!important;background:#141821!important;border-radius:6px!important;padding:0 6px!important;box-shadow:0 0 0 1.5px rgba(255,255,255,.72),0 2px 6px rgba(0,0,0,.3)}
+html body .phx.phx.pre-phx.pre-roles .vb-pos{top:5px!important;right:5px!important;font:800 9px/1.45 'IBM Plex Mono',monospace!important;letter-spacing:.04em!important;color:#141821!important;background:#fff!important;border:1px solid rgba(16,24,40,.18)!important;border-radius:5px!important;padding:0 5px!important;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+html body .phx.phx.pre-phx.pre-roles .vb-hand{bottom:5px!important;left:5px!important;width:19px;height:19px;padding:0!important;display:inline-flex;align-items:center;justify-content:center;border-radius:50%!important;font:700 10.5px/1 'Oswald',sans-serif!important;color:#fff!important;background:#141821!important;border:1.5px solid rgba(255,255,255,.75)!important}
+html body .phx.phx.pre-phx.pre-roles .vb-hand.vb-hl{color:#141821!important;background:#fff!important;border-color:#141821!important}
+html body .phx.phx.pre-phx.pre-roles .vb-min{bottom:5px!important;right:5px!important;font:600 11px/1.4 'Oswald',sans-serif!important;color:#3a404b!important;background:rgba(255,255,255,.94)!important;border-radius:6px!important;padding:0 6px!important}
+html body .phx.phx.pre-phx.pre-roles .vb-hlb{bottom:6px!important;font:700 8.5px/1.4 'Inter',sans-serif!important;letter-spacing:.12em!important}
+html body .phx.phx.pre-phx.pre-roles .vb-tile.vb-key{box-shadow:0 0 0 2px #3b7ddd,0 4px 12px rgba(59,125,221,.22)!important}
+html body .phx.phx.pre-phx.pre-roles .vb-tile.vb-stop{box-shadow:0 0 0 2px #e0453b,0 4px 12px rgba(224,69,59,.22)!important}
+html body .phx.phx.pre-phx.pre-roles .vb-tile.vb-key .vb-hlb{background:#3b7ddd!important;color:#fff!important}
+html body .phx.phx.pre-phx.pre-roles .vb-tile.vb-stop .vb-hlb{background:#e0453b!important;color:#fff!important}
+html body .phx.phx.pre-phx.pre-roles .vb-nm{font:700 13px/1.1 'Oswald',sans-serif!important;letter-spacing:.03em!important;color:#141821!important;padding:6px 4px 6px!important}
+html body .phx.phx.pre-phx.pre-roles .vb-co{font:700 9px/1 'Oswald',sans-serif!important;letter-spacing:.24em!important;padding:4px 2px!important;color:#1a1d23!important}
+html body .phx.phx.pre-phx.pre-roles .vb-co.green{background:#4ba089!important}
+html body .phx.phx.pre-phx.pre-roles .vb-co.red{background:#d8524e!important}
+html body .phx.phx.pre-phx.pre-roles .vb-co.yellow{background:#d9a521!important}
+html body.dark .phx.phx.pre-phx.pre-roles .vb-area{background:#161a22!important;border-color:color-mix(in srgb,var(--ac) 55%,transparent)!important;box-shadow:0 8px 22px rgba(0,0,0,.3)!important}
+html body.dark .phx.phx.pre-phx.pre-roles .vb-head{background:linear-gradient(180deg,color-mix(in srgb,var(--ac) 24%,#161a22) 0%,color-mix(in srgb,var(--ac) 10%,#161a22) 100%)!important}
+html body.dark .phx.phx.pre-phx.pre-roles .vb-tile{background:#1b2029!important;border-color:rgba(255,255,255,.08)!important;box-shadow:0 2px 8px rgba(0,0,0,.3)!important}
+html body.dark .phx.phx.pre-phx.pre-roles .vb-photo{background-color:#232934!important}
+html body.dark .phx.phx.pre-phx.pre-roles .vb-nm{color:#f2f4f7!important}
+html body.dark .phx.phx.pre-phx.pre-roles .vb-min{background:rgba(20,24,32,.9)!important;color:#d5dae2!important}
+html body.dark .phx.phx.pre-phx.pre-roles .vb-tile.vb-key{box-shadow:0 0 0 2px #3b7ddd,0 4px 12px rgba(59,125,221,.3)!important}
+html body.dark .phx.phx.pre-phx.pre-roles .vb-tile.vb-stop{box-shadow:0 0 0 2px #e0453b,0 4px 12px rgba(224,69,59,.3)!important}
+html body .prb .phx.phx.pre-phx.pre-roles .vb-tile.vb-key{box-shadow:0 0 0 2px #3b7ddd!important}
+html body .prb .phx.phx.pre-phx.pre-roles .vb-tile.vb-stop{box-shadow:0 0 0 2px #e0453b!important}
+html body .prb .phx.phx.pre-phx.pre-roles .vb-area{background:#fff!important;box-shadow:none!important}
+html body .prb .phx.phx.pre-phx.pre-roles .vb-head{background:linear-gradient(180deg,color-mix(in srgb,var(--ac) 16%,#fff) 0%,color-mix(in srgb,var(--ac) 6%,#fff) 100%)!important}
+html body .prb .phx.phx.pre-phx.pre-roles .vb-tile{background:#fff!important;border-color:#e3e6eb!important;box-shadow:none!important}
+html body .prb .phx.phx.pre-phx.pre-roles .vb-photo{background-color:#eef0f3!important}
+html body .prb .phx.phx.pre-phx.pre-roles .vb-nm{color:#141821!important}
+html body .prb .phx.phx.pre-phx.pre-roles .vb-min{background:rgba(255,255,255,.94)!important;color:#3a404b!important}
+html body .prb .phx.phx.pre-phx.pre-roles *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
 /* ON PAPER (Oriol, 15/11/2026: "todos los ajustes que hacemos también para el botón de imprimir, que
    tenga el mismo formato"): the card goes on paper exactly as on screen, in its light dress. The light
    theme's own rules are written again for the paper copy where the marker stands when the CSS is
