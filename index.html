@@ -12194,16 +12194,23 @@ function _pcvFitName(vn){
     ln.style.fontSize=lo.toFixed(1)+"px";
   }catch(e){_quiet(e)}
 }
-function _preCardHero(card, colPos){
+function _preCardHero(card, colPos, editing){
   try{
     if(!card || card.classList.contains("pcv")) return;
     const q=s=>card.querySelector(s);
     const img=q(".photo-img"), num=q(".num-badge"), hand=q(".hand-badge"), sc=q(".photo-sc"), posB=q(".pos-badge");
     const name=q(".card-body .name"), meta=q(".card-body .meta"), tagw=q(".tagline-wrap"), ideas=q(".ideas"), extra=q(".extra-blocks");
     const stats=q(".stat-bar"), coBar=q(".closeout-bar"), rib=q(".hl-rib"), use=q(".use-chip");
-    const role=q(".roster-badge"), mins=q(".minutes"), doubt=q(".doubt-badge.on"), why=q(".doubt-why");
+    const mins=q(".minutes"), doubt=q(".doubt-badge.on"), why=q(".doubt-why");
     const st=(coBar && coBar.getAttribute("data-state"))||"neutral", co=PCV_CO[st]||null;
     card.classList.add("pcv", "pcv-side");
+    /* THE SAME CARD WHEN IT IS BEING WRITTEN (Oriol, 15/11/2026: "arregla el modo edición, que no se ven
+       igual"). Editing lays the card out the same way, with the very fields and controls of the working
+       card moved into their places - nothing is rebuilt, so every line keeps what writes it: the number,
+       the position, the hand, the name and the passport on the photograph; the role, the minutes, the
+       usage and DOUBT in the corner; the title, the ideas and the notes in the text tile; the numbers
+       with their lights; the closeout strip that is clicked through its colours. */
+    if(editing) card.classList.add("pcv-edit");
     if(co) card.style.setProperty("--pcv-co", co.c);
     /* THE PHOTOGRAPH DOWN THE WHOLE LEFT SIDE (Oriol, 15/11/2026: "en vez de tener la foto arriba tenerla
        en el lateral", then "quiero que la foto ocupe toda la vertical", after "mucho ruido, mucha
@@ -12211,9 +12218,8 @@ function _preCardHero(card, colPos){
        the photograph fills it (up to a height where it would only be a face), the number top left with
        his second position under it, the hand he favours top right, the name written up its side -
        first name light, surname bold and as large as the strip allows - and the passport at its foot.
-       Beside it, one column of zones split by hairlines: the usage with the role, the minutes and
-       DOUBT; the numbers; the role and the staff's ideas; the shot chart last and small. KEY PLAYER /
-       STOP HIM hangs as a tab from the coloured line that frames the card. */
+       Beside it the staff's text, the numbers and the shot chart, each a tile. KEY PLAYER / STOP HIM
+       hangs as a tab from the coloured line that frames the card. */
     const strip=h("div",{class:"pcv-strip"});
     if(img) strip.appendChild(img);
     /* the photograph carried down to the closeout band (Oriol, 15/11/2026: "integra bien el final de
@@ -12222,28 +12228,37 @@ function _preCardHero(card, colPos){
     const bgi=img && img.style && img.style.backgroundImage;
     if(bgi && bgi!=="none"){ strip.style.setProperty("--pimg", bgi); strip.classList.add("has-pimg"); }
     /* his second position when he plays one (the column says the first; beside the video there is no
-       column, so it is always said) */
+       column, so it is always said); when writing, the position itself, to be typed */
     const pt=((posB && posB.textContent)||"").trim();
     const pos2=!!pt && (colPos==null || pt.toUpperCase()!==String(colPos).toUpperCase());
-    if(num || pos2){ const tl=h("div",{class:"pcv-stl"});
+    if(num || pos2 || (editing && posB)){ const tl=h("div",{class:"pcv-stl"});
       if(num) tl.appendChild(num);
-      if(pos2) tl.appendChild(h("span",{class:"pcv-pos", title:"Plays "+pt+" too"}, pt));
+      if(editing){ if(posB){ posB.classList.add("pcv-pos"); tl.appendChild(posB); } }
+      else if(pos2) tl.appendChild(h("span",{class:"pcv-pos", title:"Plays "+pt+" too"}, pt));
       strip.appendChild(tl); }
-    if(pos2) strip.classList.add("has-pos");
+    if(pos2 || (editing && posB)) strip.classList.add("has-pos");
     const hd=((hand && hand.textContent)||"").trim().toUpperCase();
-    if(hd==="L" || hd==="R") strip.appendChild(h("span",{class:"pcv-hand pcv-shand", title:hd==="L"? "Left-handed" : "Right-handed"}, hd));
-    if(name){ const n=_pcvName(name.textContent); name.textContent="";
-      name.appendChild(h("span",{class:"fn"}, n.f||"")); name.appendChild(h("span",{class:"ln"}, n.l));
+    if(editing){ if(hand){ hand.classList.add("pcv-hand", "pcv-shand"); hand.title="Dominant hand - click: right, left, unknown"; strip.appendChild(hand); } }
+    else if(hd==="L" || hd==="R") strip.appendChild(h("span",{class:"pcv-hand pcv-shand", title:hd==="L"? "Left-handed" : "Right-handed"}, hd));
+    if(name){
+      /* when writing, the name stays one line of text to type into; reading, first name and surname */
+      if(!editing){ const n=_pcvName(name.textContent); name.textContent="";
+        name.appendChild(h("span",{class:"fn"}, n.f||"")); name.appendChild(h("span",{class:"ln"}, n.l)); }
       const vn=h("div",{class:"pcv-vname"}, name);
       strip.appendChild(vn);
       /* the surname is sized once the card is on screen: as large as the strip allows, never broken */
-      requestAnimationFrame(()=>requestAnimationFrame(()=>_pcvFitName(vn))); }
+      if(!editing) requestAnimationFrame(()=>requestAnimationFrame(()=>_pcvFitName(vn))); }
     /* the passport in two set lines - where he is from and his age, then height and weight - so the
-       narrow strip never breaks it in three */
-    if(meta){ if(!meta.childElementCount){ const parts=meta.textContent.split(/\s*·\s*/).map(x=>x.trim()).filter(Boolean);
+       narrow strip never breaks it in three (left as typed when writing) */
+    if(meta){ if(!editing && !meta.childElementCount){ const parts=meta.textContent.split(/\s*·\s*/).map(x=>x.trim()).filter(Boolean);
         if(parts.length>2){ meta.textContent=""; meta.classList.add("pcv-meta2");
           meta.appendChild(h("span",{}, parts.slice(0,2).join(" · "))); meta.appendChild(h("span",{}, parts.slice(2).join(" · "))); } }
       strip.appendChild(meta); }
+    /* the photograph's own controls when writing: KEY / STOP HIM, the padlock that lets it be framed,
+       the cross that takes it off */
+    if(editing){ const ctl=h("div",{class:"pcv-sctl"});
+      [q(".hl-tog"), q(".photo-lock-btn"), q(".rm-x-photo")].forEach(x=>{ if(x) ctl.appendChild(x); });
+      if(ctl.childNodes.length) strip.appendChild(ctl); }
     const col=h("div",{class:"pcv-col"});
     /* THE STAFF'S TEXT ON TOP, THE NUMBERS AT THE FOOT (Oriol, 15/11/2026: "el texto que pongo yo con
        el titular ponlo arriba, los stats abajo"). In the top right corner, in the dorsal's dress, one
@@ -12254,54 +12269,64 @@ function _preCardHero(card, colPos){
     const minNum=(/(\d+(?:[.,]\d+)?)/.exec(minTxt)||[])[1]||"";
     const whyTxt=(why && why.textContent.trim())||"";
     let usgTxt="", foc=false;
-    if(use){ const b=use.querySelector("b"); foc=use.classList.contains("focus"); usgTxt=((b&&b.textContent)||"").trim(); use.remove(); }
+    if(use && !editing){ const b=use.querySelector("b"); foc=use.classList.contains("focus"); usgTxt=((b&&b.textContent)||"").trim(); use.remove(); }
     const body=h("div",{class:"pcv-body"});
-    /* the head of the text: DOUBT / OUT with its reason and the role line on the left, the chip on
-       the right (the minutes over the usage, so it stays narrow and the role line has its room) */
     /* the role line on the left; on the right the chip and, under it, DOUBT / OUT with its reason
        (Oriol, 15/11/2026: "el doubt mételo debajo de USG y rotation") */
     const bh=h("div",{class:"pcv-bh"}), bhl=h("div",{class:"pcv-bhl"}), bhr=h("div",{class:"pcv-bhr"});
     if(tagw) bhl.appendChild(tagw);
     bh.appendChild(bhl);
-    if(minNum || (foc && usgTxt)){
-      const mu=h("div",{class:"pcv-mu", title:"Minutes a game"+(foc && usgTxt? " · usage "+usgTxt+", among the club's highest" : "")});
-      if(minNum) mu.appendChild(h("span",{class:"m"}, h("b",{}, minNum.replace(",",".")), h("i",{}, "MIN")));
-      if(foc && usgTxt) mu.appendChild(h("span",{class:"u"}, h("b",{}, usgTxt), h("i",{}, "USG")));
-      bhr.appendChild(mu); }
-    /* DOUBT / OUT is one compact chip with its reason inside - "1G OUT", "4G OUT", "LONG TERM" or
-       the staff's own word - and nothing outside it (Oriol, 15/11/2026: "pon el doubt y dentro 1G out
-       o algo así compacto, pero nada fuera de la ficha"); the full reason stays in its title */
-    if(doubt || whyTxt){
-      const w=whyTxt.toLowerCase(), mg=/missed (?:the )?last (\d+ )?games?/.exec(w);
-      let code=mg? ((mg[1]? parseInt(mg[1],10) : 1)+"G OUT") : /long[- ]term/.test(w)? "LONG TERM" : whyTxt.toUpperCase();
-      if(code.length>14) code=code.slice(0,13).trim()+"…";
-      const chip=doubt || h("span",{class:"doubt-badge on"}, "DOUBT");
-      const base=(chip.textContent||"").trim().toUpperCase()||"DOUBT";
-      if(/^OUT\b/.test(base)) code=code.replace(/\s*OUT$/,"");
-      chip.textContent=base+(code? " · "+code : "");
-      if(whyTxt) chip.title=base+": "+whyTxt;
-      bhr.appendChild(h("div",{class:"pcv-dr"}, chip)); }
+    if(editing){
+      /* writing: the working row itself - role, minutes, usage, DOUBT and its reason - stacked in the corner */
+      const row2=q(".row2"); if(row2){ row2.classList.add("pcv-row2"); bhr.appendChild(row2); }
+    } else {
+      if(minNum || (foc && usgTxt)){
+        const mu=h("div",{class:"pcv-mu", title:"Minutes a game"+(foc && usgTxt? " · usage "+usgTxt+", among the club's highest" : "")});
+        if(minNum) mu.appendChild(h("span",{class:"m"}, h("b",{}, minNum.replace(",",".")), h("i",{}, "MIN")));
+        if(foc && usgTxt) mu.appendChild(h("span",{class:"u"}, h("b",{}, usgTxt), h("i",{}, "USG")));
+        bhr.appendChild(mu); }
+      /* DOUBT / OUT is one compact chip with its reason inside - "1G OUT", "4G OUT", "LONG TERM" or
+         the staff's own word - and nothing outside it (Oriol, 15/11/2026: "pon el doubt y dentro 1G out
+         o algo así compacto, pero nada fuera de la ficha"); the full reason stays in its title */
+      if(doubt || whyTxt){
+        const w=whyTxt.toLowerCase(), mg=/missed (?:the )?last (\d+ )?games?/.exec(w);
+        let code=mg? ((mg[1]? parseInt(mg[1],10) : 1)+"G OUT") : /long[- ]term/.test(w)? "LONG TERM" : whyTxt.toUpperCase();
+        if(code.length>14) code=code.slice(0,13).trim()+"…";
+        const chip=doubt || h("span",{class:"doubt-badge on"}, "DOUBT");
+        const base=(chip.textContent||"").trim().toUpperCase()||"DOUBT";
+        if(/^OUT\b/.test(base)) code=code.replace(/\s*OUT$/,"");
+        /* where the card is narrow (on paper) it breaks after the dot only: "DOUBT ·" over "1G OUT" */
+        chip.textContent=base+(code? " · "+code.replace(/ /g," ") : "");
+        if(whyTxt) chip.title=base+": "+whyTxt;
+        bhr.appendChild(h("div",{class:"pcv-dr"}, chip)); }
+    }
     if(bhr.childNodes.length) bh.appendChild(bhr);
-    if(bh.textContent.trim()) body.appendChild(bh);
+    if(editing || bh.textContent.trim()) body.appendChild(bh);
     /* the 3-5 ideas the staff writes - the room on the card is theirs */
     if(ideas) body.appendChild(ideas);
-    if(extra && extra.textContent.trim()) body.appendChild(extra);
-    if(body.textContent.trim()) col.appendChild(body);
+    if(extra && (editing || extra.textContent.trim())) body.appendChild(extra);
+    /* writing: a note more, and the league's numbers back when the card has none */
+    if(editing) card.querySelectorAll(".add-block-btn").forEach(b=>body.appendChild(b));
+    if(editing || body.textContent.trim()) col.appendChild(body);
     /* the numbers in the middle, in rows of three (four as two and two) - "las stats en medio" */
     const nCells=stats? stats.querySelectorAll(".stat-cell").length : 0;
-    if(nCells){ const box=h("div",{class:"pcv-stats"}, stats);
-      box.style.setProperty("--sc", String(nCells<=3? nCells : nCells===4? 2 : 3));
+    if(nCells || (editing && stats)){ const box=h("div",{class:"pcv-stats"}, stats);
+      box.style.setProperty("--sc", String(nCells<=3? Math.max(1, nCells) : nCells===4? 2 : 3));
       col.appendChild(box); }
     /* the shot chart at the foot, small (the full one is beside the video) - "mapa de tiro debajo" */
     if(sc) col.appendChild(h("div",{class:"pcv-hsc"}, sc));
     const hero=h("div",{class:"pcv-top2"}, strip, col);
     /* KEY PLAYER / STOP HIM: a tab hanging from the line that frames the card */
     if(rib){ rib.textContent=card.classList.contains("hl-stop")? "STOP HIM" : "KEY PLAYER"; rib.classList.add("pcv-tab"); rib.remove(); card.classList.add("has-tab"); }
-    /* the closeout closes the card, a band of its colour with its word (unrated: black) */
-    const band=h("div",{class:"pcv-band "+(co? st : "neutral"), title:(coBar && coBar.title)||""}, co? co.k : "");
+    /* the closeout closes the card, a band of its colour with its word (unrated: black); when
+       writing, the working strip itself, clicked through its colours, or the line that puts it back */
+    let band=null;
+    if(editing){ const cw=q(".closeout-wrap"), add=q(".add-co-btn");
+      band=cw || add || null; if(band) band.classList.add("pcv-coedit"); }
+    else band=h("div",{class:"pcv-band "+(co? st : "neutral"), title:(coBar && coBar.title)||""}, co? co.k : "");
     /* put together: the tab, the strip and its column, the closeout */
     const frag=[rib, hero, band].filter(Boolean);
-    const keep=[...card.children].filter(x=>x.classList.contains("hl-tog"));
+    const keep=[...card.children].filter(x=>x.classList.contains("hl-tog") || (editing && x.classList.contains("card-toolbar")) || frag.indexOf(x)>=0);
     [...card.children].forEach(x=>{ if(keep.indexOf(x)<0) x.classList.add("pcv-old"); });
     frag.forEach(x=>card.appendChild(x));
   }catch(e){_quiet(e)}
@@ -12432,7 +12457,7 @@ function _preOpenCard(L, tid, c, canEd, save){
     /* and its usage, the same chip as on the board, and the same tidying */
     _preCardUse(card, L, tid, c);
     _preCardTidy(card, !mayWrite);
-    if(!mayWrite) _preCardHero(card);
+    _preCardHero(card);
     col.appendChild(card);
   }
   cols.appendChild(col);
@@ -13259,10 +13284,10 @@ function _prePhxBoard(L, C, canEd, redraw){
         if(tl && !tl.textContent.trim()){
           const w=tl.closest(".tagline-wrap"); if(w) w.remove(); else tl.remove();
         }
-        /* for reading, the card led by the player (the column passed: his position is said only
-           when it is not the column's) */
-        _preCardHero(card, pos);
       }
+      /* reading and writing alike, the card led by the player (the column passed: his second position
+         is said only when it is not the column's; editing keeps every field where it writes) */
+      _preCardHero(card, pos, canEd);
       col.appendChild(card);
     });
     if(canEd){
@@ -14065,7 +14090,10 @@ function _preCardsBlock(L, tid, rep, canEd, save){
       rep.data.cards=d; C=d; redraw();
     }},"↻ Rebuild from the league"));
   ban.appendChild(h("button",{class:"pc-rebuild pc-print", type:"button", title:"Print the roster positions on one A4 page, as large as it goes",
-    onclick:()=>_prePrintBoard(board.querySelector(".phx.pre-phx")||board, "roster")},"🖨 Print"));
+    onclick:()=>{ let src=board.querySelector(".phx.pre-phx")||board;
+      /* paper prints the card as it reads, also when the board is open for writing */
+      if(canEd){ try{ const ro=_prePhxBoard(L, C, false, ()=>{}); if(ro) src=ro; }catch(e){_quiet(e)} }
+      _prePrintBoard(src, "roster"); }},"🖨 Print"));
   if(!C){
     blk.appendChild(h("div",{class:"lg-empty"},
       _lgRosBusy[tid] && !(ros&&ros.err)
@@ -47383,8 +47411,9 @@ html body .phx.phx.pre-phx .card.pcv-side.has-tab .pcv-col > .pcv-body:first-chi
 html body .phx.phx.pre-phx .card.pcv-side .pcv-body .pcv-dr{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:3px 6px;margin:0 0 5px}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bh{display:flex;align-items:flex-start;gap:8px;margin:0 0 6px}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bhl{flex:1 1 auto;min-width:0}
-html body .phx.phx.pre-phx .card.pcv-side .pcv-bhr{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px;max-width:58%;margin:-2px -3px 0 0}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-bhr{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px;max-width:50%;margin:-2px -3px 0 0}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bhr .pcv-dr{flex-direction:column!important;align-items:flex-end!important;gap:2px!important;margin:0!important}
+html body .phx.phx.pre-phx .card.pcv-side .pcv-bhr .pcv-dr .doubt-badge.on{white-space:normal!important;height:auto!important;min-height:17px;line-height:1.2!important;text-align:center;padding:2px 6px!important;max-width:100%}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bhr .pcv-why{text-align:right;font-size:clamp(8px,3.8cqw,9.5px)!important;line-height:1.2!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bhl .tagline-wrap{margin:0!important}
 html body .phx.phx.pre-phx .card.pcv-side .pcv-bhl .tagline{overflow-wrap:normal!important;word-break:normal!important;hyphens:manual}
@@ -47452,6 +47481,49 @@ html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-col > .pcv-body::befor
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .stat-cell:not(.hl-hot){background:linear-gradient(180deg,#f7f8fa 0%,#ecEFF3 100%)!important;box-shadow:inset 0 1px 0 #fff,inset 0 0 0 1px rgba(16,24,40,.05)!important}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .stat-cell.hl-hot{background:linear-gradient(180deg,rgba(229,84,75,.08) 0%,rgba(229,84,75,.16) 100%)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.7),inset 0 0 0 1px rgba(229,84,75,.10)!important}
 html body:not(.dark) .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{background:linear-gradient(180deg,#f7f8fa 0%,#eceff3 100%)!important;box-shadow:inset 0 1px 0 #fff,inset 0 0 0 1px rgba(16,24,40,.05)!important}
+/* THE SAME CARD WHEN IT IS BEING WRITTEN (Oriol, 15/11/2026: "arregla el modo edición, que no se ven
+   igual"): the working card's own fields and controls, moved into the reading layout - each styled to sit
+   where it now lives, nothing more than reading shows except what writing needs. */
+html body .phx.phx.pre-phx .card.pcv-edit .removable{position:relative}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-stl .pos-badge.pcv-pos{position:static!important;inset:auto!important;display:inline-flex!important;align-items:center;justify-content:center;min-width:20px;height:clamp(16px,7.6cqw,19px)!important;padding:0 5px!important;margin:0!important;border:0!important;border-radius:5px!important;background:#c9a227!important;color:#1a1d23!important;font:700 clamp(9px,4.3cqw,10.5px)/1 'Oswald',sans-serif!important;letter-spacing:.06em!important;box-shadow:none!important}
+html body .phx.phx.pre-phx .card.pcv-edit .hand-badge.pcv-shand{position:absolute!important;top:6px!important;right:6px!important;left:auto!important;bottom:auto!important;z-index:3!important;display:inline-flex!important;align-items:center;justify-content:center;width:clamp(18px,8.6cqw,23px)!important;height:clamp(18px,8.6cqw,23px)!important;margin:0!important;padding:0!important;border-radius:50%!important;border:1px solid rgba(255,255,255,.6)!important;background:rgba(12,15,20,.78)!important;color:#fff!important;font:700 clamp(9.5px,4.6cqw,12px)/1 'Oswald',sans-serif!important;cursor:pointer}
+html body .phx.phx.pre-phx .card.pcv-edit .hand-badge.pcv-shand:empty{border-style:dashed!important;background:rgba(12,15,20,.42)!important}
+html body .phx.phx.pre-phx .card.pcv-edit .hand-badge.pcv-shand:empty::after{content:"?";opacity:.85}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-vname{pointer-events:auto}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-vname .name{display:block!important;font:700 clamp(15px,7.4cqw,21px)/1.02 'Oswald',sans-serif!important;letter-spacing:.02em!important;color:#fff!important;text-transform:uppercase!important;white-space:normal!important;overflow-wrap:normal!important;word-break:keep-all!important;max-height:100%;overflow:hidden;cursor:text}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-strip .meta{white-space:normal!important;cursor:text}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-sctl{position:absolute;right:5px;top:clamp(30px,13cqw,36px);z-index:4;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-sctl > *{position:static!important;inset:auto!important;margin:0!important}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-sctl .hl-tog{padding:2px 6px!important;font:700 8.5px/1.3 'Oswald',sans-serif!important;letter-spacing:.08em!important;border-radius:999px!important;background:rgba(12,15,20,.78)!important;color:#fff!important;border:0!important;white-space:nowrap;cursor:pointer}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-row2{display:flex!important;flex-direction:column!important;align-items:flex-end!important;flex-wrap:nowrap!important;gap:3px!important;margin:0!important;padding:0!important}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-row2 > .rm-x{position:absolute!important;top:-6px!important;left:-14px!important;right:auto!important}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-row2 .roster-badge{display:inline-flex!important;margin:0!important;padding:2px 6px!important;border-radius:6px!important;border:1px solid rgba(255,255,255,.08)!important;background:#1b2029!important;color:#d5dae2!important;font:800 8px/1.2 'Inter',sans-serif!important;letter-spacing:.1em!important;box-shadow:none!important;cursor:text}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-row2 .minutes{display:inline-flex!important;margin:0!important;padding:3px 6px!important;border-radius:7px!important;background:#1b2029!important;color:#d5dae2!important;font:600 clamp(11px,5cqw,13.5px)/1 'Oswald',sans-serif!important;white-space:nowrap;cursor:text}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-row2 .use-chip{margin:0!important}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-row2 .use-chip .uc-bar{display:none!important}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-row2 .doubt-badge{margin:0!important}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-row2 .doubt-why{max-width:100%;text-align:right;font:italic 500 9px/1.2 'Inter',sans-serif!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-edit .pcv-row2 .roster-badge{background:#fff!important;color:#3a404b!important;border-color:#dfe3e8!important}
+html body:not(.dark) .phx.phx.pre-phx .card.pcv-edit .pcv-row2 .minutes{background:#fff!important;color:#3a404b!important}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-stats .stat-bar{position:relative}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-stats .stat-bar > .rm-x{position:absolute!important;top:-6px!important;right:-6px!important;z-index:3}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-stats .stat-cell{position:relative}
+html body .phx.phx.pre-phx .card.pcv-edit .stat-cell .hl-cell{display:inline-flex!important;position:absolute!important;top:2px!important;right:3px!important;width:14px!important;height:14px!important;align-items:center;justify-content:center;margin:0!important;padding:0!important;border:0!important;background:none!important;font-size:9px!important;line-height:1!important;color:#8a92a0!important;cursor:pointer}
+html body .phx.phx.pre-phx .card.pcv-edit .stat-cell .rm-x-stat{position:absolute!important;top:2px!important;left:3px!important}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-stats .pc-addstat{min-height:34px;margin:0!important;border-radius:8px!important;border:1px dashed #8a92a0!important;background:transparent!important;color:#8a92a0!important;font-size:14px!important;cursor:pointer}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-stats .hl-auto{position:absolute!important;right:0;bottom:-15px;font-size:8px!important}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-body .add-block-btn{display:block!important;width:100%;margin:6px 0 0!important;padding:3px 6px!important;border:1px dashed #8a92a0!important;border-radius:6px!important;background:transparent!important;color:#8a92a0!important;font:600 10px/1.3 'Inter',sans-serif!important;text-align:center;cursor:pointer}
+html body .phx.phx.pre-phx .card.pcv-edit > .closeout-wrap.pcv-coedit{flex:none;position:relative;margin:0!important;padding:0!important;width:auto!important;border:0!important}
+html body .phx.phx.pre-phx .card.pcv-edit > .closeout-wrap.pcv-coedit .closeout-bar{display:flex!important;align-items:center;justify-content:center;min-height:21px!important;height:auto!important;padding:4px 8px!important;margin:0!important;border:0!important;border-radius:0!important;font:700 clamp(10.5px,5.4cqw,13px)/1 'Oswald',sans-serif!important;letter-spacing:.24em!important;text-transform:uppercase!important;color:#1a1d23!important;background:#08090c!important;box-shadow:none!important;cursor:pointer}
+html body .phx.phx.pre-phx .card.pcv-edit > .closeout-wrap .closeout-bar[data-state="green"]{background:#4ba089!important}
+html body .phx.phx.pre-phx .card.pcv-edit > .closeout-wrap .closeout-bar[data-state="red"]{background:#d8524e!important}
+html body .phx.phx.pre-phx .card.pcv-edit > .closeout-wrap .closeout-bar[data-state="yellow"]{background:#d9a521!important}
+html body .phx.phx.pre-phx .card.pcv-edit > .closeout-wrap .closeout-bar[data-state="neutral"],html body .phx.phx.pre-phx .card.pcv-edit > .closeout-wrap .closeout-bar:not([data-state]){color:#8a92a0!important}
+html body .phx.phx.pre-phx .card.pcv-edit > .closeout-wrap > .rm-x{position:absolute!important;right:6px!important;top:50%!important;transform:translateY(-50%);z-index:2}
+html body .phx.phx.pre-phx .card.pcv-edit > .add-co-btn.pcv-coedit{display:block!important;width:100%;min-height:21px;margin:0!important;border:0!important;border-top:1px dashed #8a92a0!important;border-radius:0!important;background:transparent!important;color:#8a92a0!important;font:600 10px 'Inter',sans-serif!important;cursor:pointer}
+html body .phx.phx.pre-phx .card.pcv-edit > .card-toolbar{position:absolute!important;top:4px!important;right:4px!important;left:auto!important;z-index:9!important;margin:0!important;border-radius:8px!important;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+html body .phx.phx.pre-phx .card.pcv-edit .pcv-col{padding-top:30px}
+html body .phx.phx.pre-phx .card.pcv-edit.has-tab .pcv-col > .pcv-body:first-child{margin-top:6px}
 /* ON PAPER (Oriol, 15/11/2026: "todos los ajustes que hacemos también para el botón de imprimir, que
    tenga el mismo formato"): the card goes on paper exactly as on screen, in its light dress. The light
    theme's own rules are written again for the paper copy where the marker stands when the CSS is
@@ -47512,6 +47584,8 @@ html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-col > .pcv-body::before{back
 html body .prb .phx.phx.pre-phx .card.pcv-side .stat-cell:not(.hl-hot){background:linear-gradient(180deg,#f7f8fa 0%,#ecEFF3 100%)!important;box-shadow:inset 0 1px 0 #fff,inset 0 0 0 1px rgba(16,24,40,.05)!important}
 html body .prb .phx.phx.pre-phx .card.pcv-side .stat-cell.hl-hot{background:linear-gradient(180deg,rgba(229,84,75,.08) 0%,rgba(229,84,75,.16) 100%)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.7),inset 0 0 0 1px rgba(229,84,75,.10)!important}
 html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{background:linear-gradient(180deg,#f7f8fa 0%,#eceff3 100%)!important;box-shadow:inset 0 1px 0 #fff,inset 0 0 0 1px rgba(16,24,40,.05)!important}
+html body .prb .phx.phx.pre-phx .card.pcv-edit .pcv-row2 .roster-badge{background:#fff!important;color:#3a404b!important;border-color:#dfe3e8!important}
+html body .prb .phx.phx.pre-phx .card.pcv-edit .pcv-row2 .minutes{background:#fff!important;color:#3a404b!important}
 html body .prb .phx.phx.pre-phx .roster-columns{background:#fff!important;padding:0!important;gap:8px!important}
 html body .prb .phx.phx.pre-phx .roster-columns .pos-col{background:#f4f5f7!important;border:1px solid #e3e6eb!important;padding:8px!important;gap:8px!important}
 html body .prb .phx.phx.pre-phx .roster-columns .pos-col-head{color:#141821!important;border-bottom-color:#d5d9e0!important;padding-bottom:6px!important}
