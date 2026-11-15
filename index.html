@@ -12114,7 +12114,9 @@ function _preUsage(L, tid){
       usg:t.sec? 100*pl*(T.sec/5)/(t.sec*tu) : null, share:100*pl/tu, ok:(t.gp||0)>=need && mpg>=10 }; });
   const ok=rows.filter(r=>r.ok && r.usg!=null).sort((a,b)=>b.usg-a.usg);
   ok.forEach((r,i)=>{ r.rank=i+1; });
-  ok.filter(r=>r.usg>=25 || (r.rank===1 && r.usg>=22)).slice(0,3).forEach(r=>{ r.focus=true; });
+  /* THE TOP THREE, ALWAYS (Oriol, 15/11/2026: "marca el top 3 siempre en fichas"): a threshold left
+     Bamberg with Wright alone at 30% and nothing on the others, which read as if they were at 0 */
+  ok.slice(0,3).forEach(r=>{ r.focus=true; });
   return { rows:rows, n:ok.length };
 }
 function _preUsageOf(U, c){
@@ -25900,9 +25902,14 @@ function _lgRoster(L){
      says when they are 4 points apart on 15 tagged possessions or more. */
   const tmU=tmT? (tmT.fga||0)+0.44*(tmT.fta||0)+Math.max(tmT.tov||0, (d.players||[]).reduce((a,p)=>a+(((p.all||{}).tov)||0),0)) : 0;
   const tgTot=tgRows.reduce((a,x)=>a+(x.n||0),0);
+  /* the column is a share of the team's possessions, so its rows add up to the whole: the team line
+     says the total (Oriol, 15/11/2026: "¿la tabla da 100% el total?") */
+  const useTot={ tg:0, sea:0, nTg:0, nSea:0 };
   const useCell=(r, p)=>{
     const tg=(r && tgTot)? 100*r.n/tgTot : null, ta=p && p.all;
     const sea=(ta && tmU)? 100*((ta.p2a||0)+(ta.p3a||0)+0.44*(ta.fta||0)+(ta.tov||0))/tmU : null;
+    if(tg!=null){ useTot.tg+=tg; useTot.nTg++; }
+    if(sea!=null){ useTot.sea+=sea; useTot.nSea++; }
     if(tg==null && sea==null) return h("td",{class:"rt-x"},"—");
     const sc=v=>Math.min(100, 100*v/35).toFixed(1)+"%";
     /* ONE NUMBER UNLESS IT REALLY MOVED (Oriol, 14/11/2026: "haz un promedio si los números son muy
@@ -25981,7 +25988,10 @@ function _lgRoster(L){
      team as a whole, so the team line leaves those blank rather than printing a number
      that looks like one */
   cols.forEach(c=>ar.appendChild(h("td",{}, c.solo? "\u2014" : _lgRsTxt(c, tot, per, ctx))));
-  if(TG){ ar.appendChild(h("td",{class:"grp"},"")); ar.appendChild(h("td",{},"")); ar.appendChild(h("td",{}, TG.avg==null? "" : Number(TG.avg).toFixed(2)));
+  if(TG){ ar.appendChild(h("td",{class:"grp"},""));
+    ar.appendChild(useTot.nTg || useTot.nSea? h("td",{class:"rt-use2 tot", title:"All their players together: "+(useTot.nTg? "games tagged "+Math.round(useTot.tg)+"%" : "not tagged yet")+(useTot.nSea? " · season "+Math.round(useTot.sea)+"%" : "")+" of the team's possessions. The season can fall a point short of 100: turnovers the sheet gives to the team, not to a player"},
+      h("span",{class:"u-n"}, h("b",{}, useTot.nTg? Math.round(useTot.tg)+"%" : "—"), useTot.nSea? h("i",{}, Math.round(useTot.sea)+"%") : null)) : h("td",{},""));
+    ar.appendChild(h("td",{}, TG.avg==null? "" : Number(TG.avg).toFixed(2)));
     for(let i=0;i<2+tgUsed.length;i++) ar.appendChild(h("td",{class:i===2? "grp" : ""},"")); }
   tbl.appendChild(ar);
   /* Inside a report the full box score is not what is read first - the cards above are -
