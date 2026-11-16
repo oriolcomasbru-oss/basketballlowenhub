@@ -6086,7 +6086,7 @@ let SB_SCOPE=null;
    network may be down, the row may not exist yet. That direction matters: a failure
    leaves a player with less, never with more. */
 const PLAYER_VIEW_KEY="settings:playerview";
-const PLAYER_VIEW_DEFAULT={ sects:["oppscout"], blocks:["stats","positions","roles"], dash:[], people:{} };
+const PLAYER_VIEW_DEFAULT={ sects:["oppscout"], blocks:["stats","positions","roles"], dash:[], people:{}, staff:[] };
 /* A SCREEN FOR ONE PLAYER, NOT THE SQUAD (Oriol, 16/11/2026: "dale acceso a playbook a Eddy, déjame
    poder dar acceso a playbook a los jugadores que quiera"). Beside what every player sees, the same
    document keeps, name by name, the screens given to that player alone: people = { name: ["playbook"] }.
@@ -6100,7 +6100,10 @@ function _pvPeople(o){ const out={};
 function playerHas(u, sect){ const a=((PLAYER_VIEW && PLAYER_VIEW.people)||{})[u]; return Array.isArray(a) && a.indexOf(sect)>=0; }
 /* THE PARTS OF A PLAYER'S OWN DASHBOARD THE STAFF CAN HOLD BACK (Oriol, 9/11/2026: the rebounding and
    defense goals off for the players for now - the staff, looking at a player's dashboard, still sees
-   them, marked). Not in the saved setting = hidden from players */
+   them, marked). Not in the saved setting = hidden from players.
+   AND FROM THE STAFF TOO (Oriol, 16/11/2026: "oculta a mí también la visión de los rebotes, que lo pueda
+   configurar en permissions"): the same parts again for the staff looking at a player's dashboard -
+   staff = the ones the staff see there. Not in the saved setting = hidden from the staff as well */
 const PLAYER_DASH=[
   ["goals","Your goals · rebounding and defense"],
   ["gbg","Game by game"],
@@ -6123,7 +6126,7 @@ const PLAYER_BLOCKS=[
   ["tagging","Opponent tagging"],
   ["colourkey","Colour key"]
 ];
-let PLAYER_VIEW={ sects:PLAYER_VIEW_DEFAULT.sects.slice(), blocks:PLAYER_VIEW_DEFAULT.blocks.slice(), dash:PLAYER_VIEW_DEFAULT.dash.slice(), people:{} };
+let PLAYER_VIEW={ sects:PLAYER_VIEW_DEFAULT.sects.slice(), blocks:PLAYER_VIEW_DEFAULT.blocks.slice(), dash:PLAYER_VIEW_DEFAULT.dash.slice(), people:{}, staff:[] };
 function isPlayerUser(){ return SB_SCOPE==="player"; }
 /* may a player see this part of a pre-game report */
 /* READERS: staff who read the club and its opponents but do not work on the reports.
@@ -6138,7 +6141,8 @@ function playerBlockOk(id){ return !viewsAsPlayer() || PLAYER_VIEW.blocks.indexO
 /* may this part of the player's own dashboard be shown: to a player (or the staff viewing as one) only when
    switched on; the staff always see it */
 function playerDashOn(id){ return (PLAYER_VIEW.dash||[]).indexOf(id)>=0; }
-function playerDashOk(id){ return !isPlayerUser() || playerDashOn(id); }
+function staffDashOn(id){ return (PLAYER_VIEW.staff||[]).indexOf(id)>=0; }
+function playerDashOk(id){ return isPlayerUser()? playerDashOn(id) : staffDashOn(id); }
 function applyRoleFloor(u){
   if(SB_SCOPE!=="player") return;
   ensurePerms();
@@ -6157,7 +6161,8 @@ async function loadPlayerView(){
       got={ sects:d.sects.filter(k=>SECT_KEYS.indexOf(k)>=0),
             blocks:d.blocks.filter(k=>PLAYER_BLOCKS.some(b=>b[0]===k)),
             dash:(Array.isArray(d.dash)? d.dash : []).filter(k=>PLAYER_DASH.some(b=>b[0]===k)),
-            people:_pvPeople(d.people) };
+            people:_pvPeople(d.people),
+            staff:(Array.isArray(d.staff)? d.staff : []).filter(k=>PLAYER_DASH.some(b=>b[0]===k)) };
   }catch(e){_quiet(e)}
   if(!got) return false;
   PLAYER_VIEW=got;
@@ -6168,8 +6173,9 @@ async function loadPlayerView(){
   }
   return true;
 }
-async function savePlayerView(sects, blocks, dash, people){
-  const body={ sects:sects.slice(), blocks:blocks.slice(), dash:(dash||PLAYER_VIEW.dash||[]).slice(), people:_pvPeople(people||PLAYER_VIEW.people) };
+async function savePlayerView(sects, blocks, dash, people, staff){
+  const body={ sects:sects.slice(), blocks:blocks.slice(), dash:(dash||PLAYER_VIEW.dash||[]).slice(), people:_pvPeople(people||PLAYER_VIEW.people),
+    staff:(staff||PLAYER_VIEW.staff||[]).filter(k=>PLAYER_DASH.some(b=>b[0]===k)) };
   const r=await sbrpc("save_report",{p_token:SB_TOKEN,p_key:PLAYER_VIEW_KEY,p_kind:"settings",
     p_opponent:"",p_date:null,p_data:body,p_html:null});
   if(!r||r.ok!==true) throw new Error((r&&r.error)||"Could not save");
@@ -6371,7 +6377,7 @@ async function refreshAdmin(body){
     body.appendChild(s); }
 
   /* ---- PLAYERS: the same for every player, one setting for the squad */
-  { const sects=PLAYER_VIEW.sects.slice(), blocks=PLAYER_VIEW.blocks.slice(), dash=(PLAYER_VIEW.dash||[]).slice();
+  { const sects=PLAYER_VIEW.sects.slice(), blocks=PLAYER_VIEW.blocks.slice(), dash=(PLAYER_VIEW.dash||[]).slice(), staff=(PLAYER_VIEW.staff||[]).slice();
     const people=JSON.parse(JSON.stringify(_pvPeople(PLAYER_VIEW.people)));
     const btn=h("button",{class:"btn sm primary"},"Save players' view"); btn.disabled=true;
     const note=h("span",{class:"adm-pv-note"},"");
@@ -6384,6 +6390,7 @@ async function refreshAdmin(body){
     s.appendChild(tbl("Screens", SECT_KEYS.filter(k=>!sectHidden(k)).map(k=>[k,SECT_LABELS[k]||k]), sects));
     s.appendChild(tbl("Inside a published pre game", PLAYER_BLOCKS, blocks));
     s.appendChild(tbl("Inside the player's dashboard", PLAYER_DASH, dash));
+    s.appendChild(tbl("A player's dashboard · what the staff see", PLAYER_DASH, staff));
     /* the screens given to one player alone: a chip a player account, lit when he has it */
     PLAYER_PERSONAL.forEach(([k, l])=>{
       const all=sects.indexOf(k)>=0;
@@ -6398,7 +6405,7 @@ async function refreshAdmin(body){
           return h("label",{class:"adm-chip"}, cb, h("span",{}, "👁 "+u)); })));
     });
     btn.onclick=async ()=>{ btn.disabled=true; note.textContent="Saving…";
-      try{ await savePlayerView(sects, blocks, dash, people); note.textContent="Saved"; note.className="adm-pv-note ok"; }
+      try{ await savePlayerView(sects, blocks, dash, people, staff); note.textContent="Saved"; note.className="adm-pv-note ok"; }
       catch(e){ note.textContent="Could not save: "+((e&&e.message)||e); note.className="adm-pv-note bad"; btn.disabled=false; } };
     body.appendChild(s); }
 
@@ -30604,6 +30611,45 @@ function _dashSwitch(cur){
    three, the one the staff has published opens, the others are there and locked until the
    staff opens them. Only time with the pre game on screen and in use counts. */
 let _pdCalMonth="";   /* the month the player's calendar shows, this visit ("" = this month) */
+/* ONE SCOUTING IN A PLAYER'S USE: the days from the day after our game before to the game itself - his
+   time on the pre game screen, on that report itself, in the whole hub, and every video he opened with
+   the times he opened it and the time it played (the Playbook's videos are not the scout's). The old
+   hub's sessions where it has them, matched by the scout's name. Read the same on his dashboard and on
+   the staff's, so the two never disagree (Oriol, 16/11/2026: "cuántos vídeos abrieron y cuánto tiempo
+   estuvieron en cada vídeo, y el tiempo general"). */
+function _useStudy(doc, x, prev, toDay){
+  const days=(doc && doc.days)||{};
+  const legacy=((doc && doc.legacy && doc.legacy.sessions)||[]).filter(s=>s && s.at);
+  const from=prev? addDays(prev.g.date,1) : addDays(x.g.date,-7), to=toDay||x.g.date;
+  let sec=0, all=0, vids=0, vsec=0, dset=0; const per=[], V={};
+  for(let d=from; d<=to; d=addDays(d,1)){ const y=days[d]||{};
+    const s=(y.vsec||{}).oppscout||0; sec+=s; all+=(y.sec||0); per.push({ d:d, s:s });
+    let vd=0;
+    Object.keys(y.vids||{}).forEach(id=>{ const v=y.vids[id]; if(!v || v.where==="playbook") return; vids+=(v.n||0); vsec+=(v.sec||0); vd+=(v.n||0);
+      const e=V[id]||(V[id]={ id:id, n:0, sec:0, title:v.title||"", where:v.where||"" }); e.n+=(v.n||0); e.sec+=(v.sec||0); if(v.title) e.title=v.title; });
+    if(s>0 || vd>0) dset++; }
+  let rep=0; Object.keys(days).forEach(d=>{ rep+=(((days[d]||{}).rsec||{})["pre:"+x.g.id]||0); });
+  const list=Object.keys(V).map(k=>V[k]).sort((a,b)=>b.sec-a.sec||b.n-a.n);
+  const opp=_lgNorm(x.g.opponent||"");
+  const ls=legacy.filter(s=>{ const ws=String(s.scout||"").split(/\s+/).map(_lgNorm).filter(w=>w.length>=4);
+    return ws.some(w=>opp.indexOf(w)>=0) && s.at.slice(0,10)<=x.g.date && s.at.slice(0,10)>=addDays(from,-7); });
+  if(ls.length){
+    const LV={}, pd={}; let ls_sec=0, ls_n=0;
+    ls.forEach(s=>{ ls_sec+=s.sec; const d=s.at.slice(0,10); pd[d]=(pd[d]||0)+s.sec;
+      (s.vids||[]).forEach(v=>{ ls_n+=v.n; const e=LV[v.t]||(LV[v.t]={ id:v.t, n:0, sec:0, title:v.t, where:"old hub" }); e.n+=v.n; e.sec=Math.max(e.sec, v.sec); }); });
+    /* a video's time in the old hub is the time it played in that session: the longest of its
+       sessions is kept per video, so watching it twice does not double it */
+    const ls_vs=Object.keys(LV).reduce((a,k)=>a+LV[k].sec,0);
+    const ds=Object.keys(pd).sort(), f0=ds[0]<from? ds[0] : from;
+    const per2=[]; for(let d=f0; d<=to; d=addDays(d,1)) per2.push({ d:d, s:pd[d]||0 });
+    return { x:x, from:f0, to:to, sec:ls_sec, rep:0, all:ls_sec, vids:ls_n, vsec:ls_vs, vlist:Object.keys(LV).map(k=>LV[k]).sort((a,b)=>b.sec-a.sec||b.n-a.n), days:ds.length, per:per2, old:true, sessions:ls.length };
+  }
+  return { x:x, from:from, to:to, sec:sec, rep:rep, all:Math.max(all, sec), vids:vids, vsec:vsec, vlist:list, days:dset, per:per };
+}
+/* the first day this app has anything for him: a scouting before it is "not recorded", never nought */
+function _useCovStart(doc){ const days=(doc && doc.days)||{}; return Object.keys(days).filter(d=>((days[d]||{}).sec||0)>0).sort()[0]||null; }
+/* a time said short: 0:45, 12:05, 1 h 05 */
+function _useClock(s){ s=Math.round(s||0); if(s>=3600){ const m=Math.round(s/60); return Math.floor(m/60)+" h "+String(m%60).padStart(2,"0"); } return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
 async function _playerDash(root, who){
   const G=_dashGames(), T=todayISO();
   const page=h("div",{class:"dash pdash pd3"}); root.appendChild(page);
@@ -30659,48 +30705,33 @@ async function _playerDash(root, who){
   let doc=null;
   try{ const r=await sbrpc("get_report",{ p_token:SB_TOKEN, p_key:useKey(nm) }); doc=r && r.ok && r.report && r.report.data; }catch(e){_quiet(e)}
   try{ if(own && _use && !_viewAs) doc=doc && doc.days? _useMerge(doc, _use) : _use; }catch(e){_quiet(e)}
-  const days=(doc && doc.days)||{};
-  const legacy=((doc && doc.legacy && doc.legacy.sessions)||[]).filter(s=>s && s.at);
-  /* one scouting: the days from the day after our game before, to the game itself */
-  const study=(x, prev, toDay)=>{
-    const from=prev? addDays(prev.g.date,1) : addDays(x.g.date,-7), to=toDay||x.g.date;
-    let sec=0, vids=0, vsec=0, dset=0; const per=[], V={};
-    for(let d=from; d<=to; d=addDays(d,1)){ const y=days[d]||{};
-      const s=(y.vsec||{}).oppscout||0; sec+=s; per.push({ d:d, s:s });
-      if(s>0) dset++;
-      Object.keys(y.vids||{}).forEach(id=>{ const v=y.vids[id]; if(v.where==="playbook") return; vids+=(v.n||0); vsec+=(v.sec||0);
-        const e=V[id]||(V[id]={ id:id, n:0, sec:0, title:v.title||"", where:v.where||"" }); e.n+=(v.n||0); e.sec+=(v.sec||0); if(v.title) e.title=v.title; }); }
-    let rep=0; Object.keys(days).forEach(d=>{ rep+=((days[d].rsec||{})["pre:"+x.g.id]||0); });
-    const list=Object.keys(V).map(k=>V[k]).sort((a,b)=>b.sec-a.sec||b.n-a.n);
-    /* the old hub, when it has the sessions of this scouting: matched by the scout's name */
-    const opp=_lgNorm(x.g.opponent||"");
-    const ls=legacy.filter(s=>{ const ws=String(s.scout||"").split(/\s+/).map(_lgNorm).filter(w=>w.length>=4);
-      return ws.some(w=>opp.indexOf(w)>=0) && s.at.slice(0,10)<=x.g.date && s.at.slice(0,10)>=addDays(from,-7); });
-    if(ls.length){
-      const LV={}, pd={}; let ls_sec=0, ls_n=0, ls_vs=0;
-      ls.forEach(s=>{ ls_sec+=s.sec; const d=s.at.slice(0,10); pd[d]=(pd[d]||0)+s.sec;
-        (s.vids||[]).forEach(v=>{ ls_n+=v.n; ls_vs+=v.sec; const e=LV[v.t]||(LV[v.t]={ id:v.t, n:0, sec:0, title:v.t, where:"old hub" }); e.n+=v.n; e.sec=Math.max(e.sec, v.sec); }); });
-      /* a video's time in the old hub is the time it played in that session: the longest
-         of its sessions is kept per video, so watching it twice does not double it */
-      ls_vs=Object.keys(LV).reduce((a,k)=>a+LV[k].sec,0);
-      const ds=Object.keys(pd).sort(), f0=ds[0]<from? ds[0] : from;
-      const per2=[]; for(let d=f0; d<=to; d=addDays(d,1)) per2.push({ d:d, s:pd[d]||0 });
-      return { x:x, from:f0, to:to, sec:ls_sec, rep:0, vids:ls_n, vsec:ls_vs, vlist:Object.keys(LV).map(k=>LV[k]).sort((a,b)=>b.sec-a.sec||b.n-a.n), days:ds.length, per:per2, old:true, sessions:ls.length };
-    }
-    return { x:x, from:from, to:to, sec:sec, rep:rep, vids:vids, vsec:vsec, vlist:list, days:dset, per:per };
-  };
+  /* one scouting: the days from the day after our game before, to the game itself (_useStudy) */
+  const study=(x, prev, toDay)=>_useStudy(doc, x, prev, toDay);
   const mins=s=>{ const m=Math.round(s/60); return m<60? m+" min" : Math.floor(m/60)+" h "+String(m%60).padStart(2,"0")+" min"; };
   /* WHERE EACH NUMBER COMES FROM. The old hub has the scoutings up to Vechta; this app
      records from the first day it has anything for him. A scouting neither covers is said
      to be not recorded - never shown as nought, which would read as "did not study". */
-  const covStart=Object.keys(days).filter(d=>(days[d].sec||0)>0).sort()[0]||null;
+  const covStart=_useCovStart(doc);
   const recorded=S=>S.old || (covStart && S.to>=covStart);
-  const src=S=>S.old? "old hub" : "this app";
-  const clock=s=>Math.floor(s/60)+":"+String(Math.round(s%60)).padStart(2,"0");
+  /* a scouting's time said short: 25 min, 1 h 50 */
+  const clock=s=>{ const m=Math.round(s/60); return m<60? m+" min" : Math.floor(m/60)+" h "+String(m%60).padStart(2,"0"); };
+  const nV=S=>(S.vlist||[]).length;
+  /* EVERY VIDEO HE OPENED, AND ITS TIME (Oriol, 16/11/2026): one line a video - whose it is, how many
+     times he opened it, how long it played - the longest first */
+  const vidList=S=>{ const L=S.vlist||[];
+    if(!L.length) return h("div",{class:"p3-vnone"}, "No video opened yet");
+    const mx=Math.max(1, ...L.map(v=>v.sec));
+    return h("div",{class:"p3-vl"}, L.map(v=>h("div",{class:"p3-v"+(v.sec<15? " z" : ""), title:(v.title||"Video")+" · opened "+v.n+(v.n===1? " time" : " times")+" · "+_useClock(v.sec)+" playing"+(v.where? " · "+v.where : "")},
+      h("b",{}, v.title||"Video"), h("span",{class:"n"}, "×"+(v.n||1)), h("span",{class:"t"}, h("u",{style:"width:"+Math.round(100*v.sec/mx)+"%"})), h("em",{}, _useClock(v.sec))))); };
+  /* the same, small, under a scouting of before: a chip a video with its time */
+  const vidChips=S=>{ const L=S.vlist||[];
+    return h("div",{class:"p3-vc"}, L.length? L.map(v=>h("span",{title:(v.title||"Video")+" · opened "+v.n+(v.n===1? " time" : " times")+" · "+_useClock(v.sec)+" playing"},
+      h("b",{}, v.title||"Video"), " "+_useClock(v.sec), v.n>1? h("i",{}, " ×"+v.n) : null)) : h("span",{class:"none"}, "no video opened")); };
   const past=G.past.filter(x=>!ph(x.g)), last=past[past.length-1];
   const hist=past.slice(-6).map(x=>{ const k=past.indexOf(x); return study(x, past[k-1]); }).filter(recorded);
   const avg=hist.length? hist.reduce((a,s)=>a+s.sec,0)/hist.length : null;
-  /* ---- this game */
+  /* ---- this game: his time on the scout, big; the days, the videos and their time, the whole hub;
+     then every video he opened */
   bNow.innerHTML="";
   const nx0=G.upcoming.filter(x=>!ph(x.g))[0];
   if(nx0 && last){ const N=study(nx0, last, T);
@@ -30708,18 +30739,33 @@ async function _playerDash(root, who){
     bNow.appendChild(h("i",{}, "Studying "+nx0.g.opponent+" · since "+_dashFmt(N.from)));
     bNow.appendChild(h("b",{class:"big"}, mins(N.sec)));
     bNow.appendChild(h("span",{class:"side"},
-      h("span",{}, h("b",{}, String(N.days)), " day"+(N.days===1? "" : "s")+" opened · ", h("b",{}, String(N.vids)), " video"+(N.vids===1? "" : "s")),
+      h("span",{}, h("b",{}, String(N.days)), " day"+(N.days===1? "" : "s")+" opened"),
+      h("span",{}, h("b",{}, String(nV(N))), " video"+(nV(N)===1? "" : "s")+" opened", N.vids>nV(N)? " ("+N.vids+" times)" : "", N.vsec? " · " : "", N.vsec? h("b",{}, mins(N.vsec)) : null, N.vsec? " playing" : ""),
+      h("span",{}, "in the hub in all: ", h("b",{}, mins(N.all))),
       avg!=null? h("span",{}, "your average: ", h("b",{}, mins(avg)), " a scouting") : null));
     const bar=h("span",{class:"p3-bar"}, h("u",{style:"width:"+Math.round(100*N.sec/mx)+"%"}));
     if(avg!=null) bar.appendChild(h("s",{style:"left:"+Math.round(100*avg/mx)+"%", title:"your average"}));
     bNow.appendChild(bar);
+    bNow.appendChild(h("div",{class:"p3-vh"}, "The videos · each one and its time"));
+    bNow.appendChild(vidList(N));
     bNow.classList.toggle("under", avg!=null && N.sec<avg);
   } else bNow.appendChild(h("div",{class:"dash-miss"},"No next game in the calendar yet."));
-  /* ---- before */
+  /* ---- before: the scoutings in all on top (the general time), then one line a scouting - its
+     time, its videos and their time - and the videos under it */
   if(!hist.length) bHist.appendChild(h("div",{class:"dash-miss"},"Nothing recorded yet."));
+  else { const tot=hist.reduce((a,s)=>({ sec:a.sec+s.sec, all:a.all+(s.all||s.sec), v:a.v+nV(s), vs:a.vs+(s.vsec||0) }), { sec:0, all:0, v:0, vs:0 });
+    bHist.appendChild(h("div",{class:"p3-tot"},
+      h("span",{}, h("i",{}, "On the scouts"), h("b",{}, mins(tot.sec))),
+      h("span",{}, h("i",{}, "Videos"), h("b",{}, String(tot.v))),
+      h("span",{}, h("i",{}, "Playing them"), h("b",{}, mins(tot.vs))),
+      h("span",{}, h("i",{}, "In the hub in all"), h("b",{}, mins(tot.all))),
+      h("small",{}, "the last "+hist.length+" scouting"+(hist.length===1? "" : "s")))); }
   const hm=Math.max(1, ...hist.map(s=>s.sec));
-  hist.slice().reverse().forEach(s=>bHist.appendChild(h("div",{class:"p3-row", title:s.days+" days · "+s.vids+" videos · "+(s.old? "old hub" : "this app")},
-    h("b",{}, s.x.g.opponent), h("span",{class:"t"}, h("u",{style:"width:"+Math.round(100*s.sec/hm)+"%"})), h("em",{}, clock(s.sec)))));
+  hist.slice().reverse().forEach(s=>{
+    bHist.appendChild(h("div",{class:"p3-row", title:s.days+" days · "+nV(s)+" videos · "+_useClock(s.vsec||0)+" playing · "+(s.old? "old hub" : "this app")},
+      h("b",{}, s.x.g.opponent), h("span",{class:"t"}, h("u",{style:"width:"+Math.round(100*s.sec/hm)+"%"})), h("em",{}, clock(s.sec)),
+      h("span",{class:"vv"+(nV(s)? "" : " z")}, "▶ "+nV(s), h("i",{}, " · "+_useClock(s.vsec||0)))));
+    bHist.appendChild(vidChips(s)); });
 }
 /* ==== THE PLAYER'S GOALS: REBOUNDING AND DEFENSE (Oriol, 9/11/2026: "el objetivo del equipo es
    mejorar en defensa y en rebote") ================================================================
@@ -30954,7 +31000,8 @@ const _rgKeyT=()=>h("div",{class:"rg-key"}, h("span",{}, h("s",{class:"ko"}), "w
 function _rgBlock(nm){
   const wrap=h("div",{class:"rg"});
   /* each section only where it may be shown: a player sees it when the staff switched it on in Players ·
-     what every player sees; the staff always see it, the band saying when the players do not */
+     what every player sees; the staff when it is switched on for them in the row under it (16/11/2026),
+     the band saying when the players do not */
   const tag=(t, id)=>h("div",{class:"p3-tag"}, t, (id && !isPlayerUser() && !playerDashOn(id))? h("span",{class:"p3-hid", title:"Switched off in Permissions & users › Players · what they see"}, "hidden from players") : null);
   const into=id=>playerDashOk(id)? wrap : h("div",{});
   const shown=PLAYER_DASH.filter(([k])=>playerDashOk(k));
@@ -31812,35 +31859,92 @@ function renderDashboard(){
     scoutv:()=>{
       const nx=G.upcoming[0];
       const c=card("wide", "The scout · who has watched it", nx? ()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:nx.g.id } }) : null, "Pre game");
-      if(!nx){ c.__b.appendChild(h("div",{class:"dash-miss"},"No game in the calendar.")); return; }
-      const g=nx.g, prev=G.past[G.past.length-1], from=prev? addDays(prev.g.date,1) : addDays(g.date,-7), to=T<g.date? T : g.date;
-      const head=h("div",{class:"sv-head"}, crest(g), h("b",{}, (g.venue==="Away"? "@ " : "vs ")+_lgShort(g.opponent)), h("span",{}, _dashFmt(g.date)+(g.time? " · "+g.time : "")+" · from "+_dashFmt(from)), h("span",{class:"sv-pub"},"…"));
-      c.__b.appendChild(head);
-      _dashRep(g).then(rep=>{ const ok=!!(rep && rep.share_state==="published"); const p=head.querySelector(".sv-pub"); p.textContent=ok? "published for the players" : "not published yet"; p.className="sv-pub "+(ok? "ok" : "no"); }).catch(_quiet);
       const names=(typeof rosterUsers==="function"? rosterUsers() : []).map(p=>p.name).filter(Boolean);
-      const body=h("div",{}, loading("Reading what each player opened…")); c.__b.appendChild(body);
-      const rows=names.map(n=>({ n:n, sec:0, rep:0, vids:0, days:0, last:null, done:false }));
-      const paint=()=>{ body.innerHTML="";
-        const seen=rows.filter(r=>Math.max(r.sec,r.rep)>=60 || r.vids>0), not=rows.filter(r=>r.done && seen.indexOf(r)<0), wait=rows.filter(r=>!r.done);
+      const rows=names.map(n=>({ n:n, doc:null, sec:0, rep:0, vids:0, vsec:0, days:0, last:null, done:false }));
+      /* THE LAST FIVE SCOUTS, COMPACT (Oriol, 16/11/2026: "una visión compacta de lo que vieron los últimos
+         5 partidos, quién sí, quién no y tiempo; añade cuántos vídeos miraron"): a row a player, a column
+         a game - his time on that pre game and the videos he opened, a red cross when he did not open it,
+         a dot where this app had not started recording yet; a lock on a game not published for them */
+      const past=G.past.filter(x=>{ try{ return !_gamePlaceholder(x.g.opponent); }catch(e){ return true; } });
+      const L5=past.slice(-5).map(x=>({ x:x, prev:past[past.indexOf(x)-1]||null, pub:null }));
+      let body=null, b5=null;
+      if(!nx) c.__b.appendChild(h("div",{class:"dash-miss"},"No game in the calendar."));
+      else {
+        const g=nx.g, prev=G.past[G.past.length-1], to=T<g.date? T : g.date;
+        const head=h("div",{class:"sv-head"}, crest(g), h("b",{}, (g.venue==="Away"? "@ " : "vs ")+_lgShort(g.opponent)), h("span",{}, _dashFmt(g.date)+(g.time? " · "+g.time : "")+" · from "+_dashFmt(prev? addDays(prev.g.date,1) : addDays(g.date,-7))), h("span",{class:"sv-pub"},"…"));
+        c.__b.appendChild(head);
+        _dashRep(g).then(rep=>{ const ok=!!(rep && rep.share_state==="published"); const p=head.querySelector(".sv-pub"); p.textContent=ok? "published for the players" : "not published yet"; p.className="sv-pub "+(ok? "ok" : "no"); }).catch(_quiet);
+        body=h("div",{}, loading("Reading what each player opened…")); c.__b.appendChild(body);
+        rows.forEach(r=>{ r.study=()=>{ const S=_useStudy(r.doc, nx, prev, to);
+          r.sec=S.sec; r.rep=S.rep; r.vids=(S.vlist||[]).length; r.vsec=S.vsec||0; r.days=S.days;
+          r.last=null; (S.per||[]).forEach(p=>{ if(p.s>0) r.last=p.d; }); }; });
+      }
+      if(L5.length){ c.__b.appendChild(h("div",{class:"sv5-h"}, h("b",{}, "The last "+L5.length+" scouts"), h("span",{}, "who watched them · minutes on the pre game · ▶ videos opened")));
+        b5=h("div",{class:"sv5-b"}, loading("Reading the last games…")); c.__b.appendChild(b5);
+        L5.forEach(C=>_dashRep(C.x.g).then(rep=>{ C.pub=!!(rep && rep.share_state==="published"); paint5(); }).catch(_quiet)); }
+      const paint=()=>{ if(!body) return; body.innerHTML="";
+        const seen=rows.filter(r=>r.done && (Math.max(r.sec,r.rep)>=60 || r.vids>0)), not=rows.filter(r=>r.done && seen.indexOf(r)<0), wait=rows.filter(r=>!r.done);
         if(not.length) body.appendChild(h("div",{class:"sv-not"}, h("b",{}, not.length+" not yet: "), not.map(r=>r.n).join(" · ")));
         if(seen.length){ const mx=Math.max(60, ...seen.map(r=>Math.max(r.sec,r.rep)));
           const t=h("table",{class:"sv-t"}, h("tr",{}, h("th",{class:"l"},"Player"), h("th",{class:"l"},"Time on the scout"), h("th",{},"Videos"), h("th",{},"Days"), h("th",{class:"l"},"Last")));
           seen.sort((a,b)=>Math.max(b.sec,b.rep)-Math.max(a.sec,a.rep)).forEach(r=>{ const s=Math.max(r.sec,r.rep), m=Math.round(s/60);
             t.appendChild(h("tr",{}, h("td",{class:"l"}, h("b",{}, r.n)),
               h("td",{class:"l"}, h("span",{class:"sv-bar"}, h("i",{style:"width:"+Math.round(100*s/mx)+"%"})), " "+(m<60? m+" min" : Math.floor(m/60)+" h "+String(m%60).padStart(2,"0"))),
-              h("td",{}, r.vids? String(r.vids) : "—"), h("td",{}, String(r.days)), h("td",{class:"l mu"}, r.last? _dashFmt(r.last) : "—"))); });
+              h("td",{}, r.vids? h("span",{}, String(r.vids), h("i",{class:"sv-vt"}, " · "+_useClock(r.vsec))) : "—"), h("td",{}, String(r.days)), h("td",{class:"l mu"}, r.last? _dashFmt(r.last) : "—"))); });
           body.appendChild(t); }
         if(wait.length) body.appendChild(h("div",{class:"ld"}, "Reading "+wait.length+" more…", h("span",{class:"ld-bar"})));
         if(!rows.length) body.appendChild(h("div",{class:"dash-miss"},"No player accounts in the roster."));
-        body.appendChild(h("div",{class:"dash-src"},"Time counts while the page is open and in use; a player who has not opened it for a minute counts as not yet. Videos: the plays he pressed."));
+        body.appendChild(h("div",{class:"dash-src"},"Time counts while the page is open and in use; a player who has not opened it for a minute counts as not yet. Videos: the clips he opened, and how long they played."));
       };
-      (async ()=>{ /* all of them at once: four at a time was five rounds one after the other */ for(let i=0;i<rows.length;i+=Math.max(1,rows.length)){ await Promise.all(rows.slice(i).map(async r=>{
-          try{ const x=await sbrpc("get_report",{ p_token:SB_TOKEN, p_key:useKey(r.n) }); const days=(x && x.ok && x.report && x.report.data && x.report.data.days)||{};
-            for(let d=from; d<=to; d=addDays(d,1)){ const y=days[d]; if(!y) continue; const s=(y.vsec||{}).oppscout||0, rs=((y.rsec||{})["pre:"+g.id])||0;
-              let v=0; Object.keys(y.vids||{}).forEach(id=>{ const z=y.vids[id]; if(z.where!=="playbook") v+=(z.n||0); });
-              r.sec+=s; r.rep+=rs; r.vids+=v; if(s+rs>0 || v>0){ r.days++; r.last=d; } } }catch(e){_quiet(e)}
-          r.done=true; })); paint(); } })();
-      paint();
+      const paint5=()=>{ if(!b5) return; b5.innerHTML="";
+        const wait=rows.filter(r=>!r.done);
+        if(wait.length){ b5.appendChild(h("div",{class:"ld"}, "Reading "+wait.length+" more…", h("span",{class:"ld-bar"}))); return; }
+        if(!rows.length){ b5.appendChild(h("div",{class:"dash-miss"},"No player accounts in the roster.")); return; }
+        /* the first day this app recorded anybody: a scout before it is not recorded, never a cross */
+        const cov=rows.map(r=>_useCovStart(r.doc)).filter(Boolean).sort()[0]||null;
+        const M=rows.map(r=>{ let n=0, sec=0, rec=0; const cells=L5.map(C=>{ const S=_useStudy(r.doc, C.x, C.prev);
+            const ok=!!(S.old || (cov && S.to>=cov)), t=Math.max(S.sec, S.rep), nv=(S.vlist||[]).length, saw=ok && (t>=60 || nv>0);
+            if(ok) rec++; if(saw){ n++; sec+=t; }
+            return { ok:ok, t:t, nv:nv, vs:S.vsec||0, saw:saw, S:S }; });
+          return { r:r, cells:cells, n:n, sec:sec, rec:rec }; }).sort((a,b)=>b.n-a.n || b.sec-a.sec || String(a.r.n).localeCompare(String(b.r.n)));
+        const code=x=>{ const lg=x.lg; let t=""; try{ if(lg) t=(x.g.venue==="Away"? lg.homeTlc : lg.awayTlc)||""; }catch(e){_quiet(e)}
+          return String(t||_lgShort(x.g.opponent)||x.g.opponent||"?").slice(0,3).toUpperCase(); };
+        const g5=h("div",{class:"sv5", style:"--n:"+L5.length});
+        g5.appendChild(h("span",{class:"hd l"}, "Player"));
+        L5.forEach(C=>{ const g=C.x.g;
+          g5.appendChild(h("span",{class:"hd g"+(C.pub===false? " np" : ""), title:(g.venue==="Away"? "@ " : "vs ")+g.opponent+" · "+_dashFmt(g.date)+(C.pub===false? " · not published for the players" : "")},
+            h("b",{}, (C.pub===false? "🔒 " : "")+code(C.x)), h("i",{}, g.date.slice(8)+"/"+g.date.slice(5,7)+(/pokal|cup/i.test(String(g.competition||""))? " · cup" : "")))); });
+        g5.appendChild(h("span",{class:"hd t"}, "Total"));
+        M.forEach(m=>{ g5.appendChild(h("span",{class:"n"+(m.rec && !m.n? " no" : "")}, m.r.n));
+          m.cells.forEach((x, i)=>{ const C=L5[i], np=C.pub===false;
+            const tip=m.r.n+" · "+C.x.g.opponent+" · ";
+            if(!x.ok){ g5.appendChild(h("span",{class:"c nr", title:tip+"this app was not recording yet"}, "·")); return; }
+            if(!x.saw){ g5.appendChild(h("span",{class:"c "+(np? "np" : "no"), title:tip+(np? "not published for the players" : "not opened")+(x.t? " · "+_useClock(x.t) : "")}, np? "—" : "✕")); return; }
+            const mn=Math.round(x.t/60), lv=mn>=30? 3 : mn>=10? 2 : 1;
+            g5.appendChild(h("span",{class:"c ok l"+lv, title:tip+_useClock(x.t)+" on the scout · "+x.nv+" video"+(x.nv===1? "" : "s")+(x.nv? " ("+_useClock(x.vs)+" playing)" : "")},
+              h("b",{}, mn+"′"), h("i",{}, x.nv? "▶"+x.nv : "")));
+          });
+          const mt=Math.round(m.sec/60);
+          g5.appendChild(h("span",{class:"c t"+(m.rec && !m.n? " no" : ""), title:m.n+" of "+m.rec+" recorded scouts watched · "+_useClock(m.sec)+" in all"},
+            h("b",{}, m.rec? m.n+"/"+m.rec : "–"), h("i",{}, m.n? (mt<60? mt+"′" : Math.floor(mt/60)+"h"+String(mt%60).padStart(2,"0")) : ""))); });
+        /* the foot: how many of them opened each one */
+        g5.appendChild(h("span",{class:"ft l"}, "Watched"));
+        L5.forEach((C, i)=>{ const rec=M.filter(m=>m.cells[i].ok).length, saw=M.filter(m=>m.cells[i].saw).length;
+          g5.appendChild(h("span",{class:"ft"+(rec && saw<rec/2? " bad" : "")}, rec? saw+"/"+rec : "–")); });
+        const all=M.reduce((a,m)=>a+m.rec,0), sawAll=M.reduce((a,m)=>a+m.n,0);
+        g5.appendChild(h("span",{class:"ft t"}, all? Math.round(100*sawAll/all)+"%" : "–"));
+        b5.appendChild(h("div",{class:"sv5-w wx-skip"}, g5));
+        b5.appendChild(h("div",{class:"sv5-key"},
+          h("span",{}, h("s",{class:"l1"}), "under 10′"), h("span",{}, h("s",{class:"l2"}), "10–29′"), h("span",{}, h("s",{class:"l3"}), "30′ or more"),
+          h("span",{}, h("em",{class:"no"}, "✕"), "not opened"), h("span",{}, h("em",{}, "🔒"), "not published for them"), h("span",{}, h("em",{}, "·"), "not recorded yet")));
+      };
+      (async ()=>{ /* all of them at once: four at a time was five rounds one after the other */
+        await Promise.all(rows.map(async r=>{
+          try{ const x=await sbrpc("get_report",{ p_token:SB_TOKEN, p_key:useKey(r.n) }); r.doc=(x && x.ok && x.report && x.report.data)||null; }catch(e){_quiet(e)}
+          try{ if(r.study) r.study(); }catch(e){_quiet(e)}
+          r.done=true; paint(); }));
+        paint5(); })();
+      paint(); paint5();
     },
     owip:()=>{
       if((DASHES[currentUser]||{}).cards && DASHES[currentUser].cards.indexOf("opend")>=0) return;   /* it is a part of the to-do table */
@@ -41926,6 +42030,41 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .sv-t th.l,.sv-t td.l{text-align:left}.sv-t td.mu{color:var(--ink-faint,#8a93a2)}
 .sv-bar{display:inline-block;width:120px;height:8px;border-radius:4px;background:var(--panel-2,#eef0f3);vertical-align:middle;overflow:hidden}
 .sv-bar i{display:block;height:100%;background:#2f9e86;border-radius:4px}
+.sv-vt{font-style:normal;color:var(--ink-faint,#8a93a2);font-size:11px}
+/* THE LAST FIVE SCOUTS (Oriol, 16/11/2026): a row a player, a column a game, green as deep as the minutes */
+.sv5-h{display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap;margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--line,#eef0f3)}
+.sv5-h b{font:700 13px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase}
+.sv5-h span{font-size:11.5px;color:var(--ink-faint,#8a93a2)}
+.sv5-b{min-width:0;max-width:100%}
+.sv5-w{overflow-x:auto;scrollbar-width:thin;max-width:100%}
+.sv5{display:grid;grid-template-columns:minmax(92px,150px) repeat(var(--n),minmax(54px,104px)) minmax(64px,96px);justify-content:start;gap:3px;min-width:calc(92px + var(--n) * 57px + 67px);font-size:12px}
+.sv5 > span{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:27px;border-radius:6px;line-height:1.15;min-width:0}
+.sv5 .hd{min-height:30px;font:700 11px 'Oswald',sans-serif;letter-spacing:.06em;color:var(--ink-soft,#5b6472)}
+.sv5 .hd i{font:500 10px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);letter-spacing:0}
+.sv5 .hd.l,.sv5 .ft.l{align-items:flex-start;padding-left:4px}
+.sv5 .hd.np b{color:var(--ink-faint,#8a93a2)}
+.sv5 .n{display:block;padding-left:4px;font-weight:600;font-size:12.5px;line-height:27px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sv5 .n.no{color:#c0392b}
+.sv5 .n,.sv5 .hd.l,.sv5 .ft.l{position:sticky;left:0;z-index:1;background:var(--panel,#fff);border-radius:0;box-shadow:3px 0 0 var(--panel,#fff)}
+.sv5 .c{flex-direction:row!important;gap:5px;background:var(--panel-2,#f1f2f5)}
+.sv5 .c b{font:700 13px 'Oswald',sans-serif}
+.sv5 .c i{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;opacity:.85}
+.sv5 .c.ok.l1{background:rgba(47,158,134,.15);color:#13684f}
+.sv5 .c.ok.l2{background:rgba(47,158,134,.36);color:#0b4d3b}
+.sv5 .c.ok.l3{background:#2f9e86;color:#fff}
+.sv5 .c.no{background:rgba(216,82,78,.14);color:#c0392b;font-weight:700}
+.sv5 .c.np{color:var(--ink-faint,#8a93a2)}
+.sv5 .c.nr{background:transparent;color:var(--ink-faint,#8a93a2)}
+.sv5 .c.t{background:transparent;box-shadow:inset 0 0 0 1px var(--line,#e4e7ec)}
+.sv5 .c.t.no{box-shadow:inset 0 0 0 1px rgba(216,82,78,.45);color:#c0392b}
+.sv5 .ft{min-height:24px;font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);border-top:2px solid var(--ink,#141821);border-radius:0}
+.sv5 .ft.bad{color:#c0392b}
+.sv5 .ft.l{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase}
+.sv5-key{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;font-size:11px;color:var(--ink-faint,#8a93a2)}
+.sv5-key span{display:inline-flex;align-items:center;gap:5px}
+.sv5-key s{display:inline-block;width:12px;height:12px;border-radius:3px}
+.sv5-key s.l1{background:rgba(47,158,134,.15)}.sv5-key s.l2{background:rgba(47,158,134,.36)}.sv5-key s.l3{background:#2f9e86}
+.sv5-key em{font-style:normal;font-weight:700}.sv5-key em.no{color:#c0392b}
 .dash-todo{display:flex;flex-direction:column;gap:4px}
 .dash-todo-r{display:flex!important;flex-wrap:nowrap!important;align-items:center;gap:10px;padding:4px 8px!important;min-height:0!important}
 .dash-todo-r > .dash-kind{flex:0 0 150px}
@@ -42301,12 +42440,37 @@ body.dark .rg-gg .c.u{background:#4a2624;color:#ff9c95}body.dark .rg-gg .c.a{bac
 .p3-now.under .p3-bar u{background:#d8524e}
 .p3-bar s{position:absolute;top:-4px;bottom:-4px;width:3px;border-radius:2px;background:var(--ink,#141821)}
 .p3-hist{background:var(--panel,#fff);border-radius:14px;padding:12px 18px;display:grid;gap:6px}
-.p3-row{display:grid;grid-template-columns:150px minmax(0,1fr) 60px;gap:12px;align-items:center;font-size:13.5px}
+.p3-row{display:grid;grid-template-columns:150px minmax(0,1fr) 60px 96px;gap:12px;align-items:center;font-size:13.5px}
+/* THE VIDEOS AND THE GENERAL TIME (Oriol, 16/11/2026): this game's videos one a line, the scoutings before
+   with their videos and time, and on top of them the time in all */
+.p3-row .vv{font:700 12px 'IBM Plex Mono',monospace;text-align:right;white-space:nowrap;color:#13804f}
+.p3-row .vv i{font-weight:500;font-style:normal;color:var(--ink-faint,#8a93a2)}
+.p3-row .vv.z{color:var(--ink-faint,#8a93a2)}
+.p3-vc{display:flex;flex-wrap:wrap;gap:4px;margin:-1px 0 8px 162px}
+.p3-vc span{font-size:11.5px;padding:2px 8px;border-radius:999px;background:var(--panel-2,#f1f2f4);color:var(--ink-soft,#5b6472);white-space:nowrap}
+.p3-vc span b{font-weight:600;color:var(--ink,#141821)}
+.p3-vc span i{font-style:normal;color:var(--ink-faint,#8a93a2)}
+.p3-vc .none{background:transparent;padding-left:0;color:var(--ink-faint,#8a93a2)}
+.p3-tot{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 24px;padding:2px 0 10px;margin-bottom:4px;border-bottom:1px solid var(--line,#eef0f3)}
+.p3-tot span{display:grid;gap:2px}
+.p3-tot i{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint,#8a93a2)}
+.p3-tot b{font:700 21px/1.05 'Oswald',sans-serif}
+.p3-tot small{margin-left:auto;font-size:11.5px;color:var(--ink-faint,#8a93a2)}
+.p3-vh{grid-column:1/-1;margin-top:14px;padding-top:10px;border-top:1px solid var(--line,#eef0f3);font:600 11px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint,#8a93a2)}
+.p3-vl{grid-column:1/-1;display:grid;gap:5px}
+.p3-v{display:grid;grid-template-columns:minmax(0,190px) 30px minmax(0,1fr) 58px;gap:10px;align-items:center;font-size:13px}
+.p3-v b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.p3-v .n{font:600 11.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);text-align:right}
+.p3-v .t{height:8px;border-radius:4px;background:var(--panel-2,#f1f2f4);overflow:hidden}
+.p3-v .t u{display:block;height:100%;background:#2f9e86;border-radius:4px}
+.p3-v em{font:700 12.5px 'IBM Plex Mono',monospace;font-style:normal;text-align:right}
+.p3-v.z{color:var(--ink-faint,#8a93a2)}
+.p3-vnone{grid-column:1/-1;font-size:12.5px;color:var(--ink-faint,#8a93a2)}
 .p3-row b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .p3-row .t{height:9px;border-radius:5px;background:var(--panel-2,#f1f2f4);overflow:hidden}.p3-row .t u{display:block;height:100%;background:#c6a15b}
 .p3-row em{font:700 12.5px 'IBM Plex Mono',monospace;font-style:normal;text-align:right}
 .p3-games{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-@media (max-width:560px){ .p3-games{grid-template-columns:minmax(0,1fr)} .p3-row{grid-template-columns:110px minmax(0,1fr) 52px} }
+@media (max-width:560px){ .p3-games{grid-template-columns:minmax(0,1fr)} .p3-row{grid-template-columns:96px minmax(0,1fr) 48px 78px;gap:8px} .p3-vc{margin-left:0} .p3-v{grid-template-columns:minmax(0,1fr) 26px 54px 50px;gap:7px} .p3-tot{gap:8px 16px} .p3-tot small{margin-left:0;width:100%} }
 .p3-g{display:grid;gap:4px;justify-items:start;text-align:left;border-radius:14px;padding:12px;background:var(--panel,#fff);border:2px solid var(--line,#e4e7ec);font:inherit;color:var(--ink,#141821);cursor:pointer}
 .p3-g b{font:700 16px 'Oswald',sans-serif;letter-spacing:.04em;text-transform:uppercase}
 .p3-g > span{font:500 11px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
@@ -47381,6 +47545,13 @@ body.dark .pbb-chip.on i{color:rgba(27,32,40,.7)!important}
 body.dark .sxp-warn b{color:#e3c27a}
 body.dark tr.avl-r.st-out td.avl-s{color:#ff9d94}
 body.dark .sv-not,body.dark .sv-not b{color:#ffb0a6}
+body.dark .sv5 .c.ok.l1{background:rgba(47,158,134,.2);color:#8fdcc6}
+body.dark .sv5 .c.ok.l2{background:rgba(47,158,134,.45);color:#d6f5ec}
+body.dark .sv5 .c.no,body.dark .sv5 .n.no,body.dark .sv5 .c.t.no,body.dark .sv5 .ft.bad,body.dark .sv5-key em.no{color:#ff8f85}
+body.dark .sv5 .c.no{background:rgba(216,82,78,.2)}
+body.dark .sv5 .ft{border-top-color:var(--ink,#e8ebf0)}
+body.dark .p3-row .vv{color:#7fd8c0}
+body.dark .p3-row .vv.z{color:var(--ink-faint,#8a93a2)}
 body.dark tr.us td.n{color:#e3c27a}
 body.dark .dash-mixr .bar i[style*="#d9a521"]{color:#1b1408}
 body.dark .dash-mixr .bar i,body.dark .pbb-c-code b{filter:brightness(.82)}
