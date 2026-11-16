@@ -14184,13 +14184,24 @@ function _prePrintBoard(src, what){
      grande"): the first alone on top when they are odd, then two by two. The board is half as tall,
      and the paper is cut from the width a card has on screen - never narrower, which is what laid the
      role over the minutes and the doubt over the role */
-  let units=5;
+  /* THE CARD AS WIDE AS ON THIS SCREEN (Oriol, 16/11/2026, comparing the two: "debe ser igual a la de la
+     web"): the paper is laid out at the width the cards have on the screen it is printed from, so a line
+     breaks where it breaks there - the role, the ideas - and the whole sheet is then scaled to the page */
+  let cwScr=0, colScr=0;
+  if(what!=="roles"){ try{ const live=[].slice.call(document.querySelectorAll(".roster-columns .card.pcv")).filter(c=>!c.closest("#print-area") && !c.closest(".pre-cm") && c.getBoundingClientRect().width>60);
+      const med=a=>{ a=a.filter(w=>w>0).sort((x,y)=>x-y); return a.length? a[Math.floor(a.length/2)] : 0; };
+      cwScr=med(live.map(c=>c.getBoundingClientRect().width));
+      colScr=med(live.map(c=>{ const k=c.querySelector(".pcv-col"); return k? k.getBoundingClientRect().width : 0; })); }catch(e){_quiet(e)} }
+  let cw=Math.round(Math.max(235, Math.min(460, cwScr||300)));
+  let units=5, natural=false, setCols=()=>{};
   if(what!=="roles"){ const rc=copy.querySelector(".roster-columns");
     if(rc){ const cols=[].slice.call(rc.children).filter(c=>c.classList && c.classList.contains("pos-col")), tpl=[]; units=0;
       cols.forEach(col=>{ const cards=[].slice.call(col.children).filter(c=>c.classList && c.classList.contains("card"));
         if(cards.length>=3){ const two=h("div",{class:"prb-two"+(cards.length%2? " odd" : "")}); cards.forEach(c=>two.appendChild(c)); col.appendChild(two); col.classList.add("prb-2"); tpl.push(2); units+=2; }
         else { tpl.push(1); units+=1; } });
-      if(tpl.length) rc.style.setProperty("grid-template-columns", tpl.map(n=>"minmax(0,"+n+"fr)").join(" "), "important");
+      /* a column: its cards at the screen's width, the column's padding and edge (8px a side, 1px) around them */
+      if(tpl.length){ setCols=()=>rc.style.setProperty("grid-template-columns", tpl.map(n=>(n===2? 2*cw+8+18 : cw+18)+"px").join(" "), "important");
+        setCols(); rc.style.setProperty("justify-content","start","important"); natural=true; }
       units=Math.max(units, 1); } }
   const p=h("div",{class:"dop-fit prb prb-"+what}, h("div",{class:"dop-top"}, h("b",{}, "Pre game"), h("span",{}, title)), copy);
   area.innerHTML="";
@@ -14198,9 +14209,22 @@ function _prePrintBoard(src, what){
   const PW=1058, PH=715;
   /* a column of the board as wide as on screen (about 265px) or wider - the largest that fits the sheet */
   const widths=what==="roles"? [700,800,900,1050,1200,1350,1500,1700,1900,2150,2400,2700,3000] : [265,280,300,325,350,380,420].map(k=>Math.round(units*k));
-  const at=W=>{ p.style.zoom="1"; p.style.width=W+"px"; return Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); };
-  const refit=()=>{ let best={ s:0, w:widths[0] }; widths.forEach(W=>{ const sc=at(W); if(sc>best.s) best={ s:sc, w:W }; });
-    at(best.w); copy.querySelectorAll(".pcv-vname").forEach(_pcvFitName); p.style.zoom=best.s.toFixed(4); };
+  const at=W=>{ p.style.zoom="1"; p.style.transform="none"; p.style.width=W+"px"; return Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); };
+  /* the roster board at its own width: the columns are set in pixels above, the sheet is as wide as they are */
+  const own=()=>{ p.style.zoom="1"; p.style.transform="none"; p.style.width="max-content";
+    /* the paper's text column as wide as the screen's, to the pixel: the paper's paddings are not the
+       screen's, and three pixels were enough to break a line elsewhere */
+    for(let i=0;i<3 && colScr;i++){ const k=copy.querySelector(".card.pcv .pcv-col"); if(!k) break; const d=Math.ceil(colScr+1-k.getBoundingClientRect().width); if(d<=0) break; cw=Math.max(200, cw+d); setCols(); }
+    const W=Math.ceil(p.getBoundingClientRect().width)+2; return W; };
+  const refit=()=>{ let best={ s:0, w:widths[0] }; (natural? [own()] : widths).forEach(W=>{ const sc=at(W); if(sc>best.s) best={ s:sc, w:W }; });
+    at(best.w); copy.querySelectorAll(".pcv-vname").forEach(_pcvFitName);
+    /* the roster board is drawn at its full size and the drawing is made smaller (Oriol, 16/11/2026: "debe ser
+       igual a la de la web"): a zoom lays the text out again at its small size, where the browser's
+       smallest letters run wider, and the lines broke earlier than on the screen. A scale keeps every
+       line where the screen has it */
+    if(natural){ p.style.zoom="1"; p.style.position="absolute"; p.style.margin="0"; p.style.top="0"; p.style.transformOrigin="0 0";
+      p.style.left=Math.max(0, Math.round((PW-best.w*best.s)/2))+"px"; p.style.transform="scale("+best.s.toFixed(4)+")"; }
+    else p.style.zoom=best.s.toFixed(4); };
   document.body.classList.add("dop-measure");
   refit();
   const mq=window.matchMedia? window.matchMedia("print") : null, onMq=e=>{ if(e.matches) refit(); };
