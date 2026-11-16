@@ -5806,7 +5806,7 @@ function canView(sect){
     return PDEV_WHO.indexOf(currentUser)>=0; }
   if(!currentUser) return true;
   if(sectHidden(sect)) return false;
-  if(isPlayerUser()) return PLAYER_VIEW.sects.indexOf(sect)>=0;
+  if(isPlayerUser()) return PLAYER_VIEW.sects.indexOf(sect)>=0 || playerHas(currentUser, sect);
   if(isReader()) return READERS[currentUser].sects.indexOf(sect)>=0;
   const p=state.perms&&state.perms[currentUser];
   if(!p) return true;
@@ -6086,7 +6086,18 @@ let SB_SCOPE=null;
    network may be down, the row may not exist yet. That direction matters: a failure
    leaves a player with less, never with more. */
 const PLAYER_VIEW_KEY="settings:playerview";
-const PLAYER_VIEW_DEFAULT={ sects:["oppscout"], blocks:["stats","positions","roles"], dash:[] };
+const PLAYER_VIEW_DEFAULT={ sects:["oppscout"], blocks:["stats","positions","roles"], dash:[], people:{} };
+/* A SCREEN FOR ONE PLAYER, NOT THE SQUAD (Oriol, 16/11/2026: "dale acceso a playbook a Eddy, déjame
+   poder dar acceso a playbook a los jugadores que quiera"). Beside what every player sees, the same
+   document keeps, name by name, the screens given to that player alone: people = { name: ["playbook"] }.
+   Only the Playbook can be given this way - the server (supabase/007, get_playbook) hands its four
+   lists to a player only when his name is ticked here, and never the Planning sessions it sits with. */
+const PLAYER_PERSONAL=[["playbook","Playbook"]];
+function _pvPeople(o){ const out={};
+  if(o && typeof o==="object" && !Array.isArray(o)) Object.keys(o).forEach(u=>{ const a=Array.isArray(o[u])? o[u].filter(k=>PLAYER_PERSONAL.some(p=>p[0]===k)) : [];
+    if(a.length) out[u]=a; });
+  return out; }
+function playerHas(u, sect){ const a=((PLAYER_VIEW && PLAYER_VIEW.people)||{})[u]; return Array.isArray(a) && a.indexOf(sect)>=0; }
 /* THE PARTS OF A PLAYER'S OWN DASHBOARD THE STAFF CAN HOLD BACK (Oriol, 9/11/2026: the rebounding and
    defense goals off for the players for now - the staff, looking at a player's dashboard, still sees
    them, marked). Not in the saved setting = hidden from players */
@@ -6112,7 +6123,7 @@ const PLAYER_BLOCKS=[
   ["tagging","Opponent tagging"],
   ["colourkey","Colour key"]
 ];
-let PLAYER_VIEW={ sects:PLAYER_VIEW_DEFAULT.sects.slice(), blocks:PLAYER_VIEW_DEFAULT.blocks.slice(), dash:PLAYER_VIEW_DEFAULT.dash.slice() };
+let PLAYER_VIEW={ sects:PLAYER_VIEW_DEFAULT.sects.slice(), blocks:PLAYER_VIEW_DEFAULT.blocks.slice(), dash:PLAYER_VIEW_DEFAULT.dash.slice(), people:{} };
 function isPlayerUser(){ return SB_SCOPE==="player"; }
 /* may a player see this part of a pre-game report */
 /* READERS: staff who read the club and its opponents but do not work on the reports.
@@ -6132,7 +6143,7 @@ function applyRoleFloor(u){
   if(SB_SCOPE!=="player") return;
   ensurePerms();
   const p=state.perms[u]=state.perms[u]||{view:{},edit:{}};
-  SECT_KEYS.forEach(k=>{ p.view[k]=PLAYER_VIEW.sects.indexOf(k)>=0; p.edit[k]=false; });
+  SECT_KEYS.forEach(k=>{ p.view[k]=PLAYER_VIEW.sects.indexOf(k)>=0 || playerHas(u, k); p.edit[k]=false; });
 }
 /* Read on the way in, by staff and players alike. Nothing is applied until it has come
    back whole: a half-read document would be a permission list with holes in it. */
@@ -6145,7 +6156,8 @@ async function loadPlayerView(){
     if(d&&Array.isArray(d.sects)&&Array.isArray(d.blocks))
       got={ sects:d.sects.filter(k=>SECT_KEYS.indexOf(k)>=0),
             blocks:d.blocks.filter(k=>PLAYER_BLOCKS.some(b=>b[0]===k)),
-            dash:(Array.isArray(d.dash)? d.dash : []).filter(k=>PLAYER_DASH.some(b=>b[0]===k)) };
+            dash:(Array.isArray(d.dash)? d.dash : []).filter(k=>PLAYER_DASH.some(b=>b[0]===k)),
+            people:_pvPeople(d.people) };
   }catch(e){_quiet(e)}
   if(!got) return false;
   PLAYER_VIEW=got;
@@ -6156,8 +6168,8 @@ async function loadPlayerView(){
   }
   return true;
 }
-async function savePlayerView(sects, blocks, dash){
-  const body={ sects:sects.slice(), blocks:blocks.slice(), dash:(dash||PLAYER_VIEW.dash||[]).slice() };
+async function savePlayerView(sects, blocks, dash, people){
+  const body={ sects:sects.slice(), blocks:blocks.slice(), dash:(dash||PLAYER_VIEW.dash||[]).slice(), people:_pvPeople(people||PLAYER_VIEW.people) };
   const r=await sbrpc("save_report",{p_token:SB_TOKEN,p_key:PLAYER_VIEW_KEY,p_kind:"settings",
     p_opponent:"",p_date:null,p_data:body,p_html:null});
   if(!r||r.ok!==true) throw new Error((r&&r.error)||"Could not save");
@@ -6360,9 +6372,10 @@ async function refreshAdmin(body){
 
   /* ---- PLAYERS: the same for every player, one setting for the squad */
   { const sects=PLAYER_VIEW.sects.slice(), blocks=PLAYER_VIEW.blocks.slice(), dash=(PLAYER_VIEW.dash||[]).slice();
-    const btn=h("button",{class:"btn sm primary"},"Save for all players"); btn.disabled=true;
+    const people=JSON.parse(JSON.stringify(_pvPeople(PLAYER_VIEW.people)));
+    const btn=h("button",{class:"btn sm primary"},"Save players' view"); btn.disabled=true;
     const note=h("span",{class:"adm-pv-note"},"");
-    const s=sec("Players · what every player sees", "the same for all of them · each one picks it up the next time he signs in", h("span",{}, note, btn));
+    const s=sec("Players · what they see", "screens and blocks the same for all of them, the Playbook one by one · each one picks it up the next time he signs in", h("span",{}, note, btn));
     /* each screen or block a chip that wraps: lit when players see it */
     const tbl=(label, opts, picked)=>h("div",{class:"adm-chips"}, h("span",{class:"adm-chips-l"}, label),
       ...opts.map(([k,l])=>{ const cb=h("input",{type:"checkbox"}); cb.checked=picked.indexOf(k)>=0;
@@ -6371,8 +6384,21 @@ async function refreshAdmin(body){
     s.appendChild(tbl("Screens", SECT_KEYS.filter(k=>!sectHidden(k)).map(k=>[k,SECT_LABELS[k]||k]), sects));
     s.appendChild(tbl("Inside a published pre game", PLAYER_BLOCKS, blocks));
     s.appendChild(tbl("Inside the player's dashboard", PLAYER_DASH, dash));
+    /* the screens given to one player alone: a chip a player account, lit when he has it */
+    PLAYER_PERSONAL.forEach(([k, l])=>{
+      const all=sects.indexOf(k)>=0;
+      const names=players.map(a=>a.username).filter(Boolean).sort((x, y)=>String(x).localeCompare(String(y)));
+      s.appendChild(h("div",{class:"adm-chips"}, h("span",{class:"adm-chips-l"}, l+" · one by one"),
+        all? h("span",{class:"adm-pv-note"}, "every player sees it: it is ticked under Screens") : null,
+        ...names.map(u=>{ const cb=h("input",{type:"checkbox"}); cb.checked=Array.isArray(people[u]) && people[u].indexOf(k)>=0;
+          cb.addEventListener("change",()=>{ const a=people[u]||(people[u]=[]); const i=a.indexOf(k);
+            if(cb.checked){ if(i<0) a.push(k); } else if(i>=0) a.splice(i,1);
+            if(!a.length) delete people[u];
+            btn.disabled=false; note.textContent="not saved yet"; note.className="adm-pv-note"; });
+          return h("label",{class:"adm-chip"}, cb, h("span",{}, "👁 "+u)); })));
+    });
     btn.onclick=async ()=>{ btn.disabled=true; note.textContent="Saving…";
-      try{ await savePlayerView(sects, blocks, dash); note.textContent="Saved"; note.className="adm-pv-note ok"; }
+      try{ await savePlayerView(sects, blocks, dash, people); note.textContent="Saved"; note.className="adm-pv-note ok"; }
       catch(e){ note.textContent="Could not save: "+((e&&e.message)||e); note.className="adm-pv-note bad"; btn.disabled=false; } };
     body.appendChild(s); }
 
@@ -21298,12 +21324,44 @@ function pbData(kind){
 let _pbPasteEn=null;
 function _pbReadImg(f, en){ const rd=new FileReader(); rd.onload=async ()=>{ const small=await shrinkPhoto(rd.result); commit(()=>{ en.img=small; }); persist(); renderPlaybook(); }; rd.readAsDataURL(f); }
 function openImgPopup(url){ const ov=h("div",{class:"pb-lightbox"}); ov.addEventListener("click",()=>ov.remove()); const im=h("img",{src:url}); im.addEventListener("click",e=>e.stopPropagation()); ov.appendChild(im); const x=h("button",{class:"pb-lb-x"},"✕"); x.addEventListener("click",()=>ov.remove()); ov.appendChild(x); document.body.appendChild(ov); }
+/* A PLAYER'S PLAYBOOK (Oriol, 16/11/2026, for Eddy first). A player given the Playbook in Permissions
+   & users reads it from the server through get_playbook (supabase/007): the four lists, read only,
+   never the Planning sessions they are kept with. Read on the way into the screen, at most every
+   twenty seconds; nothing is ever written back. The staff - also when they look at the hub as a
+   player - keep their own copy and its sync. */
+const _pbPl={ at:0, tried:0, busy:false, err:"" };
+function _pbAsPlayer(){ return isPlayerUser() && !(typeof _viewAs!=="undefined" && _viewAs); }
+async function _pbPlayerLoad(){
+  if(!SB_TOKEN || !_pbAsPlayer() || _pbPl.busy || Date.now()-_pbPl.tried<20000) return;
+  _pbPl.busy=true; _pbPl.tried=Date.now();
+  try{
+    const r=JSON.parse(await _sbRaw("get_playbook",{ p_token:SB_TOKEN }));
+    if(!r || r.ok===false) throw new Error((r && r.error) || "the server did not answer");
+    const P=r.playbook||{};
+    state.playbookOff=Array.isArray(P.playbookOff)? P.playbookOff : [];
+    state.playbookDef=Array.isArray(P.playbookDef)? P.playbookDef : [];
+    /* no ATO's list on the server: the offense's ATO sections move across, as they do for the staff */
+    state.playbookAto=Array.isArray(P.playbookAto)? P.playbookAto : null;
+    state.playbookVideo=P.playbookVideo!=null? P.playbookVideo : null;
+    _pbPl.at=Date.now(); _pbPl.err="";
+  }catch(e){ _pbPl.err=(e && e.message) || String(e); }
+  finally{ _pbPl.busy=false; }
+  try{ if(state.ui.view==="playbook") renderPlaybook(); }catch(e){_quiet(e)}
+}
 function renderPlaybook(){
   syncPrintBtn();
   const root=$("#viewPlaybook"); if(!root) return;
+  if(_pbAsPlayer()){
+    if(!_pbPl.at){ root.innerHTML="";
+      root.appendChild(h("div",{class:"pb"}, h("div",{class:"pb-empty"}, _pbPl.err
+        ? (/permiso|permission/i.test(_pbPl.err)? "The playbook is not open to you yet." : "The playbook could not be read just now. Try again in a moment.")
+        : "Loading the playbook…")));
+      _pbPlayerLoad(); return; }
+    _pbPlayerLoad();
+  }
   const kind = state.ui.pbTab==="def" ? "def" : state.ui.pbTab==="ato" ? "ato" : "off";
   const data=pbData(kind);
-  const canEd = !!state.ui.pbEdit;
+  const canEd = !!state.ui.pbEdit && !isPlayerUser();
   root.innerHTML="";
   const wrap=h("div",{class:"pb"+(canEd?" editing":"")});
   if(canEd) wrap.addEventListener("paste",function(e){
@@ -21316,7 +21374,7 @@ function renderPlaybook(){
       h("button",{class:"pb-tg"+(kind==="off"?" active":""),onclick:()=>{state.ui.pbTab="off";persist();renderPlaybook();}},"Offense"),
       h("button",{class:"pb-tg"+(kind==="def"?" active":""),onclick:()=>{state.ui.pbTab="def";persist();renderPlaybook();}},"Defense"),
       h("button",{class:"pb-tg"+(kind==="ato"?" active":""),onclick:()=>{state.ui.pbTab="ato";persist();renderPlaybook();}},"ATO's ", _wipTag(true))),
-    h("button",{class:"btn pb-editbtn"+(canEd?" primary":""),onclick:()=>{state.ui.pbEdit=!state.ui.pbEdit;persist();renderPlaybook();}}, canEd?"✓ Done":"✎ Edit"));
+    isPlayerUser()? null : h("button",{class:"btn pb-editbtn"+(canEd?" primary":""),onclick:()=>{state.ui.pbEdit=!state.ui.pbEdit;persist();renderPlaybook();}}, canEd?"✓ Done":"✎ Edit"));
   if(canEd) head.appendChild(h("button",{class:"btn pb-addsec",onclick:()=>{ commit(()=>{ data.push({id:uid(),title:"New section",color:kind==="def"?"dark":"blue",entries:[{id:uid(),label:"",detail:""}]}); }); renderPlaybook(); }},"＋ section"));
   wrap.appendChild(head);
   const grid=h("div",{class:"pb-grid"});
@@ -30685,7 +30743,7 @@ function _rgBlock(nm){
   const wrap=h("div",{class:"rg"});
   /* each section only where it may be shown: a player sees it when the staff switched it on in Players ·
      what every player sees; the staff always see it, the band saying when the players do not */
-  const tag=(t, id)=>h("div",{class:"p3-tag"}, t, (id && !isPlayerUser() && !playerDashOn(id))? h("span",{class:"p3-hid", title:"Switched off in Settings › Players · what every player sees"}, "hidden from players") : null);
+  const tag=(t, id)=>h("div",{class:"p3-tag"}, t, (id && !isPlayerUser() && !playerDashOn(id))? h("span",{class:"p3-hid", title:"Switched off in Permissions & users › Players · what they see"}, "hidden from players") : null);
   const into=id=>playerDashOk(id)? wrap : h("div",{});
   const shown=PLAYER_DASH.filter(([k])=>playerDashOk(k));
   if(!shown.length) return wrap;
