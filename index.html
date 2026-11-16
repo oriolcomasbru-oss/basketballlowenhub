@@ -14178,11 +14178,25 @@ function _prePrintBoard(src, what){
      hacemos también para el botón de imprimir, que tenga el mismo formato"), in its light dress */
   /* a board with nothing on it is not sent to the printer */
   if(!copy.querySelector(what==="roles"? ".vb-area" : ".card")){ toast(what==="roles"? "No roles written yet for this club" : "No cards on the roster yet"); return; }
+  /* A POSITION OF THREE OR MORE IN TWO COLUMNS ON PAPER (Oriol, 16/11/2026: "si hay alguna posición que
+     hay 3 jugadores ponerlo en doble columna y el último al lado del segundo, así puedes hacerlo más
+     grande"): the first alone on top when they are odd, then two by two. The board is half as tall,
+     and the paper is cut from the width a card has on screen - never narrower, which is what laid the
+     role over the minutes and the doubt over the role */
+  let units=5;
+  if(what!=="roles"){ const rc=copy.querySelector(".roster-columns");
+    if(rc){ const cols=[].slice.call(rc.children).filter(c=>c.classList && c.classList.contains("pos-col")), tpl=[]; units=0;
+      cols.forEach(col=>{ const cards=[].slice.call(col.children).filter(c=>c.classList && c.classList.contains("card"));
+        if(cards.length>=3){ const two=h("div",{class:"prb-two"+(cards.length%2? " odd" : "")}); cards.forEach(c=>two.appendChild(c)); col.appendChild(two); col.classList.add("prb-2"); tpl.push(2); units+=2; }
+        else { tpl.push(1); units+=1; } });
+      if(tpl.length) rc.style.setProperty("grid-template-columns", tpl.map(n=>"minmax(0,"+n+"fr)").join(" "), "important");
+      units=Math.max(units, 1); } }
   const p=h("div",{class:"dop-fit prb prb-"+what}, h("div",{class:"dop-top"}, h("b",{}, "Pre game"), h("span",{}, title)), copy);
   area.innerHTML="";
   area.appendChild(h("div",{class:"dop-page"}, p));
   const PW=1058, PH=715;
-  const widths=what==="roles"? [700,800,900,1050,1200,1350,1500,1700,1900,2150,2400,2700,3000] : [900,1000,1100,1200,1350,1500,1650,1800,2000];
+  /* a column of the board as wide as on screen (about 265px) or wider - the largest that fits the sheet */
+  const widths=what==="roles"? [700,800,900,1050,1200,1350,1500,1700,1900,2150,2400,2700,3000] : [265,280,300,325,350,380,420].map(k=>Math.round(units*k));
   const at=W=>{ p.style.zoom="1"; p.style.width=W+"px"; return Math.min(PW/W, PH/Math.max(1, p.scrollHeight)); };
   const refit=()=>{ let best={ s:0, w:widths[0] }; widths.forEach(W=>{ const sc=at(W); if(sc>best.s) best={ s:sc, w:W }; });
     at(best.w); copy.querySelectorAll(".pcv-vname").forEach(_pcvFitName); p.style.zoom=best.s.toFixed(4); };
@@ -16439,7 +16453,7 @@ function _gpNickMan(nick, men){
   if(!men) return null;
   const n=_lgNorm(nick).split(" ")[0]||"";
   if(n.length<2) return null;
-  const ALIAS={ benny:"benjamin", ferdi:"ferdinand", chris:"christopher", eddy:"eddy", zaba:"zaba", dejour:"de jour", daedae:"de jour", dae:"de jour" };
+  const ALIAS={ benny:"benjamin", ferdi:"ferdinand", chris:"christopher", eddy:"eddy", zaba:"zaba", dejour:"de jour", daedae:"de jour", dae:"de jour", lj:"luca joe" };
   const want=ALIAS[n]||n;
   let best=null, bestS=0, tie=false;
   men.forEach(p=>{
@@ -20465,7 +20479,14 @@ function _trgGame(x, j, tid){
   let pace=null; try{ pace=_trgPace(x, j, uc, home); }catch(e){_quiet(e)}
   /* the game's rebounding, ours player by player (the minutes are left out: the post game reads them) */
   let reb=null; try{ reb=_rebGame(j.feed, uc); delete reb.min; Object.keys(reb.pl).forEach(id=>{ if(reb.pl[id].s!=="u") delete reb.pl[id]; }); }catch(e){ reb=null; }
-  return { pace:pace, rb:reb, hs:x.hs, as:x.as, home:home, ok:!!F.ok, runs:runs,
+  /* THE TWELVE OF THE NIGHT, the ones who did not get on included (the box score lists them with no
+     minutes; pl above keeps only who played): whoever is not here was not in the squad - the scout's
+     average counts only these games (Oriol, 16/11/2026) */
+  let sq=[]; try{ const nmOf={}; [(j.game||{}).homeTeam, (j.game||{}).guestTeam].forEach(t=>{ ((t && t.roster)||[]).forEach(p=>{ nmOf[String(p.id)]=(String(p.firstName||"").trim()+" "+String(p.lastName||"").trim()).trim(); }); });
+    sq=(j.feed.players||[]).filter(p=>p && p.teamcode===uc && (!p.type || p.type==="player_stats")).map(p=>nmOf[String(p.player_id)]||("#"+(p.NUM||""))); }catch(e){ sq=[]; }
+  /* and the whole club's list that night, so a man who was never in a squad is known too */
+  let rs=[]; try{ const T=home? (j.game||{}).homeTeam : (j.game||{}).guestTeam; rs=((T && T.roster)||[]).map(p=>(String(p.firstName||"").trim()+" "+String(p.lastName||"").trim()).trim()).filter(Boolean); }catch(e){ rs=[]; }
+  return { pace:pace, rb:reb, sq:sq, rs:rs, hs:x.hs, as:x.as, home:home, ok:!!F.ok, runs:runs,
     us:side(S,"u"), them:side(O,"t"), seg:seg, ot:F.nq>4,
     lead:{ us:home?F.secH:F.secA, them:home?F.secA:F.secH, tie:F.secT, total:F.total,
            maxUs:home?F.maxH:F.maxA, maxThem:home?F.maxA:F.maxH, chg:F.changes, runUs:run(true), runThem:run(false) },
@@ -20502,7 +20523,7 @@ function _trgRead(onProg){
     /* a line is kept for a game and for its score: a result corrected by the league is read again */
     /* a game is read again when its score changed, and while the league may still be correcting it: until it was read more than an hour after the day it was played, and once more the next day, when a whole game is sometimes scouted again */
     const fresh2=s=>{ if(!s || !s.at) return false; const age=(s.at - new Date(String(s.date||"")+"T23:59:59").getTime())/3600000; return age>=24; };
-    const need=games.filter(x=>{ const s=store[x.id]; if(!(s && s.hs===x.hs && s.as===x.as)) return true; if(!s.pace || !s.rb) return true; const d=Math.round((Date.now()-new Date(x.date+"T12:00:00").getTime())/86400000); return d<=2 && !fresh2(s); });
+    const need=games.filter(x=>{ const s=store[x.id]; if(!(s && s.hs===x.hs && s.as===x.as)) return true; if(!s.pace || !s.rb || !Array.isArray(s.sq) || !Array.isArray(s.rs)) return true; const d=Math.round((Date.now()-new Date(x.date+"T12:00:00").getTime())/86400000); return d<=2 && !fresh2(s); });
     let done=0;
     for(let i=0;i<need.length;i+=3){
       const part=need.slice(i,i+3);
@@ -30757,6 +30778,29 @@ function _useStudy(doc, x, prev, toDay){
   }
   return { x:x, from:from, to:to, sec:sec, rep:rep, all:Math.max(all, sec), vids:vids, vsec:vsec, vlist:list, days:dset, per:per };
 }
+/* WAS HE IN THE SQUAD (Oriol, 16/11/2026: "si un jugador ha estado lesionado en un partido no cuenta el
+   promedio de scouting para ese partido, solamente con los que ha estado convocado"). The league's box
+   score lists the twelve of the night, the ones who did not get on included (sq, from _trgRead); a man
+   not on it was not in the squad - injured or left out - and that scouting is out of his average and
+   of the counts on the staff's card. inSq(user, game): true on the sheet, false not on it, null when
+   there is nothing to go by (no box score yet, a name the league does not answer) - and it counts. */
+let _scoutSqMemo=null;
+function _scoutSquad(){
+  if(_scoutSqMemo) return _scoutSqMemo;
+  const none={ inSq:()=>null };
+  _scoutSqMemo=Promise.race([ Promise.resolve().then(()=>_trgRead()).catch(()=>null), new Promise(r=>setTimeout(()=>r(null), 20000)) ]).then(R=>{
+    const games=((R && (R.allGames||R.games))||[]).filter(x=>x && x.g && x.g.date && Array.isArray(x.sq) && x.sq.length);
+    if(!games.length){ _scoutSqMemo=null; return none; }
+    const seen={}; games.forEach(x=>(x.rs||[]).concat(x.sq).forEach(n=>{ if(n && n.charAt(0)!=="#") seen[n]=1; }));
+    const men=Object.keys(seen).map(n=>({ name:n })), who={};
+    const manOf=u=>{ if(Object.prototype.hasOwnProperty.call(who, u)) return who[u]; let m=null; try{ m=_gpNickMan(u, men); }catch(e){_quiet(e)} return (who[u]=m? m.name : null); };
+    const day=d=>Math.round(new Date(d+"T12:00:00Z").getTime()/86400000);
+    const gameOf=g=>games.filter(y=>y.g.date===g.date)[0] || games.filter(y=>Math.abs(day(y.g.date)-day(g.date))<=1)[0] || null;
+    return { inSq:(u, g)=>{ if(!g || !g.date) return null; const nm=manOf(String(u||"")); if(!nm) return null;
+      const x=gameOf(g); return x? x.sq.indexOf(nm)>=0 : null; } };
+  }).catch(()=>{ _scoutSqMemo=null; return none; });
+  return _scoutSqMemo;
+}
 /* the first day this app has anything for him: a scouting before it is "not recorded", never nought */
 function _useCovStart(doc){ const days=(doc && doc.days)||{}; return Object.keys(days).filter(d=>((days[d]||{}).sec||0)>0).sort()[0]||null; }
 /* a time said short: 0:45, 12:05, 1 h 05 */
@@ -30840,7 +30884,11 @@ async function _playerDash(root, who){
       h("b",{}, v.title||"Video"), " "+_useClock(v.sec), v.n>1? h("i",{}, " ×"+v.n) : null)) : h("span",{class:"none"}, "no video opened")); };
   const past=G.past.filter(x=>!ph(x.g)), last=past[past.length-1];
   const hist=past.slice(-6).map(x=>{ const k=past.indexOf(x); return study(x, past[k-1]); }).filter(recorded);
-  const avg=hist.length? hist.reduce((a,s)=>a+s.sec,0)/hist.length : null;
+  /* a game he was not in the squad for (injured, left out) is shown, but out of his average */
+  let SQ=null; try{ SQ=await _scoutSquad(); }catch(e){_quiet(e)}
+  hist.forEach(S=>{ S.inSq=SQ? SQ.inSq(nm, S.x.g) : null; });
+  const cnt=hist.filter(S=>S.inSq!==false);
+  const avg=cnt.length? cnt.reduce((a,s)=>a+s.sec,0)/cnt.length : null;
   /* ---- this game: his time on the scout, big; the days, the videos and their time, the whole hub;
      then every video he opened */
   bNow.innerHTML="";
@@ -30853,7 +30901,7 @@ async function _playerDash(root, who){
       h("span",{}, h("b",{}, String(N.days)), " day"+(N.days===1? "" : "s")+" opened"),
       h("span",{}, h("b",{}, String(nV(N))), " video"+(nV(N)===1? "" : "s")+" opened", N.vids>nV(N)? " ("+N.vids+" times)" : "", N.vsec? " · " : "", N.vsec? h("b",{}, mins(N.vsec)) : null, N.vsec? " playing" : ""),
       h("span",{}, "in the hub in all: ", h("b",{}, mins(N.all))),
-      avg!=null? h("span",{}, "your average: ", h("b",{}, mins(avg)), " a scouting") : null));
+      avg!=null? h("span",{ title:"the games you were in the squad for: a game you were injured or left out is not counted" }, "your average: ", h("b",{}, mins(avg)), " a game in the squad") : null));
     const bar=h("span",{class:"p3-bar"}, h("u",{style:"width:"+Math.round(100*N.sec/mx)+"%"}));
     if(avg!=null) bar.appendChild(h("s",{style:"left:"+Math.round(100*avg/mx)+"%", title:"your average"}));
     bNow.appendChild(bar);
@@ -30873,10 +30921,12 @@ async function _playerDash(root, who){
       h("small",{}, "the last "+hist.length+" scouting"+(hist.length===1? "" : "s")))); }
   const hm=Math.max(1, ...hist.map(s=>s.sec));
   hist.slice().reverse().forEach(s=>{
-    bHist.appendChild(h("div",{class:"p3-row", title:s.days+" days · "+nV(s)+" videos · "+_useClock(s.vsec||0)+" playing · "+(s.old? "old hub" : "this app")},
+    const out=s.inSq===false;
+    bHist.appendChild(h("div",{class:"p3-row"+(out? " out" : ""), title:(out? "not in the squad that game (injured or left out): not in the average · " : "")+s.days+" days · "+nV(s)+" videos · "+_useClock(s.vsec||0)+" playing · "+(s.old? "old hub" : "this app")},
       h("b",{}, s.x.g.opponent), h("span",{class:"t"}, h("u",{style:"width:"+Math.round(100*s.sec/hm)+"%"})), h("em",{}, clock(s.sec)),
       h("span",{class:"vv"+(nV(s)? "" : " z")}, "▶ "+nV(s), h("i",{}, " · "+_useClock(s.vsec||0)))));
-    bHist.appendChild(vidChips(s)); });
+    const vc=vidChips(s); if(out) vc.insertBefore(h("span",{class:"p3-out"}, "not in the squad · not in the average"), vc.firstChild);
+    bHist.appendChild(vc); });
 }
 /* ==== THE PLAYER'S GOALS: REBOUNDING AND DEFENSE (Oriol, 9/11/2026: "el objetivo del equipo es
    mejorar en defensa y en rebote") ================================================================
@@ -31970,8 +32020,14 @@ function renderDashboard(){
     scoutv:()=>{
       const nx=G.upcoming[0];
       const c=card("wide", "The scout · who has watched it", nx? ()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:nx.g.id } }) : null, "Pre game");
-      const names=(typeof rosterUsers==="function"? rosterUsers() : []).map(p=>p.name).filter(Boolean);
-      const rows=names.map(n=>({ n:n, doc:null, sec:0, rep:0, vids:0, vsec:0, days:0, last:null, done:false }));
+      const ppl=(typeof rosterUsers==="function"? rosterUsers() : []).filter(p=>p && p.name);
+      const rows=ppl.map(p=>({ n:p.name, key:p.key, doc:null, sec:0, rep:0, vids:0, vsec:0, days:0, last:null, done:false }));
+      /* who was in the squad each night, from the league's box scores: a game he was not (injured,
+         left out) is not counted for him (16/11/2026) */
+      let SQ=null; _scoutSquad().then(s=>{ SQ=s; try{ paint5(); }catch(e){_quiet(e)} }).catch(_quiet);
+      /* the next game: who the medical sheet has out that day is not waited for */
+      const avNx=(()=>{ try{ return nx? (avOn(nx.g.date)||{}) : {}; }catch(e){ return {}; } })();
+      const outNx=r=>!!(r.key && avNx[r.key]==="out");
       /* THE LAST FIVE SCOUTS, COMPACT (Oriol, 16/11/2026: "una visión compacta de lo que vieron los últimos
          5 partidos, quién sí, quién no y tiempo; añade cuántos vídeos miraron"): a row a player, a column
          a game - his time on that pre game and the videos he opened, a red cross when he did not open it,
@@ -31994,8 +32050,9 @@ function renderDashboard(){
         b5=h("div",{class:"sv5-b"}, loading("Reading the last games…")); c.__b.appendChild(b5);
         L5.forEach(C=>_dashRep(C.x.g).then(rep=>{ C.pub=!!(rep && rep.share_state==="published"); paint5(); }).catch(_quiet)); }
       const paint=()=>{ if(!body) return; body.innerHTML="";
-        const seen=rows.filter(r=>r.done && (Math.max(r.sec,r.rep)>=60 || r.vids>0)), not=rows.filter(r=>r.done && seen.indexOf(r)<0), wait=rows.filter(r=>!r.done);
+        const seen=rows.filter(r=>r.done && (Math.max(r.sec,r.rep)>=60 || r.vids>0)), not=rows.filter(r=>r.done && seen.indexOf(r)<0 && !outNx(r)), hurt=rows.filter(r=>r.done && seen.indexOf(r)<0 && outNx(r)), wait=rows.filter(r=>!r.done);
         if(not.length) body.appendChild(h("div",{class:"sv-not"}, h("b",{}, not.length+" not yet: "), not.map(r=>r.n).join(" · ")));
+        if(hurt.length) body.appendChild(h("div",{class:"sv-out"}, h("b",{}, "Out on the medical sheet: "), hurt.map(r=>r.n).join(" · "), " · not waited for"));
         if(seen.length){ const mx=Math.max(60, ...seen.map(r=>Math.max(r.sec,r.rep)));
           const t=h("table",{class:"sv-t"}, h("tr",{}, h("th",{class:"l"},"Player"), h("th",{class:"l"},"Time on the scout"), h("th",{},"Videos"), h("th",{},"Days"), h("th",{class:"l"},"Last")));
           seen.sort((a,b)=>Math.max(b.sec,b.rep)-Math.max(a.sec,a.rep)).forEach(r=>{ const s=Math.max(r.sec,r.rep), m=Math.round(s/60);
@@ -32014,9 +32071,9 @@ function renderDashboard(){
         /* the first day this app recorded anybody: a scout before it is not recorded, never a cross */
         const cov=rows.map(r=>_useCovStart(r.doc)).filter(Boolean).sort()[0]||null;
         const M=rows.map(r=>{ let n=0, sec=0, rec=0; const cells=L5.map(C=>{ const S=_useStudy(r.doc, C.x, C.prev);
-            const ok=!!(S.old || (cov && S.to>=cov)), t=Math.max(S.sec, S.rep), nv=(S.vlist||[]).length, saw=ok && (t>=60 || nv>0);
-            if(ok) rec++; if(saw){ n++; sec+=t; }
-            return { ok:ok, t:t, nv:nv, vs:S.vsec||0, saw:saw, S:S }; });
+            const ok=!!(S.old || (cov && S.to>=cov)), t=Math.max(S.sec, S.rep), nv=(S.vlist||[]).length, out=!!(SQ && SQ.inSq(r.n, C.x.g)===false), saw=ok && !out && (t>=60 || nv>0);
+            if(ok && !out) rec++; if(saw){ n++; sec+=t; }
+            return { ok:ok && !out, t:t, nv:nv, vs:S.vsec||0, saw:saw, out:out, rec0:ok, S:S }; });
           return { r:r, cells:cells, n:n, sec:sec, rec:rec }; }).sort((a,b)=>b.n-a.n || b.sec-a.sec || String(a.r.n).localeCompare(String(b.r.n)));
         const code=x=>{ const lg=x.lg; let t=""; try{ if(lg) t=(x.g.venue==="Away"? lg.homeTlc : lg.awayTlc)||""; }catch(e){_quiet(e)}
           return String(t||_lgShort(x.g.opponent)||x.g.opponent||"?").slice(0,3).toUpperCase(); };
@@ -32029,6 +32086,7 @@ function renderDashboard(){
         M.forEach(m=>{ g5.appendChild(h("span",{class:"n"+(m.rec && !m.n? " no" : "")}, m.r.n));
           m.cells.forEach((x, i)=>{ const C=L5[i], np=C.pub===false;
             const tip=m.r.n+" · "+C.x.g.opponent+" · ";
+            if(x.out){ const mo=Math.round(x.t/60); g5.appendChild(h("span",{class:"c out", title:tip+"not in the squad that night (injured or left out) · not counted"+(x.t? " · "+_useClock(x.t)+" on the scout" : "")}, h("b",{}, "out"), (x.rec0 && (x.t>=60 || x.nv))? h("i",{}, mo+"′") : null)); return; }
             if(!x.ok){ g5.appendChild(h("span",{class:"c nr", title:tip+"this app was not recording yet"}, "·")); return; }
             if(!x.saw){ g5.appendChild(h("span",{class:"c "+(np? "np" : "no"), title:tip+(np? "not published for the players" : "not opened")+(x.t? " · "+_useClock(x.t) : "")}, np? "—" : "✕")); return; }
             const mn=Math.round(x.t/60), lv=mn>=30? 3 : mn>=10? 2 : 1;
@@ -32047,7 +32105,7 @@ function renderDashboard(){
         b5.appendChild(h("div",{class:"sv5-w wx-skip"}, g5));
         b5.appendChild(h("div",{class:"sv5-key"},
           h("span",{}, h("s",{class:"l1"}), "under 10′"), h("span",{}, h("s",{class:"l2"}), "10–29′"), h("span",{}, h("s",{class:"l3"}), "30′ or more"),
-          h("span",{}, h("em",{class:"no"}, "✕"), "not opened"), h("span",{}, h("em",{}, "🔒"), "not published for them"), h("span",{}, h("em",{}, "·"), "not recorded yet")));
+          h("span",{}, h("em",{class:"no"}, "✕"), "not opened"), h("span",{}, h("em",{class:"out"}, "out"), "not in the squad that night · not counted"), h("span",{}, h("em",{}, "🔒"), "not published for them"), h("span",{}, h("em",{}, "·"), "not recorded yet")));
       };
       (async ()=>{ /* all of them at once: four at a time was five rounds one after the other */
         await Promise.all(rows.map(async r=>{
@@ -39799,6 +39857,12 @@ body.edit-mode .phx.pre-roles .pre-lock{bottom:24px}
 /* a board of the pre game alone on a sheet */
 /* five columns whatever the window: a narrow screen's three-column rule must not shape the paper */
 .prb.prb-roster .phx.phx .roster-columns:not(.pre-cm-cols){grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:9px!important}
+/* a position of three or more: two columns, the first alone on top when they are odd (16/11/2026) */
+.prb .prb-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:start}
+.prb .prb-two.odd > .card:nth-child(2){grid-column:1}
+.prb .prb-two > .card{margin:0!important;min-width:0}
+/* the screen holds the board at 1680px; on paper it takes the width it was cut to, or the cards narrow under their screen size */
+html body .prb .phx.phx.pre-phx .roster-columns{max-width:none!important;width:auto!important}
 .prb-roles .vb-areas{justify-content:center!important}
 /* a board held by the height of the sheet sits in the middle of it, not against the left edge */
 #print-area .dop-page > .prb,#print-area .dop-page > .pbp{position:relative;margin:0 auto}
@@ -42179,6 +42243,10 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .sv5 .c.no{background:rgba(216,82,78,.14);color:#c0392b;font-weight:700}
 .sv5 .c.np{color:var(--ink-faint,#8a93a2)}
 .sv5 .c.nr{background:transparent;color:var(--ink-faint,#8a93a2)}
+.sv5 .c.out{flex-direction:row!important;gap:4px;background:transparent;box-shadow:inset 0 0 0 1px var(--line,#e4e7ec);color:var(--ink-faint,#8a93a2)}
+.sv5 .c.out b{font:600 10.5px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.04em}
+.sv5-key em.out{font:600 10px 'IBM Plex Mono',monospace;text-transform:uppercase;padding:0 4px;border-radius:3px;box-shadow:inset 0 0 0 1px var(--line,#e4e7ec)}
+.sv-out{padding:6px 10px;border-radius:8px;background:var(--panel-2,#f1f2f5);color:var(--ink-soft,#5b6472);font-size:12.5px;margin:-4px 0 8px}
 .sv5 .c.t{background:transparent;box-shadow:inset 0 0 0 1px var(--line,#e4e7ec)}
 .sv5 .c.t.no{box-shadow:inset 0 0 0 1px rgba(216,82,78,.45);color:#c0392b}
 .sv5 .ft{min-height:24px;font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);border-top:2px solid var(--ink,#141821);border-radius:0}
@@ -42575,6 +42643,8 @@ body.dark .rg-gg .c.u{background:#4a2624;color:#ff9c95}body.dark .rg-gg .c.a{bac
 .p3-vc span b{font-weight:600;color:var(--ink,#141821)}
 .p3-vc span i{font-style:normal;color:var(--ink-faint,#8a93a2)}
 .p3-vc .none{background:transparent;padding-left:0;color:var(--ink-faint,#8a93a2)}
+.p3-vc .p3-out{background:transparent;padding-left:0;font:600 10.5px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.04em;color:#a2672a}
+.p3-row.out em,.p3-row.out b{color:var(--ink-faint,#8a93a2)}.p3-row.out .t u{background:var(--line,#d8dce3)}
 .p3-tot{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 24px;padding:2px 0 10px;margin-bottom:4px;border-bottom:1px solid var(--line,#eef0f3)}
 .p3-tot span{display:grid;gap:2px}
 .p3-tot i{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint,#8a93a2)}
