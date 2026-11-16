@@ -14214,16 +14214,25 @@ function _prePrintBoard(src, what){
   const own=()=>{ p.style.zoom="1"; p.style.transform="none"; p.style.width="max-content";
     /* the paper's text column as wide as the screen's, to the pixel: the paper's paddings are not the
        screen's, and three pixels were enough to break a line elsewhere */
-    for(let i=0;i<3 && colScr;i++){ const k=copy.querySelector(".card.pcv .pcv-col"); if(!k) break; const d=Math.ceil(colScr+1-k.getBoundingClientRect().width); if(d<=0) break; cw=Math.max(200, cw+d); setCols(); }
+    for(let i=0;i<3 && colScr;i++){ const k=copy.querySelector(".card.pcv .pcv-col"); if(!k) break; const kw=k.getBoundingClientRect().width;
+      if(kw<100) break; const d=Math.ceil(colScr+1-kw); if(d<=0 || d>40) break; cw=Math.max(200, Math.min(480, cw+d)); setCols(); }
     const W=Math.ceil(p.getBoundingClientRect().width)+2; return W; };
-  const refit=()=>{ let best={ s:0, w:widths[0] }; (natural? [own()] : widths).forEach(W=>{ const sc=at(W); if(sc>best.s) best={ s:sc, w:W }; });
+  /* MEASURED ONCE, ON THE SCREEN (16/11/2026: Oriol's first print came out twice as wide and ran off the sheet).
+     When the printer takes the page the browser measures it again at the paper's own scale: the text
+     column read too narrow, the tuning above widened the cards each time, and the board read narrower
+     than it was. The roster board is measured once, before printing; the printer only gets the same
+     scale again */
+  let fitted=null;
+  const place=b=>{ p.style.zoom="1"; p.style.width=b.w+"px"; p.style.position="absolute"; p.style.margin="0"; p.style.top="0"; p.style.transformOrigin="0 0";
+    p.style.left=Math.max(0, Math.round((PW-b.w*b.s)/2))+"px"; p.style.transform="scale("+b.s.toFixed(4)+")"; };
+  const refit=()=>{ if(natural && fitted){ place(fitted); return; }
+    let best={ s:0, w:widths[0] }; (natural? [own()] : widths).forEach(W=>{ const sc=at(W); if(sc>best.s) best={ s:sc, w:W }; });
     at(best.w); copy.querySelectorAll(".pcv-vname").forEach(_pcvFitName);
     /* the roster board is drawn at its full size and the drawing is made smaller (Oriol, 16/11/2026: "debe ser
        igual a la de la web"): a zoom lays the text out again at its small size, where the browser's
        smallest letters run wider, and the lines broke earlier than on the screen. A scale keeps every
        line where the screen has it */
-    if(natural){ p.style.zoom="1"; p.style.position="absolute"; p.style.margin="0"; p.style.top="0"; p.style.transformOrigin="0 0";
-      p.style.left=Math.max(0, Math.round((PW-best.w*best.s)/2))+"px"; p.style.transform="scale("+best.s.toFixed(4)+")"; }
+    if(natural){ fitted=best; place(best); }
     else p.style.zoom=best.s.toFixed(4); };
   document.body.classList.add("dop-measure");
   refit();
