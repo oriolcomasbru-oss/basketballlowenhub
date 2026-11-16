@@ -3341,15 +3341,32 @@ function _planMerge(base, loc, srv){
 /* somebody typing in Planning or the Playbook is not interrupted: the sync waits for them */
 function _planTyping(){ const a=document.activeElement; if(!a || a===document.body) return false;
   return !!(a.closest && a.closest("#viewPlan, #viewPlaybook") && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))); }
+/* THE PLAYBOOK LOST PART OF ITSELF A SECOND TIME (Oriol, 16/11/2026). Three guards since:
+   - PLAN_CV: the version of this merge. Every copy written carries it; a page that finds a newer one on
+     the server writes nothing and asks to be reloaded - a tab left open for days runs the code it was
+     opened with. supabase/008 makes the server refuse a copy without it, from tabs older than this one.
+   - the agreed copy is this state's own: the state keeps the stamp of the copy it was agreed from. Two
+     tabs share the browser's storage, and one tab saving its older state under the other's newer agreed
+     copy made the sets the old state did not have look taken off here - and they went from the server.
+     A stamp that does not match means no agreed copy: what only one side has stays.
+   - a copy before anything goes: a merge that takes a section or a call off the server's copy or off
+     this device's keeps that copy first (staff:playbook-copy:0-9), and the Playbook's ⟲ Copies brings
+     back what is missing. */
+const PLAN_CV=2;
+function _planHash(s){ s=String(s||""); let x=0; for(let i=0;i<s.length;i++) x=(Math.imul(x,31)+s.charCodeAt(i))|0; return s.length+":"+(x>>>0).toString(36); }
 async function _planSync(){
   if(!SB_TOKEN || isPlayerUser() || !state || !state.plan) return;
   if(_planSyncBusy){ _planSyncAgain=true; return; }
   if(_planTyping()){ clearTimeout(_planSyncT); _planSyncT=setTimeout(_planSync, 5000); return; }
   _planSyncBusy=true; _planSrv.busy=true; _planSyncAt=Date.now(); _planChip();
   try{
-    if(_planBase===undefined){ try{ _planBase=(await Store.get("kv","planBase"))||null; }catch(e){ _planBase=null; } _planBaseJ=_planBase? _pJ(_planBase) : null; }
+    if(_planBase===undefined){ try{ _planBase=(await Store.get("kv","planBase"))||null; }catch(e){ _planBase=null; } _planBaseJ=_planBase? _pJ(_planBase) : null;
+      if(_planBase && state._planStamp && state._planStamp!==_planHash(_planBaseJ)){ _planBase=null; _planBaseJ=null; } }
     const r=JSON.parse(await _sbRaw("get_report",{ p_token:SB_TOKEN, p_key:PLAN_DOC_KEY }));
     if(!r || r.ok===false) throw new Error((r && r.error) || "the server did not answer");
+    if(r.report && r.report.data && +r.report.data.cv>PLAN_CV) throw new Error("a newer hub has saved it · reload this page");
+    /* an ATO's sheet left from before goes back into the offense before anything is compared */
+    try{ pbData("off"); }catch(e){_quiet(e)}
     const srv=(r.report && r.report.data && r.report.data.v)? _planDocPick(r.report.data) : null;
     /* A COPY, NOT THE SCREEN'S OWN OBJECTS (Oriol, 31/10/2026: "estoy cambiando los colores y no me
        deja"). The copy agreed with the server and the state were one and the same object: an edit
@@ -3358,9 +3375,14 @@ async function _planSync(){
        What is agreed and what is on the screen never share anything now */
     const loc=JSON.parse(_pJ(_planDocPick(_planDocLocal()))), merged=_planMerge(_planBase, loc, srv);
     const mJ=_pJ(merged);
+    /* whatever this merge takes off the Playbook, on either side, is kept first */
+    if(!(typeof _viewAs!=="undefined" && _viewAs)){
+      try{ const lostS=srv? _pbLost(srv, merged) : [], lostL=_pbLost(loc, merged);
+        if(lostS.length) await _pbCopySave(srv, "taken off the server's copy", lostS);
+        if(lostL.length) await _pbCopySave(loc, "taken off "+(currentUser||"a")+"'s device", lostL); }catch(e){_quiet(e)} }
     let agreed=srv;
     if(mJ!==_pJ(srv) && (canEdit("planification") || canEdit("playbook"))){
-      const doc=Object.assign({ v:1, at:new Date().toISOString(), by:currentUser||"" }, merged);
+      const doc=Object.assign({ v:1, cv:PLAN_CV, at:new Date().toISOString(), by:currentUser||"" }, merged);
       let w=null;
       try{ w=JSON.parse(await _sbRaw("save_staff_doc",{ p_token:SB_TOKEN, p_key:PLAN_DOC_KEY, p_data:doc })); }catch(e){ w={ ok:false, error:(e && e.message) || "" }; }
       /* the server has no save_staff_doc yet (supabase/006 not run): the admin writes it the
@@ -3385,7 +3407,9 @@ async function _planSync(){
     if(moved) _planSyncAgain=true;
     /* with an edit waiting and something new from the server, the last agreement still stands: the
        next run has to see both as changes */
-    if(agreed && !(moved && brought)){ _planBaseJ=_pJ(agreed); _planBase=JSON.parse(_planBaseJ); try{ await Store.set("kv","planBase", _planBase); }catch(e){_quiet(e)} }
+    if(agreed && !(moved && brought)){ _planBaseJ=_pJ(agreed); _planBase=JSON.parse(_planBaseJ); try{ await Store.set("kv","planBase", _planBase); }catch(e){_quiet(e)}
+      /* and the state says which agreed copy it comes from, saved with it */
+      state._planStamp=_planHash(_planBaseJ); try{ await Store.set("kv","appState", state); }catch(e){_quiet(e)} }
     _planSrv.at=Date.now(); _planSrv.err="";
   }catch(e){ _planSrv.err=(e && e.message) || String(e); }
   finally{
@@ -3402,6 +3426,85 @@ function _planMaybeSync(){
 /* on the way into either screen and back into the app, at most every twenty seconds */
 function _planSyncSoon(){ if(Date.now()-_planSyncAt>20000) _planSync(); }
 try{ document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) _planSyncSoon(); }); }catch(e){_quiet(e)}
+/* ---- THE COPIES KEPT BEFORE ANYTHING GOES (16/11/2026) ---------------------------------------
+   What one copy of the Playbook has that another has not: a section by its name, a call by its name
+   (or its detail when it has no name). The offense and the old ATO's sheet count as one list. */
+function _pbItemsOf(doc){ const M=new Map();
+  ["playbookOff","playbookAto","playbookDef"].forEach(k=>{ const side=k==="playbookDef"? "def" : "off", lab=side==="def"? "Defense" : "Offense";
+    ((doc && doc[k])||[]).forEach(s=>{ const t=_pbN(s.title), es=(s.entries||[]).filter(_pbSaid);
+      if(!t && !es.length) return;
+      M.set(side+"|"+t, { sec:true, side:side, t:t, lab:lab+" › "+(s.title||"(no name)") });
+      es.forEach(e=>{ const n=_pbN(e.label)||("~"+_pbN(e.detail)); M.set(side+"|"+t+"|"+n, { sec:false, side:side, t:t, lab:lab+" › "+(s.title||"")+" › "+(e.label||e.detail||"") }); }); }); });
+  return M; }
+function _pbLost(from, to){
+  const A=_pbItemsOf(from), B=_pbItemsOf(to), out=[];
+  A.forEach((v, k)=>{ if(B.has(k)) return;
+    /* a whole section gone is said once, not once more for each of its calls */
+    if(!v.sec && !B.has(v.side+"|"+v.t)) return;
+    out.push(v.lab); });
+  return out; }
+const PB_COPY_INDEX="staff:playbook-copies", PB_COPY_N=10;
+async function _pbCopySave(doc, why, lost){
+  if(!SB_TOKEN || !doc) return false;
+  let idx=null;
+  try{ const r=JSON.parse(await _sbRaw("get_report",{ p_token:SB_TOKEN, p_key:PB_COPY_INDEX })); idx=r && r.report && r.report.data; }catch(e){_quiet(e)}
+  if(!idx || !Array.isArray(idx.list)) idx={ v:1, next:0, list:[] };
+  const slot=(+idx.next||0)%PB_COPY_N, at=new Date().toISOString();
+  const copy={ v:1, at:at, by:currentUser||"", why:why, lost:(lost||[]).slice(0,60),
+    playbookOff:doc.playbookOff||null, playbookDef:doc.playbookDef||null, playbookAto:doc.playbookAto||null, playbookVideo:doc.playbookVideo||null, plays:doc.plays||null };
+  const w=JSON.parse(await _sbRaw("save_staff_doc",{ p_token:SB_TOKEN, p_key:"staff:playbook-copy:"+slot, p_data:copy }));
+  if(!w || !w.ok) return false;
+  idx.list=idx.list.filter(x=>x && x.slot!==slot);
+  idx.list.unshift({ slot:slot, at:at, by:copy.by, why:why, lost:copy.lost.slice(0,14), n:(lost||[]).length });
+  idx.next=slot+1;
+  try{ await _sbRaw("save_staff_doc",{ p_token:SB_TOKEN, p_key:PB_COPY_INDEX, p_data:idx }); }catch(e){_quiet(e)}
+  return true; }
+/* what a copy has and the Playbook on the screen has not goes back in - nothing is taken off, nothing
+   written over; the old ATO's sheet's sections go into the offense */
+function _pbBringBack(doc){ let n=0;
+  const into=(cur, src)=>{ (src||[]).forEach(s=>{ const es=(s.entries||[]).filter(_pbSaid);
+    if(!es.length && !_pbN(s.title)) return;
+    const o=cur.find(x=>(s.id && x.id===s.id) || _pbN(x.title)===_pbN(s.title));
+    if(!o){ cur.push(JSON.parse(JSON.stringify(Object.assign({}, s, { entries:es })))); n+=1+es.length; return; }
+    o.entries=o.entries||[];
+    es.forEach(e=>{ if(o.entries.some(x=>(e.id && x.id===e.id) || (_pbN(x.label)===_pbN(e.label) && (_pbN(e.label) || _pbN(x.detail)===_pbN(e.detail))))) return;
+      o.entries.push(JSON.parse(JSON.stringify(e))); n++; }); }); };
+  commit(()=>{ into(pbData("off"), doc.playbookOff); into(pbData("off"), doc.playbookAto); into(pbData("def"), doc.playbookDef);
+    if(doc.playbookVideo && doc.playbookVideo.url && !(state.playbookVideo && state.playbookVideo.url)){ state.playbookVideo=JSON.parse(JSON.stringify(doc.playbookVideo)); n++; } });
+  persist();
+  return n; }
+async function _pbCopiesOpen(){
+  if(!SB_TOKEN){ toast("Sign in again"); return; }
+  const box=h("div",{class:"pbc"}, h("h3",{},"Playbook · copies kept"),
+    h("p",{class:"pbc-sub"},"A copy is kept on the server every time a section or a call is taken off, here or on any device. “Bring back” adds what that copy has and the Playbook does not - nothing is taken off or written over."));
+  const list=h("div",{class:"pbc-list"}, h("div",{class:"ld"},"Reading the copies…", h("span",{class:"ld-bar"})));
+  box.appendChild(list);
+  box.appendChild(h("div",{class:"dialog-foot"}, h("button",{class:"btn primary", onclick:closeDialog},"Done")));
+  openDialog(box);
+  const rows=[];
+  try{ const r=JSON.parse(await _sbRaw("get_report",{ p_token:SB_TOKEN, p_key:PB_COPY_INDEX })); const d=r && r.report && r.report.data;
+    ((d && d.list)||[]).forEach(x=>rows.push({ at:x.at, by:x.by, why:x.why, lost:x.lost||[], n:x.n||0,
+      load:async ()=>{ const q=JSON.parse(await _sbRaw("get_report",{ p_token:SB_TOKEN, p_key:"staff:playbook-copy:"+x.slot })); return q && q.report && q.report.data; } })); }catch(e){_quiet(e)}
+  /* the server's own copies of the whole document, where supabase/008 keeps them */
+  try{ const v=await sbrpc("report_versions",{ p_token:SB_TOKEN, p_key:PLAN_DOC_KEY });
+    ((v && v.ok && v.versions)||[]).forEach(x=>rows.push({ at:x.kept_at||x.saved_at, by:x.saved_by, why:"the server's copy as it was before a save", lost:[], n:0, srv:true,
+      load:async ()=>{ const q=await sbrpc("report_version",{ p_token:SB_TOKEN, p_id:x.id }); return q && q.ok && q.version && q.version.data; } })); }catch(e){_quiet(e)}
+  rows.sort((a,b)=>String(b.at||"").localeCompare(String(a.at||"")));
+  list.innerHTML="";
+  if(!rows.length){ list.appendChild(h("div",{class:"pbc-none"},"No copy yet. One is kept the next time something is taken off the Playbook.")); return; }
+  const when=t=>{ try{ return new Date(t).toLocaleString("en-GB",{ weekday:"short", day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }); }catch(e){ return String(t||""); } };
+  rows.forEach(x=>{ const note=h("span",{class:"pbc-note"},"");
+    const btn=h("button",{class:"btn sm"},"Bring back what is missing");
+    btn.onclick=async ()=>{ btn.disabled=true; note.textContent="Reading…";
+      try{ const d=await x.load(); if(!d) throw new Error("the copy could not be read");
+        const n=_pbBringBack(d); note.textContent=n? n+" back in the Playbook" : "Nothing missing: the Playbook already has all of it"; note.className="pbc-note ok";
+        try{ renderPlaybook(); }catch(e){_quiet(e)} }
+      catch(e){ note.textContent="Could not: "+((e && e.message)||e); note.className="pbc-note bad"; btn.disabled=false; } };
+    list.appendChild(h("div",{class:"pbc-row"},
+      h("div",{class:"pbc-h"}, h("b",{}, when(x.at)), h("span",{}, (x.by? x.by+" · " : "")+(x.why||""))),
+      x.lost.length? h("div",{class:"pbc-lost"}, h("i",{}, (x.n||x.lost.length)+" taken off: "), x.lost.join(" · ")+((x.n||0)>x.lost.length? " …" : "")) : null,
+      h("div",{class:"pbc-act"}, btn, note))); });
+}
 /* the line that says whether what is on the screen is on the server */
 function _planChip(el){
   const make=()=>{ const t=_planSrv.busy? "Saving on the server…" : _planSrv.err? "Not on the server: "+_planSrv.err : _planSrv.at? "On the server · "+new Date(_planSrv.at).toTimeString().slice(0,5) : "";
@@ -21517,15 +21620,22 @@ function pbData(kind){
      is started now */
   if(kind==="def"){ if(!Array.isArray(state.playbookDef)) state.playbookDef=defaultPlaybook("def"); return state.playbookDef; }
   if(!Array.isArray(state.playbookOff)) state.playbookOff=defaultPlaybook("off");
-  /* ATO'S IS A SHEET OF ITS OWN, beside offense and defense. The section that was first
-     added at the end of the offense moves across once, with whatever was written in it. */
-  if(!Array.isArray(state.playbookAto)){
-    const moved=state.playbookOff.filter(s=>/^\s*ATO/i.test(s.title||""));
-    state.playbookOff=state.playbookOff.filter(s=>!/^\s*ATO/i.test(s.title||""));
-    state.playbookAto=moved;
-    state.pbAto=2; try{ persist(); }catch(e){_quiet(e)}
+  /* NO ATO'S SHEET ANY MORE (Oriol, 16/11/2026: "quita lo de ATO's"). It had been a sheet of its own
+     since the first ATO section moved out of the offense; whatever is written in it goes back to the
+     end of the offense - a section of the same name takes the calls it does not have - and the sheet
+     stays an empty list, so nothing ever moves across again. Nothing written is lost */
+  if(!Array.isArray(state.playbookAto)) state.playbookAto=[];
+  if(state.playbookAto.length){
+    const off=state.playbookOff;
+    state.playbookAto.forEach(s=>{ const ent=(s.entries||[]).filter(_pbSaid);
+      if(!ent.length && !_pbN(s.title)) return;
+      const same=off.find(x=>_pbN(x.title)===_pbN(s.title));
+      if(!same){ off.push(JSON.parse(JSON.stringify(Object.assign({}, s, { entries:ent })))); return; }
+      same.entries=same.entries||[];
+      ent.forEach(e=>{ if(!same.entries.some(x=>(e.id && x.id===e.id) || (_pbN(x.label)===_pbN(e.label) && _pbN(x.detail)===_pbN(e.detail)))) same.entries.push(JSON.parse(JSON.stringify(e))); }); });
+    state.playbookAto=[];
+    try{ persist(); }catch(e){_quiet(e)}
   }
-  if(kind==="ato") return state.playbookAto;
   return state.playbookOff;
 }
 let _pbPasteEn=null;
@@ -21566,7 +21676,8 @@ function renderPlaybook(){
       _pbPlayerLoad(); return; }
     _pbPlayerLoad();
   }
-  const kind = state.ui.pbTab==="def" ? "def" : state.ui.pbTab==="ato" ? "ato" : "off";
+  const kind = state.ui.pbTab==="def" ? "def" : "off";
+  pbData("off");   /* an ATO's sheet left from before goes back into the offense whichever tab opens */
   const data=pbData(kind);
   const canEd = !!state.ui.pbEdit && !isPlayerUser();
   root.innerHTML="";
@@ -21579,14 +21690,16 @@ function renderPlaybook(){
   const head=h("div",{class:"pb-head"},
     h("div",{class:"pb-toggle"},
       h("button",{class:"pb-tg"+(kind==="off"?" active":""),onclick:()=>{state.ui.pbTab="off";persist();renderPlaybook();}},"Offense"),
-      h("button",{class:"pb-tg"+(kind==="def"?" active":""),onclick:()=>{state.ui.pbTab="def";persist();renderPlaybook();}},"Defense"),
-      h("button",{class:"pb-tg"+(kind==="ato"?" active":""),onclick:()=>{state.ui.pbTab="ato";persist();renderPlaybook();}},"ATO's ", _wipTag(true))),
+      h("button",{class:"pb-tg"+(kind==="def"?" active":""),onclick:()=>{state.ui.pbTab="def";persist();renderPlaybook();}},"Defense")),
     isPlayerUser()? null : h("button",{class:"btn pb-editbtn"+(canEd?" primary":""),onclick:()=>{state.ui.pbEdit=!state.ui.pbEdit;persist();renderPlaybook();}}, canEd?"✓ Done":"✎ Edit"));
+  /* THE COPIES KEPT BEFORE ANYTHING WAS TAKEN OFF (16/11/2026): the staff who edit can bring back what
+     is missing from any of them */
+  if(!isPlayerUser() && (canEdit("playbook") || isAdmin())) head.appendChild(h("button",{class:"btn pb-copiesbtn", title:"Copies kept before a section or a call was taken off · bring back what is missing", onclick:_pbCopiesOpen},"⟲ Copies"));
   if(canEd) head.appendChild(h("button",{class:"btn pb-addsec",onclick:()=>{ commit(()=>{ data.push({id:uid(),title:"New section",color:kind==="def"?"dark":"blue",entries:[{id:uid(),label:"",detail:""}]}); }); renderPlaybook(); }},"＋ section"));
   wrap.appendChild(head);
   const grid=h("div",{class:"pb-grid"});
   const COLORS=["blue","navy","green","red","purple","gold","dark"];
-  if(!data.length) grid.appendChild(h("div",{class:"pb-empty"}, (kind==="ato"? "No ATO's yet." : "Nothing here yet.")+(canEd? " Add one with ＋ section." : "")));
+  if(!data.length) grid.appendChild(h("div",{class:"pb-empty"}, "Nothing here yet."+(canEd? " Add one with ＋ section." : "")));
   data.forEach((sec,si)=>{
     sec.entries=sec.entries||[];
     const card=h("div",{class:"pb-card c-"+(sec.color||"blue")});
@@ -21649,7 +21762,6 @@ function renderPlaybook(){
     grid.appendChild(card);
   });
   wrap.appendChild(grid);
-  if(kind==="ato"){ try{ _wipArea(grid, "ato", wrap.querySelector(".pb-tg.active .wip-tag")); }catch(e){_quiet(e)} }
   wrap.appendChild(pbVideoPanel(canEd));
   root.appendChild(wrap);
 }
@@ -29462,8 +29574,7 @@ function _lgTeamDash(L){
 const OWIP=[
   ["Game plan", "the bench's control panel: rotation, player status, their team, key sets, the game", ()=>_dashOpen("gameplan",{})],
   ["When he fades", "player development: when each man drops, to rotate ours and attack theirs", ()=>_dashOpen("playerdev",{})],
-  ["Pace", "trends: how fast we play, game by game and inside the games", ()=>_dashOpen("trends",{})],
-  ["ATO's", "playbook: the after-time-out plays, a sheet of their own", ()=>{ state.ui.pbTab="ato"; _dashOpen("playbook",{}); }]];
+  ["Pace", "trends: how fast we play, game by game and inside the games", ()=>_dashOpen("trends",{})]];
 var DASHES={
   Ramon:{ name:"Ramón", role:"Head coach", cards:["oppr","post","league","trends2","week","month"] },
   Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["owork","opend","omiss","scoutv","trends2","oppr","post","week","month"] },
@@ -31953,8 +32064,7 @@ function renderDashboard(){
       const items=[
         ["Game plan", "the bench's control panel: rotation, player status, their team, key sets, the game", ()=>_dashOpen("gameplan",{})],
         ["When he fades", "player development: when each man drops, to rotate ours and attack theirs", ()=>_dashOpen("playerdev",{})],
-        ["Pace", "trends: how fast we play, game by game and inside the games", ()=>_dashOpen("trends",{})],
-        ["ATO's", "playbook: the after-time-out plays, a sheet of their own", ()=>{ state.ui.pbTab="ato"; _dashOpen("playbook",{}); }]];
+        ["Pace", "trends: how fast we play, game by game and inside the games", ()=>_dashOpen("trends",{})]];
       items.forEach(x=>c.__b.appendChild(h("div",{class:"dash-wip"}, h("div",{}, h("b",{}, x[0]), _wipTag(true), h("span",{}, x[1])), go("Open", x[2]))));
     },
     /* STILL TO HAND IN, AND TO REVIEW. Every pre game of the next games and every post game of
@@ -34536,7 +34646,7 @@ function _pbCut(hs, C, gap){
 }
 function _pbPrintSheets(){
   const area=$("#print-area"); if(!area) return;
-  const tabs=[["off","Offense"],["def","Defense"],["ato","ATO's"]].map(x=>({ t:x[1],
+  const tabs=[["off","Offense"],["def","Defense"]].map(x=>({ t:x[1],
     secs:pbData(x[0]).map(s=>({ title:s.title, color:s.color, entries:(s.entries||[]).filter(_pbSaid) })).filter(s=>s.entries.length) })).filter(x=>x.secs.length);
   if(!tabs.length){ toast("Nothing written in the playbook yet"); return; }
   const card=s=>{ const b=h("div",{class:"pbp-b"});
@@ -36608,6 +36718,20 @@ body.role-player .phx .vb-tile{cursor:default;}
 
 /* Playbook edit toggle + images */
 .pb-editbtn{margin-left:auto}
+/* the copies kept before anything was taken off the Playbook (16/11/2026) */
+.pbc{max-width:720px}
+.pbc h3{margin:0 0 4px}
+.pbc-sub{margin:0 0 12px;font-size:13px;color:var(--ink-soft,#5b6472);max-width:62ch}
+.pbc-list{display:grid;gap:8px;max-height:60vh;overflow:auto}
+.pbc-row{display:grid;gap:5px;padding:10px 12px;border:1px solid var(--line,#e4e7ec);border-radius:10px;background:var(--panel,#fff)}
+.pbc-h{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;font-size:13px}
+.pbc-h span{color:var(--ink-soft,#5b6472)}
+.pbc-lost{font-size:12.5px;color:#9c2f24;line-height:1.4}
+.pbc-lost i{font-style:normal;font-weight:700}
+.pbc-act{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pbc-note{font-size:12.5px;color:var(--ink-soft,#5b6472)}.pbc-note.ok{color:#13804f}.pbc-note.bad{color:#c0392b}
+.pbc-none{padding:14px;font-size:13px;color:var(--ink-faint,#8a93a2)}
+body.dark .pbc-lost{color:#ffb0a6}body.dark .pbc-note.ok{color:#7fd8c0}body.dark .pbc-note.bad{color:#ff8f85}
 .pb-addsec{margin-left:0}
 .pb-img{width:42px;height:30px;object-fit:cover;border-radius:5px;border:1px solid var(--line,#e7e9ee);cursor:zoom-in;flex:0 0 auto}
 .pb-imgdrop{flex:0 0 auto;border:1px dashed rgba(201,162,39,.5);background:rgba(201,162,39,.06);color:#8a6410;border-radius:6px;padding:3px 7px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap}
