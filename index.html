@@ -19719,20 +19719,20 @@ function _tsgCells(r, M, vs){
 }
 function _tsgVs(){ return (state.ui && state.ui.tsgVs==="bbl")? "bbl" : "rival"; }
 /* the game's column: the round (or the Pokal), the crest and the club, home or away and the day,
-   and where the club is in the table today; a tap opens the game */
-function _tsgHead(r, L, compact){
+   and where the club is in the table today; a tap opens the game. Not a <button>: the dashboard's
+   print takes every button off the paper, and the heads must stay on it */
+function _tsgHead(r, L){
   const d=String(r.g.date||""), day=d? d.slice(8,10)+"/"+d.slice(5,7) : "";
   const rd=r.cup? "Pokal" : (r.g.round!=null && r.g.round!==""? "MD "+r.g.round : "");
   const open=()=>{ try{ _lgGameOpen(r.g); }catch(e){_quiet(e)} };
   const tip=(r.cup? "Pokal" : "BBL"+(r.g.round!=null? ", matchday "+r.g.round : ""))+" · "+(r.home? "vs " : "@ ")+r.opp+" · "+day+" · "+r.u+"–"+r.t+(r.pos? " · "+r.opp+" "+r.pos+". in the table today" : "")+" · open the game";
-  if(compact) return h("th",{class:"tsg-h"+(r.cup? " cup" : "")+(r.u>r.t? " w" : r.u<r.t? " l" : ""), title:tip, onclick:open}, h("b",{}, r.code||r.opp.slice(0,3).toUpperCase()));
   let crest=null; try{ crest=_lgCrest(L, String(r.oid), "tsg-crest"); }catch(e){_quiet(e)}
   return h("th",{class:"tsg-h"+(r.cup? " cup" : ""), title:tip},
-    h("button",{type:"button", class:"tsg-hb", onclick:open},
+    h("div",{class:"tsg-hb", role:"button", tabindex:"0", onclick:open, onkeydown:e=>{ if(e.key==="Enter" || e.key===" "){ e.preventDefault(); open(); } }},
       h("i",{class:"tsg-rd"}, rd), crest, h("b",{}, r.code||r.opp.slice(0,3).toUpperCase()),
       h("i",{}, (r.home? "vs " : "@ ")+day), h("i",{class:"tsg-pos"}, r.pos? "#"+r.pos : r.cup && !r.rv? "ProA" : "")));
 }
-function _tsgTable(M, L, vs, compact){
+function _tsgTable(M, L, vs){
   const rows=M.rows, se=M.se, lg=M.lg, C=rows.map(r=>_tsgCells(r, M, vs));
   const f1=v=>(v==null || !isFinite(v))? "—" : v.toFixed(1), sg=v=>v==null? "—" : (v>0? "+" : v<0? "−" : "±")+Math.abs(v).toFixed(1);
   const sCell={
@@ -19740,20 +19740,19 @@ function _tsgTable(M, L, vs, compact){
     oer:{ cls:_tsgTone(se.oer, lg.r, true, 3), b:f1(se.oer), em:"BBL "+f1(lg.r), tip:"our OER, every BBL game · the BBL's average "+f1(lg.r) },
     der:{ cls:_tsgTone(se.der, lg.r, false, 3), b:f1(se.der), em:"BBL "+f1(lg.r), tip:"our DER, every BBL game · the BBL's average "+f1(lg.r) },
     net:{ cls:_tsgTone(se.net, 0, true, 3), b:sg(se.net), em:"", tip:"our net rating, every BBL game" },
-    orb:{ cls:_tsgTone(se.orp, lg.o, true, 5), b:se.orp==null? "—" : (compact? Math.round(se.orp) : f1(se.orp))+"%", em:"BBL "+f1(lg.o), tip:"OREB% "+f1(se.orp)+" · "+se.or+" of "+se.orc+" · the BBL's average "+f1(lg.o)+"%" },
-    drb:{ cls:_tsgTone(se.drp, lg.d, true, 5), b:se.drp==null? "—" : (compact? Math.round(se.drp) : f1(se.drp))+"%", em:"BBL "+f1(lg.d), tip:"DREB% "+f1(se.drp)+" · "+se.dr+" of "+se.drc+" · the BBL's average "+f1(lg.d)+"%" }
+    orb:{ cls:_tsgTone(se.orp, lg.o, true, 5), b:se.orp==null? "—" : f1(se.orp)+"%", em:"BBL "+f1(lg.o), tip:"OREB% "+f1(se.orp)+" · "+se.or+" of "+se.orc+" · the BBL's average "+f1(lg.o)+"%" },
+    drb:{ cls:_tsgTone(se.drp, lg.d, true, 5), b:se.drp==null? "—" : f1(se.drp)+"%", em:"BBL "+f1(lg.d), tip:"DREB% "+f1(se.drp)+" · "+se.dr+" of "+se.drc+" · the BBL's average "+f1(lg.d)+"%" }
   };
   const RIV=vs==="rival";
-  const ROWS=compact? [["oer","OER"],["der","DER"],["orb","OREB%"],["drb","DREB%"]]
-    : [["res","Result","margin · score"],["oer","OER", RIV? "they allow" : "pts / 100 poss"],["der","DER", RIV? "they score" : "pts / 100 allowed"],
-       ["net","Net", RIV? "they usually give" : "OER − DER"],["orb","OREB%","of our misses"],["drb","DREB%","of their misses"]];
-  const t=h("table",{class:"tsg-t wx-skip"+(compact? " sm" : ""), style:"--n:"+rows.length});
-  t.appendChild(h("tr",{class:"tsg-hr"}, h("th",{class:"tsg-l"}, compact? "" : h("span",{}, RIV? "against the rival" : "against the BBL")),
-    rows.map(r=>_tsgHead(r, L, compact)),
-    h("th",{class:"tsg-s", title:"the BBL's games, every count added up"}, h("b",{}, compact? se.w+"–"+se.l : "Season"), compact? null : h("i",{},"BBL only"))));
+  const ROWS=[["res","Result","margin · score"],["oer","OER", RIV? "they allow" : "pts / 100 poss"],["der","DER", RIV? "they score" : "pts / 100 allowed"],
+    ["net","Net", RIV? "they usually give" : "OER − DER"],["orb","OREB%","of our misses"],["drb","DREB%","of their misses"]];
+  const t=h("table",{class:"tsg-t wx-skip", style:"--n:"+rows.length});
+  t.appendChild(h("tr",{class:"tsg-hr"}, h("th",{class:"tsg-l"}, h("span",{}, RIV? "against the rival" : "against the BBL")),
+    rows.map(r=>_tsgHead(r, L)),
+    h("th",{class:"tsg-s", title:"the BBL's games, every count added up"}, h("b",{}, "Season"), h("i",{},"BBL only"))));
   ROWS.forEach(k=>{
-    const lab=h("td",{class:"tsg-l"}, h("b",{}, k[1]), (!compact && k[2])? h("i",{}, k[2]) : null);
-    const cell=x=>h("td",{class:"v "+(k[0]==="res"? "tsg-res " : "")+x.cls, title:x.tip}, h("b",{}, compact && (k[0]==="oer" || k[0]==="der") && isFinite(parseFloat(x.b))? String(Math.round(parseFloat(x.b))) : x.b), (!compact && x.em)? h("em",{}, x.em) : null);
+    const lab=h("td",{class:"tsg-l"}, h("b",{}, k[1]), k[2]? h("i",{}, k[2]) : null);
+    const cell=x=>h("td",{class:"v "+(k[0]==="res"? "tsg-res " : "")+x.cls, title:x.tip}, h("b",{}, x.b), x.em? h("em",{}, x.em) : null);
     t.appendChild(h("tr",{class:"tsg-r "+k[0]}, lab, C.map((c,i)=>{ const td=cell(c[k[0]]); if(rows[i].cup) td.classList.add("cup"); return td; }),
       (()=>{ const td=cell(sCell[k[0]]); td.classList.add("tsg-s"); return td; })()));
   });
@@ -19766,7 +19765,8 @@ function _tsgKey(M, vs){
   return vs==="rival"? "Green: better than that rival usually lets teams do · red: worse. OER against the points it allows, DER against the points it scores, OREB% and DREB% against its own rebounding - its BBL season so far, this game included. 3 points per 100 in a rating, 5 in a percentage. The season column against the BBL's average"+(M.cups? "; the Pokal's games are marked and are not in it" : "")+"."
     : "Green: better than the BBL's average (OER / DER "+(M.lg.r!=null? M.lg.r.toFixed(1) : "—")+", OREB% "+(M.lg.o!=null? M.lg.o.toFixed(1) : "—")+", DREB% "+(M.lg.d!=null? M.lg.d.toFixed(1) : "—")+") · red: worse. 3 points per 100 in a rating, 5 in a percentage. Under each club: the matchday, home or away, the day and its place in the table today"+(M.cups? "; the Pokal's games are marked and are not in the season column" : "")+".";
 }
-/* Trends' head: the big table, with the switch */
+/* Trends' head and the dashboard's Team trends card - the same table (Oriol, 16/11/2026: "me vale
+   la misma tabla para dashboard como para trends"), with the switch */
 function _trendsSeasonGrid(){
   const box=h("div",{class:"tsg"}, h("div",{class:"ld"},"Reading the season, game by game…", h("span",{class:"ld-bar"})));
   Promise.all([_trgRead(), _tsgLeague()]).then(both=>{
@@ -19784,15 +19784,6 @@ function _trendsSeasonGrid(){
     draw();
   }).catch(e=>{ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"},"The season could not be read: "+((e&&e.message)||e))); });
   return box;
-}
-/* the dashboard's Team trends card: the same table, small - the numbers whole, no line under them */
-function _dashSeasonGridInto(el){
-  Promise.all([_trgRead(), _tsgLeague()]).then(both=>{
-    const R=both[0], L=both[1], M=_tsgModel(R, L);
-    el.innerHTML="";
-    if(!M.rows.length){ el.appendChild(h("div",{class:"dash-miss"},"No game read yet.")); return; }
-    el.appendChild(_tsgTable(M, L, _tsgVs(), true));
-  }).catch(()=>{ el.innerHTML=""; el.appendChild(h("div",{class:"dash-miss"},"The season could not be read.")); });
 }
 function renderTrends(){
   const root=$("#viewTrends"); if(!root) return;
@@ -31387,10 +31378,9 @@ function renderDashboard(){
       /* WHAT IS KEY FOR US, FIRST: TAG and BACK, paint touches, ball reversals - the last game,
          the last three and the season, big - and the line of each game by game under them */
       const key=h("div",{class:"dash-key"}, loading("Reading our tagging…"));
-      /* THE SEASON GAME BY GAME, ON TOP (Oriol, 16/11/2026): Trends' table, small */
-      { const sg=h("div",{class:"dash-tsg"}, loading());
-        c.__b.appendChild(h("div",{class:"dash-keyh dash-tsgh"}, h("b",{},"The season · game by game"), h("span",{}, _tsgVs()==="rival"? "green / red: better / worse than the rival usually lets teams do" : "green / red: better / worse than the BBL's average")));
-        c.__b.appendChild(sg); _dashSeasonGridInto(sg); }
+      /* THE SEASON GAME BY GAME, ON TOP (Oriol, 16/11/2026): Trends' own table */
+      { c.__b.appendChild(h("div",{class:"dash-keyh dash-tsgh"}, h("b",{},"The season · game by game"), h("span",{}, _tsgVs()==="rival"? "green / red: better / worse than the rival usually lets teams do" : "green / red: better / worse than the BBL's average")));
+        c.__b.appendChild(h("div",{class:"dash-tsg"}, _trendsSeasonGrid())); }
       c.__b.appendChild(h("div",{class:"dash-keyh"}, h("b",{},"What is key for us"), h("span",{},"games: the last, the last 3, the season · trainings: the last 7 days, the average")));
       c.__b.appendChild(key);
       const cT=sub("TAG / BACK conceded"), cP=sub("Paint touches"), cR=sub("Ball reversals"), cL=sub("The last game");
@@ -41255,19 +41245,10 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .tsg-t td.v.tsg-res.l{background:#c4413d;color:#fff}
 .tsg-t td.v.tsg-res em{opacity:.92}
 .tsg-t tr.res > *,.tsg-t tr.net > *{border-bottom:2px solid var(--line-strong)}
-.tsg-t.sm{min-width:calc(60px + 52px + var(--n,10) * 40px)}
-.tsg-t.sm .tsg-l{width:60px;padding:2px 6px}
-.tsg-t.sm .tsg-l b{font-size:10.5px;letter-spacing:.06em}
-.tsg-t.sm .tsg-s{width:52px}
-.tsg-t.sm th.tsg-s b{font:700 11.5px 'IBM Plex Mono',monospace;letter-spacing:0;text-transform:none}
-.tsg-t.sm td.v{padding:3px 0}
-.tsg-t.sm td.v b{font-size:11.5px;font-weight:700}
-.tsg-t.sm th.tsg-h{padding:4px 0 3px;cursor:pointer;background:var(--ink-soft);color:#fff}
-.tsg-t.sm th.tsg-h b{font:700 11px 'Oswald',sans-serif;letter-spacing:.06em}
-.tsg-t.sm th.tsg-h.w{background:#23806b}.tsg-t.sm th.tsg-h.l{background:#c4413d}
-.tsg-t.sm th.tsg-h.cup{box-shadow:inset 0 -3px 0 var(--gold-1)}
-.tsg-t.sm tr.oer > *,.tsg-t.sm tr.res > *,.tsg-t.sm tr.net > *{border-bottom:1px solid var(--line)}
-.tsg-t.sm tr.der > *{border-bottom:2px solid var(--line-strong)}
+#viewDash .tsg-key{display:none}
+#print-area .tsg-bar,#print-area .tsg-key{display:none}
+#print-area .tsg-w{overflow:visible}
+#print-area .tsg-t{min-width:0}
 .dash-tsg{margin:0 0 14px;min-width:0;max-width:100%}
 .dash-tsg .tsg-w,.tsg .tsg-w{max-width:100%}
 .dash-tsg .dash-miss{padding:6px 0}
