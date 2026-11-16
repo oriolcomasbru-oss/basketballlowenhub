@@ -19645,16 +19645,19 @@ function renderTeamScout(){
    this screen is the other question — what is moving between one and the next. For now it
    holds the trends and comparison block that used to be folded away inside Post game, as
    the whole screen rather than as a drawer, and it is where the dashboard will be built. */
-/* THE SEASON, ROUND BY ROUND (Oriol, 16/11/2026: "una parte al principio que ponga los resultados de
+/* THE SEASON, GAME BY GAME (Oriol, 16/11/2026: "una parte al principio que ponga los resultados de
    todas las jornadas, el OER y el DER según los rivales, y el %OREB y %DREB · muy visual y clara ·
    el mismo esquema que el game plan pero de los partidos"; then "pon los de copa", "contra el
-   rival"). One column a game, oldest on the left, the Pokal's marked; the rows of the game plan's
-   board under the rotation: the result, OER, DER, net, OREB%, DREB%. Each cell is coloured against
-   what that rival usually does - our OER against the points it allows, our DER against the points it
-   scores, our glass against its own - from its BBL season so far (this game included, five games at
-   least), or, on the switch, against the BBL's average: 3 points per 100 in a rating, 5 in a
-   percentage. The season column is the BBL's games only, every count added up before it is divided.
-   The same table, compact, opens the dashboard's Team trends card. */
+   rival", "me vale la misma tabla para dashboard como para trends", and "una línea de cuáles son los
+   números que suelen hacer estos equipos ... cuando juegan contra los demás o contra nosotros, en
+   cada hilera, siempre el mismo formato").
+   One column a game, oldest on the left, the Pokal's marked, a tap anywhere in it opening the game.
+   Every row is a pair: what the game gave us, and under it, always in the same form, what the rest of
+   the BBL does against that club - its league games against everybody but us, whole games, every
+   count added up before it is divided - with our difference, green when it was better for us. Our row
+   is coloured against that same line (five games of it at least), or, on the switch, against the BBL's
+   average: 3 points per 100 in a rating, 5 in a percentage or a margin. The season column is the
+   BBL's games only. Trends and the dashboard's Team trends card draw the same table. */
 let _tsgFourAsk=null;
 async function _tsgLeague(){
   let L=leagueState();
@@ -19664,97 +19667,144 @@ async function _tsgLeague(){
   }
   return L;
 }
-function _tsgModel(R, L){
+/* what each club does against the rest of the BBL: its finished league games in which we were not the
+   other side, read off the season's play by play the player goals already keep (_rgLoad, whole games) */
+function _tsgRest(D){
+  const us=String((D && D.us)||""), S={};
+  ((D && D.games)||[]).forEach(g=>{ const A=D.C[g.id]; if(!A || !A.TF) return;
+    if(String(A.h)===us || String(A.a)===us) return;
+    [[String(A.h), A.hs-A.as],[String(A.a), A.as-A.hs]].forEach(p=>{ const x=A.TF[p[0]]; if(!x || !isFinite(p[1])) return;
+      const s=S[p[0]]||(S[p[0]]={ g:0, mg:0, pts:0, poss:0, op:0, opPoss:0, or:0, oC:0, dr:0, dC:0 });
+      s.g++; s.mg+=p[1]; ["pts","poss","op","opPoss","or","oC","dr","dC"].forEach(k=>{ s[k]+=x[k]||0; }); }); });
+  const out={};
+  Object.keys(S).forEach(tid=>{ const s=S[tid];
+    out[tid]={ g:s.g, mg:s.mg/s.g, o:s.poss? 100*s.pts/s.poss : null, d:s.opPoss? 100*s.op/s.opPoss : null,
+      ob:s.oC? 100*s.or/s.oC : null, db:s.dC? 100*s.dr/s.dC : null }; });
+  return out;
+}
+/* REST: null while the league's games are still being read - the rows are then coloured against the
+   club's season as the league's four factors have it (our game included), and the line under them waits */
+function _tsgModel(R, L, REST){
   const four={}; (L.four||[]).forEach(f=>{ if(f && f.teamId!=null) four[String(f.teamId)]=f; });
   const pos={}; (L.standings||[]).forEach(r=>{ pos[String(r.teamId||r.team)]=r.pos; });
   const F=(L.four||[]).filter(f=>f && isFinite(f.ortg));
   const lgO=_rebLeagueAvg(L);
   const lg={ r:F.length? F.reduce((a,f)=>a+f.ortg,0)/F.length : null, o:lgO, d:lgO!=null? 100-lgO : null };
+  /* every line read the way our row is read: what the other side does against that club */
+  const fromRest=x=>({ src:"rest", g:x.g, res:-x.mg, oer:x.d, der:x.o, net:(x.d!=null && x.o!=null)? x.d-x.o : null,
+    orb:x.db!=null? 100-x.db : null, drb:x.ob!=null? 100-x.ob : null });
+  const fromFour=f=>({ src:"four", g:f.gp||0, res:null, oer:f.drtg, der:f.ortg, net:f.drtg-f.ortg,
+    orb:(f.def && f.def.reb!=null)? 100-100*f.def.reb : null, drb:(f.off && f.off.reb!=null)? 100-100*f.off.reb : null });
   const rows=((R && (R.allGames||R.games))||[]).filter(x=>x && x.g && x.us && x.them && x.us.poss>0 && x.them.poss>0).map(x=>{
     const g=x.g, home=String(g.homeId)===String(R.tid), oid=String(home? g.awayId : g.homeId), f=four[oid];
     const rb=(x.rb && x.rb.u && x.rb.t)? x.rb : { u:{ or:x.us.oreb||0, dr:x.us.dreb||0 }, t:{ or:x.them.oreb||0, dr:x.them.dreb||0 } };
-    const rv=(f && isFinite(f.ortg) && isFinite(f.drtg))? { o:f.ortg, d:f.drtg, gp:f.gp||0,
-      ob:(f.off && f.off.reb!=null)? 100*f.off.reb : null, db:(f.def && f.def.reb!=null)? 100*f.def.reb : null } : null;
-    return { g:g, cup:!!x.cup, home:home, oid:oid, code:x.code||"", opp:_gTidy(x.opp||(home? g.away : g.home)||""), pos:pos[oid]||null,
-      u:x.us.pts, t:x.them.pts, pu:x.us.poss, pt:x.them.poss, oer:100*x.us.pts/x.us.poss, der:100*x.them.pts/x.them.poss,
-      or:rb.u.or, orc:rb.u.or+rb.t.dr, dr:rb.u.dr, drc:rb.u.dr+rb.t.or, rv:rv };
+    const ref=REST? (REST[oid]? fromRest(REST[oid]) : null) : ((f && isFinite(f.ortg) && isFinite(f.drtg))? fromFour(f) : null);
+    const r={ g:g, cup:!!x.cup, home:home, oid:oid, code:x.code||"", opp:_gTidy(x.opp||(home? g.away : g.home)||""), pos:pos[oid]||null,
+      u:x.us.pts, t:x.them.pts, pu:x.us.poss, pt:x.them.poss, or:rb.u.or, orc:rb.u.or+rb.t.dr, dr:rb.u.dr, drc:rb.u.dr+rb.t.or, ref:ref };
+    r.v={ res:r.u-r.t, oer:100*r.u/r.pu, der:100*r.t/r.pt, orb:r.orc? 100*r.or/r.orc : null, drb:r.drc? 100*r.dr/r.drc : null };
+    r.v.net=r.v.oer-r.v.der;
+    return r;
   });
   const B=rows.filter(r=>!r.cup), S=k=>B.reduce((a,r)=>a+(r[k]||0),0);
   const se={ n:B.length, w:B.filter(r=>r.u>r.t).length, l:B.filter(r=>r.u<r.t).length,
-    oer:S("pu")? 100*S("u")/S("pu") : null, der:S("pt")? 100*S("t")/S("pt") : null,
     or:S("or"), orc:S("orc"), dr:S("dr"), drc:S("drc") };
-  se.net=(se.oer!=null && se.der!=null)? se.oer-se.der : null;
-  se.orp=se.orc? 100*se.or/se.orc : null; se.drp=se.drc? 100*se.dr/se.drc : null;
-  return { rows:rows, lg:lg, se:se, cups:rows.length-B.length };
+  se.v={ res:B.length? (S("u")-S("t"))/B.length : null, oer:S("pu")? 100*S("u")/S("pu") : null, der:S("pt")? 100*S("t")/S("pt") : null,
+    orb:se.orc? 100*se.or/se.orc : null, drb:se.drc? 100*se.dr/se.drc : null };
+  se.v.net=(se.v.oer!=null && se.v.der!=null)? se.v.oer-se.v.der : null;
+  /* the line under the season: what the rest usually does against the clubs we have played, game by game averaged */
+  se.ref=null;
+  if(REST){ const W=B.filter(r=>r.ref); if(W.length){ se.ref={ src:"rest", g:W.length };
+    TSG_ROWS.forEach(k=>{ const a=W.map(r=>r.ref[k]).filter(v=>v!=null && isFinite(v)); se.ref[k]=a.length? a.reduce((p,q)=>p+q,0)/a.length : null; }); } }
+  return { rows:rows, lg:lg, se:se, cups:rows.length-B.length, rest:!!REST };
 }
+/* the rows: key, label, what our row is, what the line under it is, how a difference is judged */
+const TSG_ROWS=["res","oer","der","net","orb","drb"];
+const TSG_ROW={
+  res:{ lab:"Result", sub:"margin · score", rest:"their rivals' margin", hi:true, th:5, kind:"pts" },
+  oer:{ lab:"OER", sub:"our pts / 100 poss", rest:"their rivals score", hi:true, th:3, kind:"rtg" },
+  der:{ lab:"DER", sub:"their pts / 100 poss", rest:"their rivals allow", hi:false, th:3, kind:"rtg" },
+  net:{ lab:"Net", sub:"OER − DER", rest:"their rivals' net", hi:true, th:3, kind:"rtg" },
+  orb:{ lab:"OREB%", sub:"our misses back", rest:"their rivals get back", hi:true, th:5, kind:"pct" },
+  drb:{ lab:"DREB%", sub:"their misses kept", rest:"their rivals keep", hi:true, th:5, kind:"pct" }
+};
 function _tsgTone(v, ref, hi, th){
   if(v==null || ref==null || !isFinite(v) || !isFinite(ref)) return "";
   const d=(v-ref)*(hi? 1 : -1); return d>=th? "good" : d<=-th? "bad" : "";
 }
-/* one game's six cells: the value, the line under it, the colour and what the colour was read against */
-function _tsgCells(r, M, vs){
-  const f1=v=>(v==null || !isFinite(v))? "—" : v.toFixed(1), sg=v=>(v>0? "+" : v<0? "−" : "±")+Math.abs(v).toFixed(1);
-  const net=r.oer-r.der, op=r.orc? 100*r.or/r.orc : null, dp=r.drc? 100*r.dr/r.drc : null;
-  const rv=r.rv, okR=!!(rv && rv.gp>=MS_GAMES), lg=M.lg, who=r.opp||r.code;
-  const ref=vs==="rival"? (okR? { oer:rv.d, der:rv.o, net:rv.d-rv.o, orb:rv.db!=null? 100-rv.db : null, drb:rv.ob!=null? 100-rv.ob : null } : {})
-    : { oer:lg.r, der:lg.r, net:0, orb:lg.o, drb:lg.d };
-  const why=vs==="rival"? (okR? " · "+who+", its BBL season so far ("+rv.gp+" games, this one included)"
-      : rv? " · "+who+" has "+rv.gp+" BBL games: too few to colour against" : " · "+who+" is not a BBL club: nothing to colour against")
-    : " · the BBL's average";
-  const mg=r.u-r.t;
-  return {
-    res:{ cls:r.u>r.t? "w" : r.u<r.t? "l" : "", b:(r.u>r.t? "W " : r.u<r.t? "L " : "D ")+(mg>0? "+" : mg<0? "−" : "")+Math.abs(mg), em:r.u+"–"+r.t,
-      tip:(r.home? "vs " : "@ ")+who+" · "+r.u+"–"+r.t },
-    oer:{ cls:_tsgTone(r.oer, ref.oer, true, 3), b:f1(r.oer), em:vs==="rival"? (ref.oer!=null? "allow "+Math.round(ref.oer) : "—") : r.u+" pts",
-      tip:"OER "+f1(r.oer)+" · "+r.u+" points in ≈"+r.pu.toFixed(1)+" possessions"+(ref.oer!=null? " · "+(vs==="rival"? "they allow " : "")+f1(ref.oer)+" ("+sg(r.oer-ref.oer)+")" : "")+why },
-    der:{ cls:_tsgTone(r.der, ref.der, false, 3), b:f1(r.der), em:vs==="rival"? (ref.der!=null? "score "+Math.round(ref.der) : "—") : r.t+" pts",
-      tip:"DER "+f1(r.der)+" · "+r.t+" points in ≈"+r.pt.toFixed(1)+" possessions"+(ref.der!=null? " · "+(vs==="rival"? "they score " : "")+f1(ref.der)+" ("+sg(r.der-ref.der)+")" : "")+why },
-    net:{ cls:_tsgTone(net, ref.net, true, 3), b:sg(net), em:vs==="rival"? (ref.net!=null? "exp. "+(Math.round(ref.net)>0? "+" : Math.round(ref.net)<0? "−" : "±")+Math.abs(Math.round(ref.net)) : "—") : "",
-      tip:"Net "+sg(net)+(ref.net!=null? (vs==="rival"? " · what "+who+" usually gives a team: "+sg(ref.net) : "") : "")+why },
-    orb:{ cls:_tsgTone(op, ref.orb, true, 5), b:op==null? "—" : Math.round(op)+"%", em:r.or+"/"+r.orc,
-      tip:"OREB% "+f1(op)+" · "+r.or+" of our "+r.orc+" misses back"+(ref.orb!=null? " · "+(vs==="rival"? "teams get back " : "")+f1(ref.orb)+"%" : "")+why },
-    drb:{ cls:_tsgTone(dp, ref.drb, true, 5), b:dp==null? "—" : Math.round(dp)+"%", em:r.dr+"/"+r.drc,
-      tip:"DREB% "+f1(dp)+" · "+r.dr+" of their "+r.drc+" misses kept"+(ref.drb!=null? " · "+(vs==="rival"? "teams keep " : "")+f1(ref.drb)+"%" : "")+why }
-  };
+function _tsgFmt(k, v, signed){
+  if(v==null || !isFinite(v)) return "—";
+  const K=TSG_ROW[k].kind, s=x=>(x>0? "+" : x<0? "−" : "±");
+  if(K==="pct") return signed? s(Math.round(v))+Math.abs(Math.round(v)) : Math.round(v)+"%";
+  if(K==="pts") return s(Math.round(v))+Math.abs(Math.round(v));
+  return (signed || k==="net")? s(v)+Math.abs(v).toFixed(1) : v.toFixed(1);
 }
 function _tsgVs(){ return (state.ui && state.ui.tsgVs==="bbl")? "bbl" : "rival"; }
+/* one game's cells: our row (value, the line under the value, its colour) and the rest's line */
+function _tsgCells(r, M, vs){
+  const ref=r.ref, okR=!!(ref && ref.g>=MS_GAMES), lg=M.lg, who=r.opp||r.code, out={};
+  const lgRef={ res:null, oer:lg.r, der:lg.r, net:0, orb:lg.o, drb:lg.d };
+  const src=!ref? (r.cup && !M.rest? "" : " · "+who+(M.rest? " has no BBL games against the rest" : " is not a BBL club"))
+    : ref.src==="rest"? " · "+who+" against the rest of the BBL: "+ref.g+" games, ours left out"
+    : " · "+who+"'s BBL season so far ("+ref.g+" games, ours included) - the games against the rest are still being read";
+  const pts={ res:r.u+"–"+r.t, oer:r.u+" pts", der:r.t+" pts", net:"", orb:r.or+"/"+r.orc, drb:r.dr+"/"+r.drc };
+  TSG_ROWS.forEach(k=>{
+    const D=TSG_ROW[k], v=r.v[k], rv=ref? ref[k] : null;
+    const cmp=vs==="rival"? (okR? rv : null) : lgRef[k];
+    const cls=k==="res"? (r.u>r.t? "w" : r.u<r.t? "l" : "") : _tsgTone(v, cmp, D.hi, D.th);
+    const b=k==="res"? (r.u>r.t? "W " : r.u<r.t? "L " : "D ")+_tsgFmt(k, v) : _tsgFmt(k, v);
+    const vsTxt=cmp==null? "" : vs==="rival"? " · against the rest "+_tsgFmt(k, cmp)+" ("+_tsgFmt(k, v-cmp, true)+")" : " · the BBL's average "+_tsgFmt(k, cmp);
+    const me={ cls:cls, b:b, em:pts[k], tip:D.lab+" "+(k==="res"? r.u+"–"+r.t : _tsgFmt(k, v))+vsTxt };
+    /* the line under it: the rest against that club, and our difference */
+    let rest;
+    if(!M.rest) rest={ cls:"", b:"…", em:"", tip:"the games against the rest are still being read" };
+    else if(rv==null || !isFinite(rv)) rest={ cls:"", b:"—", em:"", tip:D.rest+src };
+    else { const d=v-rv, good=(ref.g>=MS_GAMES)? _tsgTone(v, rv, D.hi, D.th) : "";
+      rest={ cls:"", b:_tsgFmt(k, rv), em:_tsgFmt(k, d, true), ecls:good==="good"? "up" : good==="bad"? "dn" : "",
+        tip:D.lab+": "+D.rest+" "+_tsgFmt(k, rv)+src+" · us "+_tsgFmt(k, v)+" ("+_tsgFmt(k, d, true)+(ref.g<MS_GAMES? ", too few games to colour" : "")+")" }; }
+    out[k]={ me:me, rest:rest };
+  });
+  return out;
+}
 /* the game's column: the round (or the Pokal), the crest and the club, home or away and the day,
-   and where the club is in the table today; a tap opens the game. Not a <button>: the dashboard's
-   print takes every button off the paper, and the heads must stay on it */
-function _tsgHead(r, L){
+   and where the club is in the table today. Not a <button>: the dashboard's print takes every button
+   off the paper, and the heads must stay on it */
+function _tsgHead(r, L, open){
   const d=String(r.g.date||""), day=d? d.slice(8,10)+"/"+d.slice(5,7) : "";
   const rd=r.cup? "Pokal" : (r.g.round!=null && r.g.round!==""? "MD "+r.g.round : "");
-  const open=()=>{ try{ _lgGameOpen(r.g); }catch(e){_quiet(e)} };
   const tip=(r.cup? "Pokal" : "BBL"+(r.g.round!=null? ", matchday "+r.g.round : ""))+" · "+(r.home? "vs " : "@ ")+r.opp+" · "+day+" · "+r.u+"–"+r.t+(r.pos? " · "+r.opp+" "+r.pos+". in the table today" : "")+" · open the game";
   let crest=null; try{ crest=_lgCrest(L, String(r.oid), "tsg-crest"); }catch(e){_quiet(e)}
   return h("th",{class:"tsg-h"+(r.cup? " cup" : ""), title:tip},
     h("div",{class:"tsg-hb", role:"button", tabindex:"0", onclick:open, onkeydown:e=>{ if(e.key==="Enter" || e.key===" "){ e.preventDefault(); open(); } }},
       h("i",{class:"tsg-rd"}, rd), crest, h("b",{}, r.code||r.opp.slice(0,3).toUpperCase()),
-      h("i",{}, (r.home? "vs " : "@ ")+day), h("i",{class:"tsg-pos"}, r.pos? "#"+r.pos : r.cup && !r.rv? "ProA" : "")));
+      h("i",{}, (r.home? "vs " : "@ ")+day), h("i",{class:"tsg-pos"}, r.pos? "#"+r.pos : r.cup && !r.ref? "ProA" : "")));
 }
 function _tsgTable(M, L, vs){
   const rows=M.rows, se=M.se, lg=M.lg, C=rows.map(r=>_tsgCells(r, M, vs));
-  const f1=v=>(v==null || !isFinite(v))? "—" : v.toFixed(1), sg=v=>v==null? "—" : (v>0? "+" : v<0? "−" : "±")+Math.abs(v).toFixed(1);
-  const sCell={
-    res:{ cls:"", b:se.w+"–"+se.l, em:"BBL record", tip:"BBL record: "+se.w+" won, "+se.l+" lost"+(M.cups? " · the Pokal's "+M.cups+" not in the season column" : "") },
-    oer:{ cls:_tsgTone(se.oer, lg.r, true, 3), b:f1(se.oer), em:"BBL "+f1(lg.r), tip:"our OER, every BBL game · the BBL's average "+f1(lg.r) },
-    der:{ cls:_tsgTone(se.der, lg.r, false, 3), b:f1(se.der), em:"BBL "+f1(lg.r), tip:"our DER, every BBL game · the BBL's average "+f1(lg.r) },
-    net:{ cls:_tsgTone(se.net, 0, true, 3), b:sg(se.net), em:"", tip:"our net rating, every BBL game" },
-    orb:{ cls:_tsgTone(se.orp, lg.o, true, 5), b:se.orp==null? "—" : f1(se.orp)+"%", em:"BBL "+f1(lg.o), tip:"OREB% "+f1(se.orp)+" · "+se.or+" of "+se.orc+" · the BBL's average "+f1(lg.o)+"%" },
-    drb:{ cls:_tsgTone(se.drp, lg.d, true, 5), b:se.drp==null? "—" : f1(se.drp)+"%", em:"BBL "+f1(lg.d), tip:"DREB% "+f1(se.drp)+" · "+se.dr+" of "+se.drc+" · the BBL's average "+f1(lg.d)+"%" }
-  };
+  const opens=rows.map(r=>()=>{ try{ _lgGameOpen(r.g); }catch(e){_quiet(e)} });
   const RIV=vs==="rival";
-  const ROWS=[["res","Result","margin · score"],["oer","OER", RIV? "they allow" : "pts / 100 poss"],["der","DER", RIV? "they score" : "pts / 100 allowed"],
-    ["net","Net", RIV? "they usually give" : "OER − DER"],["orb","OREB%","of our misses"],["drb","DREB%","of their misses"]];
   const t=h("table",{class:"tsg-t wx-skip", style:"--n:"+rows.length});
-  t.appendChild(h("tr",{class:"tsg-hr"}, h("th",{class:"tsg-l"}, h("span",{}, RIV? "against the rival" : "against the BBL")),
-    rows.map(r=>_tsgHead(r, L)),
+  t.appendChild(h("tr",{class:"tsg-hr"}, h("th",{class:"tsg-l"}, h("span",{}, RIV? "coloured against the rest" : "coloured against the BBL")),
+    rows.map((r,i)=>_tsgHead(r, L, opens[i])),
     h("th",{class:"tsg-s", title:"the BBL's games, every count added up"}, h("b",{}, "Season"), h("i",{},"BBL only"))));
-  ROWS.forEach(k=>{
-    const lab=h("td",{class:"tsg-l"}, h("b",{}, k[1]), k[2]? h("i",{}, k[2]) : null);
-    const cell=x=>h("td",{class:"v "+(k[0]==="res"? "tsg-res " : "")+x.cls, title:x.tip}, h("b",{}, x.b), x.em? h("em",{}, x.em) : null);
-    t.appendChild(h("tr",{class:"tsg-r "+k[0]}, lab, C.map((c,i)=>{ const td=cell(c[k[0]]); if(rows[i].cup) td.classList.add("cup"); return td; }),
-      (()=>{ const td=cell(sCell[k[0]]); td.classList.add("tsg-s"); return td; })()));
+  const lgRef={ res:null, oer:lg.r, der:lg.r, net:0, orb:lg.o, drb:lg.d };
+  TSG_ROWS.forEach(k=>{
+    const D=TSG_ROW[k], v=se.v[k], sr=se.ref? se.ref[k] : null;
+    /* our row */
+    const sMe={ cls:k==="res"? "" : _tsgTone(v, lgRef[k], D.hi, D.th), b:k==="res"? se.w+"–"+se.l : (k==="orb" || k==="drb")? (v==null? "—" : v.toFixed(1)+"%") : _tsgFmt(k, v),
+      em:k==="res"? "avg "+_tsgFmt(k, v) : lgRef[k]!=null && k!=="net"? "BBL "+(k==="orb" || k==="drb"? lgRef[k].toFixed(1) : lgRef[k].toFixed(1)) : "",
+      tip:k==="res"? "BBL record "+se.w+"–"+se.l+", "+_tsgFmt(k, v)+" a game"+(M.cups? " · the Pokal's "+M.cups+" not in the season column" : "") : D.lab+" "+_tsgFmt(k, v)+", every BBL game"+(lgRef[k]!=null? " · the BBL's average "+_tsgFmt(k, lgRef[k]) : "") };
+    const sRest=!M.rest? { b:"…", em:"", tip:"the games against the rest are still being read" }
+      : sr==null? { b:"—", em:"", tip:"" }
+      : (()=>{ const d=v-sr, g=_tsgTone(v, sr, D.hi, D.th); return { b:_tsgFmt(k, sr), em:_tsgFmt(k, d, true), ecls:g==="good"? "up" : g==="bad"? "dn" : "",
+          tip:D.lab+": "+D.rest+", the clubs we have played, a game on average "+_tsgFmt(k, sr)+" · us "+_tsgFmt(k, v)+" ("+_tsgFmt(k, d, true)+")" }; })();
+    const td=(x, i, extra)=>{ const c=h("td",{class:"v "+(extra||"")+(x.cls||""), title:x.tip+(i!=null? " · tap: the game" : "")},
+        h("b",{}, x.b), x.em? h("em",{class:x.ecls||""}, x.em) : null);
+      if(i!=null){ c.classList.add("go"); if(rows[i].cup) c.classList.add("cup"); c.addEventListener("click", opens[i]); }
+      return c; };
+    t.appendChild(h("tr",{class:"tsg-r "+k}, h("td",{class:"tsg-l"}, h("b",{}, D.lab), h("i",{}, D.sub)),
+      C.map((c,i)=>td(c[k].me, i, k==="res"? "tsg-res " : "")), td(sMe, null, "tsg-s "+(k==="res"? "tsg-res " : ""))));
+    t.appendChild(h("tr",{class:"tsg-rest "+k}, h("td",{class:"tsg-l"}, h("b",{}, "the rest"), h("i",{}, D.rest)),
+      C.map((c,i)=>td(c[k].rest, i)), td(sRest, null, "tsg-s ")));
   });
   /* the newest games in sight: a long season slides, the label column and the season stay put */
   const wrap=h("div",{class:"tsg-w"}, t);
@@ -19762,26 +19812,34 @@ function _tsgTable(M, L, vs){
   return wrap;
 }
 function _tsgKey(M, vs){
-  return vs==="rival"? "Green: better than that rival usually lets teams do · red: worse. OER against the points it allows, DER against the points it scores, OREB% and DREB% against its own rebounding - its BBL season so far, this game included. 3 points per 100 in a rating, 5 in a percentage. The season column against the BBL's average"+(M.cups? "; the Pokal's games are marked and are not in it" : "")+"."
-    : "Green: better than the BBL's average (OER / DER "+(M.lg.r!=null? M.lg.r.toFixed(1) : "—")+", OREB% "+(M.lg.o!=null? M.lg.o.toFixed(1) : "—")+", DREB% "+(M.lg.d!=null? M.lg.d.toFixed(1) : "—")+") · red: worse. 3 points per 100 in a rating, 5 in a percentage. Under each club: the matchday, home or away, the day and its place in the table today"+(M.cups? "; the Pokal's games are marked and are not in the season column" : "")+".";
+  const lg=M.lg, f=v=>v!=null? v.toFixed(1) : "—";
+  return (vs==="rival"? "Our rows: green when better than the rest of the BBL does against that club, red when worse."
+      : "Our rows: green when better than the BBL's average (OER / DER "+f(lg.r)+", OREB% "+f(lg.o)+", DREB% "+f(lg.d)+"), red when worse.")
+    +" Under each one, the rest: what the other clubs do against that rival in its BBL games against everybody but us, and our difference. 3 points per 100 in a rating, 5 in a percentage or a margin; a rival with fewer than 5 such games is not coloured. The season column is the BBL's games only"+(M.cups? "; the Pokal's are marked" : "")+". Tap a game for its sheet.";
 }
-/* Trends' head and the dashboard's Team trends card - the same table (Oriol, 16/11/2026: "me vale
-   la misma tabla para dashboard como para trends"), with the switch */
+/* Trends' head and the dashboard's Team trends card - the same table, with the switch */
 function _trendsSeasonGrid(){
   const box=h("div",{class:"tsg"}, h("div",{class:"ld"},"Reading the season, game by game…", h("span",{class:"ld-bar"})));
   Promise.all([_trgRead(), _tsgLeague()]).then(both=>{
-    const R=both[0], L=both[1], M=_tsgModel(R, L);
+    const R=both[0], L=both[1];
+    let M=_tsgModel(R, L, null);
     box.innerHTML="";
     if(!M.rows.length){ box.appendChild(h("div",{class:"lg-empty"},"No finished game of ours in the league feed yet.")); return; }
     const seg=h("div",{class:"lg-seg tsg-seg"}), body=h("div",{}), key=h("div",{class:"tsg-key"});
+    const wait=h("span",{class:"ld tsg-ld"},"Reading the rest of the league…", h("span",{class:"ld-bar"}));
     const draw=()=>{ const vs=_tsgVs(); seg.innerHTML="";
-      [["rival","The rival"],["bbl","The BBL average"]].forEach(o=>seg.appendChild(h("button",{type:"button", class:"lg-seg-b"+(vs===o[0]? " act" : ""),
+      [["rival","The rest vs them"],["bbl","The BBL average"]].forEach(o=>seg.appendChild(h("button",{type:"button", class:"lg-seg-b"+(vs===o[0]? " act" : ""),
         onclick:()=>{ if(_tsgVs()===o[0]) return; state.ui.tsgVs=o[0]; try{ persist(); }catch(e){_quiet(e)} draw(); }}, o[1])));
-      body.innerHTML=""; body.appendChild(_tsgTable(M, L, vs, false)); key.textContent=_tsgKey(M, vs); };
-    box.appendChild(h("div",{class:"tsg-bar"}, h("span",{class:"tsg-bl"},"Colour against"), seg,
+      const keep=body.firstChild? body.firstChild.scrollLeft : null;
+      body.innerHTML=""; const w=_tsgTable(M, L, vs); body.appendChild(w); key.textContent=_tsgKey(M, vs);
+      if(keep!=null && keep<w.scrollWidth-w.clientWidth-4) requestAnimationFrame(()=>{ try{ w.scrollLeft=keep; }catch(e){_quiet(e)} }); };
+    box.appendChild(h("div",{class:"tsg-bar"}, h("span",{class:"tsg-bl"},"Colour against"), seg, wait,
       h("span",{class:"tsg-sum"}, M.se.w+"–"+M.se.l+" in the BBL"+(M.cups? " · "+M.cups+" Pokal" : ""))));
     box.appendChild(body); box.appendChild(key);
     draw();
+    /* the rest of the league: every finished BBL game, read once and kept (the player goals share it) */
+    _rgLoad().then(D=>{ M=_tsgModel(R, L, _tsgRest(D)); wait.remove(); draw(); })
+      .catch(()=>{ wait.remove(); key.textContent=_tsgKey(M, _tsgVs())+" The rest of the league could not be read."; });
   }).catch(e=>{ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"},"The season could not be read: "+((e&&e.message)||e))); });
   return box;
 }
@@ -19794,7 +19852,7 @@ function renderTrends(){
     /* the panel used to be a fold, and opening it threw the Drive cache away — which is
        how a file uploaded five minutes ago appeared. With no fold left, that is a button:
        forget what was read, redraw, and the block mounts itself again. */
-    h("button",{class:"btn sm", title:"Print the trends on two A4 pages: the key figures and TAG / BACK, then the rebounding, the ratings and the sets",
+    h("button",{class:"btn sm", title:"Print the trends on three A4 pages: the season game by game, the key figures and TAG / BACK, then the rebounding, the ratings and the sets",
       onclick:()=>_dashTrendsPrint()},"🖨 Print"),
     h("button",{class:"btn sm", title:"Read the tagging from Drive again",
       onclick:()=>{ try{ if(window.LowenPostStats && window.LowenPostStats.dropCache)
@@ -29969,14 +30027,17 @@ function _dashTrendsPrint(){
     const top=t=>h("div",{class:"dop-top"}, h("b",{}, "Team trends"), h("span",{}, t));
     const row=(cls, ...k)=>{ const r=h("div",{class:"dtp-row "+cls}); k.filter(Boolean).forEach(x=>r.appendChild(x)); return r; };
     const day=_dashFmt(todayISO());
+    /* the season game by game on a sheet of its own, first (Oriol, 16/11/2026): every game, a pair of rows a measure */
+    const p0=h("div",{class:"dop-fit dtp"}, top("the season game by game · "+day));
+    [c.querySelector(".dash-tsgh"), c.querySelector(".dash-tsg")].forEach(x=>{ if(x) p0.appendChild(x); });
     const p1=h("div",{class:"dop-fit dtp"}, top("game by game, practice by practice · "+day));
-    [c.querySelector(".dash-tsgh"), c.querySelector(".dash-tsg"), c.querySelector(".dash-keyh:not(.dash-tsgh)"), c.querySelector(".dash-key"), subOf(/^TAG \/ BACK/),
+    [c.querySelector(".dash-keyh:not(.dash-tsgh)"), c.querySelector(".dash-key"), subOf(/^TAG \/ BACK/),
       row("c3", subOf(/^Paint touches/), subOf(/^Ball reversals/), subOf(/^The last game/))].forEach(x=>{ if(x) p1.appendChild(x); });
     const p2=h("div",{class:"dop-fit dtp"}, top("rebounding, ratings and sets · "+day));
     [subOf(/^Rebounding/), row("c3", subOf(/^OER/), subOf(/^Net rating/), subOf(/^Possessions/)),
       row("c4", subOf(/best sets/), subOf(/worst sets/), subOf(/improving most/), subOf(/dropping most/))].forEach(x=>{ if(x) p2.appendChild(x); });
     hold.remove();
-    [p1, p2].forEach(p=>{ p.style.width=W+"px"; area.appendChild(h("div",{class:"dop-page"}, p)); });
+    [p0, p1, p2].forEach(p=>{ p.style.width=W+"px"; area.appendChild(h("div",{class:"dop-page"}, p)); });
   }
   const lay=()=>{
     /* each chart drawn once more at the width it has on the sheet - not left to the browser,
@@ -30708,6 +30769,14 @@ function _rgGameAgg(G, j, us){
         const Wp=_gpLiveWin(feed, c, o=>segs.some(g=>o.t>=g[0] && o.t<g[1]), {});
         out.U[id]=[r1(poss(Wp.t)), Wp.t.pts, Wp.t.sc]; }); }
   });
+  /* THE WHOLE GAME TOO, garbage time in, read as Trends reads ours (the league's team lines, the
+     rebounds from the play by play): what each club does against the rest, for the season table */
+  out.TF={};
+  [[hc, String(G.homeId), M.H, M.A],[ac, String(G.awayId), M.A, M.H]].forEach(([c, tid, S, O])=>{
+    if(!S || !O) return;
+    let Rb=null; try{ Rb=_rebGame(j.feed, c); }catch(e){_quiet(e)}
+    out.TF[tid]={ pts:S.pts||0, poss:r1(S.poss||0), op:O.pts||0, opPoss:r1(O.poss||0),
+      or:Rb? Rb.u.or : 0, oC:Rb? Rb.u.or+Rb.t.dr : 0, dr:Rb? Rb.u.dr : 0, dC:Rb? Rb.u.dr+Rb.t.or : 0 }; });
   return out;
 }
 let _rgRun=null;
@@ -30731,7 +30800,8 @@ async function _rgLoad(){
     }
     /* every finished game, read once; a sheet that is not ours is let go after it is summed */
     const C=_rgLS(RG_KEY)||{ v:1, g:{} };
-    const need=games.filter(g=>{ const a=C.g[g.id]; return !a || ((String(g.homeId)===us || String(g.awayId)===us) && a.us!==us); });
+    /* a game kept before the whole-game lines (TF) were added is read once more */
+    const need=games.filter(g=>{ const a=C.g[g.id]; return !a || !a.TF || ((String(g.homeId)===us || String(g.awayId)===us) && a.us!==us); });
     for(let i=0;i<need.length;i+=8){ const part=need.slice(i, i+8);
       await Promise.all(part.map(async G=>{ try{
         const j=await (_lgGameMemo[G.id]||(_lgGameMemo[G.id]=fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(G.id)).then(r=>r.json())));
@@ -31372,7 +31442,7 @@ function renderDashboard(){
     trends2:()=>{
       const c=card("wide", "Team trends · game by game, practice by practice", ()=>_dashOpen("trends"), "Trends");
       /* the card on two sheets of paper, as the next opponent and the last game */
-      { const ch=c.querySelector(".dash-ch"), pb=h("button",{type:"button", class:"dash-go dash-print", title:"Print the trends on two A4 pages"},"🖨 Print");
+      { const ch=c.querySelector(".dash-ch"), pb=h("button",{type:"button", class:"dash-go dash-print", title:"Print the trends on three A4 pages"},"🖨 Print");
         pb.addEventListener("click",()=>_dashTrendsPrint()); ch.insertBefore(pb, ch.querySelector(".dash-go")); }
       const sub=(t, cls)=>{ const b=h("div",{class:"dash-sub"}, h("h4",{class:cls||""}, t)); const body=h("div",{}, loading()); b.appendChild(body); b.__b=body; return b; };
       /* WHAT IS KEY FOR US, FIRST: TAG and BACK, paint touches, ball reversals - the last game,
@@ -41236,7 +41306,9 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .tsg-hb .lg-bdg.crest.tsg-crest{width:20px;height:20px;margin:1px 0}
 .tsg-t th.tsg-h.cup{box-shadow:inset 0 3px 0 var(--gold-2)}
 .tsg-t th.tsg-h.cup i.tsg-rd{color:#8a6a1c}
-.tsg-t td.v{padding:4px 1px;line-height:1.1;color:var(--ink)}
+.tsg-t td.v{padding:4px 1px;line-height:1.1;color:var(--ink);background:var(--panel)}
+/* the pairs are the table's own rhythm: no zebra of the long tables on top of them */
+.tsg-t td{background-image:none!important}
 .tsg-t td.v b{display:block;font:800 12.5px 'IBM Plex Mono',monospace;white-space:nowrap}
 .tsg-t td.v em{display:block;font:600 10px 'Inter',system-ui,sans-serif;font-style:normal;opacity:.72;margin-top:2px;white-space:nowrap;overflow:hidden}
 .tsg-t td.v.good{background:#b5e3c6;color:#0b4428}
@@ -41244,7 +41316,23 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .tsg-t td.v.tsg-res.w{background:#23806b;color:#fff}
 .tsg-t td.v.tsg-res.l{background:#c4413d;color:#fff}
 .tsg-t td.v.tsg-res em{opacity:.92}
-.tsg-t tr.res > *,.tsg-t tr.net > *{border-bottom:2px solid var(--line-strong)}
+.tsg-t tr.tsg-r > *{border-bottom:1px dashed var(--line-strong)}
+.tsg-t tr.tsg-rest > *{border-bottom:2px solid var(--line-strong)}
+.tsg-t tr.tsg-rest:last-child > *{border-bottom:0}
+.tsg-t tr.tsg-rest td.v{background:var(--bg);padding:3px 1px}
+.tsg-t tr.tsg-rest td.v b{font:600 11.5px 'IBM Plex Mono',monospace;color:var(--ink-soft)}
+.tsg-t tr.tsg-rest td.v em{font:700 10.5px 'IBM Plex Mono',monospace;opacity:1;color:var(--ink-faint);margin-top:1px}
+.tsg-t tr.tsg-rest td.v em.up{color:#17805a}
+.tsg-t tr.tsg-rest td.v em.dn{color:#c53727}
+.tsg-t tr.tsg-rest .tsg-l{background:var(--bg)}
+.tsg-t tr.tsg-rest .tsg-l b{font-size:10px;letter-spacing:.14em;color:var(--ink-soft)}
+.tsg-t td.v.go{cursor:pointer}
+.tsg-t td.v.go:hover{box-shadow:inset 0 0 0 2px var(--gold-2)}
+.tsg-w{scrollbar-width:thin}
+.tsg-bar .ld.tsg-ld{display:inline-flex;padding:0;min-height:0;gap:6px;font:500 11px 'Inter',system-ui,sans-serif;color:var(--ink-faint)}
+.tsg-bar .ld.tsg-ld .ld-bar{min-width:50px;width:60px;flex:0 0 60px}
+body.dark .tsg-t tr.tsg-rest td.v em.up{color:#7fd6a3}
+body.dark .tsg-t tr.tsg-rest td.v em.dn{color:#f28b84}
 #viewDash .tsg-key{display:none}
 #print-area .tsg-bar,#print-area .tsg-key{display:none}
 #print-area .tsg-w{overflow:visible}
