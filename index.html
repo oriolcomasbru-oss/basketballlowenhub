@@ -30647,14 +30647,26 @@ function _dashPostNotesInto(box, g){
    what it gave up */
 function _dashPostSplit(box, g){
   box.appendChild(h("div",{class:"ld dash-ld"},"Reading our tagging of the game…", h("span",{class:"ld-bar"})));
-  _dashNeed(()=>window.LowenPostStats && window.LowenPostStats.gameModel && window.LowenPostStats.summarise).then(()=>window.LowenPostStats.gameModel(g.opponent, g.date)).then(GM=>{
+  /* OER AND DER ARE THE LEAGUE'S, AS IN TRENDS (Oriol, 17/11/2026: "OER y DER tampoco sale el mismo"): this
+     card read them from our tagging - points a tagged possession, ~12 possessions a game more than the box
+     score counts - so the same game had two OERs. They are the official points over the box score's
+     possessions now, per 100, the very numbers of Trends' season table and of the post game's overview;
+     the tagging keeps what only it can say (TAG, BACK, paint touches, reversals, the concepts) */
+  const day=d=>Math.round(new Date(String(d)+"T12:00:00Z").getTime()/86400000);
+  const lgP=Promise.resolve().then(()=>_trgRead()).then(R=>{ const all=(R && (R.allGames||R.games))||[], lg=(R && R.games)||[];
+    const x=all.filter(y=>y.g && y.g.date===g.date)[0] || all.filter(y=>y.g && Math.abs(day(y.g.date)-day(g.date))<=1)[0];
+    if(!x || !x.us || !x.them || !x.us.poss || !x.them.poss) return null;
+    const S=(k,side)=>lg.reduce((a,y)=>a+(+y[side][k]||0),0);
+    return { oer:100*x.us.pts/x.us.poss, der:100*x.them.pts/x.them.poss, pu:x.us.poss, pt:x.them.poss,
+      oS:S("poss","us")? 100*S("pts","us")/S("poss","us") : null, dS:S("poss","them")? 100*S("pts","them")/S("poss","them") : null }; }).catch(()=>null);
+  _dashNeed(()=>window.LowenPostStats && window.LowenPostStats.gameModel && window.LowenPostStats.summarise).then(()=>Promise.all([window.LowenPostStats.gameModel(g.opponent, g.date), lgP])).then(([GM, LG])=>{
     box.innerHTML="";
     const m=GM && GM.model;
     if(!m || !(m.poss||[]).length){ box.appendChild(h("div",{class:"dash-miss"},"The tagging of this game is not in the Drive folder yet.")); return; }
     const API=window.LowenPostStats, s=API.summarise(m);
-    const sumP=l=>l.reduce((a,q)=>a+(q.pts||0),0);
-    const oer=m.poss.length? sumP(m.poss)/m.poss.length : null;
-    const dp=m.dposs||[], der=dp.length? sumP(dp)/dp.length : null;
+    const dp=m.dposs||[];
+    const f1=v=>v==null? "—" : Number(v).toFixed(1);
+    const vsS=(v,sv,hi)=>(v==null || sv==null)? "" : (hi? v-sv : sv-v)>=3? "good" : (hi? v-sv : sv-v)<=-3? "bad" : "";
     const tr=m.trans||{}, tb=k=>{ const o=tr[k]; return (o && o.n)? { ppp:o.pts/o.n, n:o.n } : null; };
     const TAG=tb("tag"), BACK=tb("back");
     const f2=v=>v==null? "—" : Number(v).toFixed(2), fP=v=>(v==null||!isFinite(v))? "—" : Math.round(v)+"%";
@@ -30667,7 +30679,7 @@ function _dashPostSplit(box, g){
     const setRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" runs"), h("em",{class:x.n<MS_POSS? "" : x.v>=1.1? "lo" : x.v<0.8? "hi" : ""}, x.v.toFixed(2)));
     const pt=API.measured(s,"pt"), br=API.measured(s,"br");
     const off=h("div",{class:"dash-sub"}, h("h4",{},"Offense"),
-      h("div",{class:"dash-figs"}, fig("OER", f2(oer), m.poss.length+" possessions", oer==null? "" : oer>=1.1? "good" : oer<0.95? "bad" : ""),
+      h("div",{class:"dash-figs"}, fig("OER", LG? f1(LG.oer) : "—", LG? "per 100 · season "+f1(LG.oS) : "the league's box score is not in yet", LG? vsS(LG.oer, LG.oS, true) : ""),
         fig("Paint touches", fP(pt), "target 70%", isFinite(pt)? (pt>=70? "good" : pt<60? "bad" : "") : ""),
         fig("Ball reversals", fP(br), "of possessions", "")),
       h("div",{class:"dash-h5"},"Sets that worked · half court"), good.length? two(good.map(setRow)) : h("div",{class:"dash-miss"},"No half court set scored a point a possession on two runs or more."),
@@ -30678,13 +30690,13 @@ function _dashPostSplit(box, g){
     const conRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" poss"), h("em",{class:x.n<MS_POSS? "" : x.v<=0.85? "lo" : x.v>=1.15? "hi" : ""}, x.v.toFixed(2)));
     const tbTone=o=>!o? "" : o.ppp<=0.9? "good" : o.ppp>=1.2? "bad" : "";
     const def=h("div",{class:"dash-sub"}, h("h4",{},"Defense"),
-      h("div",{class:"dash-figs"}, fig("DER", f2(der), dp.length+" possessions", der==null? "" : der<=0.95? "good" : der>=1.1? "bad" : ""),
+      h("div",{class:"dash-figs"}, fig("DER", LG? f1(LG.der) : "—", LG? "per 100 · season "+f1(LG.dS) : "the league's box score is not in yet", LG? vsS(LG.der, LG.dS, false) : ""),
         fig("TAG", TAG? f2(TAG.ppp) : "—", TAG? TAG.n+" transitions · pts each"+(_tagSplitTxt(tr.tag)? " · "+_tagSplitTxt(tr.tag) : "")+(_scTxt(tr.tag)? " · "+_scTxt(tr.tag) : "") : "none", tbTone(TAG)),
         fig("BACK", BACK? f2(BACK.ppp) : "—", BACK? BACK.n+" transitions · pts each"+(_scTxt(tr.back)? " · "+_scTxt(tr.back) : "") : "none", tbTone(BACK))),
       h("div",{class:"dash-h5"},"Our defensive concepts · points allowed a possession"),
       cs.length? two(cs.map(conRow)) : h("div",{class:"dash-miss"},"No defensive situation tagged twice."));
     box.appendChild(h("div",{class:"dash-2"}, off, def));
-    box.appendChild(h("div",{class:"dash-src"},"From our tagging of the game ("+(GM.name||"")+") · green is good for us, red is bad"));
+    box.appendChild(h("div",{class:"dash-src"},"OER and DER: the league's box score, per 100, as in Trends · the rest from our tagging of the game ("+(GM.name||"")+") · green is good for us, red is bad"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Our tagging could not be read from the Drive.")); });
 }
 /* a line chart for a card: one value a game, the last game marked */

@@ -1210,11 +1210,11 @@
     var box = el("div", "sx-prlook");
     var hd = el("div", "sx-prlook-h");
     hd.appendChild(el("b", null, "The practice in one look"));
-    hd.appendChild(el("span", null, "the last " + recent.length + (recent.length === 1 ? " session" : " sessions") + " · paint touches against the 70% target, floor 60% · TAG and BACK: points given up a time · OER / DER: points a possession"));
+    hd.appendChild(el("span", null, "the last " + recent.length + (recent.length === 1 ? " session" : " sessions") + " · paint touches against the 70% target, floor 60% · TAG and BACK: points given up a time · PPP: points a tagged possession, ours and theirs (OER and DER are the league's, per 100, in the season table)"));
     box.appendChild(hd);
     var t = el("table", "sx-prlook-t");
     var head = el("tr");
-    ["Session", "Poss", "Paint touches", "TAG", "BACK", "Ball reversals", "OER", "DER"].forEach(function (x, i) {
+    ["Session", "Poss", "Paint touches", "TAG", "BACK", "Ball reversals", "PPP", "PPP allowed"].forEach(function (x, i) {
       var th = el("th", i ? "" : "l", x); head.appendChild(th); });
     t.appendChild(head);
     var ptTone = function (v) { return v >= 70 ? "g" : v >= 60 ? "a" : "r"; };
@@ -1389,7 +1389,7 @@
       var sTD = section("Transition defense \u2014 TAG and BACK",
         "The possession counted is the action that follows one of ours: not a second chance, " +
         "and opening within ten seconds of ours ending, which is live play and nothing else. " +
-        "DER is what that action scored, per possession. The last two columns are the ones " +
+        "PPP is what that action scored, per tagged possession. The last two columns are the ones " +
         "tagged as a transition attack, on their own.");
       var tdRowP = function (lbl, o, marks) {
         var share = 100 * o.n / Math.max(1, TD.tag.n + TD.back.n);
@@ -1410,7 +1410,7 @@
       var tdTot = tdRowP("TAG + BACK", tdAll, "");
       tdTot.cls = "sx-totrow";
       sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%", "Missed tag up",
-        "Possessions", "Pts conceded", "DER", "In transition", "Trans. pts", "We finished on"], [
+        "Possessions", "Pts conceded", "PPP", "In transition", "Trans. pts", "We finished on"], [
         tdRowP("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2")
       ].concat(backSubRows(TD.tag, TD.tag.n + TD.back.n, 12, TAG_SUB)).concat(scRows(TD.tag, 12)).concat([
         tdRowP("BACK \u00b7 after a miss at the rim or a turnover", TD.back, "M2 \u00b7 Turnover")
@@ -1571,6 +1571,7 @@
   function slug(s) { return (s || "").toLowerCase().replace(/[^a-z0-9]/g, ""); }
 
   function findGameFile(files, opponent, date) {
+    var allFiles = files || [];
     /* a workbook in this folder is never a tagging export, and read as CSV it
        parses into rows with no tags at all — every count would come out zero */
     files = (files || []).filter(function (f) { return /\.csv$/i.test(f.name || ""); });
@@ -1613,6 +1614,24 @@
       if (near.length === 1) hit = near;
     }
     if (!hit.length) return null;
+    /* THE SAME FILE FOR THE SAME NIGHT EVERYWHERE (Oriol, 17/11/2026: the post game of Chemnitz on 15/11
+       read the Pokal's file, G11 CUP CHEMNITZ, while Trends read G16 for it - its DER 1.11 on 92
+       possessions is the cup's 75-102). Two files of one club with no date in their names were told
+       apart by whichever the folder listed first. The night each file belongs to is now the one Trends
+       gives it (assignGames: the date in the name, the calendar, the staff's G number): the file given
+       to this game is taken, and a file given to another night is never this game's. A file dated only
+       by its upload day is not given to a night, and is found the old way. */
+    if (date) {
+      try {
+        var A = assignGames(allFiles), dd = function (s) { return Math.round(new Date(s + "T12:00:00Z").getTime() / 86400000); };
+        var sure = function (a) { return !!(a && a.d && (a.how === "fixture" || a.how === "name")); };
+        var mine = hit.filter(function (f) { var a = A[f.id]; return sure(a) && Math.abs(dd(a.d) - dd(date)) <= 1; });
+        if (mine.length) return mine[0];
+        var loose = hit.filter(function (f) { return !sure(A[f.id]); });
+        if (!loose.length) return null;
+        hit = loose;
+      } catch (e) { /* the old way below */ }
+    }
     /* A FILE OF ANOTHER DAY IS NOT THIS GAME: a friendly against a club we later played in
        the league was given that league game's tagging. A file whose name carries a date more
        than three days from the game's is left out (one with no date cannot be told apart). */
@@ -3098,7 +3117,7 @@
              without reading what the night scored is half the story, and this table
              is the one a staff looks at after a game. */
           tgtBox.appendChild(table(["Date", "Type", "Poss", "Fastbreak", "Paint touch elsewhere",
-              "The 70% measure", "OER", "Reading"],
+              "The 70% measure", "PPP", "Reading"],
             tlPoints.map(function (p) {
               var st = p.s, measured = st.phased;
               if (!st.poss) return [p.d, measured ? "Game" : "Training", 0,
@@ -3564,7 +3583,7 @@
     /* the rating rides under the measure, on the same dates, in a band of its own - the games' */
     var oerUnder = function (st) { return st.poss ? st.pts / st.poss : NaN; };
     var copt = { max: 100, axisFmt: pct0f, height: 215,
-      under: { name: "OER in games — points per possession", get: function (st) { return st.__game ? oerUnder(st) : NaN; }, fmt: f2,
+      under: { name: "PPP in games — points a tagged possession", get: function (st) { return st.__game ? oerUnder(st) : NaN; }, fmt: f2,
                color: "var(--tl-1)", height: 58, join: true } };
     if (opts.target) { copt.ref = { v: 70, label: "70% — target" };
       copt.bands = [{ v: 65, label: "65" }, { v: 60, label: "60" }]; }
@@ -3595,7 +3614,7 @@
     var oAvg = oers.length ? oers.reduce(function (a, v) { return a + v; }, 0) / oers.length : NaN;
 
     sec.appendChild(trTable(["Date", "Type", "Poss", "Fastbreak", what + " elsewhere",
-        title.replace(/ —.*$/, ""), "OER", opts.target ? "Reading" : "vs average"],
+        title.replace(/ —.*$/, ""), "PPP", opts.target ? "Reading" : "vs average"],
       points.map(function (p) {
         var st = p.s, m = st.phased, g = p.kind === "game", v = measured(st, key);
         var sh = Math.round(v);
@@ -3624,10 +3643,10 @@
     else if (!fit) line = "Every session is at the same volume, so there is nothing to read across.";
     else if (!firm) line = "More of it does not predict more points: a straight line through " +
       "the sessions explains only " + Math.round(100 * fit.r2) + "% of the spread (R² " +
-      f2(fit.r2) + "). OER in games " + f2(oAvg) + ".";
+      f2(fit.r2) + "). PPP in games " + f2(oAvg) + ".";
     else line = "Every ten points of it is worth " + (fit.b >= 0 ? "+" : "−") +
       f2(Math.abs(fit.b * 10)) + " per possession, and that line explains " +
-      Math.round(100 * fit.r2) + "% of the spread (R² " + f2(fit.r2) + "). OER in games " +
+      Math.round(100 * fit.r2) + "% of the spread (R² " + f2(fit.r2) + "). PPP in games " +
       f2(oAvg) + ".";
     sec.appendChild(el("div", "sx-sub fit-span" + (firm ? "" : " tr-warnline"), line));
 
@@ -3636,7 +3655,7 @@
     var bands = oerBands(points, key).filter(function (b) { return b.n; });
     if (bands.length > 1) {
       var bl = el("div", "sx-sub fit-span");
-      bl.appendChild(el("b", null, "OER by volume:  "));
+      bl.appendChild(el("b", null, "PPP by volume:  "));
       bl.appendChild(document.createTextNode(bands.map(function (b) {
         return b.label + " " + f2(b.oer) + " (" + b.n + ")";
       }).join("   ·   ")));
@@ -3656,7 +3675,7 @@
   function trTagBack(root, sessions) {
     var sec = trSection(root, "03", "Transition defense — TAG and BACK, every session",
       "TAG is the possession that follows one of ours ending on a long shot, BACK the one that " +
-      "follows a shot at the rim or a turnover. The number is the DER on each: what was scored " +
+      "follows a shot at the rim or a turnover. The number is the PPP allowed on each: what was scored " +
       "per possession. Games and trainings share the dates; the marker says which is which.");
     var pts = sessions.filter(function (g) {
       return g.m && g.m.trans && (g.m.trans.tag.n + g.m.trans.back.n) > 0;
@@ -3674,9 +3693,9 @@
     });
     if (!pts.length) { sec.appendChild(el("div", "sx-empty", "No session carries it yet.")); return null; }
     sec.appendChild(timelineChart("", "", pts, [
-      { name: "TAG — DER after a long shot", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2,
+      { name: "TAG — PPP allowed after a long shot", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2,
         n: function (s) { return s.tagN; }, roll: function (s) { return [s.tagP, s.tagN]; } },
-      { name: "BACK — DER after a miss at the rim or a turnover", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2,
+      { name: "BACK — PPP allowed after a miss at the rim or a turnover", color: "var(--tl-2)", get: function (s) { return s.backPpp; }, fmt: f2,
         n: function (s) { return s.backN; }, roll: function (s) { return [s.backP, s.backN]; } }
     ], { axisFmt: f2, height: 200, minN: 5, rollWindow: 5 }));
     sec.appendChild(el("div", "sx-sub", "The line is the last five sessions added together, points over possessions. Small dots are trainings and diamonds are games; a day with fewer than four possessions is left out."));
@@ -3700,7 +3719,7 @@
     if (gm.length) rows.push(tot("Every game", gm));
     if (tr.length) rows.push(tot("Every training", tr));
     if (gm.length && tr.length) rows.push(tot("Everything", pts));
-    sec.appendChild(trTable(["Session", "Type", "TAG poss", "TAG pts", "TAG DER", "BACK poss", "BACK pts", "BACK DER", "Both DER", "Worse end"],
+    sec.appendChild(trTable(["Session", "Type", "TAG poss", "TAG pts", "TAG PPP", "BACK poss", "BACK pts", "BACK PPP", "Both PPP", "Worse end"],
       rows, { sort: false }));
     /* the headline figure stays the games': it is the one measured against an opponent */
     var head = gm.length ? gm : pts;
@@ -4492,7 +4511,7 @@
     if (tb && tb.pts) {
       trendPool("TAG defense", tb.pts, "tagP", "tagN", false);
       trendPool("BACK defense", tb.pts, "backP", "backN", false);
-      trendBy("DER, whole game", tb.pts, function (s) { return s.der; }, f2, false);
+      trendBy("PPP allowed, whole game", tb.pts, function (s) { return s.der; }, f2, false);
     }
     heading = heading.filter(function (x) { return Math.abs(x.rel) >= 0.04; })
       .sort(function (x, y) { return Math.abs(y.rel) - Math.abs(x.rel); }).slice(0, 3);
@@ -4653,11 +4672,11 @@
     pts.forEach(function (p) { if (p.s) p.s.__game = (p.kind === "game"); });
     var gSess = pts.filter(function (p) { return p.kind === "game"; }), tSess = pts.filter(function (p) { return p.kind !== "game"; });
     var oerAvg = meanOf(gSess, oerGet), oerLast = lastOf(gSess, oerGet), oerTr = meanOf(tSess, oerGet);
-    var oerBand = function () { return { name: "OER in games — points per possession", get: function (s) { return s.__game ? oerGet(s) : NaN; }, fmt: f2,
+    var oerBand = function () { return { name: "PPP in games — points a tagged possession", get: function (s) { return s.__game ? oerGet(s) : NaN; }, fmt: f2,
       color: "var(--tl-1)", height: 64, join: true }; };
     var oerKpi = isFinite(oerAvg) ? [
-      { l: "OER last game", v: f2(oerLast), cls: oerLast >= oerAvg ? "good" : "bad" },
-      { l: "OER games", v: f2(oerAvg) } ].concat(isFinite(oerTr) ? [{ l: "OER trainings", v: f2(oerTr) }] : []) : [];
+      { l: "PPP last game", v: f2(oerLast), cls: oerLast >= oerAvg ? "good" : "bad" },
+      { l: "PPP games", v: f2(oerAvg) } ].concat(isFinite(oerTr) ? [{ l: "PPP trainings", v: f2(oerTr) }] : []) : [];
     var kinds = function (key) { var m = function (s) { return measured(s, key); };
       return { gl: lastOf(gSess, m), ga: meanOf(gSess, m), tl: lastOf(tSess, m), ta: meanOf(tSess, m) }; };
     var kindKpi = function (k, graded) {
@@ -4668,12 +4687,12 @@
       if (isFinite(k.ta)) out.push({ l: "Trainings", v: pct0f(k.ta) });
       return out; };
     if (pt) { var kp = kinds("pt");
-      dash.appendChild(tdCard("Paint touches · OER", "the 70% measure, and what we scored the same day underneath · games and trainings apart",
+      dash.appendChild(tdCard("Paint touches · PPP", "the 70% measure, and what we scored the same day underneath · games and trainings apart",
         kindKpi(kp, true).concat([{ l: "Target", v: "70%" }]).concat(oerKpi),
         timelineChart("", "", pts, gamesMeasured("pt"),
           { max: 100, axisFmt: pct0f, height: 200, ref: { v: 70, label: "70%" }, under: oerBand() }))); }
     if (br) { var kb = kinds("br");
-      dash.appendChild(tdCard("Ball reversals · OER", "the same measure, and what we scored the same day underneath · games and trainings apart",
+      dash.appendChild(tdCard("Ball reversals · PPP", "the same measure, and what we scored the same day underneath · games and trainings apart",
         kindKpi(kb, false).concat(oerKpi),
         timelineChart("", "", pts, gamesMeasured("br"),
           { max: 100, axisFmt: pct0f, height: 200, ref: isFinite(kb.ga) ? { v: kb.ga, label: "games avg" } : null, under: oerBand() }))); }
@@ -4685,12 +4704,12 @@
          what the other scores and the figure would just be the OER again - so the band
          carries the games, where there is an opponent to concede to */
       if (isFinite(derAvg)) {
-        tOpt.under = { name: "DER — points conceded per possession, whole game", get: derGet, fmt: f2,
+        tOpt.under = { name: "PPP allowed — points conceded a tagged possession, whole game", get: derGet, fmt: f2,
           color: "var(--tl-2)", height: 64 };
-        tKpi.push({ l: "DER last", v: f2(derLast), cls: derLast <= derAvg ? "good" : "bad" });
-        tKpi.push({ l: "DER season", v: f2(derAvg) });
+        tKpi.push({ l: "PPP allowed last", v: f2(derLast), cls: derLast <= derAvg ? "good" : "bad" });
+        tKpi.push({ l: "PPP allowed season", v: f2(derAvg) });
       }
-      dash.appendChild(tdCard("Transition defense · DER", "the line is the last five sessions together · small dots trainings, diamonds games · days under four possessions left out — lower is better",
+      dash.appendChild(tdCard("Transition defense · PPP allowed", "the line is the last five sessions together · small dots trainings, diamonds games · days under four possessions left out — lower is better",
         tKpi,
         timelineChart("", "", tb.pts, [
           { name: "TAG: after our long shot", color: "var(--tl-1)", get: function (s) { return s.tagPpp; }, fmt: f2,
