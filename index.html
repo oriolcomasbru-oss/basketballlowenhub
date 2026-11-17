@@ -19880,12 +19880,12 @@ function _tsgModel(R, L, REST){
 /* the rows: key, label, what our row is, what the line under it is, how a difference is judged */
 const TSG_ROWS=["res","oer","der","net","orb","drb"];
 const TSG_ROW={
-  res:{ lab:"Result", sub:"margin · score", rest:"their rivals' margin", hi:true, th:5, kind:"pts" },
-  oer:{ lab:"OER", sub:"our pts / 100 poss", rest:"their rivals score", hi:true, th:3, kind:"rtg" },
-  der:{ lab:"DER", sub:"their pts / 100 poss", rest:"their rivals allow", hi:false, th:3, kind:"rtg" },
-  net:{ lab:"Net", sub:"OER − DER", rest:"their rivals' net", hi:true, th:3, kind:"rtg" },
-  orb:{ lab:"OREB%", sub:"our misses back", rest:"their rivals get back", hi:true, th:5, kind:"pct" },
-  drb:{ lab:"DREB%", sub:"their misses kept", rest:"their rivals keep", hi:true, th:5, kind:"pct" }
+  res:{ lab:"Result", sub:"margin · score", rest:"others vs them", hi:true, th:5, kind:"pts" },
+  oer:{ lab:"OER", sub:"our pts / 100 poss", rest:"others score vs them", hi:true, th:3, kind:"rtg" },
+  der:{ lab:"DER", sub:"their pts / 100 poss", rest:"they score vs others", hi:false, th:3, kind:"rtg" },
+  net:{ lab:"Net", sub:"OER − DER", rest:"others' net vs them", hi:true, th:3, kind:"rtg" },
+  orb:{ lab:"OREB%", sub:"our misses back", rest:"others get back vs them", hi:true, th:5, kind:"pct" },
+  drb:{ lab:"DREB%", sub:"their misses kept", rest:"others keep vs them", hi:true, th:5, kind:"pct" }
 };
 function _tsgTone(v, ref, hi, th){
   if(v==null || ref==null || !isFinite(v) || !isFinite(ref)) return "";
@@ -19898,6 +19898,17 @@ function _tsgFmt(k, v, signed){
   if(K==="pts") return s(Math.round(v))+Math.abs(Math.round(v));
   return (signed || k==="net")? s(v)+Math.abs(v).toFixed(1) : v.toFixed(1);
 }
+/* THE REST'S LINE IN WORDS (Oriol, 17/11/2026: "no la entiendo esta hilera, mejórala"): "−16" over "+25" said
+   neither who lost nor whether +25 was good. The rest's result now carries its W or L, as ours does, and
+   our difference says better or worse - the same on every row, DER's lower-is-better included */
+function _tsgDiff(k, d, strong){
+  if(d==null || !isFinite(d)) return { t:"", cls:"" };
+  const D=TSG_ROW[k], b=d*(D.hi? 1 : -1), K=D.kind;
+  const mag=K==="rtg"? Math.abs(b).toFixed(1) : String(Math.round(Math.abs(b)));
+  if(+mag===0) return { t:"same", cls:"" };
+  const tone=_tsgTone(b, 0, true, D.th);
+  return { t:mag+(b>0? " better" : " worse"), cls:strong && tone==="good"? "up" : strong && tone==="bad"? "dn" : "" }; }
+function _tsgRestRes(v){ if(v==null || !isFinite(v)) return "—"; const m=Math.round(v); return m===0? "even" : (m>0? "W " : "L ")+_tsgFmt("res", v); }
 function _tsgVs(){ return (state.ui && state.ui.tsgVs==="bbl")? "bbl" : "rival"; }
 /* one game's cells: our row (value, the line under the value, its colour) and the rest's line */
 function _tsgCells(r, M, vs){
@@ -19919,7 +19930,8 @@ function _tsgCells(r, M, vs){
     if(!M.rest) rest={ cls:"", b:"…", em:"", tip:"the games against the rest are still being read" };
     else if(rv==null || !isFinite(rv)) rest={ cls:"", b:"—", em:"", tip:D.rest+src };
     else { const d=v-rv, good=(ref.g>=MS_GAMES)? _tsgTone(v, rv, D.hi, D.th) : "";
-      rest={ cls:"", b:_tsgFmt(k, rv), em:_tsgFmt(k, d, true), ecls:good==="good"? "up" : good==="bad"? "dn" : "",
+      const dw=_tsgDiff(k, d, ref.g>=MS_GAMES);
+      rest={ cls:"", b:k==="res"? _tsgRestRes(rv) : _tsgFmt(k, rv), em:dw.t, ecls:dw.cls,
         tip:D.lab+": "+D.rest+" "+_tsgFmt(k, rv)+src+" · us "+_tsgFmt(k, v)+" ("+_tsgFmt(k, d, true)+(ref.g<MS_GAMES? ", too few games to colour" : "")+")" }; }
     out[k]={ me:me, rest:rest };
   });
@@ -19955,7 +19967,7 @@ function _tsgTable(M, L, vs){
       tip:k==="res"? "BBL record "+se.w+"–"+se.l+", "+_tsgFmt(k, v)+" a game"+(M.cups? " · the Pokal's "+M.cups+" not in the season column" : "") : D.lab+" "+_tsgFmt(k, v)+", every BBL game"+(lgRef[k]!=null? " · the BBL's average "+_tsgFmt(k, lgRef[k]) : "") };
     const sRest=!M.rest? { b:"…", em:"", tip:"the games against the rest are still being read" }
       : sr==null? { b:"—", em:"", tip:"" }
-      : (()=>{ const d=v-sr, g=_tsgTone(v, sr, D.hi, D.th); return { b:_tsgFmt(k, sr), em:_tsgFmt(k, d, true), ecls:g==="good"? "up" : g==="bad"? "dn" : "",
+      : (()=>{ const d=v-sr, dw=_tsgDiff(k, d, true); return { b:k==="res"? _tsgRestRes(sr) : _tsgFmt(k, sr), em:dw.t, ecls:dw.cls,
           tip:D.lab+": "+D.rest+", the clubs we have played, a game on average "+_tsgFmt(k, sr)+" · us "+_tsgFmt(k, v)+" ("+_tsgFmt(k, d, true)+")" }; })();
     const td=(x, i, extra)=>{ const c=h("td",{class:"v "+(extra||"")+(x.cls||""), title:x.tip+(i!=null? " · tap: the game" : "")},
         h("b",{}, x.b), x.em? h("em",{class:x.ecls||""}, x.em) : null);
@@ -19975,7 +19987,7 @@ function _tsgKey(M, vs){
   const lg=M.lg, f=v=>v!=null? v.toFixed(1) : "—";
   return (vs==="rival"? "Our rows: green when better than the rest of the BBL does against that club, red when worse."
       : "Our rows: green when better than the BBL's average (OER / DER "+f(lg.r)+", OREB% "+f(lg.o)+", DREB% "+f(lg.d)+"), red when worse.")
-    +" Under each one, the rest: what the other clubs do against that rival in its BBL games against everybody but us, and our difference. 3 points per 100 in a rating, 5 in a percentage or a margin; a rival with fewer than 5 such games is not coloured. The season column is the BBL's games only"+(M.cups? "; the Pokal's are marked" : "")+". Tap a game for its sheet.";
+    +" Under each one, the rest: what the other clubs do against that rival in its BBL games against everybody but us (in Result, W or L from their side: L −16 = they lose to that rival by 16 a game), and how much better or worse we did. 3 points per 100 in a rating, 5 in a percentage or a margin; a rival with fewer than 5 such games is not coloured. The season column is the BBL's games only"+(M.cups? "; the Pokal's are marked" : "")+". Tap a game for its sheet.";
 }
 /* Trends' head and the dashboard's Team trends card - the same table, with the switch */
 function _trendsSeasonGrid(){
@@ -41614,6 +41626,8 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .tsg-t .tsg-l{position:sticky;left:0;z-index:2;width:112px;background:var(--panel);text-align:left;padding:4px 8px;border-right:1px solid var(--line-strong)}
 .tsg-t .tsg-l b{display:block;font:700 12px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
 .tsg-t .tsg-l i{display:block;font:500 10px 'Inter',system-ui,sans-serif;font-style:normal;color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* the rest's label may take a second line rather than lose its end (17/11/2026) */
+.tsg-t .tsg-rest .tsg-l i{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.15}
 .tsg-t th.tsg-l{vertical-align:bottom}
 .tsg-t th.tsg-l span{font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint)}
 .tsg-t .tsg-s{position:sticky;right:0;z-index:2;width:78px;border-right:0;box-shadow:inset 2px 0 0 var(--ink)}
@@ -41673,6 +41687,8 @@ body.dark .tsg-t th.tsg-h.cup i.tsg-rd{color:var(--gold-1)}
   .tsg-t{min-width:calc(84px + 64px + var(--n,10) * 54px)}
   .tsg-t .tsg-l{width:84px;padding:3px 5px}
   .tsg-t .tsg-l i{display:none}
+  /* "13.3 worse" in a narrow column: the word goes under the number rather than being cut (17/11/2026) */
+  .tsg-t .tsg-rest td.v em{white-space:normal;overflow:visible;line-height:1.1;font-size:9.5px}
   .tsg-t .tsg-s{width:64px}
   .tsg-sum{margin-left:0}
 }
