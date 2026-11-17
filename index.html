@@ -31903,9 +31903,15 @@ function renderDashboard(){
               fig("Off. rating", oL.toFixed(1), "season "+oS.toFixed(1), oL-oS>=3? "good" : oL-oS<=-3? "bad" : ""),
               fig("Def. rating", dL.toFixed(1), "season "+dS.toFixed(1), dL-dS<=-3? "good" : dL-dS>=3? "bad" : ""),
               /* the game's rebounding, ours and what the rival got */
-              (()=>{ const o=100*(+x.us.oreb||0)/Math.max(1,(+x.us.oreb||0)+(+x.them.dreb||0)), oS2=100*S("oreb","us")/Math.max(1,S("oreb","us")+S("dreb","them"));
-                return fig("OREB%", Math.round(o)+"%", x.us.oreb+" of "+((+x.us.oreb||0)+(+x.them.dreb||0))+" · season "+Math.round(oS2)+"%", o-oS2>=5? "good" : o-oS2<=-5? "bad" : ""); })(),
-              (()=>{ const d=100*(+x.us.dreb||0)/Math.max(1,(+x.us.dreb||0)+(+x.them.oreb||0)), dS2=100*S("dreb","us")/Math.max(1,S("dreb","us")+S("oreb","them"));
+              /* the rebounds as the season table counts them, from the play by play (the box score's team line
+                 can differ by one - Würzburg's 9 of 31 against 9 of 32): one count everywhere (17/11/2026) */
+              (()=>{ const RBo=y=>(y.rb && y.rb.u && y.rb.t)? { uo:+y.rb.u.or||0, ud:+y.rb.u.dr||0, to:+y.rb.t.or||0, td:+y.rb.t.dr||0 } : { uo:+y.us.oreb||0, ud:+y.us.dreb||0, to:+y.them.oreb||0, td:+y.them.dreb||0 };
+                const a=RBo(x), SR=k=>GL.reduce((s,y)=>s+RBo(y)[k],0);
+                const o=100*a.uo/Math.max(1,a.uo+a.td), oS2=100*SR("uo")/Math.max(1,SR("uo")+SR("td"));
+                return fig("OREB%", Math.round(o)+"%", a.uo+" of "+(a.uo+a.td)+" · season "+Math.round(oS2)+"%", o-oS2>=5? "good" : o-oS2<=-5? "bad" : ""); })(),
+              (()=>{ const RBo=y=>(y.rb && y.rb.u && y.rb.t)? { uo:+y.rb.u.or||0, ud:+y.rb.u.dr||0, to:+y.rb.t.or||0, td:+y.rb.t.dr||0 } : { uo:+y.us.oreb||0, ud:+y.us.dreb||0, to:+y.them.oreb||0, td:+y.them.dreb||0 };
+                const a=RBo(x), SR=k=>GL.reduce((s,y)=>s+RBo(y)[k],0);
+                const d=100*a.ud/Math.max(1,a.ud+a.to), dS2=100*SR("ud")/Math.max(1,SR("ud")+SR("to"));
                 return fig("DREB%", Math.round(d)+"%", "rival OREB "+Math.round(100-d)+"% · season "+Math.round(dS2)+"%", d-dS2>=5? "good" : d-dS2<=-5? "bad" : ""); })()));
           paintLast();
         } else [cN,cOD,cPS].forEach(x=>x.__b.appendChild(h("div",{class:"dash-miss"},"Two games are needed for a line.")));
