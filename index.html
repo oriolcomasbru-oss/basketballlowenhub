@@ -14179,11 +14179,9 @@ function _prePrintBoard(src, what){
      hacemos también para el botón de imprimir, que tenga el mismo formato"), in its light dress */
   /* a board with nothing on it is not sent to the printer */
   if(!copy.querySelector(what==="roles"? ".vb-area" : ".card")){ toast(what==="roles"? "No roles written yet for this club" : "No cards on the roster yet"); return; }
-  /* A POSITION OF THREE OR MORE IN TWO COLUMNS ON PAPER (Oriol, 16/11/2026: "si hay alguna posición que
-     hay 3 jugadores ponerlo en doble columna y el último al lado del segundo, así puedes hacerlo más
-     grande"): the first alone on top when they are odd, then two by two. The board is half as tall,
-     and the paper is cut from the width a card has on screen - never narrower, which is what laid the
-     role over the minutes and the doubt over the role */
+  /* ON PAPER, ONE COLUMN A POSITION AT THE SCREEN'S CARD WIDTH - never narrower, which is what laid the role
+     over the minutes and the doubt over the role. (The two columns for a position of three, tried on
+     16/11/2026, gave way to a compact third card, below.) */
   /* THE CARD AS WIDE AS ON THIS SCREEN (Oriol, 16/11/2026, comparing the two: "debe ser igual a la de la
      web"): the paper is laid out at the width the cards have on the screen it is printed from, so a line
      breaks where it breaks there - the role, the ideas - and the whole sheet is then scaled to the page */
@@ -14197,10 +14195,14 @@ function _prePrintBoard(src, what){
   if(what!=="roles"){ const rc=copy.querySelector(".roster-columns");
     if(rc){ const cols=[].slice.call(rc.children).filter(c=>c.classList && c.classList.contains("pos-col")), tpl=[]; units=0;
       cols.forEach(col=>{ const cards=[].slice.call(col.children).filter(c=>c.classList && c.classList.contains("card"));
-        if(cards.length>=3){ const two=h("div",{class:"prb-two"+(cards.length%2? " odd" : "")}); cards.forEach(c=>two.appendChild(c)); col.appendChild(two); col.classList.add("prb-2"); tpl.push(2); units+=2; }
-        else { tpl.push(1); units+=1; } });
+        /* THE THIRD MAN AND ON, COMPACT (Oriol, 16/11/2026: "no me gusta a doble columna; como el tercero
+           siempre tiene menos peso, ponerlo debajo pero más compacto, y así ganar espacio para hacerlo todo
+           más grande"): one column a position again; from the third card down the shot chart is left off,
+           so the column is shorter and the whole sheet can be printed larger */
+        cards.forEach((c, i)=>{ if(i>=2) c.classList.add("prb-lite"); });
+        tpl.push(1); units+=1; });
       /* a column: its cards at the screen's width, the column's padding and edge (8px a side, 1px) around them */
-      if(tpl.length){ setCols=()=>rc.style.setProperty("grid-template-columns", tpl.map(n=>(n===2? 2*cw+8+18 : cw+18)+"px").join(" "), "important");
+      if(tpl.length){ setCols=()=>rc.style.setProperty("grid-template-columns", tpl.map(()=>(cw+18)+"px").join(" "), "important");
         setCols(); rc.style.setProperty("justify-content","start","important"); natural=true; }
       units=Math.max(units, 1); } }
   const p=h("div",{class:"dop-fit prb prb-"+what}, h("div",{class:"dop-top"}, h("b",{}, "Pre game"), h("span",{}, title)), copy);
@@ -39891,10 +39893,8 @@ body.edit-mode .phx.pre-roles .pre-lock{bottom:24px}
 /* a board of the pre game alone on a sheet */
 /* five columns whatever the window: a narrow screen's three-column rule must not shape the paper */
 .prb.prb-roster .phx.phx .roster-columns:not(.pre-cm-cols){grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:9px!important}
-/* a position of three or more: two columns, the first alone on top when they are odd (16/11/2026) */
-.prb .prb-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:start}
-.prb .prb-two.odd > .card:nth-child(2){grid-column:1}
-.prb .prb-two > .card{margin:0!important;min-width:0}
+/* on paper, the third man of a position and on without his shot chart: the column shorter, the sheet larger (16/11/2026) */
+html body .prb .phx.phx.pre-phx .card.pcv.prb-lite .pcv-col .pcv-hsc{display:none!important}
 /* the screen holds the board at 1680px; on paper it takes the width it was cut to, or the cards narrow under their screen size */
 html body .prb .phx.phx.pre-phx .roster-columns{max-width:none!important;width:auto!important}
 .prb-roles .vb-areas{justify-content:center!important}
