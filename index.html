@@ -6193,14 +6193,23 @@ const PLAYER_VIEW_DEFAULT={ sects:["oppscout"], blocks:["stats","positions","rol
 /* A SCREEN FOR ONE PLAYER, NOT THE SQUAD (Oriol, 16/11/2026: "dale acceso a playbook a Eddy, déjame
    poder dar acceso a playbook a los jugadores que quiera"). Beside what every player sees, the same
    document keeps, name by name, the screens given to that player alone: people = { name: ["playbook"] }.
-   Only the Playbook can be given this way - the server (supabase/007, get_playbook) hands its four
-   lists to a player only when his name is ticked here, and never the Planning sessions it sits with. */
-const PLAYER_PERSONAL=[["playbook","Playbook"]];
+   The Playbook - the server (supabase/007, get_playbook) hands its four lists to a player only when his
+   name is ticked here, and never the Planning sessions it sits with.
+   THE PRE GAME AS SOON AS IT IS FINISHED (Oriol, 18/11/2026: "ábrele el scouting a Ferdi en cuanto lo pongo
+   en verde para el staff, solamente para él; al resto lo activaré con el botón de los jugadores"): a player
+   ticked "scoutready" opens a pre game the moment the staff mark it finished, without its being published.
+   The server (supabase/009, get_report) hands it to him only then, and only the parts every player is given. */
+const PLAYER_PERSONAL=[["playbook","Playbook"],["scoutready","Pre game when finished"]];
 function _pvPeople(o){ const out={};
   if(o && typeof o==="object" && !Array.isArray(o)) Object.keys(o).forEach(u=>{ const a=Array.isArray(o[u])? o[u].filter(k=>PLAYER_PERSONAL.some(p=>p[0]===k)) : [];
     if(a.length) out[u]=a; });
   return out; }
 function playerHas(u, sect){ const a=((PLAYER_VIEW && PLAYER_VIEW.people)||{})[u]; return Array.isArray(a) && a.indexOf(sect)>=0; }
+/* a pre game a player may open: published, or finished by the staff for a player given it early */
+function playerOpenRep(rep, kind, who){
+  if(rep && rep.share_state==="published") return true;
+  return (kind==null || kind==="oppscout") && playerHas(who||currentUser, "scoutready") && repDone(rep, "pre"); }
+function playerEarlyNames(){ const P=(PLAYER_VIEW && PLAYER_VIEW.people)||{}; return Object.keys(P).filter(u=>Array.isArray(P[u]) && P[u].indexOf("scoutready")>=0); }
 /* THE PARTS OF A PLAYER'S OWN DASHBOARD THE STAFF CAN HOLD BACK (Oriol, 9/11/2026: the rebounding and
    defense goals off for the players for now - the staff, looking at a player's dashboard, still sees
    them, marked). Not in the saved setting = hidden from players.
@@ -6868,9 +6877,12 @@ function repStatSet(key, rep){
    private or hidden, and both mean not yet. While the status of a game is still being
    fetched the row stays out - it appears when the answer arrives, which is a row that
    turns up a moment late rather than one that was there and should not have been. */
-function playerMaySeeGame(key){
+function playerMaySeeGame(key, kind){
   if(!isPlayerUser()) return true;
-  return _repShare[key]==="published";
+  if(_repShare[key]==="published") return true;
+  /* a pre game finished by the staff, for a player given it as soon as it is (18/11/2026) */
+  const st=_repStat[key];
+  return kind==="oppscout" && playerHas(currentUser, "scoutready") && !!(st && st.pre && st.pre.done);
 }
 function loadRepStats(keys, after){
   if(!SB_TOKEN || _repStatBusy) return;
@@ -6985,7 +6997,7 @@ function seasonGrid(kind){
        only what he is allowed to open, or a month would read 1/4 with one row under it. */
     let done=0, tot=0;
     items.forEach(x=>{
-      if(x.type==="game" && !playerMaySeeGame(gameKey(x.g))) return;
+      if(x.type==="game" && !playerMaySeeGame(gameKey(x.g), kind)) return;
       /* a training with nothing to tag is in order, so it counts as closed */
       tot++; const c = x.type==="game" ? repStatCls(gameKey(x.g), slot) : praStatCls(x.date); if(c==="done"||c==="na") done++; });
     const col=h("div",{class:"year-month"+(isThisMonth(k)?" cur-month":"")},
@@ -7014,7 +7026,7 @@ function seasonGrid(kind){
     };
     items.forEach(x=>{
       if(x.type==="game"){ curGrp=null; const g=x.g; const key=gameKey(g); wanted.push(key);
-        if(!playerMaySeeGame(key)) return;
+        if(!playerMaySeeGame(key, kind)) return;
         /* the file behind the row, so a game whose tagging or plan is in Drive says so
            here too and not only in the calendar */
         const file = (kind==="gameplan") ? DXg.game[g.id] : TXg.game[g.id];
@@ -7394,7 +7406,7 @@ async function loadScout(body, g, key, kind, from){
      last time, and on a shared computer that is the game the coach had open. The server
      had refused the report, and this went on to draw the page anyway from the league feed
      and the roles board. Anything short of a published report sends him back to the list. */
-  if(isPlayerUser() && !(rep && rep.share_state==="published")){
+  if(isPlayerUser() && !playerOpenRep(rep, from)){
     toast("That game has not been shared with the players yet");
     if(from==="gameplan"){ state.ui.gp={mode:"overview"}; persist(); renderGamePlan(); }
     else if(from==="oppscout"){ state.ui.os={mode:"overview"}; persist(); renderOppScout(); }
@@ -30895,7 +30907,7 @@ async function _playerDash(root, who){
     const tile=h("button",{type:"button", class:"p3-g lock", disabled:"disabled", onclick:()=>{ if(!tile.disabled) _dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } }); }},
       crest(g), h("b",{}, (g.venue==="Away"? "@ " : "vs ")+_lgShort(g.opponent)), h("span",{}, _dashFmt(g.date)+(g.time? " · "+g.time : "")+" · "+(dd===0? "today" : dd===1? "tomorrow" : "in "+dd+" days")), cta);
     bGames.appendChild(tile);
-    _dashRep(g).then(rep=>{ const ok=!!(rep && rep.share_state==="published");
+    _dashRep(g).then(rep=>{ const ok=!!(rep && playerOpenRep(rep, "oppscout", nm));
       tile.disabled=!ok; tile.classList.toggle("lock", !ok); tile.classList.toggle("open", ok); cta.textContent=ok? "Open ›" : "🔒 Not open yet"; }); });
   if(!bGames.children.length) bGames.appendChild(h("div",{class:"dash-miss"},"No game in the calendar yet."));
   /* OUR MONTH, UNDER HIS PRE GAMES (Oriol, 8/11/2026): League's calendar and results for us -
@@ -32106,7 +32118,8 @@ function renderDashboard(){
         const g=nx.g, prev=G.past[G.past.length-1], to=T<g.date? T : g.date;
         const head=h("div",{class:"sv-head"}, crest(g), h("b",{}, (g.venue==="Away"? "@ " : "vs ")+_lgShort(g.opponent)), h("span",{}, _dashFmt(g.date)+(g.time? " · "+g.time : "")+" · from "+_dashFmt(prev? addDays(prev.g.date,1) : addDays(g.date,-7))), h("span",{class:"sv-pub"},"…"));
         c.__b.appendChild(head);
-        _dashRep(g).then(rep=>{ const ok=!!(rep && rep.share_state==="published"); const p=head.querySelector(".sv-pub"); p.textContent=ok? "published for the players" : "not published yet"; p.className="sv-pub "+(ok? "ok" : "no"); }).catch(_quiet);
+        _dashRep(g).then(rep=>{ const ok=!!(rep && rep.share_state==="published"), early=!ok && !!rep && repDone(rep, "pre") && playerEarlyNames().length>0;
+          const p=head.querySelector(".sv-pub"); p.textContent=ok? "published for the players" : early? "finished · open to "+playerEarlyNames().join(", ") : "not published yet"; p.className="sv-pub "+(ok? "ok" : early? "early" : "no"); }).catch(_quiet);
         body=h("div",{}, loading("Reading what each player opened…")); c.__b.appendChild(body);
         rows.forEach(r=>{ r.study=()=>{ const S=_useStudy(r.doc, nx, prev, to);
           r.sec=S.sec; r.rep=S.rep; r.vids=(S.vlist||[]).length; r.vsec=S.vsec||0; r.days=S.days;
@@ -32114,7 +32127,7 @@ function renderDashboard(){
       }
       if(L5.length){ c.__b.appendChild(h("div",{class:"sv5-h"}, h("b",{}, "The last "+L5.length+" scouts"), h("span",{}, "who watched them · minutes on the pre game · ▶ videos opened")));
         b5=h("div",{class:"sv5-b"}, loading("Reading the last games…")); c.__b.appendChild(b5);
-        L5.forEach(C=>_dashRep(C.x.g).then(rep=>{ C.pub=!!(rep && rep.share_state==="published"); paint5(); }).catch(_quiet)); }
+        L5.forEach(C=>_dashRep(C.x.g).then(rep=>{ C.pub=!!(rep && rep.share_state==="published"); C.done=!!(rep && repDone(rep, "pre")); paint5(); }).catch(_quiet)); }
       const paint=()=>{ if(!body) return; body.innerHTML="";
         const seen=rows.filter(r=>r.done && (Math.max(r.sec,r.rep)>=60 || r.vids>0)), not=rows.filter(r=>r.done && seen.indexOf(r)<0 && !outNx(r)), hurt=rows.filter(r=>r.done && seen.indexOf(r)<0 && outNx(r)), wait=rows.filter(r=>!r.done);
         if(not.length) body.appendChild(h("div",{class:"sv-not"}, h("b",{}, not.length+" not yet: "), not.map(r=>r.n).join(" · ")));
@@ -32150,7 +32163,7 @@ function renderDashboard(){
             h("b",{}, (C.pub===false? "🔒 " : "")+code(C.x)), h("i",{}, g.date.slice(8)+"/"+g.date.slice(5,7)+(/pokal|cup/i.test(String(g.competition||""))? " · cup" : "")))); });
         g5.appendChild(h("span",{class:"hd t"}, "Total"));
         M.forEach(m=>{ g5.appendChild(h("span",{class:"n"+(m.rec && !m.n? " no" : "")}, m.r.n));
-          m.cells.forEach((x, i)=>{ const C=L5[i], np=C.pub===false;
+          m.cells.forEach((x, i)=>{ const C=L5[i], np=C.pub===false && !(C.done && playerHas(m.r.n, "scoutready"));
             const tip=m.r.n+" · "+C.x.g.opponent+" · ";
             if(x.out){ const mo=Math.round(x.t/60); g5.appendChild(h("span",{class:"c out", title:tip+"not in the squad that night (injured or left out) · not counted"+(x.t? " · "+_useClock(x.t)+" on the scout" : "")}, h("b",{}, "out"), (x.rec0 && (x.t>=60 || x.nv))? h("i",{}, mo+"′") : null)); return; }
             if(!x.ok){ g5.appendChild(h("span",{class:"c nr", title:tip+"this app was not recording yet"}, "·")); return; }
@@ -42279,6 +42292,7 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .sv-head b{font:700 15px 'Oswald',sans-serif;letter-spacing:.04em}.sv-head > span{font-size:12px;color:var(--ink-soft,#5b6472)}
 .sv-pub{margin-left:auto;padding:2px 9px;border-radius:10px;font:700 11px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;background:var(--panel-2,#f1f2f5)}
 .sv-pub.ok{background:rgba(47,158,134,.15);color:#13804f}.sv-pub.no{background:rgba(216,82,78,.12);color:#c0392b}
+.sv-pub.early{background:rgba(198,161,91,.2);color:#8a6a1f}
 .sv-not{padding:8px 10px;border-radius:8px;background:rgba(216,82,78,.1);color:#9c2f24;font-size:13px;margin-bottom:8px}
 .sv-t{width:100%;border-collapse:collapse;font-size:12.5px}
 .sv-t th{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472);padding:4px 6px;border-bottom:2px solid var(--ink,#141821);text-align:center}
@@ -47599,6 +47613,7 @@ body.dark .adm-cs.wait{color:#a9b1bd}
 body.dark .adm-type.pl{color:#8fb8f0}
 body.dark .adm-acc-t .adm-del{color:#ff8f85}
 body.dark .sv-pub.no{color:#ff8f85}
+body.dark .sv-pub.early{color:#e6c87a}
 body.dark .dash-kind.pre{color:#8fb8f0}
 body.dark .dash-kind.post{color:#e3c27a}
 body.dark .dash-kind.rev{color:#c6b0f0}
