@@ -5531,11 +5531,21 @@ function _docOpponent(name, opponents){
   });
   return best;
 }
+/* THE DRIVE IS READ AGAIN WHEN IT MAY HAVE CHANGED (Oriol, 19/11/2026: "no lee los sheet in drive, acabo
+   de subir muchos; tampoco lee el game plan"). The folders were listed once a visit - and the dashboard's
+   card did not even ask when it had a list kept from an earlier visit - so a sheet or a plan uploaded with
+   the hub open never showed until the page was reloaded. A list older than three minutes is read again
+   whenever something asks for it, the dashboard's card always asks, and coming back to the hub's tab
+   reads it again and redraws when a file came in. A file that could not be opened is tried again once a
+   visit, not never. */
+const DOCS_FRESH_MS=3*60*1000;
+const _docsRetried={};
+function _docsSig(){ const D=docsState(); return Object.keys(D.files||{}).length+"|"+Object.keys(D.lists||{}).sort().map(k=>k+":"+(D.lists[k]||[]).length).join(","); }
 async function syncDocs(force){
   if(_docsBusy) return;
   /* before sign-in there is nothing to ask with; not marked as tried, so it runs after */
   if(!SB_TOKEN) return;
-  if(_docsTried && !force) return;
+  if(_docsTried && !force){ const at=Date.parse(docsState().at||"")||0; if(Date.now()-at<DOCS_FRESH_MS) return; }
   _docsBusy=true; _docsTried=true;
   const D=docsState();
   try{
@@ -5588,7 +5598,9 @@ async function syncDocs(force){
         /* a name that carries its day needs nobody to open the file */
         if(_docDateInName(f.name)) return false;
         if(d && d.date) return false;
-        if(d && d.tried && !force) return false;
+        /* one that could not be opened is tried again once a visit */
+        if(d && d.tried && !force && !(/^could not read/.test(String(d.how||"")) && !_docsRetried[f.id])) return false;
+        if(d && d.tried && !force) _docsRetried[f.id]=1;
         if(folder==="practicedoc") return true;
         return !d || (!d.drive && !_docDateInName(f.name));
       });
@@ -5619,6 +5631,12 @@ async function syncDocs(force){
     persist();
   } finally { _docsBusy=false; }
 }
+/* back on the hub's tab: the Drive read again if its list is old, the screen redrawn if a file came in */
+try{ document.addEventListener("visibilitychange", ()=>{
+  if(document.hidden || !SB_TOKEN || isPlayerUser()) return;
+  const before=_docsSig();
+  Promise.resolve(syncDocs(false)).then(()=>{ if(_docsSig()===before) return;
+    softRender(()=>{ const v=state.ui.view; if(v==="planification") renderPlan(); else if(v==="dashboard") renderDashboard(); else if(v==="gameplan") renderGamePlan(); }); }).catch(_quiet); }); }catch(e){_quiet(e)}
 function _docDateInName(name){
   const p2=n=>(n<10?"0":"")+n;
   const s0=String(name||"");
@@ -32215,7 +32233,9 @@ function renderDashboard(){
       const paint=()=>{ body.innerHTML=""; try{ body.appendChild(_planMissing({ dash:true })); }catch(e){ body.appendChild(h("div",{class:"dash-miss"},"Planning could not be read.")); } };
       const ready=()=>Object.keys((docsState().files)||{}).length>0;
       try{ loadGamesOnce(()=>{}); }catch(e){_quiet(e)}
-      if(ready()) paint(); else { try{ (_docsTried? Promise.resolve() : syncDocs(false)).then(paint, paint); }catch(e){ paint(); } }
+      /* drawn with what is known, and always read again from the Drive (it is skipped when the list is fresh) */
+      if(ready()) paint();
+      try{ Promise.resolve(syncDocs(false)).then(()=>{ if(c.isConnected) paint(); }, ()=>{ if(c.isConnected) paint(); }); }catch(e){ paint(); }
       /* the tagging of the trainings arrives on its own: painted again when it has */
       setTimeout(()=>{ if(c.isConnected) paint(); }, 6000);
     },
