@@ -12352,12 +12352,15 @@ function _pcvFitName(vn){
   try{
     if(!vn || !vn.isConnected) return;
     const room=vn.clientHeight, wide=vn.clientWidth; if(!(room>16) || !(wide>16)) return;
+    /* a card drawn larger (the column beside the video at 1.3, 19/11/2026) measures its box in its own pixels
+       and the letters on the screen: the screen's are brought back to the box's, or the name came out small */
+    const vr=vn.getBoundingClientRect(), z=(vn.offsetHeight>0 && vr.height>0)? vr.height/vn.offsetHeight : 1;
     const fn=vn.querySelector(".fn"), ln=vn.querySelector(".ln");
-    if(fn && fn.textContent){ fn.style.fontSize=""; const r=fn.getBoundingClientRect();
-      if(r.height>room){ const fs=parseFloat(getComputedStyle(fn).fontSize)||10; fn.style.fontSize=Math.max(7, fs*room/r.height*.97).toFixed(1)+"px"; } }
+    if(fn && fn.textContent){ fn.style.fontSize=""; const r=fn.getBoundingClientRect(), rh=r.height/z;
+      if(rh>room){ const fs=parseFloat(getComputedStyle(fn).fontSize)||10; fn.style.fontSize=Math.max(7, fs*room/rh*.97).toFixed(1)+"px"; } }
     if(!ln) return;
-    const fw=(fn && fn.textContent)? fn.getBoundingClientRect().width : 0;
-    const ok=px=>{ ln.style.fontSize=px+"px"; const r=ln.getBoundingClientRect(); return r.height<=room+.5 && r.width<=wide-fw-2; };
+    const fw=(fn && fn.textContent)? fn.getBoundingClientRect().width/z : 0;
+    const ok=px=>{ ln.style.fontSize=px+"px"; const r=ln.getBoundingClientRect(); return r.height/z<=room+.5 && r.width/z<=wide-fw-2; };
     let lo=9, hi=44;
     if(ok(hi)) return;
     if(!ok(lo)) return;
@@ -39643,6 +39646,15 @@ body.dark .us-f .lg-bdg.face.sum+.lg-bdg.face.sum{box-shadow:0 0 0 2px #242a33}
 .pre-cm .pre-cm-box.cm-wide .pre-cm-side:hover{opacity:1}
 .pre-cm .pre-cm-box:fullscreen{width:100vw;height:100vh;max-width:none;border-radius:0;padding:10px}
 .pre-cm .pre-cm-box:fullscreen .pre-cm-side{top:56px;right:14px;bottom:14px}
+/* THE CARD BESIDE THE VIDEO 30% LARGER ON A COMPUTER (Oriol, 19/11/2026: "casi siempre lo usaré allí para
+   abrirlo en pantalla, así podrán verlo mejor"): the whole column - the card and the shot chart under it -
+   drawn at 1.3, its text with it, so it reads from across a room. Its distances to the edges are divided
+   back, so the card still starts level with the video. A phone keeps the card as it was. */
+@media (min-width:1100px){
+  .pre-cm .pre-cm-side{zoom:1.3;padding-top:calc((var(--cm-bar,38px) + 9px) / 1.3)}
+  .pre-cm .pre-cm-box.cm-wide .pre-cm-side{padding-top:calc(8px / 1.3);top:calc(60px / 1.3);right:calc(18px / 1.3);bottom:calc(18px / 1.3)}
+  .pre-cm .pre-cm-box:fullscreen .pre-cm-side{top:calc(56px / 1.3);right:calc(14px / 1.3);bottom:calc(14px / 1.3)}
+}
 @media (max-width:900px){
   .pre-cm .pre-cm-box{flex-direction:column;height:96vh}
   .pre-cm .pre-cm-side{flex:0 0 auto;max-width:none}
