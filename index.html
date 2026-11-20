@@ -6027,6 +6027,7 @@ function _useMerge(a, b){
       const p1 = (x.vids||{})[id] || {}, p2 = (y.vids||{})[id] || {};
       m.vids[id] = { n: Math.max(p1.n||0, p2.n||0), sec: Math.max(p1.sec||0, p2.sec||0), where: p1.where || p2.where || "",
                      title: p1.title || p2.title || "" };
+      const ap = Math.max(p1.app||0, p2.app||0); if(ap) m.vids[id].app = ap;
     });
     days[d] = m;
   });
@@ -6133,15 +6134,24 @@ function useView(v){
   d.views[v] = (d.views[v] || 0) + 1;
   _useDirty = true;
 }
-function useVideo(id, where, title){
+function useVideo(id, where, title, app){
   const d = _useDay(); if(!d || !id) return;
   const p = d.vids[id] = d.vids[id] || { n: 0, where: where || "", title: title || "" };
   p.n++; if(where) p.where = where; if(title) p.title = title;
   const s = _useSess(); if(s){ s.vn = (s.vn || 0) + 1; s.end = Date.now(); }
   _useDirty = true;
+  /* opened in the YouTube app: counted as an opening there, and the time it plays there is not ours to see */
+  if(app){ p.app = (p.app || 0) + 1; useFlush(); return; }
   /* the player is open from now: the heartbeat adds its seconds while it stays open */
   _useVidOn = { id: id, where: where || "", title: title || "" };
 }
+/* a video's time as the analysis shows it: the time it played in the hub, and whether it was also
+   opened in the YouTube app, where its time cannot be measured */
+function _useVidTime(v){ const s=(v && v.sec)||0, a=(v && v.app)||0;
+  return s>0? _useClock(s)+(a? " + app" : "") : (a? "YouTube app" : _useClock(0)); }
+function _useVidTip(v){ const n=(v && v.n)||1, a=(v && v.app)||0;
+  return "opened "+n+(n>1? " times" : " time")+" · "+_useClock((v && v.sec)||0)+" playing in the hub"
+    +(a? " · "+a+(a>1? " times" : " time")+" in the YouTube app (time there not measured)" : ""); }
 let _useBusy = false;
 async function useFlush(){
   if(!_use || !_useDirty || !SB_TOKEN || !currentUser || _useBusy) return;
@@ -11571,9 +11581,11 @@ function _preVideoRow(rep, canEd, save, g){
   const V=rep.data.videos;
   const row=h("div",{class:"pv2"});
   PRE_VIDS.forEach(([k, lab])=>{
-    const box=h("div",{class:"pv2-box pv2-"+k}, h("div",{class:"pv2-h"}, h("b",{}, lab)));
+    /* the same video in the YouTube app, for a phone YouTube asks to sign in (see _ytAppLink) */
+    const ytApp=_ytAppLink("pre game video", lab+(g && g.opponent? " · "+g.opponent : ""));
+    const box=h("div",{class:"pv2-box pv2-"+k}, h("div",{class:"pv2-h"}, h("b",{}, lab), ytApp));
     const frame=h("div",{class:"pv2-frame"});
-    const draw=()=>{ frame.innerHTML=""; const u=V[k], id=_ytId(u);
+    const draw=()=>{ frame.innerHTML=""; const u=V[k], id=_ytId(u); ytApp.set(u);
       if(!id){ frame.appendChild(h("div",{class:"pv2-ph"}, canEd? "Paste the YouTube link above" : "No video yet")); return; }
       const play=h("button",{type:"button", class:"pv2-play", title:"Play "+lab, "aria-label":"Play "+lab},
         h("img",{src:"https://i.ytimg.com/vi/"+id+"/hqdefault.jpg", alt:"", loading:"lazy"}), h("span",{class:"pv2-pb", "aria-hidden":"true"}, "▶"));
@@ -12585,8 +12597,10 @@ function _preOpenCard(L, tid, c, canEd, save){
 
   /* -- the video -- */
   const frame=h("div",{class:"pre-cm-video"});
+  /* the same video in the YouTube app, for a phone YouTube asks to sign in (see _ytAppLink) */
+  const ytApp=_ytAppLink("player card", ()=>(c&&(c.name||c.player))||"").set("");
   /* "paste the link above" with no bar above is a message about a box that is not there */
-  const place=bad=>{ frame.innerHTML=""; frame.appendChild(h("div",{class:"pre-cm-ph"+(bad?" bad":"")},
+  const place=bad=>{ ytApp.set(""); frame.innerHTML=""; frame.appendChild(h("div",{class:"pre-cm-ph"+(bad?" bad":"")},
     bad? "Aixo no sembla un link de YouTube. Enganxa l'adreca sencera (youtube.com o youtu.be)."
        : (mayWrite ? "Enganxa el link de YouTube aqui a dalt \u2014 el video s'obre tot sol."
                    : "No video for this player yet."))); };
@@ -12594,6 +12608,7 @@ function _preOpenCard(L, tid, c, canEd, save){
     const id=_ytId(u);
     if(!id){ place(true); return false; }
     try{ useVideo(id, "player card", (c&&(c.name||c.player))||""); }catch(e){_quiet(e)}
+    ytApp.set(u);
     frame.innerHTML="";
     const f=document.createElement("iframe");
     /* si el link porta el minut, s'hi comenca: un clip d'scouting sempre apunta a un
@@ -12660,7 +12675,7 @@ function _preOpenCard(L, tid, c, canEd, save){
      Watching is untouched: a player with a clip on him plays it either way, for anyone
      who is allowed to see the report. */
   /* mayWrite is settled at the top of this function - see the note there */
-  const bar=h("div",{class:"pre-cm-bar"}, mayWrite? inp : null, mayWrite? openBtn : null, wideBtn);
+  const bar=h("div",{class:"pre-cm-bar"}, mayWrite? inp : null, mayWrite? openBtn : null, wideBtn, ytApp);
   box.appendChild(h("div",{class:"pre-cm-main"}, bar, frame));
 
   /* -- the card, as it is on the board, and his floor under it -- */
@@ -21926,6 +21941,21 @@ function _ytEmbed(u){
   const t=_ytStart(u);
   return "https://www.youtube-nocookie.com/embed/"+id+"?rel=0"+(t? ("&start="+t) : "");
 }
+/* THE YOUTUBE APP (20/11/2026). On a phone YouTube sometimes stops a video played inside another page
+   with "Sign in to confirm you're not a bot" - a player on an iPhone got it on his card. The check is
+   YouTube's, made on the network the phone is on, and nothing the hub sends can lift it; the same video
+   opened in the YouTube app (or on youtube.com) plays there, signed in. So a video a player can open
+   carries this link beside it. The opening is counted (as "app"); the time it plays there cannot be. */
+function _ytWatch(u){ const id=_ytId(u); if(!id) return ""; const t=_ytStart(u); return "https://www.youtube.com/watch?v="+id+(t? "&t="+t+"s" : ""); }
+function _ytAppLink(where, title){
+  const a=h("a",{class:"yt-app", target:"_blank", rel:"noopener",
+    title:"If the video asks you to sign in, open it here: it plays in the YouTube app"},
+    h("span",{class:"yt-app-i", "aria-hidden":"true"}, "▶"), "Open in YouTube");
+  a.set=u=>{ const w=_ytWatch(u); a._u=u||""; a.hidden=!w; if(w) a.href=w; else a.removeAttribute("href"); return a; };
+  a.addEventListener("click", ()=>{ const id=_ytId(a._u); if(!id) return;
+    try{ useVideo(id, where, typeof title==="function"? title() : (title||""), true); }catch(e){_quiet(e)} });
+  return a;
+}
 function pbVideoPanel(canEd){
   const pv=state.playbookVideo||(state.playbookVideo={url:"",updated:""});
   const box=h("div",{class:"pb-video"});
@@ -30904,7 +30934,7 @@ function _useStudy(doc, x, prev, toDay){
     const s=(y.vsec||{}).oppscout||0; sec+=s; all+=(y.sec||0); per.push({ d:d, s:s });
     let vd=0;
     Object.keys(y.vids||{}).forEach(id=>{ const v=y.vids[id]; if(!v || v.where==="playbook") return; vids+=(v.n||0); vsec+=(v.sec||0); vd+=(v.n||0);
-      const e=V[id]||(V[id]={ id:id, n:0, sec:0, title:v.title||"", where:v.where||"" }); e.n+=(v.n||0); e.sec+=(v.sec||0); if(v.title) e.title=v.title; });
+      const e=V[id]||(V[id]={ id:id, n:0, sec:0, app:0, title:v.title||"", where:v.where||"" }); e.n+=(v.n||0); e.sec+=(v.sec||0); e.app+=(v.app||0); if(v.title) e.title=v.title; });
     if(s>0 || vd>0) dset++; }
   let rep=0; Object.keys(days).forEach(d=>{ rep+=(((days[d]||{}).rsec||{})["pre:"+x.g.id]||0); });
   const list=Object.keys(V).map(k=>V[k]).sort((a,b)=>b.sec-a.sec||b.n-a.n);
@@ -31022,12 +31052,12 @@ async function _playerDash(root, who){
   const vidList=S=>{ const L=S.vlist||[];
     if(!L.length) return h("div",{class:"p3-vnone"}, "No video opened yet");
     const mx=Math.max(1, ...L.map(v=>v.sec));
-    return h("div",{class:"p3-vl"}, L.map(v=>h("div",{class:"p3-v"+(v.sec<15? " z" : ""), title:(v.title||"Video")+" · opened "+v.n+(v.n===1? " time" : " times")+" · "+_useClock(v.sec)+" playing"+(v.where? " · "+v.where : "")},
-      h("b",{}, v.title||"Video"), h("span",{class:"n"}, "×"+(v.n||1)), h("span",{class:"t"}, h("u",{style:"width:"+Math.round(100*v.sec/mx)+"%"})), h("em",{}, _useClock(v.sec))))); };
+    return h("div",{class:"p3-vl"}, L.map(v=>h("div",{class:"p3-v"+(v.sec<15 && !v.app? " z" : ""), title:(v.title||"Video")+" · "+_useVidTip(v)+(v.where? " · "+v.where : "")},
+      h("b",{}, v.title||"Video"), h("span",{class:"n"}, "×"+(v.n||1)), h("span",{class:"t"}, h("u",{style:"width:"+Math.round(100*v.sec/mx)+"%"})), h("em",{}, _useVidTime(v))))); };
   /* the same, small, under a scouting of before: a chip a video with its time */
   const vidChips=S=>{ const L=S.vlist||[];
-    return h("div",{class:"p3-vc"}, L.length? L.map(v=>h("span",{title:(v.title||"Video")+" · opened "+v.n+(v.n===1? " time" : " times")+" · "+_useClock(v.sec)+" playing"},
-      h("b",{}, v.title||"Video"), " "+_useClock(v.sec), v.n>1? h("i",{}, " ×"+v.n) : null)) : h("span",{class:"none"}, "no video opened")); };
+    return h("div",{class:"p3-vc"}, L.length? L.map(v=>h("span",{title:(v.title||"Video")+" · "+_useVidTip(v)},
+      h("b",{}, v.title||"Video"), " "+_useVidTime(v), v.n>1? h("i",{}, " ×"+v.n) : null)) : h("span",{class:"none"}, "no video opened")); };
   const past=G.past.filter(x=>!ph(x.g)), last=past[past.length-1];
   const hist=past.slice(-6).map(x=>{ const k=past.indexOf(x); return study(x, past[k-1]); }).filter(recorded);
   /* a game he was not in the squad for (injured, left out) is shown, but out of his average */
@@ -31056,8 +31086,8 @@ async function _playerDash(root, who){
       _dashRep(nx0.g).then(rep=>{ const ids=_preVidIds(rep), ks=PRE_VIDS.filter(([k])=>ids[k]); if(!ks.length) return;
         pvl.appendChild(h("i",{}, "Pre game videos"));
         ks.forEach(([k, lab])=>{ const v=(N.vlist||[]).filter(x=>x.id===ids[k] && (x.n>0 || x.sec>0))[0];
-          pvl.appendChild(h("span",{class:"p3-pv "+(v? "ok" : "no"), title:v? "opened "+(v.n||1)+(v.n>1? " times" : " time")+" · "+_useClock(v.sec)+" playing" : "not opened yet"},
-            h("b",{}, lab), v? " "+_useClock(v.sec)+(v.n>1? " ×"+v.n : "") : " not watched")); }); }).catch(_quiet); }
+          pvl.appendChild(h("span",{class:"p3-pv "+(v? "ok" : "no"), title:v? _useVidTip(v) : "not opened yet"},
+            h("b",{}, lab), v? " "+_useVidTime(v)+(v.n>1? " ×"+v.n : "") : " not watched")); }); }).catch(_quiet); }
     bNow.appendChild(h("div",{class:"p3-vh"}, "The videos · each one and its time"));
     bNow.appendChild(vidList(N));
     bNow.classList.toggle("under", avg!=null && N.sec<avg);
@@ -32219,8 +32249,11 @@ function renderDashboard(){
         const VK=PRE_VIDS.filter(([k])=>VID && VID[k]), vOf=(r,k)=>(r.vl||[]).filter(v=>v.id===VID[k] && (v.n>0 || v.sec>0))[0]||null;
         if(VK.length){ const fit=rows.filter(r=>r.done && !outNx(r));
           body.appendChild(h("div",{class:"sv-pv"}, h("b",{}, "Pre game videos"), VK.map(([k, lab])=>{ const w=fit.filter(r=>vOf(r,k)), nw=fit.filter(r=>!vOf(r,k));
-            const avg=w.length? w.reduce((a,r)=>a+(vOf(r,k).sec||0),0)/w.length : 0;
-            return h("span",{class:"sv-pvi"}, h("i",{}, lab), " "+w.length+" of "+fit.length+" watched", w.length? h("em",{}, " · "+_useClock(avg)+" each") : null,
+            /* the average is over those it played for in the hub; the YouTube app's time cannot be measured */
+            const wt=w.filter(r=>(vOf(r,k).sec||0)>0), wa=w.filter(r=>vOf(r,k).app>0).length;
+            const avg=wt.length? wt.reduce((a,r)=>a+(vOf(r,k).sec||0),0)/wt.length : 0;
+            return h("span",{class:"sv-pvi"}, h("i",{}, lab), " "+w.length+" of "+fit.length+" watched", wt.length? h("em",{}, " · "+_useClock(avg)+" each") : null,
+              wa? h("em",{title:"opened in the YouTube app: the time there is not measured"}, " · "+wa+" in the YouTube app") : null,
               nw.length? h("small",{}, "not yet: "+nw.map(r=>r.n).join(", ")) : null); }))); }
         if(seen.length){ const mx=Math.max(60, ...seen.map(r=>Math.max(r.sec,r.rep)));
           const t=h("table",{class:"sv-t"}, h("tr",{}, h("th",{class:"l"},"Player"), h("th",{class:"l"},"Time on the scout"), h("th",{},"Videos"), ...VK.map(([k, lab])=>h("th",{}, lab)), h("th",{},"Days"), h("th",{class:"l"},"Last")));
@@ -32228,7 +32261,7 @@ function renderDashboard(){
             t.appendChild(h("tr",{}, h("td",{class:"l"}, h("b",{}, r.n)),
               h("td",{class:"l"}, h("span",{class:"sv-bar"}, h("i",{style:"width:"+Math.round(100*s/mx)+"%"})), " "+(m<60? m+" min" : Math.floor(m/60)+" h "+String(m%60).padStart(2,"0"))),
               h("td",{}, r.vids? h("span",{}, String(r.vids), h("i",{class:"sv-vt"}, " · "+_useClock(r.vsec))) : "—"),
-              ...VK.map(([k, lab])=>{ const v=vOf(r,k); return v? h("td",{class:"sv-pvc", title:lab+" · opened "+(v.n||1)+(v.n>1? " times" : " time")+" · "+_useClock(v.sec)+" playing"}, _useClock(v.sec)+(v.n>1? " ×"+v.n : "")) : h("td",{class:"sv-x", title:lab+" · not opened"}, "✕"); }),
+              ...VK.map(([k, lab])=>{ const v=vOf(r,k); return v? h("td",{class:"sv-pvc", title:lab+" · "+_useVidTip(v)}, _useVidTime(v)+(v.n>1? " ×"+v.n : "")) : h("td",{class:"sv-x", title:lab+" · not opened"}, "✕"); }),
               h("td",{}, String(r.days)), h("td",{class:"l mu"}, r.last? _dashFmt(r.last) : "—"))); });
           body.appendChild(t); }
         if(wait.length) body.appendChild(h("div",{class:"ld"}, "Reading "+wait.length+" more…", h("span",{class:"ld-bar"})));
@@ -42884,6 +42917,14 @@ body.dark .sv-t td.sv-x{color:#ff8f85}
 .pv2-ph{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:12px;color:#8a93a2;font-size:13px;background:var(--panel-2,#f1f2f5)}
 @media (max-width:700px){ .pv2{grid-template-columns:minmax(0,1fr)} }
 @media print{ .pv2-blk,.p3-vids{display:none!important} }
+/* the same video in the YouTube app, for a phone YouTube asks to sign in (20/11/2026) */
+.yt-app{display:inline-flex;align-items:center;gap:6px;margin-left:auto;border:1px solid var(--line,#dfe3e8);border-radius:6px;padding:7px 11px;
+  font-size:11px;font-weight:700;letter-spacing:.04em;line-height:1;color:var(--muted,#5b6472);background:none;text-decoration:none;white-space:nowrap;cursor:pointer}
+.yt-app:hover,.yt-app:focus-visible{color:var(--ink,#141821);border-color:var(--ink,#141821)}
+.yt-app-i{color:#c4302b;font-size:9px}
+.yt-app[hidden]{display:none!important}
+.pre-cm .yt-app{margin-left:0;padding:8px 13px}
+@media (hover:none),(pointer:coarse){ .yt-app,.pre-cm .yt-app{padding:11px 14px;font-size:12px} }
 .p3-games{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 @media (max-width:560px){ .p3-games{grid-template-columns:minmax(0,1fr)} .p3-row{grid-template-columns:96px minmax(0,1fr) 48px 78px;gap:8px} .p3-vc{margin-left:0} .p3-v{grid-template-columns:minmax(0,1fr) 26px 54px 50px;gap:7px} .p3-tot{gap:8px 16px} .p3-tot small{margin-left:0;width:100%} }
 .p3-g{display:grid;gap:4px;justify-items:start;text-align:left;border-radius:14px;padding:12px;background:var(--panel,#fff);border:2px solid var(--line,#e4e7ec);font:inherit;color:var(--ink,#141821);cursor:pointer}
@@ -47183,7 +47224,7 @@ body.dark .pbb-c-gm i.z.old{background:rgba(184,134,46,.14)}
     padding-top:0!important}
   .pre-cm .pre-cm-box.cm-wide .pre-cm-side{position:static!important;opacity:1!important}
   /* and the buttons above it are things a thumb has to hit */
-  .pre-cm .pre-cm-btn{padding:11px 14px!important;font-size:12px!important}
+  .pre-cm .pre-cm-btn,.pre-cm .yt-app{padding:11px 14px!important;font-size:12px!important}
   .pre-cm .pre-cm-in{padding:11px 12px!important;font-size:14px!important}
   .pre-cm .pre-cm-x{width:40px!important;height:40px!important;font-size:17px!important;
     top:14px!important;right:14px!important}
