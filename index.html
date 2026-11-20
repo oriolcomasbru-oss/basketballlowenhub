@@ -12588,14 +12588,15 @@ function _preCardShots(card, L, tid, c){
     ph.appendChild(h("div",{class:"photo-sc", title:sc.line}, sc.svg));
   }catch(e){_quiet(e)}
 }
-function _preOpenCard(L, tid, c, canEd, save){
+function _preOpenCard(L, tid, c, canEd, save, readOnly){
   const old=document.getElementById("preCardModal"); if(old) old.remove();
   /* decided first, because both the bar and what the empty frame says depend on it */
   var _cmEdit=false, _cmAllow=!!canEd;
   try{ _cmEdit = (typeof EDIT_MODE!=="undefined" && !!EDIT_MODE)
     || document.body.classList.contains("edit-mode"); }catch(e){_quiet(e)}
   try{ if(!_cmAllow && typeof canEdit==="function" && canEdit("oppscout")) _cmAllow=true; }catch(e){_quiet(e)}
-  const mayWrite = !!(_cmEdit && _cmAllow);
+  /* opened from somewhere that cannot save the report (the dashboard): a card to read, never a link box */
+  const mayWrite = !readOnly && !!(_cmEdit && _cmAllow);
   const box=h("div",{class:"pre-cm-box"});
   const wrap=h("div",{class:"phx pre-phx pre-cm", id:"preCardModal"}, box);
 
@@ -12703,7 +12704,7 @@ function _preOpenCard(L, tid, c, canEd, save){
     if(tl && !tl.textContent.trim()){ const w=tl.closest(".tagline-wrap"); (w||tl).remove(); }
     /* THE SAME CARD AS ON THE BOARD: the KEY / STOP HIM band and frame, OUT, the lit boxes with
        their rank - the board's card had them and the one opened beside the video did not */
-    try{ _preHl(L, card, c, false, ()=>{}, _preClub()); }catch(e){_quiet(e)}
+    try{ _preHl(L, card, c, false, ()=>{}, tid||_preClub()); }catch(e){_quiet(e)}
     /* and its usage, the same chip as on the board, and the same tidying */
     _preCardUse(card, L, tid, c);
     _preCardTidy(card, !mayWrite);
@@ -21960,6 +21961,31 @@ function _ytAppLink(where, title){
     try{ useVideo(id, where, typeof title==="function"? title() : (title||""), true); }catch(e){_quiet(e)} });
   return a;
 }
+/* ONE VIDEO, LARGE, OVER THE PAGE (Oriol, 20/11/2026: the dashboard's small KEYS / HOW TO ATTACK "al clicar se
+   abre un popup con el video en grande"). The player is youtube.com's, as everywhere (see _ytAppLink); Escape,
+   the cross or a click outside it closes it, and closing it stops the video. */
+function _vidPopup(u, lab, where, title){
+  const id=_ytId(u); if(!id) return;
+  const old=document.getElementById("vidPop"); if(old) old.remove();
+  const st=_ytStart(u);
+  const f=document.createElement("iframe");
+  f.src="https://www.youtube.com/embed/"+id+"?rel=0&autoplay=1"+(st? "&start="+st : ""); f.title=lab||"Video"; f.allowFullscreen=true;
+  f.setAttribute("allow","accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen");
+  const close=()=>{ document.removeEventListener("keydown", onKey); wrap.remove(); };
+  const onKey=e=>{ if(e.key==="Escape") close(); };
+  const sub=!title? "" : (lab && title.indexOf(lab+" · ")===0)? title.slice(lab.length+3) : (title!==lab? title : "");
+  const box=h("div",{class:"vpop-box", role:"dialog", "aria-modal":"true", "aria-label":lab||"Video"},
+    h("div",{class:"vpop-h"}, h("b",{}, lab||"Video"), sub? h("span",{}, sub) : null,
+      _ytAppLink(where, title||lab||"").set(u),
+      h("button",{type:"button", class:"vpop-x", title:"Close", "aria-label":"Close", onclick:close}, "✕")),
+    h("div",{class:"vpop-v"}, f));
+  const wrap=h("div",{class:"vpop", id:"vidPop"}, box);
+  wrap.addEventListener("click", e=>{ if(e.target===wrap) close(); });
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(wrap);
+  try{ useVideo(id, where, title||lab||""); }catch(e){_quiet(e)}
+  try{ box.querySelector(".vpop-x").focus({ preventScroll:true }); }catch(e){_quiet(e)}
+}
 function pbVideoPanel(canEd){
   const pv=state.playbookVideo||(state.playbookVideo={url:"",updated:""});
   const box=h("div",{class:"pb-video"});
@@ -29898,6 +29924,33 @@ function _scNoteBox(cyc){
   _dashScGet(cyc).then(drawNote).catch(()=>drawNote(null));
   return note;
 }
+/* THE PRE GAME'S KEYS AND HOW TO ATTACK, SMALL (Oriol, 20/11/2026: "una versión mini de youtube ... los videos en
+   tamaño pequeño a la derecha. Al clicar se abre un popup con el video en grande"). A picture a video, its name on
+   it; a click plays it large over the page (_vidPopup). Pasted in the pre game, in edit mode, as before. */
+function _dashVidsInto(box, row, g){
+  const sub=box.parentNode; if(sub) sub.classList.add("dash-pvs");
+  box.innerHTML="";
+  _dashRep(g).then(rep=>{ const ids=_preVidIds(rep), V=(rep && rep.data && rep.data.videos)||{}, ks=PRE_VIDS.filter(([k])=>ids[k]);
+    box.innerHTML="";
+    row.classList.toggle("has-v", ks.length>0);
+    if(!ks.length) return;
+    box.appendChild(h("div",{class:"dash-pvg n"+ks.length}, ks.map(([k, lab])=>{
+      const b=h("button",{type:"button", class:"dash-pvt pv2-"+k, title:"Play "+lab+" large"},
+        h("span",{class:"im"}, h("img",{src:"https://i.ytimg.com/vi/"+ids[k]+"/mqdefault.jpg", alt:"", loading:"lazy"}),
+          h("i",{class:"pb", "aria-hidden":"true"}, "▶")),
+        h("b",{}, lab));
+      b.addEventListener("click", ()=>_vidPopup(V[k], lab, "pre game video", lab+(g && g.opponent? " · "+g.opponent : "")));
+      return b; })));
+  }).catch(e=>{ _quiet(e); row.classList.remove("has-v"); });
+}
+/* a man's card from the dashboard: the pre game's popup with the league's numbers of today, read only - the
+   copy is the dashboard's own, so nothing of it can find its way back into the report */
+function _dashOpenCard(g, cd, pos){
+  const L=leagueState(), tid=_lgTeamIdByName(L, g.opponent)||"";
+  const c=JSON.parse(JSON.stringify(cd||{}));
+  try{ const C={ pos:{} }; C.pos[PRE_CARD_POS.indexOf(pos)>=0? pos : PRE_CARD_POS[0]]=[c]; _preCardsFresh(L, tid, C); }catch(e){_quiet(e)}
+  _preOpenCard(L, tid, c, false, ()=>{}, true);
+}
 /* THE NEXT OPPONENT'S ROSTER, as the staff wrote it on the cards - tagline, the first
    ideas, the closeout - with who started and how long each man plays from their last games.
    Used by the pre game card and by the roster card on its own. */
@@ -29909,18 +29962,26 @@ function _dashRosterInto(box, g, wide){
     const nk=s=>_lgNorm(_lgLastName(String(s||"")));
     const byNum={}, byName={}; POS.forEach(k=>(cards[k]||[]).forEach(c0=>{ if(!c0) return; if(c0.num) byNum[String(c0.num)]=c0; const n=nk(c0.name); if(n) byName[n]=c0; }));
     const used={};
-    const man=(p, start, cd)=>{ if(cd) used[cd.id||cd.name]=1;
+    const man=(p, start, cd, pos)=>{ if(cd) used[cd.id||cd.name]=1;
       const ideas=wide? [] : ((cd && cd.ideas)||[]).filter(x=>String(x||"").trim() && !_preIdeaKind(x)).slice(0, 2);   /* the wide roster says the role only */
       /* the wide roster puts each man's face beside him, from the league roster */
       let face=null; if(wide){ try{ face=_lgFaceName(g, p.name||(cd&&cd.name)||"", "ros"); }catch(e){_quiet(e)} }
-      return h("div",{class:"dash-man"+(face? " ph" : "")+(start? " start" : "")+((cd && (cd.hl==="key"||cd.hl==="stop"))? " hl-"+cd.hl : "")+((cd && cd.out)? " is-out" : ""), style:(cd && CO[cd.co])? "border-left-color:"+CO[cd.co] : ""},
+      /* A MAN WITH A CARD OPENS IT (Oriol, 20/11/2026: "en roster summary debes poder clicar y que te salgan las
+         fichas de cada jugador, como en pregame"): the pre game's own popup, his video beside it, to read */
+      const go=!!(wide && cd);
+      const el=h("div",{class:"dash-man"+(face? " ph" : "")+(start? " start" : "")+((cd && (cd.hl==="key"||cd.hl==="stop"))? " hl-"+cd.hl : "")+((cd && cd.out)? " is-out" : "")+(go? " go" : ""), style:(cd && CO[cd.co])? "border-left-color:"+CO[cd.co] : "",
+          role:go? "button" : null, tabindex:go? "0" : null, title:go? "Open the card of "+(_lgLastName(p.name||cd.name||"")||"him") : null},
         face, h("div",{class:"bd"}, h("div",{class:"l1"}, h("u",{}, (p.num||(cd&&cd.num))? "#"+(p.num||cd.num) : ""), h("b",{}, _lgLastName(p.name||(cd&&cd.name)||"")),
           (p.last===false)? h("em",{title:"Did not play their last game"},"?") : null,
           cd && cd.badge==="NEW"? h("span",{class:"new"},"NEW") : null,
           (cd && cd.hl==="stop")? h("span",{class:"hlb stop"},"STOP HIM") : (cd && cd.hl==="key")? h("span",{class:"hlb key"},"KEY") : null,
           p.min? h("i",{}, Math.round(p.min)+"′"+(start && R? " · S "+p.st+"/"+R.n : "")) : null),
         (cd && _cardTxt(cd.tag))? h("div",{class:"tg"}, _cardTxt(cd.tag)) : null,
-        ideas.length? h("div",{class:"id"}, ideas.join(" · ")) : null)); };
+        ideas.length? h("div",{class:"id"}, ideas.join(" · ")) : null));
+      if(go){ const open=()=>_dashOpenCard(g, cd, pos);
+        el.addEventListener("click", open);
+        el.addEventListener("keydown", e=>{ if(e.key==="Enter" || e.key===" "){ e.preventDefault(); open(); } }); }
+      return el; };
     const wrap=h("div",{class:wide? "dash-ros5" : ""}); box.appendChild(wrap);
     /* THE STAFF'S ORDER FIRST. When the pre game has cards, the roster is the cards: each
        position and each man in the order the staff put them in the pre game. Their games
@@ -29932,23 +29993,23 @@ function _dashRosterInto(box, g, wide){
         const grp=h("div",{class:"dash-pos2"}, h("b",{}, k)); const list=h("div",{}); grp.appendChild(list);
         const anyS=l.some(cd=>cd.badge==="STARTER");
         l.forEach((cd,i)=>{ const p=ms[String(parseInt(cd.num,10))] || mn[nk(cd.name)] || null;
-          list.appendChild(man(Object.assign({ num:cd.num, name:cd.name }, p? { min:p.min, st:p.st, last:p.last } : {}), anyS? cd.badge==="STARTER" : i===0, cd)); });
+          list.appendChild(man(Object.assign({ num:cd.num, name:cd.name }, p? { min:p.min, st:p.st, last:p.last } : {}), anyS? cd.badge==="STARTER" : i===0, cd, k)); });
         wrap.appendChild(grp); });
-      box.appendChild(h("div",{class:"dash-src"}, wide? "Order of the pre game cards"+(R? " · min: last "+R.n+" games · S = starts" : "")+" · edge = closeout" : "In the order of the pre game cards"+(R? " · minutes from their last "+R.n+" games · S = games started" : "")+" · the edge is the closeout on the card · ? = missed the last game"));
+      box.appendChild(h("div",{class:"dash-src"}, wide? "Order of the pre game cards"+(R? " · min: last "+R.n+" games · S = starts" : "")+" · edge = closeout · click a man: his card" :"In the order of the pre game cards"+(R? " · minutes from their last "+R.n+" games · S = games started" : "")+" · the edge is the closeout on the card · ? = missed the last game"));
     } else if(R){
       R.five.forEach((e,i)=>{ const row=[e].concat(R.bench[i]||[]);
         const grp=h("div",{class:"dash-pos2"}, h("b",{}, POS[i]));
         const list=h("div",{}); grp.appendChild(list);
-        row.forEach((p,j)=>list.appendChild(man(p, j===0, byNum[String(p.num||"")] || byName[nk(p.name)] || null)));
+        row.forEach((p,j)=>list.appendChild(man(p, j===0, byNum[String(p.num||"")] || byName[nk(p.name)] || null, POS[i])));
         /* a man on our cards at this position whom their games do not have yet - a signing */
-        (cards[POS[i]]||[]).forEach(cd=>{ if(cd && !used[cd.id||cd.name] && (cd.badge==="NEW" || cd.from)) list.appendChild(man({ num:cd.num, name:cd.name }, false, cd)); });
+        (cards[POS[i]]||[]).forEach(cd=>{ if(cd && !used[cd.id||cd.name] && (cd.badge==="NEW" || cd.from)) list.appendChild(man({ num:cd.num, name:cd.name }, false, cd, POS[i])); });
         wrap.appendChild(grp); });
       const benchN=R.bench.reduce((n,b)=>n+b.length,0);
       box.appendChild(h("div",{class:"dash-src"}, "Rotation of "+(5+benchN)+" · minutes from their last "+R.n+" games · the edge is the closeout on the card · ? = missed the last game"));
     } else if(POS.some(k=>(cards[k]||[]).length)){
       POS.forEach(k=>{ const l=(cards[k]||[]).filter(Boolean); if(!l.length) return;
         const grp=h("div",{class:"dash-pos2"}, h("b",{}, k)); const list=h("div",{}); grp.appendChild(list);
-        l.forEach(cd=>list.appendChild(man({ num:cd.num, name:cd.name }, cd.badge==="STARTER", cd))); wrap.appendChild(grp); });
+        l.forEach(cd=>list.appendChild(man({ num:cd.num, name:cd.name }, cd.badge==="STARTER", cd, k))); wrap.appendChild(grp); });
     } else box.appendChild(h("div",{class:"dash-miss"},"No cards and no games of theirs in the league feed yet."));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their roster could not be read.")); });
 }
@@ -30107,7 +30168,10 @@ function _dashOppPrint(card, title){
     const notesSub=[...body.querySelectorAll(".dash-sub")].filter(s=>/Scouting notes/.test(((s.querySelector("h4")||{}).textContent)||""))[0];
     const notesBlk=notesSub? notesSub.closest(".dash-blk") : null, notesBox=notesSub? notesSub.children[1] : null;
     const top=t=>h("div",{class:"dop-top"}, h("b",{}, "Next opponent"), h("span",{}, t));
-    const clean=el=>{ el.querySelectorAll("button,input,.dash-go").forEach(x=>x.remove()); el.querySelectorAll(".dash-src").forEach(x=>x.remove());
+    const clean=el=>{
+      /* a video is not paper: their numbers take the line the two small videos shared with them */
+      el.querySelectorAll(".dash-pvs").forEach(x=>x.remove()); if(el.classList) el.classList.remove("has-v");
+      el.querySelectorAll("button,input,.dash-go").forEach(x=>x.remove()); el.querySelectorAll(".dash-src").forEach(x=>x.remove());
       /* a box that scrolls on the screen is cut by the printer to what fits: on paper it is not there at all */
       el.querySelectorAll(".dash-kpw").forEach(w=>{ while(w.firstChild) w.parentNode.insertBefore(w.firstChild, w); w.remove(); });
       return el; };
@@ -30514,7 +30578,7 @@ const DASH_TS=[
   ["Forced turnovers","d",t=>100*t.def.tov,1,"d-tov","%"], ["Def. rebounding","d",t=>100*t.def.reb,1,"d-reb","%"],
   ["Opp. free throw rate","d",t=>100*t.def.ftr,-1,"d-ft",""], ["Opp. 3PA rate","d",t=>(t.def.p2a+t.def.p3a)? 100*t.def.p3a/(t.def.p2a+t.def.p3a) : null,0,"d-mix","%"] ];
 function _dashOrd(n){ return n+(n%10===1&&n%100!==11? "st" : n%10===2&&n%100!==12? "nd" : n%10===3&&n%100!==13? "rd" : "th"); }
-function _dashTeamStatsInto(box, opp){
+function _dashTeamStatsInto(box, opp, compact){
   box.innerHTML="";
   const L=leagueState(), tid=String(_lgTeamIdByName(L, opp)||""), F=Object.values(L.four||{}).filter(t=>t && t.off && t.def && t.gp);
   const me=F.filter(t=>String(t.teamId)===tid)[0], our=((L.teams||[]).filter(t=>_lgOurs(t.name))[0]||{}).id, us=F.filter(t=>String(t.teamId)===String(our))[0];
@@ -30543,10 +30607,26 @@ function _dashTeamStatsInto(box, opp){
   const style=all.filter(x=>x.m[3]===0).sort((a,b)=>b.e-a.e)[0]||null;
   const IDEAS=[
     { x:take(best("o", true)),  side:"Their attack", tag:"Take it away", tone:"thr" },
-    { x:take(best("d", false)), side:"Their defense gives up", tag:"Attack it", tone:"opp" },
-    { x:take(best("d", true)),  side:"Their defense takes away", tag:"Beware", tone:"bew" },
+    { x:take(best("d", false)), side:"Their defense gives up", short:"Their defense", tag:"Attack it", tone:"opp" },
+    { x:take(best("d", true)),  side:"Their defense takes away", short:"Their defense", tag:"Beware", tone:"bew" },
     { x:style, side:"How they play", tag:"Style", tone:"sty" } ].filter(i=>i.x);
   const f1=v=>v==null? "—" : v.toFixed(1);
+  /* THE SAME FOUR IDEAS, SHORTER (Oriol, 20/11/2026: "más resumida y más compacta", with the pre game's
+     videos beside it): the idea, the measure and its value, where it stands and the league's average - three
+     lines a box. The number of ours it meets is in the box's tip. */
+  if(compact){
+    box.appendChild(h("div",{class:"dash-ts c"}, IDEAS.map(I=>{ const x=I.x, m=x.m, dir=m[3];
+      const most=m[4]==="pace"? ["fastest","slowest"] : ["most","fewest"];
+      const where=dir===0? (x.r<=mid? _dashOrd(x.r)+" "+most[0] : _dashOrd(n+1-x.r)+" "+most[1]) : _dashOrd(x.r)+" of "+n, u=usOf(x);
+      const tip=I.side+" · "+m[0]+" "+f1(x.v)+m[5]+" · "+where+" · league "+f1(x.avg)+m[5]
+        +(u? " · our "+u.m[0]+" "+f1(u.v)+u.m[5]+" ("+_dashOrd(u.r)+")" : (x.us!=null && dir===0? " · us "+f1(x.us)+m[5] : ""));
+      return h("div",{class:"dash-t "+I.tone, title:tip},
+        h("div",{class:"t1"}, h("i",{}, I.short||I.side), h("em",{}, I.tag)),
+        h("div",{class:"t3"}, h("span",{class:"t2"}, m[0]), h("b",{}, f1(x.v)+m[5])),
+        h("div",{class:"t4"}, h("strong",{}, where), " · league "+f1(x.avg)+m[5])); })));
+    box.appendChild(h("div",{class:"dash-src"}, "League numbers, "+me.gp+" games · each idea the most extreme of its kind · 1st = best"));
+    return;
+  }
   box.appendChild(h("div",{class:"dash-ts"}, IDEAS.map(I=>{ const x=I.x, m=x.m, dir=m[3];
     const most=m[4]==="pace"? ["fastest","slowest"] : ["most","fewest"];
     const where=dir===0? (x.r<=mid? _dashOrd(x.r)+" "+most[0] : _dashOrd(n+1-x.r)+" "+most[1]) : _dashOrd(x.r)+" of "+n;
@@ -31816,7 +31896,11 @@ function renderDashboard(){
       const cT=sub("Team stats · what sets them apart"), cR=sub("Roster summary"),
         cV=sub("Pick & roll · their 4 and their 5 on the ball screen"), cN=sub("Scouting notes · key ideas"),
         cS=sub("Playbook summary · their key sets"), cF=sub("Recent form"), cP=sub("Key players · play by play and our tagging");
-      c.__b.appendChild(h("div",{class:"dash-blk"}, cT));
+      /* THEIR NUMBERS WITH THE PRE GAME'S TWO VIDEOS BESIDE THEM, small, before the roster (Oriol, 20/11/2026);
+         with no video in the pre game the numbers keep the whole line */
+      const cPV=sub("Videos");
+      const tsv=h("div",{class:"dash-blk dash-tsv"}, cT, cPV);
+      c.__b.appendChild(tsv);
       c.__b.appendChild(h("div",{class:"dash-blk"}, cR));
       /* the notes take the whole width, a concept at a time; the ball screen, their sets and
          how they come in share the line under them */
@@ -31825,7 +31909,8 @@ function renderDashboard(){
          room they need (Oriol, 8/11/2026: "recent form puede ir debajo de pick and roll") */
       c.__b.appendChild(h("div",{class:"dash-3c dash-pf"}, h("div",{class:"dash-col"}, cV, cF), cS));
       c.__b.appendChild(h("div",{class:"dash-blk"}, cP));
-      _dashTeamStatsInto(cT.__b, g.opponent);
+      _dashTeamStatsInto(cT.__b, g.opponent, true);
+      _dashVidsInto(cPV.__b, tsv, g);
       _dashRosterInto(cR.__b, g, true);
       _dashCoverInto(cV.__b, g.opponent);
       _dashNotesInto(cN.__b, g);
@@ -41523,6 +41608,53 @@ body.dark .gp2-q{--gp-in-bg:rgba(228,193,88,.42);--gp-in-line:rgba(228,193,88,.9
 .dash-t.bew{border-top-color:#d9a521}.dash-t.bew .t1 em{background:rgba(217,165,33,.18);color:#8a5a0b}.dash-t.bew .t3 b{color:#8a5a0b}.dash-t.bew .trk u{background:#d9a521}
 .dash-t .t4{font:500 11px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media (max-width:900px){ .dash-ts{grid-template-columns:repeat(2,minmax(0,1fr))} .dash-2.r64{grid-template-columns:minmax(0,1fr)} }
+/* the four ideas, three lines a box, with the pre game's two videos small beside them (20/11/2026) */
+.dash-ts.c{grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:8px}
+.dash-ts.c .dash-t{padding:6px 10px 7px;gap:3px}
+.dash-ts.c .t1 i{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-ts.c .t1 em{white-space:nowrap;flex:0 0 auto}
+.dash-ts.c .t3{justify-content:space-between;gap:10px;min-width:0}
+.dash-ts.c .t3 .t2{font:700 12px/1.2 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--ink,#141821);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-ts.c .t3 b{font-size:21px;white-space:nowrap}
+.dash-ts.c .t4 strong{font-weight:700;color:var(--ink-soft,#5b6472)}
+.dash-tsv{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start}
+.dash-tsv > .dash-pvs{display:none}
+.dash-tsv.has-v{grid-template-columns:minmax(0,1fr) auto}
+.dash-tsv.has-v > .dash-pvs{display:grid;border-left:1px solid var(--line,#e4e7ec);padding-left:14px;border-top:0;padding-top:0}
+.dash-pvg{display:grid;grid-template-columns:repeat(2,168px);gap:10px}
+.dash-pvg.n1{grid-template-columns:168px}
+.dash-pvt{display:grid;gap:6px;align-content:start;padding:0;margin:0;border:0;background:none;text-align:left;cursor:pointer;color:inherit;font:inherit;min-width:0}
+.dash-pvt .im{position:relative;display:block;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:#000}
+.dash-pvt img{width:100%;height:100%;object-fit:cover;display:block;opacity:.9;transition:opacity .15s}
+.dash-pvt .pb{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:42px;height:29px;border-radius:8px;background:rgba(10,12,16,.78);color:#fff;font-size:12px;font-style:normal;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.dash-pvt:hover img,.dash-pvt:focus-visible img{opacity:1}
+.dash-pvt:hover .pb,.dash-pvt:focus-visible .pb{background:#c4302b}
+.dash-pvt:focus-visible{outline:2px solid var(--gold,#c9a227);outline-offset:3px;border-radius:8px}
+.dash-pvt b{font:700 11px/1.2 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;padding-left:7px;border-left:3px solid #c6a15b;color:var(--ink,#141821)}
+.dash-pvt.pv2-attack b{border-left-color:#c0392b}
+@media (max-width:760px){
+  .dash-tsv.has-v{grid-template-columns:minmax(0,1fr)}
+  .dash-tsv.has-v > .dash-pvs{border-left:0;padding-left:0;border-top:1px solid var(--line,#e4e7ec);padding-top:10px}
+  .dash-pvg{grid-template-columns:repeat(2,minmax(0,1fr))} .dash-pvg.n1{grid-template-columns:minmax(0,1fr)} }
+/* a man of the roster summary opens his card */
+.dash-man.go{cursor:pointer;border-radius:0 6px 6px 0;transition:background .12s}
+.dash-man.go:hover{background:var(--panel-2,#f1f2f4)}
+.dash-man.go.start:hover{background:rgba(198,161,91,.22)}
+.dash-man.go:focus-visible{outline:2px solid var(--gold,#c9a227);outline-offset:1px}
+/* one video, large, over the page */
+.vpop{position:fixed;top:0;right:0;bottom:0;left:0;z-index:130;background:rgba(6,10,15,.88);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;
+  padding:max(12px,env(safe-area-inset-top,0px)) max(12px,env(safe-area-inset-right,0px)) max(12px,env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px))}
+.vpop-box{width:100%;width:min(1180px,100%,calc((100vh - 110px) * 16 / 9));width:min(1180px,100%,calc((100dvh - 110px) * 16 / 9));box-sizing:border-box;display:grid;gap:10px;
+  background:var(--panel,#fff);border:1px solid var(--line-gold,#c9a227);border-radius:12px;padding:12px;box-shadow:0 20px 60px rgba(0,0,0,.45)}
+.vpop-h{display:flex;align-items:center;gap:10px;min-width:0}
+.vpop-h b{font:700 16px/1.2 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink,#141821);white-space:nowrap}
+.vpop-h > span{font-size:12px;color:var(--muted,#5b6472);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vpop-h .yt-app{margin-left:auto}
+.vpop-x{flex:0 0 auto;width:34px;height:34px;border-radius:50%;border:1px solid var(--line-gold,#c9a227);background:var(--panel,#fff);color:var(--ink,#141821);font-size:14px;cursor:pointer}
+.vpop-x:hover{background:var(--panel-2,#f1f2f4)}
+.vpop-v{position:relative;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden}
+.vpop-v iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}
+@media (max-width:600px){ .vpop-h > span{display:none} .vpop-x{width:40px;height:40px} .vpop-box{padding:10px} }
 /* recent form: one box a game, oldest to newest */
 .dash-form{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
 .dash-form .fg{border-radius:8px;padding:5px 6px;display:grid;gap:1px;justify-items:center;text-align:center;background:rgba(216,82,78,.08);border-bottom:3px solid #d8524e;min-width:0}
