@@ -11156,6 +11156,7 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
     if(!tid0 && !_preSeasonDone){
       _preSeasonDone=true;
       wrap.appendChild(_preSafe("FROM THE LEAGUE", ()=>_preNoClubBlock(leagueState(), reRender)));
+      if(canEd || _preHasVideos(rep)) wrap.appendChild(_preSafe("VIDEOS", ()=>_preVideosBlock(rep, canEd, save, g)));
     } else if(tid0 && !_preSeasonDone){
       _preSeasonDone=true;
       /* The button that used to live here handed a JSON document to the scouting sheet's
@@ -11172,6 +11173,9 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
         wrap.appendChild(_preSafe("ROSTER POSITIONS", ()=>_preCardsBlock(leagueState(), tid0, rep, canEd, save)));
       if(playerBlockOk("roles"))
         wrap.appendChild(_preSafe("ROSTER ROLES IN THE TEAM", ()=>_preRolesBlock(rep, canEd, save, leagueState(), tid0)));
+      /* KEYS and HOW TO ATTACK, before their season: the links written in edit mode, the players see them too */
+      if(canEd || _preHasVideos(rep))
+        wrap.appendChild(_preSafe("VIDEOS", ()=>_preVideosBlock(rep, canEd, save, g)));
       if(playerBlockOk("season"))
         wrap.appendChild(_preSafe("THEIR SEASON", ()=>_preSeasonBlock(tid0)));
       /* Their last five games, read from the play by play - a section of its own, after the
@@ -11551,6 +11555,53 @@ function _prePlaysEuro(tid){
   return (L.euro||[]).some(g=>String(g.homeId)===T || String(g.awayId)===T)
     || (L.games||[]).some(g=>_lgPhase(g)==="euro" && (String(g.homeId||g.home)===T || String(g.awayId||g.away)===T));
 }
+/* TWO VIDEOS BEFORE THEIR SEASON (Oriol, 20/11/2026: "dos vídeos en dos cajas en una línea, de YouTube, el
+   link arriba solamente en modo edición; se debe poder ver allí mismo; los jugadores también; el de la
+   izquierda es KEYS y el de la derecha HOW TO ATTACK"). Kept in the report (data.videos), so a published
+   pre game - or one open early to a player - hands them to the players with the rest; they are not one of
+   the blocks the Players view switches off. A click on the picture plays it in its box, and it is counted
+   with the other videos a player opens. */
+const PRE_VIDS=[["keys","KEYS"],["attack","HOW TO ATTACK"]];
+function _preHasVideos(rep){ const V=(rep && rep.data && rep.data.videos)||{}; return PRE_VIDS.some(([k])=>!!_ytId(V[k])); }
+function _preVideoRow(rep, canEd, save, g){
+  rep.data=rep.data||{};
+  if(!rep.data.videos || typeof rep.data.videos!=="object" || Array.isArray(rep.data.videos)) rep.data.videos={};
+  const V=rep.data.videos;
+  const row=h("div",{class:"pv2"});
+  PRE_VIDS.forEach(([k, lab])=>{
+    const box=h("div",{class:"pv2-box pv2-"+k}, h("div",{class:"pv2-h"}, h("b",{}, lab)));
+    const frame=h("div",{class:"pv2-frame"});
+    const draw=()=>{ frame.innerHTML=""; const u=V[k], id=_ytId(u);
+      if(!id){ frame.appendChild(h("div",{class:"pv2-ph"}, canEd? "Paste the YouTube link above" : "No video yet")); return; }
+      const play=h("button",{type:"button", class:"pv2-play", title:"Play "+lab, "aria-label":"Play "+lab},
+        h("img",{src:"https://i.ytimg.com/vi/"+id+"/hqdefault.jpg", alt:"", loading:"lazy"}), h("span",{class:"pv2-pb", "aria-hidden":"true"}, "▶"));
+      play.onclick=()=>{ try{ useVideo(id, "pre game video", lab+(g && g.opponent? " · "+g.opponent : "")); }catch(e){_quiet(e)}
+        frame.innerHTML="";
+        const f=document.createElement("iframe");
+        f.src=_ytEmbed(u)+"&autoplay=1"; f.title=lab; f.allowFullscreen=true;
+        f.setAttribute("allow","autoplay; encrypted-media; picture-in-picture; fullscreen");
+        frame.appendChild(f); };
+      frame.appendChild(play); };
+    if(canEd){
+      const inp=h("input",{class:"pv2-in", type:"url", placeholder:"Paste the YouTube link of "+lab});
+      inp.value=V[k]||"";
+      const apply=()=>{ const v=inp.value.trim();
+        if(v && !_ytId(v)){ inp.classList.add("bad"); inp.title="That is not a YouTube link"; return; }
+        inp.classList.remove("bad"); inp.title="";
+        if((V[k]||"")===v) return;
+        if(v) V[k]=v; else delete V[k];
+        try{ save(); }catch(e){_quiet(e)} draw(); };
+      inp.addEventListener("change", apply);
+      inp.addEventListener("paste", ()=>setTimeout(apply, 0));
+      box.appendChild(inp);
+    }
+    box.appendChild(frame);
+    draw();
+    row.appendChild(box);
+  });
+  return row;
+}
+function _preVideosBlock(rep, canEd, save, g){ return _preBlock("VIDEOS", _preVideoRow(rep, canEd, save, g), "pv2-blk"); }
 function _preBlock(title, node, cls){
   const blk=h("div",{class:"rs-block rs-block-lg "+(cls||"")});
   blk.appendChild(h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"}, title)));
@@ -30916,6 +30967,13 @@ async function _playerDash(root, who){
   page.appendChild(_rgBlock(nm));
   const ph=g=>{ try{ return _gamePlaceholder(g.opponent); }catch(e){ return false; } };
   const crest=g=>{ try{ return _lgOppCrest(g, "opp big")||h("span",{class:"dash-crest"}, String(g.opponent||"?").slice(0,3).toUpperCase()); }catch(e){ return null; } };
+  /* THE NEXT GAME'S TWO VIDEOS, FIRST (Oriol, 20/11/2026: "en el dashboard de los jugadores, 2 links a vídeos"):
+     KEYS and HOW TO ATTACK of the next pre game, played in their boxes, once that pre game is open to him */
+  { const vSlot=h("div",{}); page.appendChild(vSlot);
+    const nxV=G.upcoming.filter(x=>!ph(x.g))[0];
+    if(nxV) _dashRep(nxV.g).then(rep=>{ if(!rep || !playerOpenRep(rep, "oppscout", nm) || !_preHasVideos(rep)) return;
+      vSlot.appendChild(h("div",{class:"p3-tag"}, "Videos · "+(nxV.g.venue==="Away"? "@ " : "vs ")+_lgShort(nxV.g.opponent)));
+      vSlot.appendChild(h("div",{class:"p3-vids"}, _preVideoRow(rep, false, ()=>{}, nxV.g))); }).catch(_quiet); }
   const bNow=h("div",{class:"p3-now"}, h("div",{class:"ld dash-ld"},"Reading your time…", h("span",{class:"ld-bar"})));
   const bHist=h("div",{class:"p3-hist"});
   const bGames=h("div",{class:"p3-games"});
@@ -42777,6 +42835,24 @@ body.dark .rg-gg .c.u{background:#4a2624;color:#ff9c95}body.dark .rg-gg .c.a{bac
 .p3-row b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .p3-row .t{height:9px;border-radius:5px;background:var(--panel-2,#f1f2f4);overflow:hidden}.p3-row .t u{display:block;height:100%;background:#c6a15b}
 .p3-row em{font:700 12.5px 'IBM Plex Mono',monospace;font-style:normal;text-align:right}
+/* the pre game's two videos, KEYS and HOW TO ATTACK, side by side (20/11/2026) */
+.pv2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:12px 0 4px}
+.p3-vids .pv2{padding:12px}
+.pv2-box{display:grid;gap:8px;align-content:start;min-width:0}
+.pv2-h{display:flex;align-items:center;gap:8px;padding-left:10px;border-left:4px solid #c6a15b}
+.pv2-attack .pv2-h{border-left-color:#c0392b}
+.pv2-h b{font:700 16px/1.2 'Oswald',sans-serif;letter-spacing:.1em;color:var(--ink,#141821)}
+.pv2-in{width:100%;box-sizing:border-box;border:1px solid var(--line,#dfe3e8);border-radius:8px;padding:8px 11px;font-size:13px;background:var(--panel-2,#f4f5f7);color:var(--ink,#141821)}
+.pv2-in.bad{border-color:#c0392b;background:rgba(216,82,78,.08)}
+.pv2-frame{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden}
+.pv2-frame iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}
+.pv2-play{position:absolute;top:0;left:0;width:100%;height:100%;padding:0;margin:0;border:0;background:#000;cursor:pointer;display:block}
+.pv2-play img{width:100%;height:100%;object-fit:cover;display:block;opacity:.92}
+.pv2-pb{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:70px;height:48px;border-radius:12px;background:rgba(10,12,16,.78);color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.pv2-play:hover .pv2-pb,.pv2-play:focus-visible .pv2-pb{background:#c4302b}
+.pv2-ph{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:12px;color:#8a93a2;font-size:13px;background:var(--panel-2,#f1f2f5)}
+@media (max-width:700px){ .pv2{grid-template-columns:minmax(0,1fr)} }
+@media print{ .pv2-blk,.p3-vids{display:none!important} }
 .p3-games{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 @media (max-width:560px){ .p3-games{grid-template-columns:minmax(0,1fr)} .p3-row{grid-template-columns:96px minmax(0,1fr) 48px 78px;gap:8px} .p3-vc{margin-left:0} .p3-v{grid-template-columns:minmax(0,1fr) 26px 54px 50px;gap:7px} .p3-tot{gap:8px 16px} .p3-tot small{margin-left:0;width:100%} }
 .p3-g{display:grid;gap:4px;justify-items:start;text-align:left;border-radius:14px;padding:12px;background:var(--panel,#fff);border:2px solid var(--line,#e4e7ec);font:inherit;color:var(--ink,#141821);cursor:pointer}
