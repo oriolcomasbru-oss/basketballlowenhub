@@ -11592,8 +11592,12 @@ function _preVideoRow(rep, canEd, save, g){
       play.onclick=()=>{ try{ useVideo(id, "pre game video", lab+(g && g.opponent? " · "+g.opponent : "")); }catch(e){_quiet(e)}
         frame.innerHTML="";
         const f=document.createElement("iframe");
-        f.src=_ytEmbed(u)+"&autoplay=1"; f.title=lab; f.allowFullscreen=true;
-        f.setAttribute("allow","autoplay; encrypted-media; picture-in-picture; fullscreen");
+        /* THE SAME PLAYER AS THE CARD'S (20/11/2026): from youtube-nocookie.com Oriol got YouTube's "Sign in to
+           confirm you're not a bot" on KEYS and HOW TO ATTACK while the card's videos, from youtube.com, played
+           on the same screen. youtube.com can see the viewer's own YouTube session; the no-cookie address cannot. */
+        const st=_ytStart(u);
+        f.src="https://www.youtube.com/embed/"+id+"?rel=0&autoplay=1"+(st? "&start="+st : ""); f.title=lab; f.allowFullscreen=true;
+        f.setAttribute("allow","accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen");
         frame.appendChild(f); };
       frame.appendChild(play); };
     if(canEd){
