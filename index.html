@@ -11563,6 +11563,8 @@ function _prePlaysEuro(tid){
    with the other videos a player opens. */
 const PRE_VIDS=[["keys","KEYS"],["attack","HOW TO ATTACK"]];
 function _preHasVideos(rep){ const V=(rep && rep.data && rep.data.videos)||{}; return PRE_VIDS.some(([k])=>!!_ytId(V[k])); }
+/* the two videos of a pre game as YouTube ids, to find them in what each player opened */
+function _preVidIds(rep){ const V=(rep && rep.data && rep.data.videos)||{}, o={}; PRE_VIDS.forEach(([k])=>{ const id=_ytId(V[k]); if(id) o[k]=id; }); return o; }
 function _preVideoRow(rep, canEd, save, g){
   rep.data=rep.data||{};
   if(!rep.data.videos || typeof rep.data.videos!=="object" || Array.isArray(rep.data.videos)) rep.data.videos={};
@@ -30967,13 +30969,6 @@ async function _playerDash(root, who){
   page.appendChild(_rgBlock(nm));
   const ph=g=>{ try{ return _gamePlaceholder(g.opponent); }catch(e){ return false; } };
   const crest=g=>{ try{ return _lgOppCrest(g, "opp big")||h("span",{class:"dash-crest"}, String(g.opponent||"?").slice(0,3).toUpperCase()); }catch(e){ return null; } };
-  /* THE NEXT GAME'S TWO VIDEOS, FIRST (Oriol, 20/11/2026: "en el dashboard de los jugadores, 2 links a vídeos"):
-     KEYS and HOW TO ATTACK of the next pre game, played in their boxes, once that pre game is open to him */
-  { const vSlot=h("div",{}); page.appendChild(vSlot);
-    const nxV=G.upcoming.filter(x=>!ph(x.g))[0];
-    if(nxV) _dashRep(nxV.g).then(rep=>{ if(!rep || !playerOpenRep(rep, "oppscout", nm) || !_preHasVideos(rep)) return;
-      vSlot.appendChild(h("div",{class:"p3-tag"}, "Videos · "+(nxV.g.venue==="Away"? "@ " : "vs ")+_lgShort(nxV.g.opponent)));
-      vSlot.appendChild(h("div",{class:"p3-vids"}, _preVideoRow(rep, false, ()=>{}, nxV.g))); }).catch(_quiet); }
   const bNow=h("div",{class:"p3-now"}, h("div",{class:"ld dash-ld"},"Reading your time…", h("span",{class:"ld-bar"})));
   const bHist=h("div",{class:"p3-hist"});
   const bGames=h("div",{class:"p3-games"});
@@ -31056,6 +31051,13 @@ async function _playerDash(root, who){
     const bar=h("span",{class:"p3-bar"}, h("u",{style:"width:"+Math.round(100*N.sec/mx)+"%"}));
     if(avg!=null) bar.appendChild(h("s",{style:"left:"+Math.round(100*avg/mx)+"%", title:"your average"}));
     bNow.appendChild(bar);
+    /* the pre game's KEYS and HOW TO ATTACK: watched or not, and for how long (Oriol, 20/11/2026) */
+    { const pvl=h("div",{class:"p3-pvl"}); bNow.appendChild(pvl);
+      _dashRep(nx0.g).then(rep=>{ const ids=_preVidIds(rep), ks=PRE_VIDS.filter(([k])=>ids[k]); if(!ks.length) return;
+        pvl.appendChild(h("i",{}, "Pre game videos"));
+        ks.forEach(([k, lab])=>{ const v=(N.vlist||[]).filter(x=>x.id===ids[k] && (x.n>0 || x.sec>0))[0];
+          pvl.appendChild(h("span",{class:"p3-pv "+(v? "ok" : "no"), title:v? "opened "+(v.n||1)+(v.n>1? " times" : " time")+" · "+_useClock(v.sec)+" playing" : "not opened yet"},
+            h("b",{}, lab), v? " "+_useClock(v.sec)+(v.n>1? " ×"+v.n : "") : " not watched")); }); }).catch(_quiet); }
     bNow.appendChild(h("div",{class:"p3-vh"}, "The videos · each one and its time"));
     bNow.appendChild(vidList(N));
     bNow.classList.toggle("under", avg!=null && N.sec<avg);
@@ -32191,17 +32193,18 @@ function renderDashboard(){
          a dot where this app had not started recording yet; a lock on a game not published for them */
       const past=G.past.filter(x=>{ try{ return !_gamePlaceholder(x.g.opponent); }catch(e){ return true; } });
       const L5=past.slice(-5).map(x=>({ x:x, prev:past[past.indexOf(x)-1]||null, pub:null }));
-      let body=null, b5=null;
+      let body=null, b5=null, VID={};
       if(!nx) c.__b.appendChild(h("div",{class:"dash-miss"},"No game in the calendar."));
       else {
         const g=nx.g, prev=G.past[G.past.length-1], to=T<g.date? T : g.date;
         const head=h("div",{class:"sv-head"}, crest(g), h("b",{}, (g.venue==="Away"? "@ " : "vs ")+_lgShort(g.opponent)), h("span",{}, _dashFmt(g.date)+(g.time? " · "+g.time : "")+" · from "+_dashFmt(prev? addDays(prev.g.date,1) : addDays(g.date,-7))), h("span",{class:"sv-pub"},"…"));
         c.__b.appendChild(head);
         _dashRep(g).then(rep=>{ const ok=!!(rep && rep.share_state==="published"), early=!ok && !!rep && repDone(rep, "pre") && playerEarlyNames().length>0;
-          const p=head.querySelector(".sv-pub"); p.textContent=ok? "published for the players" : early? "finished · open to "+playerEarlyNames().join(", ") : "not published yet"; p.className="sv-pub "+(ok? "ok" : early? "early" : "no"); }).catch(_quiet);
+          const p=head.querySelector(".sv-pub"); p.textContent=ok? "published for the players" : early? "finished · open to "+playerEarlyNames().join(", ") : "not published yet"; p.className="sv-pub "+(ok? "ok" : early? "early" : "no");
+          VID=_preVidIds(rep); try{ paint(); }catch(e){_quiet(e)} }).catch(_quiet);
         body=h("div",{}, loading("Reading what each player opened…")); c.__b.appendChild(body);
         rows.forEach(r=>{ r.study=()=>{ const S=_useStudy(r.doc, nx, prev, to);
-          r.sec=S.sec; r.rep=S.rep; r.vids=(S.vlist||[]).length; r.vsec=S.vsec||0; r.days=S.days;
+          r.sec=S.sec; r.rep=S.rep; r.vids=(S.vlist||[]).length; r.vsec=S.vsec||0; r.days=S.days; r.vl=S.vlist||[];
           r.last=null; (S.per||[]).forEach(p=>{ if(p.s>0) r.last=p.d; }); }; });
       }
       if(L5.length){ c.__b.appendChild(h("div",{class:"sv5-h"}, h("b",{}, "The last "+L5.length+" scouts"), h("span",{}, "who watched them · minutes on the pre game · ▶ videos opened")));
@@ -32211,12 +32214,22 @@ function renderDashboard(){
         const seen=rows.filter(r=>r.done && (Math.max(r.sec,r.rep)>=60 || r.vids>0)), not=rows.filter(r=>r.done && seen.indexOf(r)<0 && !outNx(r)), hurt=rows.filter(r=>r.done && seen.indexOf(r)<0 && outNx(r)), wait=rows.filter(r=>!r.done);
         if(not.length) body.appendChild(h("div",{class:"sv-not"}, h("b",{}, not.length+" not yet: "), not.map(r=>r.n).join(" · ")));
         if(hurt.length) body.appendChild(h("div",{class:"sv-out"}, h("b",{}, "Out on the medical sheet: "), hurt.map(r=>r.n).join(" · "), " · not waited for"));
+        /* KEYS AND HOW TO ATTACK: who has watched each one and for how long (Oriol, 20/11/2026: "analizar si lo
+           ven y cuánto tiempo") - the pre game's own two videos, found by their YouTube ids in what each opened */
+        const VK=PRE_VIDS.filter(([k])=>VID && VID[k]), vOf=(r,k)=>(r.vl||[]).filter(v=>v.id===VID[k] && (v.n>0 || v.sec>0))[0]||null;
+        if(VK.length){ const fit=rows.filter(r=>r.done && !outNx(r));
+          body.appendChild(h("div",{class:"sv-pv"}, h("b",{}, "Pre game videos"), VK.map(([k, lab])=>{ const w=fit.filter(r=>vOf(r,k)), nw=fit.filter(r=>!vOf(r,k));
+            const avg=w.length? w.reduce((a,r)=>a+(vOf(r,k).sec||0),0)/w.length : 0;
+            return h("span",{class:"sv-pvi"}, h("i",{}, lab), " "+w.length+" of "+fit.length+" watched", w.length? h("em",{}, " · "+_useClock(avg)+" each") : null,
+              nw.length? h("small",{}, "not yet: "+nw.map(r=>r.n).join(", ")) : null); }))); }
         if(seen.length){ const mx=Math.max(60, ...seen.map(r=>Math.max(r.sec,r.rep)));
-          const t=h("table",{class:"sv-t"}, h("tr",{}, h("th",{class:"l"},"Player"), h("th",{class:"l"},"Time on the scout"), h("th",{},"Videos"), h("th",{},"Days"), h("th",{class:"l"},"Last")));
+          const t=h("table",{class:"sv-t"}, h("tr",{}, h("th",{class:"l"},"Player"), h("th",{class:"l"},"Time on the scout"), h("th",{},"Videos"), ...VK.map(([k, lab])=>h("th",{}, lab)), h("th",{},"Days"), h("th",{class:"l"},"Last")));
           seen.sort((a,b)=>Math.max(b.sec,b.rep)-Math.max(a.sec,a.rep)).forEach(r=>{ const s=Math.max(r.sec,r.rep), m=Math.round(s/60);
             t.appendChild(h("tr",{}, h("td",{class:"l"}, h("b",{}, r.n)),
               h("td",{class:"l"}, h("span",{class:"sv-bar"}, h("i",{style:"width:"+Math.round(100*s/mx)+"%"})), " "+(m<60? m+" min" : Math.floor(m/60)+" h "+String(m%60).padStart(2,"0"))),
-              h("td",{}, r.vids? h("span",{}, String(r.vids), h("i",{class:"sv-vt"}, " · "+_useClock(r.vsec))) : "—"), h("td",{}, String(r.days)), h("td",{class:"l mu"}, r.last? _dashFmt(r.last) : "—"))); });
+              h("td",{}, r.vids? h("span",{}, String(r.vids), h("i",{class:"sv-vt"}, " · "+_useClock(r.vsec))) : "—"),
+              ...VK.map(([k, lab])=>{ const v=vOf(r,k); return v? h("td",{class:"sv-pvc", title:lab+" · opened "+(v.n||1)+(v.n>1? " times" : " time")+" · "+_useClock(v.sec)+" playing"}, _useClock(v.sec)+(v.n>1? " ×"+v.n : "")) : h("td",{class:"sv-x", title:lab+" · not opened"}, "✕"); }),
+              h("td",{}, String(r.days)), h("td",{class:"l mu"}, r.last? _dashFmt(r.last) : "—"))); });
           body.appendChild(t); }
         if(wait.length) body.appendChild(h("div",{class:"ld"}, "Reading "+wait.length+" more…", h("span",{class:"ld-bar"})));
         if(!rows.length) body.appendChild(h("div",{class:"dash-miss"},"No player accounts in the roster."));
@@ -42835,6 +42848,24 @@ body.dark .rg-gg .c.u{background:#4a2624;color:#ff9c95}body.dark .rg-gg .c.a{bac
 .p3-row b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .p3-row .t{height:9px;border-radius:5px;background:var(--panel-2,#f1f2f4);overflow:hidden}.p3-row .t u{display:block;height:100%;background:#c6a15b}
 .p3-row em{font:700 12.5px 'IBM Plex Mono',monospace;font-style:normal;text-align:right}
+/* who watched the pre game's KEYS and HOW TO ATTACK, and for how long (20/11/2026) */
+.sv-pv{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline;padding:8px 10px;border-radius:8px;background:var(--panel-2,#f1f2f5);margin:0 0 8px;font-size:12.5px;color:var(--ink-soft,#5b6472)}
+.sv-pv > b{font:700 11px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink,#141821)}
+.sv-pvi i{font-style:normal;font-weight:700;color:var(--ink,#141821)}
+.sv-pvi em{font-style:normal;color:var(--ink-faint,#8a93a2)}
+.sv-pvi small{display:block;font-size:11.5px;color:#9c2f24}
+.sv-t td.sv-pvc{color:#13804f;font-weight:600;white-space:nowrap}
+.sv-t td.sv-x{color:#c0392b;font-weight:700}
+.p3-pvl{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin-top:10px}
+.p3-pvl:empty{display:none}
+.p3-pvl > i{font:600 11px 'IBM Plex Mono',monospace;font-style:normal;text-transform:uppercase;color:var(--ink-faint,#8a93a2);margin-right:4px}
+.p3-pv{padding:3px 11px;border-radius:999px;font-size:12.5px}
+.p3-pv b{font:700 11.5px 'Oswald',sans-serif;letter-spacing:.06em;margin-right:2px}
+.p3-pv.ok{background:rgba(47,158,134,.14);color:#13684f}
+.p3-pv.no{background:rgba(216,82,78,.12);color:#9c2f24}
+body.dark .sv-pvi small,body.dark .p3-pv.no{color:#ffb0a6}
+body.dark .sv-t td.sv-pvc,body.dark .p3-pv.ok{color:#7fd8c0}
+body.dark .sv-t td.sv-x{color:#ff8f85}
 /* the pre game's two videos, KEYS and HOW TO ATTACK, side by side (20/11/2026) */
 .pv2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:12px 0 4px}
 .p3-vids .pv2{padding:12px}
