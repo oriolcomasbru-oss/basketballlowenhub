@@ -1832,8 +1832,11 @@
         tone: K.tone(PD.ppp, RD && RD.ppp, true, 0.04) });
     }
     if (S.bsFreq != null) figs.push({ label: "Ball screens", value: S.bsFreq + "%", note: "of what they defend · " + f2n(S.bsPpp) + " allowed", tone: "vol" });
+    /* the report with no tagging yet (see shell): its figures keep their places, empty */
+    else if (D.__shell) figs.push({ label: "Ball screens", value: null, note: "comes with the tagging", tone: "neutral" });
     if (D.second) figs.push({ label: "Offensive rebounds", value: D.second.orb, note: D.second.pts + " points on the possessions that followed one", tone: "vol" });
-    if (D.meta) figs.push({ label: "Games tagged", value: D.meta.ngames, note: (D.meta.games || []).join(" · "), tone: "vol" });
+    else if (D.__shell) figs.push({ label: "Offensive rebounds", value: null, note: "comes with the tagging", tone: "neutral" });
+    if (D.meta) figs.push({ label: "Games tagged", value: D.meta.ngames, note: D.__shell ? "none in the Drive yet" : (D.meta.games || []).join(" · "), tone: D.__shell ? "neutral" : "vol" });
     /* a row of one of the report's own tables, as a sentence: `edge` is already "how good
        this is for us", whichever side of the ball it is */
     var line = function (rows, minPoss, text, weight) {
@@ -2550,6 +2553,97 @@
        Drive both lived here. Out, on request. The one caveat that changes how a
        number reads — the reference pools every file in the folder, this
        opponent's own games included — is said in the rule box at the top. */
+    leaguePending(root);
+  }
+
+  /* TEAM STATS KEEPS ITS SHAPE WHEN A PART OF IT IS NOT IN YET.
+     With no tagging of the opponent in the Drive the block used to be one sentence, the whole
+     file list of the folder, and under them the league's parts - pace, rebounding, their last
+     games - stacked one after another with no tabs: the page fell apart exactly when the staff
+     opened it to see what was still missing (Oriol, 21/11/2026: "que siempre tenga el mismo
+     esquema"). Now it is the same report whatever is missing: the same tabs, the same overview
+     card with the league's figures in their places, the same numbered sections where they always
+     are, and each part that is not in yet says so in one dashed line where it will appear. The
+     league's parts land in their own tabs as they do when the tagging is there. */
+  function pend(host, txt) { host.appendChild(el("div", "sxp-pend", txt)); return host; }
+  /* pace and rebounding are the league's, put in by the page (_preInj); a club the league has no
+     numbers for - a cup rival from another league - would leave those two tabs blank. The line
+     is there from the start and goes the moment the parts arrive (the page marks .has-lg). */
+  function leaguePending(root) {
+    [["pace", "Pace"], ["reb", "Rebounding"]].forEach(function (t) {
+      var p = tabOf(sub(root, t[1]), t[0]);
+      p.classList.add("sxp-pend-lg");
+      pend(p, "From the league's play by play - not in for this club.");
+    });
+  }
+  function shell(root, opponent, R, staff, retry) {
+    root.innerHTML = "";
+    root.className = "sxp sxp-shell";
+    var who = String(opponent || "this opponent");
+    root.removeAttribute("title");
+    root.appendChild(tabBar(root));
+
+    /* what is missing, once, above every tab the tagging fills */
+    var miss = tabOf(el("div", "sxp-miss"), "over off def bs games");
+    var head = R.why === "error" ? "The tagging of " + who + " could not be read"
+      : R.why === "nodata" ? "The tagging of " + who + " carries no possessions this report can read"
+      : "The tagging of " + who + " is not in yet";
+    miss.appendChild(el("b", "", head));
+    if (staff) {
+      miss.appendChild(el("span", "", R.why === "error"
+        ? String(R.msg || "") + ". The league's numbers are already here."
+        : R.why === "nodata"
+        ? "The files that carry its name were read but none of their clips is a category this report knows."
+        : "Drop the CSVs in the Drive's opponent tagging folder with the club in the file name, like the others (Gnn SEASON " +
+          who.toUpperCase() + " (RIVAL).csv), and these parts fill in on their own. The league's numbers are already here."));
+      /* the folder's contents, one click away: nine times in ten the file is there under a
+         name nobody expected, but a whole folder spelled out across the page is not a report */
+      if (R.why === "nomatch" && (R.files || []).length) {
+        var dt = el("details", "sxp-miss-f");
+        dt.appendChild(el("summary", "", "In the folder · " + R.files.length + " files"));
+        dt.appendChild(el("div", "sxp-files", R.files.join(" · ")));
+        miss.appendChild(dt);
+      }
+      if (retry) {
+        var again = el("button", "btn sm", "Try again");
+        again.addEventListener("click", retry);
+        miss.appendChild(again);
+      }
+    } else {
+      miss.appendChild(el("span", "", "These parts fill in once the staff has tagged their games."));
+    }
+    root.appendChild(miss);
+
+    /* Overview: the ball screen block and the summary card, both where they always are */
+    var pnr = el("div", "sxp-pnr");
+    pnr.appendChild(el("div", "sxp-pnr-h", "Pick & roll · their 4 and their 5 on the ball screen"));
+    pend(pnr, "Comes with the tagging: which coverage each big plays, how often, and what it costs them.");
+    root.appendChild(tabOf(pnr, "over"));
+    try {
+      var dashT = teamDash({ __shell: 1, meta: { team: who, ngames: 0, games: [] }, say: {} });
+      if (dashT) {
+        pend(dashT, "How they score, how their possessions end, where they concede, the ball screen coverage, the quarters and who finishes come with the tagging.");
+        root.appendChild(tabOf(dashT, "over"));
+      }
+    } catch(e){_quiet(e)}
+
+    /* the same rows and sections as the full report, numbered the same */
+    var rowA = el("div", "sxp rst-sxp sxp-row fit-even sxp-rowA"); root.appendChild(rowA);
+    var rowAn = el("div", "sxp rst-sxp sxp-row fit-even sxp-rowAn"); root.appendChild(rowAn);
+    var rowQ = el("div", "sxp rst-sxp sxp-row sxp-rowQ"); root.appendChild(rowQ);
+    tabOf(rowA, "off def games"); tabOf(rowAn, "off games"); tabOf(rowQ, "games");
+    var s2s = tabOf(section(rowA, "01", "Half court and open court"), "off def");
+    pend(tabOf(sub(s2s, "Their offense"), "off"), "Comes with the tagging.");
+    pend(tabOf(sub(s2s, "Their defense"), "def"), "Comes with the tagging.");
+    pend(sub(tabOf(section(rowA, "02", "Game by game"), "games"), ""), "Comes with the tagging: each tagged game, their offense and their defense.");
+    pend(sub(tabOf(section(rowAn, "03", "Second chance"), "off"), ""), "Comes with the tagging.");
+    pend(sub(section(rowQ, "04", "Quarter by quarter, game by game"), ""), "Comes with the tagging.");
+    var s4 = tabOf(section(root, "05", "How they attack"), "off");
+    pend(sub(s4, "Possession mix · finishing · playbook"), "Comes with the tagging.");
+    var s5 = tabOf(section(root, "06", "How they defend — where we attack"), "def bs");
+    pend(tabOf(sub(s5, "By situation"), "def"), "Comes with the tagging.");
+    pend(tabOf(sub(s5, "Ball screen coverage"), "bs"), "Comes with the tagging: what each coverage costs them, by quarter and game by game.");
+    leaguePending(root);
   }
 
 
@@ -2565,13 +2659,15 @@
     box.appendChild(sk);
     return box;
   }
-  function mount(host, run) {
+  function mount(host, run, fail) {
     var box = el("div", "sxp-host");
     box.appendChild(loadingBox("Reading the tagging from Drive…"));
     host.parentNode.insertBefore(box, host);
     host.style.display = "none";
     run(box).catch(function (e) {
       box.innerHTML = "";
+      /* TEAM STATS says it inside its own shape (see shell) */
+      if (fail) { try { fail(box, e); return; } catch(e4){_quiet(e4)} }
       var msg = String((e && e.message) || e);
       var wrap = el("div", "sxp-err");
       /* "err fetch failed" is the Drive function saying it could not reach Google: a
@@ -2697,27 +2793,34 @@
 
   function hook(host) {
     var opponent = host.getAttribute("data-opponent") || opponentFromPage();
-    mount(host, function (box) {
+    /* the slot carries a line for the staff and nothing for a player (renderReportSections):
+       where to put the files, and the folder's contents, are for the staff */
+    var staff = !!String(host.textContent || "").trim();
+    var draw = function (box) {
       return buildFor(opponent).then(function (R) {
         box.innerHTML = "";
-        if (R.why === "empty") {
-          box.appendChild(el("div", "sxp-empty", "No tagging files in the opponent Drive folder yet."));
-          return;
-        }
-        if (R.why === "nomatch") {
-          var e2 = el("div", "sxp-empty");
-          e2.appendChild(el("div", "", "No file in the scouting folder matches “" + (opponent || "—") + "”."));
-          e2.appendChild(el("div", "sxp-files", "In the folder: " + R.files.join(" · ")));
-          box.appendChild(e2);
-          return;
-        }
-        if (!R.D) {
-          box.appendChild(el("div", "sxp-empty", "Those files carry no usable possessions."));
+        /* no tagging yet, or none of it readable: the report's own shape, empty where it waits */
+        if (R.why === "empty" || R.why === "nomatch" || !R.D) {
+          shell(box, opponent, { why: R.D ? R.why : (R.why || "nodata"), files: R.files }, staff);
           return;
         }
         render(box, R.D, R.used, { skipPlayers: !!document.querySelector(".scoutpre-players-slot") || !!window.__preOneTable });
       });
-    });
+    };
+    var failed = function (box, e) {
+      var msg = String((e && e.message) || e);
+      var net = /fetch failed|failed to fetch|networkerror|did not answer/i.test(msg);
+      var again = function () {
+        try { dropCache(); } catch(e2){_quiet(e2)}
+        box.innerHTML = ""; box.className = "sxp-host";
+        box.appendChild(loadingBox("Reading the tagging from Drive…"));
+        draw(box).catch(function (e3) { box.innerHTML = ""; failed(box, e3); });
+      };
+      shell(box, opponent, { why: "error", msg: net
+        ? msg + ". The tagging comes from /.netlify/functions/drive: check in Netlify that the Drive credentials are set and the scouting folder is shared with that account"
+        : "Could not build the scouting stats: " + msg }, staff, again);
+    };
+    mount(host, draw, failed);
   }
 
   /* The players table is asked for at the top of the report, in PLAYERS STATS,
@@ -2774,9 +2877,20 @@
       ".scoutpre-slot,.scoutpre-players-slot{border:1px dashed var(--line-strong,#ccc);border-radius:10px;padding:22px;",
       "color:var(--ink-faint);font-size:13px;line-height:1.5;text-align:center;background:rgba(0,0,0,.015)}",
       ".sxp-loading,.sxp-empty{border:1px dashed var(--line-strong,#ccc);border-radius:10px;padding:20px;",
-      /* the loading variant holds a spinner and a skeleton, which are read from the left */
-      ".sxp-loading{text-align:left;padding:14px 16px}",
       "color:var(--ink-faint);font-size:13px;text-align:center}",
+      /* the loading variant holds a spinner and a skeleton, which are read from the left
+         (this line sat inside the rule above and broke it and the error rule after it) */
+      ".sxp-loading{text-align:left;padding:14px 16px}",
+      /* a part not in yet: where it will be, in one dashed line (see shell) */
+      ".sxp-pend{border:1px dashed var(--line-strong,#ccc);border-radius:9px;padding:11px 14px;color:var(--ink-faint);font-size:12px;line-height:1.45;background:rgba(127,127,127,.04)}",
+      ".sxp-pnr > .sxp-pend,.ui-sum > .sxp-pend{margin-top:10px}",
+      ".sxp.has-lg > .sxp-pend-lg{display:none!important}",
+      ".sxp-miss{border:1px solid var(--line,#e4e7ec);border-left:4px solid var(--ink-faint,#8a93a2);background:var(--panel-2,#f4f5f7);",
+      "border-radius:9px;padding:11px 14px;margin:0 0 12px;display:grid;gap:5px;justify-items:start}",
+      ".sxp-miss b{font-size:12.5px;color:var(--ink)}",
+      ".sxp-miss > span{font-size:11.5px;color:var(--ink-soft);line-height:1.55}",
+      ".sxp-miss-f > summary{cursor:pointer;font-size:11.5px;color:var(--ink-soft)}",
+      ".sxp-miss-f .sxp-files{margin-top:6px}",
       ".sxp-err{border:1px solid var(--alert,#c0392b);border-radius:10px;padding:14px;color:var(--alert,#c0392b);font-size:13px}",
       ".sxp-meta{font:400 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink-faint);margin:2px 0 12px}",
       ".sxp-files{font-size:11px;color:var(--ink-faint);margin-top:10px;line-height:1.5}",

@@ -9950,7 +9950,8 @@ function _prescFit(){
    play by play (which used to be a section of its own), their offense tab gets the pace of
    their offense and their defense tab the pace of their defense. The tabs show a piece by
    its data-tabs, so the pieces are put inside the tagging report; when there is no tagging
-   for this club yet they sit in the TEAM STATS block on their own. They are kept as nodes,
+   for this club yet the report is drawn anyway, empty where it waits (scoutpre's shell), so
+   they still land in their tabs (21/11/2026). They are kept as nodes,
    so a redraw of the tagging that empties its report finds them and puts them back. */
 /* IN DEVELOPMENT. The parts still being adjusted say so, so whoever reads them knows the
    numbers and the layout may still change. small = the short tag for a tab. */
@@ -10018,6 +10019,8 @@ function _preInj(){
   }
   const sxp=blk.querySelector(".sxp");
   if(sxp){
+    /* the report's own "not in for this club" lines for pace and rebounding step aside */
+    sxp.classList.add("has-lg");
     if(I.parts.every(p=>p.parentNode===sxp)) return;
     /* after the overview's own dashboard if it has one, else right under the tab bar */
     const kids=Array.from(sxp.children);
