@@ -9502,6 +9502,14 @@ function _uiParse(x){
   if(!label && note && note.length<=46){ label=note; note=""; }
   return { label:label, big:big, note:note };
 }
+/* WHERE A NUMBER COMES FROM (Oriol, 24/11/2026: "que se vea de manera gráfica de dónde sale cada
+   cosa"): our tagging of a few games, or the league's numbers of the whole season. A figure, a
+   finding or a block that says so carries one of these two chips. */
+function uiSrc(src){
+  if(src==="tag") return h("span",{class:"ui-src tag", title:"From our tagging of their games"},"Tagged");
+  if(src==="lg") return h("span",{class:"ui-src lg", title:"From the league's numbers of the season"},"League");
+  return null;
+}
 function _uiCard(x){
   const tone=uiTone(x.tone), txt=String(x.text||"");
   /* several comparisons in one sentence: each is a chip, not a clause */
@@ -9521,11 +9529,18 @@ function _uiCard(x){
     bigEl=ar? h("div",{class:"ui-card-v"}, h("s",{}, ar[1]), h("i",{},"→"), h("b",{}, ar[2])) : h("div",{class:"ui-card-v"}, h("b",{}, P.big));
   }
   const w=(x.size==null)? 0 : Math.max(0, Math.min(1, x.size));
-  return h("div",{class:"ui-card "+tone, title:txt},
-    P.label? h("div",{class:"ui-card-k"}, P.label) : null, bigEl,
+  /* A FINDING ON MORE POSSESSIONS STANDS OUT (Oriol, 24/11/2026: "los hallazgos con más posesiones
+     deben destacar sobre los demás de algún modo visual"): given nw, its possessions against the
+     most any finding of the card has, the card is drawn in three weights and its count becomes a
+     bar of possessions */
+  const nw=(x.nw==null || !isFinite(x.nw))? null : Math.max(0, Math.min(1, x.nw));
+  const wt=nw==null? "" : nw>=0.66? " w3" : nw>=0.33? " w2" : " w1";
+  const nEl=(x.n==null)? null : nw==null? h("span",{class:"ui-card-n"}, String(x.n)+(x.unit? " "+x.unit : ""))
+    : h("span",{class:"ui-card-nw", title:x.n+(x.unit? " "+x.unit : "")+" behind this finding"}, h("i",{style:"width:"+Math.max(8, Math.round(100*nw))+"%"}), h("b",{}, String(x.n)+(x.unit? " "+x.unit : "")));
+  return h("div",{class:"ui-card "+tone+wt, title:txt},
+    (P.label || x.src)? h("div",{class:"ui-card-k"}, uiSrc(x.src), P.label||"") : null, bigEl,
     P.note? h("div",{class:"ui-card-t"}, P.note) : null,
-    h("div",{class:"ui-card-f"}, w? h("span",{class:"ui-card-bar"}, h("i",{style:"width:"+Math.round(100*w)+"%"})) : h("span",{}),
-      (x.n!=null)? h("span",{class:"ui-card-n"}, String(x.n)+(x.unit? " "+x.unit : "")) : null));
+    h("div",{class:"ui-card-f"}, w? h("span",{class:"ui-card-bar"}, h("i",{style:"width:"+Math.round(100*w)+"%"})) : h("span",{}), nEl));
 }
 /* bars for a series: games, quarters. items: [{ label, value, tone, text }] */
 function uiStrip(o){
@@ -9569,16 +9584,20 @@ function uiSummary(o){
   o=o||{};
   const card=h("div",{class:"ui-sum"+(o.cls? " "+o.cls : "")});
   if(o.title || o.sub) card.appendChild(h("div",{class:"ui-sum-h"}, h("b",{}, o.title||""), o.sub? h("span",{}, o.sub) : null));
-  if((o.figures||[]).length){
-    card.appendChild(h("div",{class:"ui-figs"}, o.figures.map(f=>{
+  const figEl=f=>{
       /* where the figure sits between the ends of its scale, with the reference marked */
       let meter=null;
       if(f.scale && isFinite(f.scale.v)){ const lo=f.scale.lo, hi=f.scale.hi, pos=v=>Math.max(0, Math.min(100, 100*(v-lo)/((hi-lo)||1)));
         meter=h("span",{class:"ui-meter"}, h("i",{style:"width:"+pos(f.scale.v).toFixed(1)+"%"}),
           isFinite(f.scale.ref)? h("u",{style:"left:"+pos(f.scale.ref).toFixed(1)+"%", title:"reference"}) : null); }
       return h("div",{class:"ui-fig "+uiTone(f.tone), title:f.title||""},
-        h("i",{}, f.label||""), h("b",{}, f.value==null? "—" : String(f.value)), meter, f.note? h("span",{}, f.note) : null); })));
-  }
+        h("i",{}, f.label||""), h("b",{}, f.value==null? "—" : String(f.value)), meter, f.note? h("span",{}, f.note) : null); };
+  if(o.head) card.appendChild(o.head);
+  if((o.figures||[]).length) card.appendChild(h("div",{class:"ui-figs"}, o.figures.map(figEl)));
+  /* the same figures from two sources, one row each, the row saying which */
+  (o.figRows||[]).filter(r=>r && (r.figures||[]).length).forEach(r=>{
+    card.appendChild(h("div",{class:"ui-figrow"}, h("div",{class:"ui-figrow-h"}, uiSrc(r.src), h("b",{}, r.label||""), r.sub? h("span",{}, r.sub) : null),
+      h("div",{class:"ui-figs"}, r.figures.map(figEl)))); });
   const vis=(o.visuals||[]).filter(Boolean);
   if(vis.length) card.appendChild(h("div",{class:"ui-visrow"}, vis));
   const groups=(o.groups||[]).filter(g=>g && (g.ideas||[]).length);
@@ -9589,7 +9608,7 @@ function uiSummary(o){
         h("div",{class:"ui-group-h"}, h("b",{}, g.title||""), h("span",{}, String(g.ideas.length))),
         h("div",{class:"ui-cards"}, g.ideas.map(_uiCard))); })));
   } else if((o.ideas||[]).length) card.appendChild(h("div",{class:"ui-cards"}, o.ideas.map(_uiCard)));
-  if(o.empty && !(o.figures||[]).length && !groups.length && !(o.ideas||[]).length && !vis.length)
+  if(o.empty && !(o.figures||[]).length && !(o.figRows||[]).length && !groups.length && !(o.ideas||[]).length && !vis.length)
     card.appendChild(h("div",{class:"ui-sum-e"}, o.empty));
   return card;
 }
@@ -9599,7 +9618,7 @@ function uiColourKey(){
     h("span",{}, h("i",{class:"good"}), "better for us"), h("span",{}, h("i",{class:"bad"}), "worse for us"),
     h("span",{}, h("i",{class:"vol"}), "volume, how often"), h("span",{}, h("i",{class:"neutral"}), "no reference, or too few"));
 }
-try{ window.UIKit={ tone:uiToneOf, pick:uiPick, summary:uiSummary, colourKey:uiColourKey, strip:uiStrip, split:uiSplit, ranks:uiRanks }; }catch(e){_quiet(e)}
+try{ window.UIKit={ tone:uiToneOf, pick:uiPick, summary:uiSummary, colourKey:uiColourKey, strip:uiStrip, split:uiSplit, ranks:uiRanks, src:uiSrc }; }catch(e){_quiet(e)}
 /* WHAT IS THE PAGE DOING WHEN IT FEELS SLOW.
    A page that is slow on one machine, with one report and one session, and fine on the
    bench, cannot be fixed by reading the code: every guess is as good as the next. This is
@@ -31086,7 +31105,7 @@ function _dashBestInto(box, opp){
       return h("li",{}, h("i",{}, String(i+1)), h("span",{},
         h("b",{}, (_lgLastName(x.name)||x.name)+" · "+(x.m.pir/gp(x)).toFixed(1)+" PIR, "+(x.t.pts/gp(x)).toFixed(1)+" pts, "+(x.t.sec/60/gp(x)).toFixed(0)+" min"),
         h("small",{}, why.length? why.join(" · ") : "Not in the league's top 25 in anything — leads them in PIR"),
-        tg? h("small",{class:"tg"}, "Our tagging: "+tg.use+"% of their possessions, eFG "+tg.efg+"%"+(()=>{ const u=(x.t.p2a||0)+(x.t.p3a||0)+0.44*(x.t.fta||0)+(x.t.tov||0); return u>0? " · "+((x.t.pts||0)/u).toFixed(2)+" PPP with his turnovers" : ""; })()) : null)); })));
+        tg? h("small",{class:"tg"}, "Our tagging: "+tg.use+"% of the tagged possessions, eFG "+tg.efg+"%"+(()=>{ const u=(x.t.p2a||0)+(x.t.p3a||0)+0.44*(x.t.fta||0)+(x.t.tov||0); return u>0? " · "+((x.t.pts||0)/u).toFixed(2)+" PPP with his turnovers" : ""; })()) : null)); })));
     box.appendChild(h("div",{class:"dash-src"},"Ranked by PIR a game · places among the "+pool.length+" players of the league with enough games and minutes"));
   }).catch(()=>{ box.innerHTML=""; box.appendChild(h("div",{class:"dash-miss"},"Their players could not be read.")); });
 }
@@ -40243,6 +40262,27 @@ body.prt .pre-copy{display:none!important}
 .ui-card-bar i{display:block;height:100%;border-radius:2px;background:#8a93a2}
 .ui-card.good .ui-card-bar i{background:#2f9e86}.ui-card.bad .ui-card-bar i{background:#d8524e}.ui-card.vol .ui-card-bar i{background:#4a86d8}
 .ui-card-n{flex:none;font:500 10px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+/* where a number comes from: our tagging or the league */
+.ui-src{display:inline-block;vertical-align:1px;margin-right:6px;padding:1px 6px;border-radius:4px;font:700 9px/1.5 'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+.ui-vis-h span.ui-src,.ui-figrow-h span.ui-src{font:700 9px/1.5 'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase}
+.ui-src.tag{background:#f3e6c4;color:#6b4f12;border:1px solid #dcc286}
+.ui-src.lg{background:#dce8f8;color:#1f4f93;border:1px solid #a9c4ea}
+body.dark .ui-src.tag{background:rgba(214,170,80,.18);color:#e8c77e;border-color:rgba(214,170,80,.45)}
+body.dark .ui-src.lg{background:rgba(110,160,230,.18);color:#9cc0f2;border-color:rgba(110,160,230,.45)}
+.ui-figrow{margin:0 0 10px}
+.ui-figrow-h{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;margin:0 0 6px}
+.ui-figrow-h b{font:700 11px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--ink,#141821)}
+.ui-figrow-h span:not(.ui-src){font-size:11px;color:var(--ink-faint,#8a93a2)}
+.ui-figrow .ui-figs{margin-bottom:0}
+/* a finding on more possessions weighs more: three weights, and its count as a bar */
+.ui-card-nw{position:relative;flex:none;min-width:64px;height:16px;border-radius:4px;background:rgba(20,24,33,.07);overflow:hidden;display:flex;align-items:center}
+.ui-card-nw i{position:absolute;left:0;top:0;bottom:0;background:rgba(20,24,33,.16)}
+.ui-card-nw b{position:relative;padding:0 6px;font:600 10px 'IBM Plex Mono',monospace;color:var(--ink,#141821);white-space:nowrap}
+body.dark .ui-card-nw{background:rgba(255,255,255,.07)} body.dark .ui-card-nw i{background:rgba(255,255,255,.2)} body.dark .ui-card-nw b{color:#e6e9ef}
+.ui-card.w3{border-top-width:5px;box-shadow:0 1px 0 rgba(20,24,33,.04),0 2px 8px rgba(20,24,33,.08)}
+.ui-card.w3 .ui-card-v b{font-size:26px}
+.ui-card.w1{opacity:.78}
+.ui-card.w1 .ui-card-v b{font-size:17px}
 .ui-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
 .ui-chip{display:inline-flex;align-items:baseline;gap:6px;background:var(--panel,#fff);border:1px solid var(--line,#e4e7ec);border-radius:8px;padding:4px 9px;font-size:11.5px}
 .ui-chip i{font-style:normal;color:var(--ink-soft,#5b6472)}.ui-chip b{font:800 13px 'Inter',sans-serif}.ui-chip em{font-style:normal;font-size:11px;color:var(--ink-faint,#8a93a2)}
