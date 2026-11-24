@@ -1881,8 +1881,9 @@ body.prt.prt-textonly .rs-block-stats{display:none!important}
 .rs-add-sec.alt{border-color:#bcd0c2;background:rgba(30,130,76,.12);color:#1e824c}
 /* floating rich-text toolbar */
 .rep-toolbar{position:absolute;z-index:9000;display:none;align-items:center;gap:4px;background:var(--ink,#111827);border-radius:10px;padding:5px 7px;box-shadow:0 8px 24px rgba(16,24,40,.28)}
-/* key ideas: an underline only while editing, and the button that puts it on and off */
-.rs-rich span[data-key]{font-weight:700}
+/* key ideas: an underline only while editing, and the button that puts it on and off. The mark
+   never changes the type (Oriol, 24/11/2026: "no cambies el formato en el informe, mantén lo que era
+   regular y lo que era negrita"): a regular line stays regular and a bold one bold, read and edited */
 body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[data-key]{text-decoration:underline;text-decoration-color:#c6a15b;text-decoration-thickness:3px;text-underline-offset:3px;background:rgba(198,161,91,.16);border-radius:2px}
 .key-idea-btn{position:fixed;z-index:9100;font:700 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:999px;border:0;background:#141821;color:#f3d98e;box-shadow:0 6px 18px rgba(16,24,40,.3);cursor:pointer;white-space:nowrap}
 .rep-toolbar .rep-tb-btn.tb-key{color:#f3d98e;font-weight:800;letter-spacing:.04em}
@@ -8539,7 +8540,7 @@ function _keyCopy(e){
   const at=r.commonAncestorContainer, el=at.nodeType===1? at : at.parentNode;
   const box=(el && el.closest)? el.closest(".rs-rich") : null, k=box? _keySpanOf(at, box) : null;
   if(!k) return;
-  const sp=document.createElement("span"); sp.setAttribute("data-key","1"); sp.style.fontWeight="700";
+  const sp=document.createElement("span"); sp.setAttribute("data-key","1");
   sp.appendChild(r.cloneContents());
   e.clipboardData.setData("text/html", sp.outerHTML);
   e.clipboardData.setData("text/plain", sel.toString());
