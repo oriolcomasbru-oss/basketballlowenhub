@@ -1251,6 +1251,115 @@ async function liveRead(gameId, key) {
   else pinned(s.ip, "POST", "&sid=" + s.sid, "41", key, 1000);
   return { rows: liveRows(s.st), complete: s.ends >= 7, ms: Date.now() - t0, trace };
 }
+
+/* SEVERAL GAMES AT ONCE (Oriol, 24/11/2026: the League's live window, "varios partidos a la vez",
+   up to four on one screen). liveRead above follows one game per session, and asking it for
+   another game closes the session and reads the new one's history from the start - four games
+   in turn would be four sessions opened and closed every few seconds, which is exactly what the
+   league's behaviour filter answers with a 403.
+   A socket.io session can be in more than one game: every push names its game (the first
+   element of the message), so ONE session joins every game asked for and the rows are sorted
+   into the game they belong to. Each call is then the same two small requests whatever the
+   number of games. The bench's reading (liveRead) is left exactly as it was: this is a second
+   session, used only by the League. A game nobody has asked for in three minutes is let go. */
+async function liveReadMany(ids, key) {
+  const t0 = Date.now(), trace = [];
+  const tr = (w, r) => { if (trace.length < 40) trace.push((Date.now() - t0) + "ms " + w + " " + r.status + " " + S(r.text).slice(0, 120)); };
+  const gidOf = (id) => (/^\d+$/.test(S(id)) ? Number(id) : S(id));
+  const done = (s, err) => {
+    const games = {};
+    ids.forEach(id => { const g = s && s.games[id]; games[id] = g ? { rows: liveRows(g.st), complete: g.ends >= 7 } : { rows: [], complete: false }; });
+    return { games, ms: Date.now() - t0, trace, error: err || "" };
+  };
+  if (Date.now() < LIVE.block) return done(null, "the league is holding the live channel back for a minute (403)");
+  const blocked = (r) => { if (r.status === 403) { LIVE.block = Date.now() + 60e3; LIVE.m = null; return true; } return false; };
+  const eat = (s, text) => {
+    let closed = false;
+    for (const pk of S(text).split("\x1e")) {
+      if (pk === "2") { s.pong = true; continue; }
+      if (pk.startsWith("40")) { s.joined = true; continue; }
+      if (pk.startsWith("44") || pk === "41" || pk === "1") { closed = true; continue; }
+      if (!pk.startsWith("42")) continue;
+      let msg; try { msg = JSON.parse(pk.slice(2)); } catch (e) { continue; }
+      if (!Array.isArray(msg)) continue;
+      const g = s.games[S(msg[0])]; if (!g) continue;
+      const d = msg[1];
+      (Array.isArray(d) && Array.isArray(d[0]) ? d : [d]).forEach(r => {
+        if (Array.isArray(r) && Number(r[0]) === 20) g.ends++; else liveApply(g.st, r);
+      });
+    }
+    return { closed };
+  };
+  const send = async (s, body) => { const r = await pinned(s.ip, "POST", "&sid=" + s.sid, (s.pong ? "3\x1e" : "") + body, key, 2000); s.pong = false; tr("POST " + body.slice(0, 40), r); return r; };
+  const read = async (s, ms) => { const r = await pinned(s.ip, "GET", "&sid=" + s.sid + "&t=" + Date.now(), null, key, ms); tr("GET", r); return r; };
+  const join = (id) => '42["join",' + JSON.stringify(gidOf(id)) + "]";
+  const hist = (id) => '42["history",' + JSON.stringify(gidOf(id)) + "]";
+  const newGame = () => ({ st: liveState(), ends: 0, asked: Date.now() });
+
+  let s = LIVE.m;
+  if (s && Date.now() - s.used > 40e3) { pinned(s.ip, "POST", "&sid=" + s.sid, "41", key, 1000); s = LIVE.m = null; }
+
+  /* the session is open: the games it already follows are asked for what is new, the games it
+     does not follow yet are joined and their history read */
+  if (s) {
+    const now = Date.now();
+    Object.keys(s.games).forEach(id => { if (ids.indexOf(id) < 0 && now - s.games[id].asked > 180e3) delete s.games[id]; });
+    const fresh = ids.filter(id => !s.games[id]);
+    ids.forEach(id => { if (s.games[id]) s.games[id].asked = now; else s.games[id] = newGame(); });
+    const known = ids.filter(id => fresh.indexOf(id) < 0), poke = known[0] || fresh[0];
+    s.ack = (s.ack || 0) + 1;
+    let body = "42" + s.ack + '["join",' + JSON.stringify(gidOf(poke)) + "]";
+    fresh.forEach(id => { body += (id === poke ? "" : "\x1e" + join(id)) + "\x1e" + hist(id); });
+    const p = await send(s, body);
+    if (blocked(p)) return done(null, "403");
+    if (p.status === 200) {
+      let ok = true;
+      do {
+        const g = await read(s, 2500);
+        if (blocked(g)) return done(null, "403");
+        if (g.status !== 200 || eat(s, g.text).closed) { ok = false; break; }
+      } while (fresh.some(id => s.games[id].ends < 7) && Date.now() - t0 < 6000);
+      if (ok) { s.used = Date.now(); return done(s); }
+    }
+    LIVE.m = s = null;   /* the session is gone: a new one below */
+  }
+
+  /* a new session, on one server, held there, in every game asked for */
+  const ips = await liveIps();
+  const ip = ips ? ips[Math.floor(Math.random() * ips.length)] : new URL(apiBase()).hostname;
+  const o = await pinned(ip, "GET", "&t=" + Date.now(), null, key, 2000); tr("OPEN " + ip, o);
+  if (blocked(o)) return done(null, "403");
+  const m = /^0(\{.*\})/.exec(o.text || "");
+  if (!m) return done(null, "live channel: no session");
+  s = { ip: ip, sid: JSON.parse(m[1]).sid, games: {}, joined: false, pong: false, ack: 0, used: Date.now() };
+  ids.forEach(id => { s.games[id] = newGame(); });
+  await send(s, "40");
+  const c = await read(s, 2000); eat(s, c.text);
+  if (!s.joined) return done(null, blocked(c) ? "403" : "live channel: not let in");
+  await send(s, ids.map(id => join(id) + "\x1e" + hist(id)).join("\x1e"));
+  while (ids.some(id => s.games[id].ends < 7) && Date.now() - t0 < 7000) {
+    const g = await read(s, Math.max(500, 7000 - (Date.now() - t0)));
+    if (g.status !== 200) { blocked(g); break; }
+    if (eat(s, g.text).closed) break;
+  }
+  if (ids.some(id => s.games[id].ends >= 7)) { s.used = Date.now(); LIVE.m = s; }
+  else pinned(s.ip, "POST", "&sid=" + s.sid, "41", key, 1000);
+  return done(s);
+}
+LIVE.m = null;
+
+/* WHAT THE LEAGUE'S LIST OF GAMES NEEDS OF A GAME BEING PLAYED: the score and where it is, from
+   the play by play - a few hundred bytes instead of the whole feed */
+function liveLite(feed) {
+  if (!feed) return null;
+  const pts = (t) => (num(t.FTM) || 0) + 2 * (num(t.P2M) || 0) + 3 * (num(t.P3M) || 0);
+  const el = (a) => { const q = S(a.quarter); const qi = q.charAt(0) === "o" ? 4 + Math.max(0, (parseInt(q.slice(2), 10) || 1) - 1) : Math.max(0, (parseInt(q.slice(1), 10) || 1) - 1);
+    const len = qi < 4 ? 600 : 300, base = qi < 4 ? qi * 600 : 2400 + (qi - 4) * 300; return base + Math.max(0, Math.min(len, len - (num(a.time) || 0))); };
+  let last = null, lt = -1;
+  (feed.actions || []).forEach(a => { const t = el(a); if (t >= lt) { lt = t; last = a; } });
+  return { teams: (feed.teams || []).map(t => ({ code: t.teamcode, id: S(t.id), pts: pts(t), fouls: num(t.team_fouls) })),
+    n: (feed.actions || []).length, last: last ? { quarter: last.quarter, time: num(last.time) } : null };
+}
 const liveMemo = {};
 
 
@@ -1455,15 +1564,25 @@ exports.handler = async (event) => {
       const pick = g => {
         const t = (x) => x && (x.name || x.teamName || x.shortName || x.fullName) || "";
         const h = g.homeTeam || g.home || {}, a = g.guestTeam || g.awayTeam || g.away || g.guest || {};
+        /* the score: the season list carries it as result.final [home, away] (see the games of
+           res=all), so that is read first; the single fields are what this read before and
+           they came back empty (every finished game 0-0) */
+        const r = g.result || {}, fin = Array.isArray(r.final) ? r.final : (g.results && Array.isArray(g.results.finalScore)) ? g.results.finalScore : null;
+        /* num() reads nothing as 0, so an empty field is skipped before it is read */
+        const one = (...v) => { for (const x of v) { if (x == null || x === "" || typeof x === "object") continue; const n = num(x); if (n != null) return n; } return null; };
         return { id: S(g.id || g.gameId), status: S(g.status || g.gameStatus), progress: S(g.gameProgress || g.gameProgess || g.progress), time: S(g.gameTime || g.time || ""),
           home: S(t(h)), homeId: S(h.id || h.teamId || ""), away: S(t(a)), awayId: S(a.id || a.teamId || ""),
-          hs: num(g.homeTeamScore != null ? g.homeTeamScore : (g.result && g.result.homeTeamFinalScore) != null ? g.result.homeTeamFinalScore : h.score),
-          as: num(g.guestTeamScore != null ? g.guestTeamScore : (g.result && g.result.guestTeamFinalScore) != null ? g.result.guestTeamFinalScore : a.score),
+          hs: one(fin && fin[0], g.homeTeamScore, r.homeTeamFinalScore, r.homeScore, h.score),
+          as: one(fin && fin[1], g.guestTeamScore, r.guestTeamFinalScore, r.guestScore, a.score),
+          competition: S(g.competition || ""),
           start: S(g.scheduledTime || g.startTime || g.date || "") };
       };
       const list = k => (Array.isArray(raw && raw[k]) ? raw[k] : []).map(pick);
+      /* what the league writes in result, so the first game day shows where the live score is */
+      const rs = ((raw && raw.present) || []).filter(g => S(g.status) === "LIVE")[0] || ((raw && raw.past) || [])[0];
       out = Object.assign(meta, { past: list("past"), present: list("present"), future: list("future"),
-        sample: raw && raw.present && raw.present[0] ? Object.keys(raw.present[0]) : (raw && raw.past && raw.past[0] ? Object.keys(raw.past[0]) : []) });
+        sample: raw && raw.present && raw.present[0] ? Object.keys(raw.present[0]) : (raw && raw.past && raw.past[0] ? Object.keys(raw.past[0]) : []),
+        resultSample: rs ? { status: S(rs.status), result: rs.result || null } : null });
       return reply(200, out, 2500);
 
     } else if (res === "livedocs") {
@@ -1482,6 +1601,41 @@ exports.handler = async (event) => {
       }
       out = Object.assign(meta, { found: found });
       return reply(200, out, 0);
+
+    } else if (res === "live" && (q.ids || q.lite)) {
+      /* THE LEAGUE'S LIVE WINDOW: up to four games in full (ids) and the others being played only
+         as their score (lite), from one session of the live channel (liveReadMany). Held two
+         seconds, so the staff watching share one reading. */
+      const clean = (v) => S(v).split(",").map(x => x.trim()).filter(x => /^[\w-]{1,20}$/.test(x));
+      const full = clean(q.ids).slice(0, 4);
+      const lite = clean(q.lite).filter(x => full.indexOf(x) < 0).slice(0, 9);
+      const all = full.concat(lite);
+      if (!all.length) return reply(400, { ok: false, errors: ["res=live needs &ids=<gameId,...> or &lite=<gameId,...>"] }, 0);
+      const mk = "m|" + full.join(",") + "|" + lite.join(",");
+      const lm = liveMemo[mk];
+      if (lm && Date.now() - lm.t < 1800) return reply(200, Object.assign({}, lm.d, { cached: true }), 2000);
+      const sheetOf = (id) => {
+        const sk = "sheet|" + id, c = getCache(sk, TTL.game);
+        return c ? Promise.resolve(c) : api("/v2/game/" + encodeURIComponent(id), key).then(sh => setCache(sk, sh)).catch(e => ({ _error: e.message }));
+      };
+      const [sheets, live] = await Promise.all([Promise.all(full.map(sheetOf)), liveReadMany(all, key).catch(e => ({ games: {}, error: e.message }))]);
+      if (live.error) meta.errors.push(live.error);
+      const games = {};
+      let any = false;
+      all.forEach((id, i) => {
+        const L1 = (live.games || {})[id] || { rows: [], complete: false };
+        const feed = (L1.complete && L1.rows.length) ? decodeFeed(L1.rows) : null;
+        if (feed) any = true;
+        if (i < full.length) {
+          const sh = sheets[i];
+          if (sh && sh._error) meta.errors.push("game " + id + ": " + sh._error);
+          games[id] = { game: (sh && !sh._error) ? sh : null, feed: feed, complete: !!L1.complete };
+        } else games[id] = { lite: liveLite(feed), complete: !!L1.complete };
+      });
+      out = Object.assign(meta, { games: games, live: { ms: live.ms || 0, trace: q.debug === "1" ? live.trace : undefined } });
+      if (any) liveMemo[mk] = { t: Date.now(), d: out };
+      Object.keys(liveMemo).forEach(k => { if (Date.now() - liveMemo[k].t > 60e3) delete liveMemo[k]; });
+      return reply(200, out, any ? 2000 : 0);
 
     } else if (res === "live") {
       /* the game while it is being played: the sheet (names, numbers) from cache, the play

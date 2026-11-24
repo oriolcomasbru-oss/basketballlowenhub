@@ -22835,14 +22835,19 @@ function _lgMdRows(games, selId){
     const mine=selId && (String(g.homeId||g.home)===String(selId) || String(g.awayId||g.away)===String(selId));
     /* the home crest sits on the right of its name and the away crest on the left, so the
        two badges meet in the middle around the score and the fixture reads as a pairing */
-    list.appendChild(h("div",{class:"lg-md-row"+((_lgOurs(g.home)||_lgOurs(g.away))?" ours":"")+(mine?" sel":"")+(done?" open":""),
-        title:done?"Open the game":null, onclick:done?(()=>_lgGameOpen(g)):null},
+    /* a click asks at that moment what the game is: being played opens the live window, over
+       opens the game sheet (see _lvRowClick) */
+    const row=h("div",{class:"lg-md-row"+((_lgOurs(g.home)||_lgOurs(g.away))?" ours":"")+(mine?" sel":"")+(done?" open":""),
+        title:done?"Open the game":null, onclick:()=>_lvRowClick(g)},
       h("span",{class:"lg-md-date"}, (g.date? g.date.slice(8,10)+"/"+g.date.slice(5,7) : ""), g.time? h("i",{class:"lg-md-hr"}, " "+g.time) : null),
       h("span",{class:"lg-md-t r"+(done&&g.hs>g.as?" win":""), title:g.home||""},
         h("span",{class:"lg-md-nm"}, h("span",{class:"nm-f"}, g.home||""), h("span",{class:"nm-s"}, _lgShort(g.home||""))), _lgCrest(L, g.homeId||g.home, "mdc")),
       h("span",{class:"lg-md-sc"}, done? (g.hs+" : "+g.as) : "–"),
       h("span",{class:"lg-md-t"+(done&&g.as>g.hs?" win":""), title:g.away||""},
-        _lgCrest(L, g.awayId||g.away, "mdc"), h("span",{class:"lg-md-nm"}, h("span",{class:"nm-f"}, g.away||""), h("span",{class:"nm-s"}, _lgShort(g.away||""))))));
+        _lgCrest(L, g.awayId||g.away, "mdc"), h("span",{class:"lg-md-nm"}, h("span",{class:"nm-f"}, g.away||""), h("span",{class:"nm-s"}, _lgShort(g.away||"")))));
+    row.__g=g;
+    if(!done){ try{ _lvRowPaint(row); }catch(e){_quiet(e)} }
+    list.appendChild(row);
   });
   return list;
 }
@@ -25411,6 +25416,590 @@ function _lgGamePanel(g, close){
   });
   return panel;
 }
+/* ===================== LIVE IN THE LEAGUE =====================
+   Oriol, 24/11/2026: "en el apartado league, quiero que cuando un partido está en juego ponga
+   live. Y puedas acceder a la ficha live del partido ... el partido tiene alguna señal y se va
+   actualizando el marcador ... Una vez terminado sale la ficha como siempre ... un popup ...
+   varios partidos a la vez ... 3 o máximo 4 partiendo pantalla. Sacamos todo del play by play."
+   - What is being played, and where it is (quarter, clock), is the league's game centre: one
+     call says it for every game. It is asked every 15 s while a game is on, 30 s on a game day.
+   - Everything else is the play by play of the live channel. The games open in the window are
+     read in full, together, in one call every 3 s (bbl?res=live&ids=…); the other games being
+     played only as their score (&lite=…), every 10 s, for the rows of the League page.
+   - The bench reads its own game by itself (_gpLiveBlock): nothing here touches it.
+   - The rules of the bench hold (4/11/2026): the states - team fouls, timeouts, the arrow, the
+     last two minutes - are said once, on the scoreboard, and "bonus" is never written: the
+     line says who shoots.
+   - REPLAY, to try it without a game being played: a finished game is played again at the
+     speed chosen, always marked REPLAY, staff only. Nothing is saved. */
+const LV={ ids:[], open:false, min:false, lay:1, focus:"", gc:{}, gcAt:0, gcBusy:0, data:{}, lite:{}, rp:{},
+  fullAt:0, liteAt:0, busy:0, last:0, dirty:true, err:"", back:null, strip:null, pan:{}, tab:{}, menu:false };
+function _lvWide(){ return (window.innerWidth||1200)>=760; }
+function _lvTlc(id, name){
+  let t=null; try{ t=(leagueState().teams||[]).filter(x=>String(x.id)===String(id))[0]; }catch(e){_quiet(e)}
+  return (t && (t.tlc||t.short)) || String(name||"").replace(/[^A-Za-zÄÖÜäöü]/g,"").slice(0,3).toUpperCase();
+}
+function _lvGame(id){
+  id=String(id);
+  let g=null; try{ const L=leagueState(); g=((L.games||[]).concat(L.cup||[])).filter(x=>String(x.id)===id)[0]||null; }catch(e){_quiet(e)}
+  const c=LV.gc[id];
+  const b=g? Object.assign({}, g) : c? { id:id, home:c.home, homeId:c.homeId, away:c.away, awayId:c.awayId, date:String(c.start||"").slice(0,10) } : { id:id, home:"", away:"" };
+  b.homeTlc=b.homeTlc||_lvTlc(b.homeId, b.home); b.awayTlc=b.awayTlc||_lvTlc(b.awayId, b.away);
+  return b;
+}
+/* the clock of a period: a play on the buzzer, or a game at 0:00 not yet at the break, is still the
+   period that is ending ("Q2 · 0:00"), never the start of the next one */
+function _lvPer(t){ t=Math.max(0, t-0.001); return t<2400? Math.min(3, Math.floor(t/600)) : 4+Math.floor((t-2400)/300); }
+function _lvClk(qi, t){ const base=qi<4? qi*600 : 2400+(qi-4)*300, len=qi<4? 600 : 300, l=Math.max(0, Math.round(base+len-t));
+  return (qi<4? "Q"+(qi+1) : "OT"+(qi-3))+" · "+Math.floor(l/60)+":"+String(l%60).padStart(2,"0"); }
+function _lvGcLive(id){ const c=LV.gc[String(id)]; return !!(c && c.status==="LIVE"); }
+function _lvGcFin(id){ const c=LV.gc[String(id)]; return !!(c && /^(POST|OFFICIAL)$/.test(String(c.status||""))); }
+function _lvLiveIds(){ return Object.keys(LV.gc).filter(_lvGcLive); }
+/* the clock the league's game centre gives, in seconds left in the period; NaN when it gives none */
+function _lvLeft(c){ const tm=String((c&&c.time)||"").split(":").map(Number); return tm.length>=2? tm[tm.length-2]*60+tm[tm.length-1] : NaN; }
+/* where the game is, in the words of a scoreboard */
+function _lvWhere(c){
+  const p=String((c&&c.progress)||""), m=/^Q(\d)/i.exec(p), o=/^OT(\d*)/i.exec(p), brk=/_break/i.test(p), l=_lvLeft(c);
+  const clk=isFinite(l)? Math.floor(l/60)+":"+String(l%60).padStart(2,"0") : "";
+  if(m){ const q=+m[1]; return brk? (q===2? "Half time" : "End of Q"+q) : "Q"+q+(clk? " · "+clk : ""); }
+  if(o){ const n=+(o[1]||1); return brk? "End of OT"+(n>1? n : "") : "OT"+(n>1? n : "")+(clk? " · "+clk : ""); }
+  return "";
+}
+/* THE GAME AS IT STANDS, for one game of the window: the feed cut where the game is, the clock,
+   the score quarter by quarter. A replay is cut at its own clock; a live game at the league's,
+   with the same care as the bench: a play written well ahead of the league's clock (the stray
+   foul of a break) is left out while there are three such plays at most. */
+function _lvView(id){
+  id=String(id);
+  const g=_lvGame(id), rp=LV.rp[id], c=LV.gc[id], D=LV.data[id];
+  const V={ id:id, g:g, rp:rp||null, c:c||null, j:null, feed:null, lastT:0, live:false, fin:false, where:"", maxQ:0, hc:"A", hs:0, as:0, Q:[] };
+  if(rp){
+    const f=rp.Jf.feed||{}, T=rp.T;
+    const acts=(f.actions||[]).filter(a=>_lgGameElapsed(a.quarter, a.time).t<=T);
+    const qNow=T<2400? Math.min(3, Math.floor(T/600)) : 4+Math.floor((T-2400)/300);
+    const cut=Object.assign({}, f, { actions:acts, starters:(f.starters||[]).filter(s=>_lgGameElapsed(s.quarter,0).qi<=qNow),
+      shots:(f.shots||[]).filter(s=>_lgGameElapsed(s.q, s.time).t<=T) });
+    /* the lines of the teams and the men as they stood at that moment, counted from the plays */
+    const sel={}; for(let q=0;q<=qNow;q++) sel[q]=1;
+    const part=_lgGamePeriodBox(cut, sel);
+    V.feed=Object.assign({}, cut, { teams:part.teams, players:part.players });
+    V.j={ game:rp.Jf.game, feed:V.feed }; V.lastT=T; V.fin=T>=rp.end; V.live=!V.fin;
+    V.where=V.fin? "Final" : _lvClk(_lvPer(T), T);
+  } else if(D && D.j && D.j.feed){
+    let feed=D.j.feed;
+    V.fin=_lvGcFin(id); V.live=!V.fin;
+    const gq=_gpGcQ(c);
+    if(c && c.status==="LIVE" && gq>=0){
+      const base=gq<4? gq*600 : 2400+(gq-4)*300, len=gq<4? 600 : 300, l=_lvLeft(c);
+      const gEl=/_break/i.test(String(c.progress||""))? base+len : (isFinite(l)? base+Math.max(0, Math.min(len, len-l)) : base+len);
+      const a0=feed.actions||[], ahead=a0.filter(a=>_lgGameElapsed(a.quarter, a.time).t>gEl+30);
+      if(ahead.length && ahead.length<=3) feed=Object.assign({}, feed, { actions:a0.filter(a=>ahead.indexOf(a)<0) });
+    }
+    V.feed=feed; V.j={ game:D.j.game, feed:feed };
+    let mq=0, evT=0; (feed.actions||[]).forEach(a=>{ const e=_lgGameElapsed(a.quarter, a.time); if(e.qi>mq) mq=e.qi; if(e.t>evT) evT=e.t; });
+    let gcT=0;
+    if(c && c.status==="LIVE" && gq>=0 && !/_break/i.test(String(c.progress||""))){ const l=_lvLeft(c), base=gq<4? gq*600 : 2400+(gq-4)*300, len=gq<4? 600 : 300;
+      if(isFinite(l)) gcT=base+Math.max(0, Math.min(len, len-l)); }
+    V.lastT=V.fin? (mq<4? (mq+1)*600 : 2400+(mq-3)*300) : Math.max(evT, gcT);
+    /* the clock shown is the furthest of the two - the game centre's or the last play's - so it never
+       reads behind a play already on the screen; a break is named while no play of the next period is in */
+    const brk=!!(c && c.status==="LIVE" && gq>=0 && /_break/i.test(String(c.progress||"")) && evT<=(gq<4? (gq+1)*600 : 2400+(gq-3)*300));
+    V.where=V.fin? "Final" : brk? _lvWhere(c) : _lvClk(Math.max(mq, gq, _lvPer(V.lastT)), V.lastT);
+  } else if(c){ V.live=c.status==="LIVE"; V.fin=_lvGcFin(id); V.where=V.fin? "Final" : _lvWhere(c); }
+  if(V.feed){
+    (V.feed.teams||[]).forEach(t=>{ if(String(t.id)===String(g.homeId)) V.hc=t.teamcode; });
+    _gpActs(V.feed, V.lastT+1).forEach(o=>{ const p=_gpPts(o.a), q=_gpQx(o.a.quarter); if(q>V.maxQ) V.maxQ=q;
+      if(!p) return; V.Q[q]=V.Q[q]||[0,0]; if(o.a.teamcode===V.hc){ V.hs+=p; V.Q[q][0]+=p; } else { V.as+=p; V.Q[q][1]+=p; } });
+    for(let q=0;q<=V.maxQ;q++) V.Q[q]=V.Q[q]||[0,0];
+  } else { const s=_lvScore(id); if(s){ V.hs=s.h; V.as=s.a; } else { V.hs=null; V.as=null; } }
+  return V;
+}
+/* the score of a game being played, for its row: the play by play when it has been read, else
+   the league's game centre (which writes nothing until a basket, so 0-0 there is not shown) */
+function _lvScore(id){
+  id=String(id); const g=_lvGame(id), D=LV.data[id];
+  if(D && D.j && D.j.feed){ let hc="A"; (D.j.feed.teams||[]).forEach(t=>{ if(String(t.id)===String(g.homeId)) hc=t.teamcode; });
+    let a=0, b=0; (D.j.feed.actions||[]).forEach(x=>{ const p=_gpPts(x); if(x.teamcode===hc) a+=p; else b+=p; }); return { h:a, a:b }; }
+  const l=LV.lite[id];
+  if(l && l.teams && l.teams.length===2){ let a=null, b=null; l.teams.forEach(t=>{ if(String(t.id)===String(g.homeId)) a=t.pts; else b=t.pts; }); if(a!=null && b!=null) return { h:a, a:b }; }
+  const c=LV.gc[id]; if(c && c.hs!=null && c.as!=null && c.hs+c.as>0) return { h:c.hs, a:c.as };
+  return null;
+}
+/* one play in words, for the last plays and the play by play */
+function _lvTxt(a, M, subs){
+  const nm=id=>{ const n=M.names[String(id)]; return n? n.split(" ").slice(-1)[0] : ""; };
+  const who=nm(a.player_id1)||(a.player_nr1? "#"+a.player_nr1 : ""), k=a.action, by=who? " · "+who : "";
+  const SHOT={ LU:"layup", DU:"dunk", JS:"jump shot", TI:"tip in", AO:"alley oop" };
+  const TOV={ BP:"bad pass", LB:"lost ball", TR:"travelling", VI:"violation", OB:"out of bounds", "24":"24 seconds", "8":"8 seconds", "5":"5 seconds", "3":"3 seconds" };
+  if(k==="P2"||k==="P3"){ const made=a.result==="+";
+    return (k==="P3"? "3pt " : "2pt ")+(SHOT[a.info3]||"shot")+" "+(made? "made" : a.result==="BL"? "blocked" : "missed")+by+((made && nm(a.player_id2))? " (assist "+nm(a.player_id2)+")" : ""); }
+  if(k==="FT") return "Free throw "+(a.result==="+"? "made" : "missed")+by;
+  if(k==="REB"||k==="TREB") return (a.info1==="O"? "Offensive" : "Defensive")+" rebound"+(k==="TREB"? " · team" : by);
+  if(k==="TO"||k==="TTO") return "Turnover"+(TOV[a.info1]? ", "+TOV[a.info1] : "")+(k==="TTO"? " · team" : by);
+  if(k==="ST") return "Steal"+by;
+  if(k==="BL") return "Block"+by;
+  if(k==="FOUL") return (a.info1==="O"? "Offensive foul" : a.info1==="T"? "Technical foul" : a.info1==="U"? "Unsportsmanlike foul" : a.info1==="D"? "Disqualifying foul" : "Foul")+by;
+  if(k==="CFOUL") return "Technical foul on the bench";
+  if(k==="TIMEO") return "Timeout";
+  if(k==="JB") return "Jump ball"+by;
+  if(k==="SUBST" && subs){ const i=nm(a.player_id2), o=nm(a.player_id1); return "Sub"+(i? " · in "+i : "")+(o? " · out "+o : ""); }
+  return "";
+}
+/* the plays in words, the newest first, with the score after each basket */
+function _lvPlays(V, M, n, subs){
+  let hs=0, as=0; const rows=[];
+  M.acts.forEach(x=>{ const a=x.a; if(x.t>V.lastT+1) return;
+    const p=_gpPts(a), home=a.teamcode===M.hc; if(p){ if(home) hs+=p; else as+=p; }
+    const txt=_lvTxt(a, M, subs); if(!txt) return;
+    /* the clock written on the play itself: its period and the time left in it */
+    const tl=Math.max(0, Math.round(Number(a.time)||0)), clk=(x.qi<4? "Q"+(x.qi+1) : "OT"+(x.qi-3))+" "+Math.floor(tl/60)+":"+String(tl%60).padStart(2,"0");
+    rows.push({ t:x.t, qi:x.qi, clk:clk, home:home, txt:txt, sc:p? hs+"–"+as : "", team:(a.teamcode==="A"||a.teamcode==="B") });
+  });
+  return (n? rows.slice(-n) : rows).reverse();
+}
+/* THE MARGIN, AS FAR AS THE GAME HAS GONE: the step line of the game sheet, cut at the clock,
+   over the whole game's width so the minutes still to play are seen */
+function _lvLine(M, V, ht){
+  const F=M.flow, W=1000, Ht=ht||70, T=4, B=4, total=Math.max(F.total, V.lastT);
+  const mx=Math.max(5, Math.ceil(Math.max(F.maxH, F.maxA, 1)/5)*5);
+  const X=t=>(W*t/total).toFixed(1), Y=d=>(T+(Ht-T-B)*(mx-d)/(2*mx)).toFixed(1), y0=Y(0);
+  const svg=sv("svg",{viewBox:"0 0 "+W+" "+Ht, class:"lv-line", preserveAspectRatio:"none", role:"img", "aria-label":"The margin, minute by minute"});
+  const id="lv"+Math.random().toString(36).slice(2,8);
+  let d="M0 "+y0, pd=0;
+  F.ev.forEach(e=>{ if(e.t>V.lastT) return; const nd=e.h-e.a; d+=" L"+X(e.t)+" "+Y(pd)+" L"+X(e.t)+" "+Y(nd); pd=nd; });
+  d+=" L"+X(V.lastT)+" "+Y(pd);
+  const area=d+" L"+X(V.lastT)+" "+y0+" Z";
+  svg.appendChild(sv("defs",{}, sv("clipPath",{id:id+"u"}, sv("rect",{x:0,y:0,width:W,height:y0})),
+    sv("clipPath",{id:id+"d"}, sv("rect",{x:0,y:y0,width:W,height:Ht}))));
+  for(let q=1;q<F.nq;q++){ const t=q<4? q*600 : 2400+(q-4)*300; svg.appendChild(sv("line",{x1:X(t),x2:X(t),y1:0,y2:Ht,class:"lv-lq"})); }
+  svg.appendChild(sv("line",{x1:0,x2:W,y1:y0,y2:y0,class:"lv-l0"}));
+  svg.appendChild(sv("path",{d:area, class:"lv-lh", "clip-path":"url(#"+id+"u)"}));
+  svg.appendChild(sv("path",{d:area, class:"lv-la", "clip-path":"url(#"+id+"d)"}));
+  svg.appendChild(sv("path",{d:d, class:"lv-ll"}));
+  if(V.live) svg.appendChild(sv("line",{x1:X(V.lastT),x2:X(V.lastT),y1:0,y2:Ht,class:"lv-lnow"}));
+  return svg;
+}
+/* THE SCOREBOARD. Big score, where the game is, the quarters; and, once, each side's team fouls
+   (saying who shoots from the fifth), its timeouts left, the arrow, the run being played and the
+   last two minutes of a close game. The small one, for the split screen, keeps the two notes
+   that matter most at that moment. */
+function _lvBoard(V, mini){
+  const g=V.g, L=leagueState(), f=V.feed, hc=V.hc, ac=hc==="A"? "B" : "A";
+  const lead=(V.hs!=null && V.as!=null)? V.hs-V.as : 0;
+  const st=V.rp? (V.fin? "Final · replay" : "REPLAY") : V.fin? "Final" : V.live? "LIVE" : "";
+  const where=V.fin? "" : V.where;
+  let tmH=null, tmA=null, run=null, ar="", P=null;
+  if(f){ try{ tmH=_gpTeamInfo(f, hc, V.maxQ, V.lastT); tmA=_gpTeamInfo(f, ac, V.maxQ, V.lastT); }catch(e){_quiet(e)}
+    try{ run=_gpRun(f, hc, V.lastT); }catch(e){_quiet(e)} try{ ar=_gpArrow(f); }catch(e){_quiet(e)}
+    const qi=V.maxQ, base=qi<4? qi*600 : 2400+(qi-4)*300, len=qi<4? 600 : 300; P={ qi:qi, left:Math.max(0, base+len-V.lastT) }; }
+  const tl=c=>c===hc? g.homeTlc : g.awayTlc;
+  const l2=!!(P && V.live && P.qi>=3 && P.left<=120 && Math.abs(lead)<=6);
+  const notes=[];
+  if(l2) notes.push({ k:"warn", t:"Last 2:00 · "+(lead? Math.abs(lead)+"-pt game" : "tied") });
+  /* from the fifth team foul of a period (the fourth and the overtimes are one) every foul is two
+     free throws: the line says for whom */
+  [[tmH, hc],[tmA, ac]].forEach(x=>{ if(V.live && x[0] && x[0].fouls>=4) notes.push({ k:"ft", t:"2 FT for "+tl(x[1]===hc? ac : hc)+" on every foul" }); });
+  if(V.live && run && run.pts>=(mini? 6 : 5)) notes.push({ k:run.us? "h" : "a", t:"Run "+run.pts+"–0 "+(run.us? g.homeTlc : g.awayTlc)+" · since "+_lgGameClock(run.t0) });
+  const crest=(id, nm)=>{ try{ return _lgCrest(L, id||nm, "lv-crest"); }catch(e){ return null; } };
+  const score=h("div",{class:"lv-sc"},
+    h("div",{class:"lv-tm r"+(lead>0? " up" : "")}, h("span",{class:"lv-nm"}, mini? g.homeTlc : (g.home||g.homeTlc)), crest(g.homeId, g.home)),
+    h("div",{class:"lv-nums"}, h("b",{}, V.hs==null? "–" : V.hs), h("i",{},":"), h("b",{}, V.as==null? "–" : V.as)),
+    h("div",{class:"lv-tm"+(lead<0? " up" : "")}, crest(g.awayId, g.away), h("span",{class:"lv-nm"}, mini? g.awayTlc : (g.away||g.awayTlc))));
+  const stat=h("div",{class:"lv-st"+(V.live && !V.rp? " on" : V.rp? " rp" : "")}, (V.live && !V.rp)? h("i",{class:"lv-dot"}) : null,
+    h("b",{}, st), where? h("span",{}, (st? " · " : "")+where) : null);
+  const box=h("div",{class:"lv-board"+(mini? " mini" : "")}, score, stat);
+  if(!mini && V.Q.length){
+    box.appendChild(h("div",{class:"lv-qs"}, V.Q.map((q,i)=>h("span",{class:i===V.maxQ && V.live? "cur" : ""},
+      h("i",{}, i<4? "Q"+(i+1) : "OT"+(i-3)), " "+q[0]+"–"+q[1]))));
+  }
+  /* the states are the game's while it is being played; once over they say nothing */
+  if(!mini && f && V.live){
+    const side=(tm, c)=>{ if(!tm) return null; const n=tm.fouls;
+      const dots=[]; for(let i=0;i<tm.of;i++) dots.push(h("i",{class:i<tm.left? "on" : ""}));
+      return h("div",{class:"lv-side"}, h("b",{}, tl(c)),
+        h("span",{class:"lv-tf"+(n>=4? " pen" : n===3? " warn" : ""), title:"team fouls in "+(P.qi>=3? "the 4th"+(P.qi>3? " and the overtimes" : "") : "Q"+(P.qi+1))+" · from the 5th, every foul is 2 free throws"},
+          "Fouls "+n), h("span",{class:"lv-to", title:tm.left+" of "+tm.of+" timeouts left"}, "TO ", dots)); };
+    box.appendChild(h("div",{class:"lv-sides"}, side(tmH, hc),
+      ar? h("span",{class:"lv-ar", title:"alternating possession: the next held ball or the start of the next period"}, "Arrow → "+tl(ar)) : h("span",{}),
+      side(tmA, ac)));
+  }
+  const show=mini? notes.slice(0,2) : notes;
+  if(show.length) box.appendChild(h("div",{class:"lv-notes"}, show.map(n=>h("span",{class:"lv-n "+n.k}, n.t))));
+  return box;
+}
+/* WHO IS ON THE FLOOR, each side: number, name, points, rebounds, assists and fouls (marked by
+   the quarter, as the bench marks them), and how long he has been on */
+function _lvCourt(V, M, code){
+  const P=_gpCourt(V.feed, code, V.lastT), S=code===M.hc? M.H : M.A, by={};
+  S.pl.forEach(p=>{ by[p.id]=p; });
+  const nums={}; (V.feed.players||[]).forEach(p=>{ nums[String(p.player_id)]=p.NUM; });
+  const on=Object.keys(P).filter(id=>P[id].on).map(id=>({ id:id, p:by[id]||null, stint:P[id].stint||0, num:(by[id] && by[id].num)||nums[id]||"" }))
+    .sort((a,b)=>(parseInt(a.num,10)||0)-(parseInt(b.num,10)||0));
+  const tb=h("table",{class:"lv-ct"}, h("tr",{}, h("th",{},"#"), h("th",{class:"l"}, code===M.hc? V.g.homeTlc : V.g.awayTlc), h("th",{},"PTS"), h("th",{},"REB"), h("th",{},"AST"), h("th",{},"PF"), h("th",{title:"on the floor since"},"ON")));
+  if(!on.length) tb.appendChild(h("tr",{}, h("td",{colspan:"7", class:"lv-e"},"The five is not in the play by play yet")));
+  on.forEach(x=>{ const p=x.p||{}, pf=p.pf||0, lv=_gpFoulLv(pf, V.maxQ);
+    tb.appendChild(h("tr",{}, h("td",{class:"n"}, x.num), h("td",{class:"l"}, (p.name||M.names[x.id]||"").split(" ").slice(-1)[0]||("#"+x.num)),
+      h("td",{class:"b"}, p.pts||0), h("td",{}, p.reb||0), h("td",{}, p.ast||0), h("td",{class:"pf "+lv}, pf), h("td",{class:"m"}, _gpMmss(x.stint)))); });
+  return tb;
+}
+function _lvPlayRows(V, list, cls){
+  const g=V.g;
+  return h("div",{class:"lv-plays "+(cls||"")}, list.length? list.map(r=>h("div",{class:"lv-pl"+(r.sc? " sc" : "")},
+    h("span",{class:"t"}, r.clk),
+    h("b",{class:"w "+(r.team? (r.home? "h" : "a") : "")}, r.team? (r.home? g.homeTlc : g.awayTlc) : ""),
+    h("span",{class:"x"}, r.txt), h("span",{class:"s"}, r.sc))) : h("div",{class:"lv-e"},"No plays yet"));
+}
+const LV_TABS=[["game","Game"],["cmp","Team comparison"],["pl","Players"],["sh","Shot chart"],["pbp","Play by play"]];
+/* ONE GAME, the whole window: the scoreboard, the margin, and then the tabs - the game (who is
+   on, the last plays), and the blocks of the game sheet fed by the live play by play */
+function _lvFullBody(V, M){
+  const g=V.g, t=LV.tab[V.id]||"game", gx=Object.assign({}, g, { hs:V.hs, as:V.as });
+  if(t==="game"){
+    const F=M.flow, kp=(l,v)=>h("span",{}, h("i",{}, l), " ", h("b",{}, v));
+    return h("div",{class:"lv-game"},
+      h("div",{class:"lv-kps"}, kp("Lead changes", F.changes), kp("Ties", F.ties),
+        kp(g.homeTlc+" max lead", F.maxH? "+"+F.maxH : "—"), kp(g.awayTlc+" max lead", F.maxA? "+"+F.maxA : "—")),
+      h("div",{class:"lv-two"}, h("div",{}, h("div",{class:"lv-h"},"On the floor"), _lvCourt(V, M, M.hc)),
+        h("div",{}, h("div",{class:"lv-h"}," "), _lvCourt(V, M, M.hc==="A"? "B" : "A"))),
+      h("div",{class:"lv-h"},"Last plays"), _lvPlayRows(V, _lvPlays(V, M, 8, false)));
+  }
+  const wrap=h("div",{class:"lgg inline lv-sheet"});
+  if(t==="cmp"){
+    if(M.H.has && M.A.has){ wrap.appendChild(h("div",{class:"lgg-cmp-top"}, h("b",{class:"h"}, g.home||""), h("b",{class:"a"}, g.away||"")));
+      wrap.appendChild(_lgGameCompare(gx, M)); wrap.appendChild(h("div",{class:"lv-h"},"Four factors")); wrap.appendChild(_lgGameFour(gx, M)); }
+    else wrap.appendChild(h("div",{class:"lv-e"},"The team lines are not in the play by play yet"));
+  } else if(t==="pl"){
+    wrap.appendChild(_lgGameBox(g.home||"", M.H, null)); wrap.appendChild(_lgGameBox(g.away||"", M.A, null));
+  } else if(t==="sh"){
+    wrap.appendChild(h("div",{class:"lgg-shots one"}, _lgGameShots(g.home||"", M.H), _lgGameShots(g.away||"", M.A)));
+  } else if(t==="pbp"){
+    wrap.appendChild(_lvPlayRows(V, _lvPlays(V, M, 0, true), "all"));
+  }
+  return wrap;
+}
+function _lvModel(V){ return _lgGameModel(Object.assign({}, V.g, { hs:V.hs, as:V.as }), V.j); }
+/* the replay's own controls: the speed, pause, and the clock it is at */
+function _lvRpBar(V){
+  const r=V.rp; if(!r) return null;
+  const sp=[1,10,30,60].map(x=>h("button",{type:"button", class:"lv-b"+(r.speed===x? " on" : ""), onclick:e=>{ e.stopPropagation(); r.speed=x; if(r.T<r.end) r.playing=true; LV.dirty=true; }}, "×"+x));
+  return h("div",{class:"lv-rp"}, h("b",{},"REPLAY"), h("span",{}, "a finished game played again, to try the window"),
+    h("button",{type:"button", class:"lv-b", onclick:e=>{ e.stopPropagation(); if(r.T>=r.end){ r.T=0; } r.playing=!r.playing; LV.dirty=true; }}, r.playing? "Pause" : (r.T>=r.end? "Again" : "Play")), sp);
+}
+/* ONE PANEL. The whole window when it shows one game; the small scoreboard and the two last
+   plays when the screen is split. Its parts are drawn again only when they have moved: the
+   scoreboard with the clock, the tab below only when there is a new play (or, for the Game tab,
+   when the clock has moved the minutes on the floor) - so a table being read keeps its place. */
+function _lvPanel(id, mini){
+  const P=LV.pan[id]||(LV.pan[id]={ el:h("div",{}), a:"", b:"", t:"", mini:null });
+  const V=_lvView(id); let M=null;
+  try{ if(V.j && V.j.feed) M=_lvModel(V); }catch(e){ _quiet(e); M=null; }
+  const n=(V.feed && (V.feed.actions||[]).length)||0;
+  const sigA=JSON.stringify([V.hs, V.as, V.where, V.live, V.fin, n, Math.floor(V.lastT), V.rp? [V.rp.speed, V.rp.playing] : 0, LV.err && !V.feed? LV.err : "", mini? LV.lay : 0]);
+  const tab=LV.tab[id]||"game", sigB=JSON.stringify([n, tab, (tab==="game")? Math.floor(V.lastT) : 0, !!M]);
+  const el=P.el;
+  if(P.mini!==mini){ el.innerHTML=""; P.a=""; P.b=""; P.t=""; P.mini=mini; }
+  el.className="lv-p"+(mini? " mini" : " full")+(V.live && !V.rp? " live" : "")+(V.fin? " fin" : "")+(V.rp? " rp" : "");
+  const finRow=()=>(V.fin && !V.rp)? h("div",{class:"lv-finrow"}, h("button",{type:"button", class:"btn sm", onclick:e=>{ e.stopPropagation(); _lvSheet(id); }},"Open the game sheet")) : null;
+  const wait=()=>h("div",{class:"lv-e"}, LV.err? "The play by play could not be read: "+LV.err : V.live? "Reading the play by play…" : "Nothing to show yet");
+  if(mini){
+    if(P.a===sigA) return el;
+    el.innerHTML=""; P.a=sigA;
+    el.onclick=()=>{ LV.focus=id; LV.lay=1; LV.dirty=true; _lvPaint(); }; el.title="Open this game";
+    el.appendChild(_lvBoard(V, true));
+    const fr=finRow(); if(fr) el.appendChild(fr);
+    if(M && M.flow && LV.lay<=2) el.appendChild(_lvLine(M, V, 34));
+    el.appendChild((V.feed && M)? _lvPlayRows(V, _lvPlays(V, M, 2, false), "two") : wait());
+    return el;
+  }
+  el.onclick=null; el.title="";
+  let head=el.querySelector(":scope > .lv-head");
+  if(!head){ head=h("div",{class:"lv-head"}); el.insertBefore(head, el.firstChild); }
+  if(P.a!==sigA){
+    head.innerHTML=""; P.a=sigA;
+    head.appendChild(_lvBoard(V, false));
+    const fr=finRow(); if(fr) head.appendChild(fr);
+    const rb=_lvRpBar(V); if(rb) head.appendChild(rb);
+    if(M && M.flow) head.appendChild(_lvLine(M, V, 64));
+    if(!V.feed) head.appendChild(wait());
+  }
+  let tabs=el.querySelector(":scope > .lv-tabs2"), body=el.querySelector(":scope > .lv-pbody");
+  if(!V.feed || !M){ if(tabs) tabs.remove(); if(body) body.remove(); P.t=""; P.b=""; return el; }
+  if(!tabs || P.t!==tab){
+    const nt=h("div",{class:"lv-tabs2"}, LV_TABS.map(x=>h("button",{type:"button", class:"lv-t2"+(tab===x[0]? " on" : ""),
+      onclick:()=>{ LV.tab[id]=x[0]; LV.dirty=true; _lvPaint(); }}, x[1])));
+    if(tabs) tabs.replaceWith(nt); else el.appendChild(nt);
+    tabs=nt; P.t=tab;
+  }
+  if(!body){ body=h("div",{class:"lv-pbody"}); el.appendChild(body); P.b=""; }
+  if(P.b!==sigB){
+    body.style.minHeight=body.offsetHeight? body.offsetHeight+"px" : "";
+    body.innerHTML="";
+    try{ body.appendChild(_lvFullBody(V, M)); }catch(e){ _quiet(e); body.appendChild(h("div",{class:"lv-e"},"This part could not be drawn.")); }
+    body.style.minHeight=""; P.b=sigB;
+  }
+  return el;
+}
+/* a finished game: the game sheet as always. Until the league has written it (some minutes after
+   the end) it is drawn from the play by play of the live channel. */
+function _lvSheet(id){
+  id=String(id);
+  const V=_lvView(id), g=Object.assign({}, _lvGame(id));
+  if(!_lgDone(g) && V.hs!=null){ g.hs=V.hs; g.as=V.as; }
+  if((!g.quarters || !g.quarters.length) && V.Q.length) g.quarters=V.Q.map(q=>[q[0], q[1]]);
+  if(!_lgGameMemo[id] && V.j && V.j.feed && !V.rp){
+    const lj=V.j;
+    _lgGameMemo[id]=fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(id)).then(r=>r.json())
+      .then(j=>{ if(j && j.feed && (j.feed.actions||[]).length) return j; setTimeout(()=>{ delete _lgGameMemo[id]; }, 0); return lj; })
+      .catch(()=>{ setTimeout(()=>{ delete _lgGameMemo[id]; }, 0); return lj; });
+  }
+  _lgGameOpen(g);
+}
+/* THE WINDOW. Over the page; a tab per game; 1, 2, 3 or 4 on the screen at once (four is two by
+   two); "—" folds it into a strip at the bottom that follows the staff round the hub and keeps
+   counting; × closes it. On a phone one game at a time, the next one a swipe away. */
+function _lvOpen(id, split){
+  id=id? String(id) : "";
+  if(id && LV.ids.indexOf(id)<0){
+    if(LV.ids.length>=4){ try{ toast("Four games at most: close one first"); }catch(e){_quiet(e)} }
+    else LV.ids.push(id);
+  }
+  if(id && LV.ids.indexOf(id)>=0) LV.focus=id;
+  if(!LV.focus || LV.ids.indexOf(LV.focus)<0) LV.focus=LV.ids[0]||"";
+  if(split) LV.lay=Math.min(4, Math.max(1, LV.ids.length)); else if(id) LV.lay=1;
+  LV.open=true; LV.min=false; LV.menu=false; LV.dirty=true; LV.fullAt=0;
+  _lvPaint();
+}
+function _lvDrop(id){
+  id=String(id); LV.ids=LV.ids.filter(x=>x!==id); delete LV.rp[id]; delete LV.pan[id];
+  if(LV.focus===id) LV.focus=LV.ids[0]||"";
+  if(!LV.ids.length){ LV.open=false; LV.min=false; }
+  LV.lay=Math.min(LV.lay, Math.max(1, LV.ids.length)); LV.dirty=true; _lvPaint();
+}
+function _lvClose(){ LV.open=false; LV.min=false; LV.ids=[]; LV.rp={}; LV.pan={}; LV.focus=""; LV.menu=false; LV.dirty=true; _lvPaint(); }
+/* REPLAY: a finished game, read once, played again from the tip-off */
+async function _lvReplay(g){
+  const id=String(g.id);
+  if(LV.ids.indexOf(id)>=0 && LV.rp[id]){ LV.focus=id; LV.dirty=true; _lvPaint(); return; }
+  if(LV.ids.length>=4){ try{ toast("Four games at most: close one first"); }catch(e){_quiet(e)} return; }
+  LV.menu=false; LV.err=""; LV.dirty=true;
+  const Jf=await _gpFetchJ("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(id), 12000);
+  if(!Jf || !Jf.feed || !(Jf.feed.actions||[]).length){ try{ toast("This game has no play by play"); }catch(e){_quiet(e)} return; }
+  const end=(Jf.feed.actions||[]).reduce((m,a)=>Math.max(m, _lgGameElapsed(a.quarter, a.time).t), 0);
+  LV.rp[id]={ Jf:Jf, T:0, end:end, speed:10, playing:true };
+  _lvOpen(id, LV.ids.length>=1);
+}
+function _lvAddMenu(){
+  const L=leagueState(), liveIds=_lvLiveIds().filter(id=>LV.ids.indexOf(id)<0);
+  const menu=h("div",{class:"lv-menu", onclick:e=>e.stopPropagation()});
+  const row=(g, sub, fn)=>h("button",{type:"button", class:"lv-mi", onclick:fn}, h("b",{}, g.homeTlc+" – "+g.awayTlc), h("span",{}, sub));
+  menu.appendChild(h("div",{class:"lv-mh"},"Being played"));
+  if(liveIds.length) liveIds.forEach(id=>{ const g=_lvGame(id), s=_lvScore(id);
+    menu.appendChild(row(g, (s? s.h+"–"+s.a+" · " : "")+_lvWhere(LV.gc[id]), ()=>_lvOpen(id, true))); });
+  else menu.appendChild(h("div",{class:"lv-me"}, LV.gcAt? "No other game is being played now" : "Asking the league what is being played…"));
+  if(!isPlayerUser()){
+    const past=((L.games||[]).concat(L.cup||[])).filter(_lgDone).filter((x,i,A)=>A.findIndex(y=>String(y.id)===String(x.id))===i)
+      .sort((a,b)=>String(b.date+(b.time||"")).localeCompare(String(a.date+(a.time||"")))).slice(0,12);
+    if(past.length){
+      menu.appendChild(h("div",{class:"lv-mh"},"Replay a finished game", h("span",{}," · to try the window")));
+      past.forEach(x=>{ const g=_lvGame(x.id); menu.appendChild(row(g, String(x.date).slice(8,10)+"/"+String(x.date).slice(5,7)+" · "+x.hs+"–"+x.as+" · replay", ()=>_lvReplay(x))); });
+    }
+  }
+  return menu;
+}
+function _lvPaint(){
+  try{ _lvPaintRows(); }catch(e){_quiet(e)}
+  try{ _lvPaintWin(); }catch(e){_quiet(e)}
+  try{ _lvPaintStrip(); }catch(e){_quiet(e)}
+}
+function _lvPaintWin(){
+  if(!LV.open || LV.min || !LV.ids.length){ if(LV.back){ LV.back.remove(); LV.back=null; } return; }
+  if(!LV.back){
+    LV.back=h("div",{class:"lv-back", onclick:()=>{ LV.min=true; LV.dirty=true; _lvPaint(); }});
+    document.body.appendChild(LV.back);
+    /* a swipe on a phone moves to the next game */
+    let x0=null, y0=null;
+    LV.back.addEventListener("touchstart", e=>{ const t=e.touches[0]; x0=t.clientX; y0=t.clientY; }, { passive:true });
+    LV.back.addEventListener("touchend", e=>{ if(x0==null || _lvWide()) return; const t=e.changedTouches[0], dx=t.clientX-x0, dy=t.clientY-y0; x0=null;
+      if(Math.abs(dx)<70 || Math.abs(dy)>Math.abs(dx)*0.7 || e.target.closest(".lgg-scroll,.lv-tabs,.lv-tabs2")) return;
+      const i=LV.ids.indexOf(LV.focus), k=(i+(dx<0? 1 : -1)+LV.ids.length)%LV.ids.length; LV.focus=LV.ids[k]; LV.dirty=true; _lvPaint(); });
+  }
+  const wide=_lvWide(), lay=wide? Math.min(LV.lay, LV.ids.length) : 1;
+  const fi=Math.max(0, LV.ids.indexOf(LV.focus)), shown=[];
+  for(let k=0;k<lay;k++) shown.push(LV.ids[(fi+k)%LV.ids.length]);
+  const views=LV.ids.map(id=>_lvView(id));
+  const win=LV.back.firstChild || h("div",{class:"lv", onclick:e=>{ e.stopPropagation(); if(LV.menu && !e.target.closest(".lv-addw")){ LV.menu=false; LV.dirty=true; _lvPaint(); } }});
+  if(!win.parentNode) LV.back.appendChild(win);
+  win.className="lv"+(lay>1? " split" : "");
+  /* the bar is drawn again only when something on it has changed (a score, the games, the menu) */
+  const topSig=JSON.stringify([views.map(V=>[V.id, V.hs, V.as, V.live, V.fin, !!V.rp]), shown, lay, wide, LV.menu, LV.menu? [_lvLiveIds(), LV.gcAt>0] : 0]);
+  if(win.__top!==topSig || !win.querySelector(":scope > .lv-top")){
+    win.__top=topSig;
+    const tabs=h("div",{class:"lv-tabs"}, views.map(V=>{ const id=V.id, g=V.g;
+      return h("div",{class:"lv-tab"+(shown.indexOf(id)>=0? " on" : "")+(V.live && !V.rp? " live" : ""), title:g.home+" – "+g.away, onclick:()=>{ LV.focus=id; LV.dirty=true; _lvPaint(); }},
+        (V.live && !V.rp)? h("i",{class:"lv-dot"}) : null, V.rp? h("em",{title:"replay"},"R") : null,
+        h("span",{}, g.homeTlc+" "+(V.hs==null? "–" : V.hs)+"–"+(V.as==null? "–" : V.as)+" "+g.awayTlc), V.fin? h("small",{},"F") : null,
+        h("button",{type:"button", class:"lv-tx", title:"Close this game", onclick:e=>{ e.stopPropagation(); _lvDrop(id); }},"×")); }));
+    const add=h("div",{class:"lv-addw"}, h("button",{type:"button", class:"lv-b lv-add"+(LV.menu? " on" : ""), onclick:e=>{ e.stopPropagation(); LV.menu=!LV.menu; LV.dirty=true; _lvPaint(); }}, "+ Add game"),
+      LV.menu? _lvAddMenu() : null);
+    const lays=wide && LV.ids.length>1? h("div",{class:"lv-lays", title:"games on the screen at once"}, [1,2,3,4].filter(n=>n<=LV.ids.length).map(n=>
+      h("button",{type:"button", class:"lv-b"+(lay===n? " on" : ""), onclick:()=>{ LV.lay=n; LV.dirty=true; _lvPaint(); }}, String(n)))) : null;
+    const top=h("div",{class:"lv-top"}, tabs, add, lays,
+      h("button",{type:"button", class:"lv-b", title:"Fold into a strip at the bottom", onclick:()=>{ LV.min=true; LV.menu=false; LV.dirty=true; _lvPaint(); }},"—"),
+      h("button",{type:"button", class:"lv-b", title:"Close the live window", onclick:_lvClose},"×"));
+    const oldTop=win.querySelector(":scope > .lv-top"); if(oldTop) oldTop.replaceWith(top); else win.insertBefore(top, win.firstChild);
+  }
+  /* the panels stay where they are: they are put in again only when the games on the screen change,
+     so a table being read keeps its place while the game goes on */
+  let grid=win.querySelector(":scope > .lv-grid"); if(!grid){ grid=h("div",{}); win.appendChild(grid); }
+  grid.className="lv-grid n"+lay;
+  const els=shown.map(id=>_lvPanel(id, lay>1));
+  const cur=Array.from(grid.children);
+  if(cur.length!==els.length || cur.some((c,i)=>c!==els[i])){ grid.innerHTML=""; els.forEach(e=>grid.appendChild(e)); }
+}
+function _lvPaintStrip(){
+  const want=LV.min && LV.ids.length;
+  if(!want){ if(LV.strip){ LV.strip.remove(); LV.strip=null; } return; }
+  if(!LV.strip){ LV.strip=h("div",{class:"lv-strip"}); document.body.appendChild(LV.strip); }
+  LV.strip.innerHTML="";
+  LV.ids.forEach(id=>{ const V=_lvView(id), g=V.g;
+    LV.strip.appendChild(h("button",{type:"button", class:"lv-sg"+(V.live && !V.rp? " live" : ""), title:"Open this game", onclick:()=>{ LV.focus=id; LV.lay=1; LV.min=false; LV.open=true; LV.dirty=true; _lvPaint(); }},
+      (V.live && !V.rp)? h("i",{class:"lv-dot"}) : V.rp? h("em",{},"R") : null,
+      h("b",{}, g.homeTlc+" "+(V.hs==null? "–" : V.hs)+"–"+(V.as==null? "–" : V.as)+" "+g.awayTlc), h("span",{}, V.fin? "Final" : V.where))); });
+  if(LV.ids.length>1) LV.strip.appendChild(h("button",{type:"button", class:"lv-sb", onclick:()=>{ LV.lay=Math.min(4, LV.ids.length); LV.min=false; LV.open=true; LV.dirty=true; _lvPaint(); }},"Show all"));
+  LV.strip.appendChild(h("button",{type:"button", class:"lv-sb", title:"Close the live window", onclick:_lvClose},"×"));
+}
+/* THE ROWS OF THE LEAGUE PAGE. A game being played says so where its date was - a red dot and
+   LIVE, a "+" to put it beside the ones already open - and its score runs, with the quarter and
+   the clock under it. A game that has just ended shows its final score and opens the game sheet
+   before the league's list of results has caught up. */
+function _lvRowPaint(row){
+  const g=row.__g; if(!g) return;
+  const id=String(g.id), live=_lvGcLive(id), fin=!_lgDone(g) && _lvGcFin(id);
+  const dt=row.querySelector(".lg-md-date"), sc=row.querySelector(".lg-md-sc");
+  if(!dt || !sc) return;
+  if(row.__d0==null){ row.__d0=Array.from(dt.childNodes); row.__s0=sc.textContent; }
+  const s=(live || fin)? _lvScore(id) : null, where=live? _lvWhere(LV.gc[id]) : fin? "Final" : "";
+  const sig=JSON.stringify([live, fin, s, where]);
+  if(row.__lv===sig) return; row.__lv=sig;
+  row.classList.toggle("lv-on", live); row.classList.toggle("lv-fin", fin);
+  if(live || fin) row.classList.add("open");
+  if(live){
+    dt.innerHTML=""; dt.appendChild(h("span",{class:"lv-badge"}, h("i",{class:"lv-dot"}), "LIVE"));
+    dt.appendChild(h("button",{type:"button", class:"lv-plus", title:"Watch it beside the games already open", onclick:e=>{ e.stopPropagation(); _lvOpen(id, true); }},"+"));
+  } else { dt.innerHTML=""; row.__d0.forEach(n=>dt.appendChild(n)); }
+  sc.innerHTML="";
+  if(live || fin){ sc.appendChild(h("span",{}, s? s.h+" : "+s.a : "– : –")); if(where) sc.appendChild(h("i",{class:"lv-where"}, where)); }
+  else sc.textContent=row.__s0;
+  row.title=live? "Open the live game" : (fin || _lgDone(g))? "Open the game" : "";
+}
+function _lvPaintRows(){
+  document.querySelectorAll(".lg-md-row").forEach(r=>{ if(r.__g) _lvRowPaint(r); });
+  const live=_lvLiveIds().length;
+  const tab=document.querySelector('.tb-tab[data-view="league"]'); if(tab) tab.classList.toggle("lv-dot-on", live>0);
+  document.querySelectorAll(".lv-hbtn").forEach(b=>{ b.classList.toggle("on", live>0); b.textContent=live? "● Live · "+live : "Live"; });
+}
+function _lvRowClick(g){
+  const id=String(g.id);
+  if(_lvGcLive(id)) return _lvOpen(id, false);
+  if(!_lgDone(g) && _lvGcFin(id)) return _lvSheet(id);
+  if(_lgDone(g)) _lgGameOpen(g);
+}
+/* the button of the Results panel: the window, with the games being played - or, with none, the replays */
+function _lvBtn(){
+  if(isPlayerUser()) return null;
+  return h("button",{type:"button", class:"btn sm lv-hbtn", title:"The live window: the games being played, up to four at once",
+    onclick:()=>{ const ids=_lvLiveIds(); if(ids.length && !LV.ids.length) ids.slice(0,4).forEach(id=>{ if(LV.ids.indexOf(id)<0) LV.ids.push(id); });
+      if(!LV.ids.length){ LV.open=true; LV.min=false; LV.menu=true; LV.dirty=true; _lvPaintEmpty(); return; }
+      _lvOpen("", LV.ids.length>1); }}, "Live");
+}
+/* the window with nothing open yet: only the menu, to pick a game being played or a replay */
+function _lvPaintEmpty(){
+  if(LV.back){ LV.back.remove(); LV.back=null; }
+  const close=()=>{ b.remove(); LV.open=false; LV.menu=false; };
+  const b=h("div",{class:"lv-back", onclick:close},
+    h("div",{class:"lv lv-empty", onclick:e=>e.stopPropagation()},
+      h("div",{class:"lv-top"}, h("b",{class:"lv-tt"},"Live"), h("div",{class:"spacer"}), h("button",{type:"button", class:"lv-b", onclick:close},"×")),
+      _lvAddMenu()));
+  document.body.appendChild(b);
+  b.querySelectorAll(".lv-mi").forEach(x=>x.addEventListener("click", ()=>{ if(b.isConnected) b.remove(); }));
+}
+async function _lvCall(full, lite){
+  LV.busy=Date.now();
+  const enc=a=>a.map(encodeURIComponent).join(",");
+  const url="/.netlify/functions/bbl?res=live"+(full.length? "&ids="+enc(full) : "")+(lite.length? "&lite="+enc(lite) : "")+"&b="+Math.floor(Date.now()/2000);
+  const j=await _gpFetchJ(url, 9000);
+  LV.busy=0; const now=Date.now(); if(full.length) LV.fullAt=now; if(lite.length || !full.length) LV.liteAt=now;
+  if(!j || !j.games){ LV.err=(navigator.onLine===false)? "this device is offline" : (j && (j.errors||[])[0]) || "no answer from the league"; LV.dirty=true; return; }
+  LV.err="";
+  Object.keys(j.games).forEach(id=>{ const x=j.games[id], D=LV.data[id]||(LV.data[id]={});
+    if(x.feed){
+      /* a reading with fewer plays than the one on the screen is let go, unless it stays that way for
+         half a minute (the league took a play away) - so the score never steps back */
+      const nNew=(x.feed.actions||[]).length, nOld=(D.j && D.j.feed && (D.j.feed.actions||[]).length)||0;
+      if(nNew<nOld){ if(!D.back) D.back=now; if(now-D.back<30000) return; } D.back=0;
+      D.j={ game:x.game || (D.j && D.j.game) || null, feed:x.feed }; D.at=now;
+    } else if(x.lite){
+      const old=LV.lite[id];
+      if(old && x.lite.n<old.n){ if(!old.back) old.back=now; if(now-old.back<30000) return; }
+      LV.lite[id]=Object.assign({ at:now }, x.lite);
+    }
+  });
+  if((j.errors||[]).length && !Object.keys(j.games).some(id=>j.games[id].feed || j.games[id].lite)) LV.err=String(j.errors[0]);
+  LV.dirty=true;
+}
+async function _lvGcCall(){
+  LV.gcBusy=Date.now();
+  const g2=await _gpFetchJ("/.netlify/functions/bbl?res=gamecenter&b="+Math.floor(Date.now()/2000), 6000);
+  LV.gcBusy=0; LV.gcAt=Date.now();
+  if(!g2) return;
+  [].concat(g2.present||[], g2.past||[]).forEach(x=>{ const id=String(x.id), old=LV.gc[id];
+    /* the league answers from more than one server and one can be behind: within a quarter the clock
+       only runs down, so an answer with more time left is let go for half a minute (see the bench) */
+    if(old && old.status==="LIVE" && x.status==="LIVE" && x.progress===old.progress && _lvLeft(x)>_lvLeft(old)){
+      if(!old._back) old._back=Date.now(); if(Date.now()-old._back<30000) return; }
+    if(old && /^(POST|OFFICIAL)$/.test(String(old.status||"")) && x.status==="LIVE") return;
+    LV.gc[id]=x;
+    /* a game that has just ended is read once more at once, so its last plays and its final score are in */
+    if(/^(POST|OFFICIAL)$/.test(String(x.status||"")) && old && old.status==="LIVE"){
+      const D=LV.data[id]||(LV.data[id]={}); if(!D.finAt) D.finAt=Date.now(); LV.fullAt=0; LV.liteAt=0; }
+  });
+  LV.dirty=true;
+}
+/* THE CLOCK OF IT ALL, once a second: the replays move, the league is asked when it is time, and
+   whatever has moved is drawn again. Nothing is asked of the league while the page is hidden,
+   and nothing at all on a day without games unless the League page or the window is open. */
+function _lvLoop(){
+  const now=Date.now(), dt=LV.last? Math.min(5, (now-LV.last)/1000) : 1; LV.last=now;
+  Object.keys(LV.rp).forEach(id=>{ const r=LV.rp[id]; if(!r.playing || LV.ids.indexOf(id)<0) return;
+    r.T=Math.min(r.end, r.T+dt*r.speed); if(r.T>=r.end) r.playing=false; LV.dirty=true; });
+  const vis=!(document.visibilityState && document.visibilityState!=="visible");
+  if(vis){
+    const lgv=document.getElementById("viewLeague"), onLg=!!(lgv && lgv.style.display!=="none" && lgv.offsetParent!==null);
+    let day=false;
+    try{ const L=leagueState(), today=todayISO(); day=((L.games||[]).concat(L.cup||[])).some(g=>g.date===today); }catch(e){_quiet(e)}
+    const watching=onLg || LV.open || LV.min, liveIds=_lvLiveIds();
+    /* with a game being played open in the window, the game centre is asked with the play by play
+       (every 3 s): it says the clock and the breaks, which the plays alone do not */
+    const fullOn=LV.open && !LV.min && LV.ids.some(id=>!LV.rp[id] && _lvGcLive(id));
+    const every=fullOn? 3000 : liveIds.length? 15000 : day? 30000 : watching? 300000 : 0;
+    if(every && (!LV.gcBusy || now-LV.gcBusy>10000) && now-LV.gcAt>=every) _lvGcCall();
+    if(!LV.busy || now-LV.busy>12000){
+      const recent=id=>{ const D=LV.data[id]; return _lvGcFin(id) && D && D.finAt && now-D.finAt<60000; };
+      const openLive=LV.ids.filter(id=>!LV.rp[id] && (_lvGcLive(id) || recent(id)));
+      const others=liveIds.concat(Object.keys(LV.data).filter(recent)).filter((id,i,A)=>A.indexOf(id)===i && openLive.indexOf(id)<0);
+      if(LV.open && !LV.min && openLive.length && now-LV.fullAt>=3000) _lvCall(openLive, others);
+      else if((onLg || LV.open || LV.min) && (openLive.length || others.length) && now-LV.liteAt>=10000) _lvCall([], openLive.concat(others));
+    }
+  }
+  if(LV.dirty){ LV.dirty=false; _lvPaint(); }
+}
+document.addEventListener("keydown", e=>{
+  if(e.key!=="Escape" || !LV.back || document.querySelector(".lgg-back")) return;
+  if(LV.menu){ LV.menu=false; } else LV.min=true;
+  LV.dirty=true; _lvPaint();
+});
+window.addEventListener("resize", ()=>{ if(LV.back){ LV.dirty=true; } });
+setTimeout(()=>{ setInterval(()=>{ try{ _lvLoop(); }catch(e){ _quiet(e); } }, 1000); }, 2500);
 function _lgMdCol(title, games, tag, grp, selId){
   const col=h("div",{class:"lg-mdc"});
   const when=(games&&games.length)? (games.map(g=>g.date||"").filter(Boolean).sort()[0]||"") : "";
@@ -25423,7 +26012,7 @@ function _lgMdCol(title, games, tag, grp, selId){
 }
 function _lgResults(L){
   const P=_lgPair(L);
-  const box=_lgPanel("Results", null);
+  const box=_lgPanel("Results", _lvBtn());
   if(!P.n && !_lgCupGames(L).length){
     box.appendChild(h("div",{class:"lg-empty"},"No games in the feed.")); return box;
   }
@@ -38750,6 +39339,174 @@ body.dark .lg-md-row.sel{background:rgba(224,199,129,.12)}
 /* a finished game opens over the page */
 .lg-md-row.open{cursor:pointer}
 .lg-md-row.open:hover{background:rgba(201,162,39,.16);border-radius:6px}
+/* LIVE IN THE LEAGUE (LV in the script): the rows, the dot on the menu, the window over the
+   page, the strip at the bottom. Red means "being played" and nothing else here. */
+:root{--lv-red:#d0392f;--lv-h:#b8893a;--lv-a:#3f7bd0}
+body.dark{--lv-red:#ff6b5e;--lv-h:#d9ad5c;--lv-a:#6fa1ec}
+.lv-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--lv-red);flex:none;animation:lvPulse 1.6s ease-in-out infinite}
+@keyframes lvPulse{0%,100%{opacity:1}50%{opacity:.3}}
+.lg-md-row.lv-on{box-shadow:inset 3px 0 0 var(--lv-red);border-radius:0 6px 6px 0}
+.lv-badge{display:inline-flex;align-items:center;gap:5px;font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;color:var(--lv-red);vertical-align:middle}
+.lv-plus{margin-left:6px;width:20px;height:20px;border-radius:50%;border:1px solid var(--line-strong,#cfd4dc);background:var(--panel,#fff);color:var(--ink-soft,#5b6472);font:600 14px/1 system-ui,sans-serif;cursor:pointer;padding:0;vertical-align:middle}
+.lv-plus:hover,.lv-plus:focus-visible{border-color:var(--lv-red);color:var(--lv-red)}
+.lg-md-sc > span{display:block}
+.lg-md-sc .lv-where{display:block;font:600 10.5px/1.25 'IBM Plex Mono',monospace;font-style:normal;color:var(--lv-red);white-space:nowrap}
+.lg-md-row.lv-fin .lv-where{color:var(--ink-faint,#8a919c)}
+.tb-tab[data-view="league"].lv-dot-on{position:relative}
+.tb-tab[data-view="league"].lv-dot-on::after{content:"";position:absolute;top:4px;right:3px;width:7px;height:7px;border-radius:50%;background:var(--lv-red);animation:lvPulse 1.6s ease-in-out infinite}
+.lv-hbtn.on{color:var(--lv-red);border-color:var(--lv-red)}
+/* the window */
+.lv-back{position:fixed;inset:0;z-index:8990;background:rgba(10,13,18,.62);overflow:auto;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 16px max(16px,env(safe-area-inset-left,0px))}
+.lv{position:relative;margin:0 auto;width:min(1080px,100%);background:var(--panel,#fff);color:var(--ink,#141821);border:1px solid var(--line,#e4e7ec);border-radius:16px;padding:12px 16px 18px;box-shadow:0 24px 60px rgba(0,0,0,.35)}
+.lv.split{width:min(1500px,100%)}
+.lv-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:10px;border-bottom:1px solid var(--line,#e4e7ec);margin-bottom:12px}
+.lv-tt{font:700 14px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase}
+.lv-tabs{display:flex;gap:6px;flex:1 1 auto;min-width:0;overflow-x:auto;scrollbar-width:none}
+.lv-tabs::-webkit-scrollbar{display:none}
+.lv-tab{display:inline-flex;align-items:center;gap:6px;flex:none;padding:4px 4px 4px 10px;border-radius:9px;border:1px solid var(--line,#e4e7ec);font:600 12.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);cursor:pointer;background:var(--panel,#fff)}
+.lv-tab.on{border-color:var(--ink,#141821);color:var(--ink,#141821);background:var(--panel-2,#f4f5f7)}
+.lv-tab em,.lv-sg em{font:700 10px 'Oswald',sans-serif;font-style:normal;letter-spacing:.08em;color:#fff;background:var(--ink-faint,#8a93a2);border-radius:4px;padding:1px 4px}
+.lv-tab small{font:700 10px 'Oswald',sans-serif;letter-spacing:.08em;color:var(--ink-faint,#8a93a2)}
+.lv-tx{border:0;background:transparent;color:var(--ink-faint,#8a93a2);font-size:16px;line-height:1;width:22px;height:22px;border-radius:6px;cursor:pointer;padding:0}
+.lv-tx:hover{background:var(--line,#e4e7ec);color:var(--ink,#141821)}
+.lv-b{border:1px solid var(--line,#e4e7ec);background:var(--panel,#fff);color:var(--ink-soft,#5b6472);border-radius:8px;min-width:30px;height:30px;padding:0 9px;font:600 12.5px system-ui,sans-serif;cursor:pointer;flex:none}
+.lv-b:hover{border-color:var(--line-strong,#cfd4dc);color:var(--ink,#141821)}
+.lv-b.on{background:var(--ink,#141821);border-color:var(--ink,#141821);color:var(--panel,#fff)}
+.lv-lays{display:flex;gap:3px}
+.lv-lays .lv-b{min-width:28px;padding:0 6px;font-family:'IBM Plex Mono',monospace}
+.lv-addw{position:relative;flex:none}
+.lv-menu{position:absolute;top:36px;right:0;z-index:3;width:min(340px,86vw);max-height:min(460px,70vh);overflow:auto;background:var(--panel,#fff);border:1px solid var(--line,#e4e7ec);border-radius:12px;box-shadow:0 14px 36px rgba(0,0,0,.22);padding:6px}
+.lv-empty .lv-menu{position:static;width:auto;max-height:none;box-shadow:none;border:0;padding:0}
+.lv-empty{width:min(420px,100%)}
+.lv-mh{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);padding:8px 8px 4px}
+.lv-mh span{text-transform:none;letter-spacing:0;font:400 11px system-ui,sans-serif}
+.lv-me{font-size:12px;color:var(--ink-faint,#8a93a2);padding:4px 8px 8px}
+.lv-mi{display:flex;justify-content:space-between;align-items:baseline;gap:10px;width:100%;border:0;background:transparent;border-radius:8px;padding:7px 8px;cursor:pointer;color:var(--ink,#141821);text-align:left}
+.lv-mi:hover{background:var(--panel-2,#f4f5f7)}
+.lv-mi b{font:600 13px 'IBM Plex Mono',monospace}
+.lv-mi span{font-size:11.5px;color:var(--ink-faint,#8a93a2);white-space:nowrap}
+.lv-grid{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
+.lv-p{min-width:0}
+.lv-grid.n2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.lv-grid.n3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.lv-grid.n4{grid-template-columns:repeat(2,minmax(0,1fr))}
+.lv-p.mini{border:1px solid var(--line,#e4e7ec);border-radius:12px;padding:12px 14px;cursor:pointer;min-width:0}
+.lv-p.mini:hover{border-color:var(--line-strong,#cfd4dc)}
+.lv-p.mini.live{box-shadow:inset 0 3px 0 var(--lv-red)}
+/* the scoreboard */
+.lv-board{display:flex;flex-direction:column;align-items:center;gap:6px}
+.lv-sc{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:16px;width:100%}
+.lv-tm{display:flex;align-items:center;gap:10px;min-width:0;font:600 15px 'Oswald',sans-serif;letter-spacing:.02em;color:var(--ink-soft,#5b6472)}
+.lv-tm.r{justify-content:flex-end;text-align:right}
+.lv-tm.up{color:var(--ink,#141821)}
+.lv-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lv-crest{width:34px;height:34px;flex:none}
+.lv-nums{display:flex;align-items:baseline;gap:8px;font:700 54px/1 'Inter',system-ui,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.lv-nums i{font-style:normal;color:var(--ink-faint,#8a93a2);font-weight:400;font-size:.6em;transform:translateY(-.12em)}
+.lv-st{display:inline-flex;align-items:center;gap:6px;font:600 12px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.lv-st b{font:700 12px 'Oswald',sans-serif;letter-spacing:.14em}
+.lv-st.on,.lv-st.on b{color:var(--lv-red)}
+.lv-st.rp b{color:#fff;background:var(--ink-faint,#8a93a2);border-radius:4px;padding:1px 6px}
+.lv-qs{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 14px;font:500 12px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}
+.lv-qs i{font:700 10.5px 'Oswald',sans-serif;font-style:normal;letter-spacing:.08em;color:var(--ink-faint,#8a93a2)}
+.lv-qs .cur{color:var(--ink,#141821)}
+.lv-qs .cur i{color:var(--lv-red)}
+.lv-sides{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:16px;align-items:center;width:100%;margin-top:2px}
+.lv-side{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--ink-soft,#5b6472)}
+.lv-sides > .lv-side:first-child{justify-content:flex-end}
+.lv-side b{font:700 11px 'Oswald',sans-serif;letter-spacing:.1em;color:var(--ink,#141821)}
+.lv-tf{font:600 12px 'IBM Plex Mono',monospace}
+.lv-tf.warn{color:#a86f0c}
+.lv-tf.pen{color:var(--lv-red)}
+.lv-to{display:inline-flex;align-items:center;gap:3px;font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+.lv-to i{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--line-strong,#cfd4dc)}
+.lv-to i.on{background:var(--ink-soft,#5b6472);border-color:var(--ink-soft,#5b6472)}
+.lv-ar{font:600 11.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);white-space:nowrap}
+.lv-notes{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
+.lv-n{font:600 11.5px system-ui,sans-serif;border-radius:999px;padding:3px 10px;background:var(--panel-2,#f4f5f7);color:var(--ink-soft,#5b6472);border:1px solid var(--line,#e4e7ec)}
+.lv-n.warn{background:rgba(208,57,47,.10);border-color:rgba(208,57,47,.35);color:var(--lv-red)}
+.lv-n.ft{background:rgba(168,111,12,.10);border-color:rgba(168,111,12,.35);color:#8d5d08}
+body.dark .lv-n.ft{color:#e2b35a}
+.lv-n.h{box-shadow:inset 3px 0 0 var(--lv-h)}
+.lv-n.a{box-shadow:inset 3px 0 0 var(--lv-a)}
+.lv-board.mini{align-items:stretch}
+.lv-board.mini .lv-sc{gap:10px}
+.lv-board.mini .lv-tm{font-size:14px;gap:7px}
+.lv-board.mini .lv-crest{width:24px;height:24px}
+.lv-board.mini .lv-nums{font-size:38px}
+.lv-grid.n3 .lv-board.mini .lv-nums,.lv-grid.n4 .lv-board.mini .lv-nums{font-size:32px}
+.lv-board.mini .lv-st{align-self:center}
+.lv-board.mini .lv-notes{justify-content:flex-start}
+.lv-finrow{display:flex;justify-content:center;margin:8px 0 2px}
+/* the replay's controls */
+.lv-rp{display:flex;align-items:center;flex-wrap:wrap;gap:6px;justify-content:center;margin:10px 0 0;font-size:11.5px;color:var(--ink-faint,#8a93a2)}
+.lv-rp > b{font:700 11px 'Oswald',sans-serif;letter-spacing:.14em;color:#fff;background:var(--ink-faint,#8a93a2);border-radius:4px;padding:2px 7px}
+.lv-rp .lv-b{height:26px;min-width:26px;font-size:12px}
+/* the margin */
+.lv-line{display:block;width:100%;height:64px;margin:12px 0 4px}
+.lv-p.mini .lv-line{height:34px;margin:8px 0 2px}
+.lv-lq{stroke:var(--line,#e4e7ec);stroke-width:1;vector-effect:non-scaling-stroke}
+.lv-l0{stroke:var(--line-strong,#cfd4dc);stroke-width:1;vector-effect:non-scaling-stroke}
+.lv-lh{fill:var(--lv-h);opacity:.22}
+.lv-la{fill:var(--lv-a);opacity:.22}
+.lv-ll{fill:none;stroke:var(--ink,#141821);stroke-width:1.6;vector-effect:non-scaling-stroke}
+.lv-lnow{stroke:var(--lv-red);stroke-width:1.5;stroke-dasharray:3 3;vector-effect:non-scaling-stroke}
+/* the tabs of one game */
+.lv-tabs2{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--line,#e4e7ec);margin:12px 0 12px}
+.lv-t2{border:0;background:transparent;padding:7px 10px;font:600 12.5px system-ui,sans-serif;color:var(--ink-soft,#5b6472);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer}
+.lv-t2.on{color:var(--ink,#141821);border-bottom-color:var(--ink,#141821)}
+.lv-kps{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:var(--ink-faint,#8a93a2);margin-bottom:12px}
+.lv-kps i{font-style:normal}
+.lv-kps b{font:600 12.5px 'IBM Plex Mono',monospace;color:var(--ink,#141821)}
+.lv-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 22px;margin-bottom:12px}
+.lv-h{font:700 11px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);margin:2px 0 6px}
+.lv-ct{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+.lv-ct th{font:700 10px 'IBM Plex Mono',monospace;letter-spacing:.06em;color:var(--ink-faint,#8a93a2);text-align:right;padding:3px 5px;border-bottom:1px solid var(--line,#e4e7ec)}
+.lv-ct td{text-align:right;padding:5px 5px;border-bottom:1px solid var(--line,#eef0f3)}
+.lv-ct .l{text-align:left;font-weight:600}
+.lv-ct th.l{color:var(--ink,#141821);font:700 11px 'Oswald',sans-serif;letter-spacing:.1em}
+.lv-ct td.n{color:var(--ink-faint,#8a93a2);font-family:'IBM Plex Mono',monospace;font-size:11.5px;width:28px}
+.lv-ct td.b{font-weight:700}
+.lv-ct td.m{color:var(--ink-faint,#8a93a2);font-family:'IBM Plex Mono',monospace;font-size:11.5px}
+.lv-ct td.pf.hot{color:var(--lv-red);font-weight:800}
+.lv-ct td.pf.out{color:#fff;background:var(--lv-red);font-weight:800;border-radius:4px}
+.lv-plays{display:flex;flex-direction:column}
+.lv-pl{display:grid;grid-template-columns:62px 34px minmax(0,1fr) auto;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--line,#eef0f3);font-size:12.5px}
+.lv-pl .t{font:500 11px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+.lv-pl .w{font:700 11px 'Oswald',sans-serif;letter-spacing:.08em}
+.lv-pl .w.h{color:var(--lv-h)}
+.lv-pl .w.a{color:var(--lv-a)}
+.lv-pl .x{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-soft,#5b6472)}
+.lv-pl.sc .x{color:var(--ink,#141821)}
+.lv-pl .s{font:700 12px 'IBM Plex Mono',monospace}
+.lv-plays.two .lv-pl{grid-template-columns:58px 30px minmax(0,1fr) auto;font-size:12px}
+.lv-plays.two{margin-top:8px}
+.lv-e{font-size:12.5px;color:var(--ink-faint,#8a93a2);padding:10px 0;text-align:center}
+.lv-sheet{border:0;padding:0;margin:0;background:transparent}
+/* the strip at the bottom, when the window is folded */
+.lv-strip{position:fixed;left:0;right:0;bottom:0;z-index:8980;display:flex;gap:6px;align-items:center;overflow-x:auto;scrollbar-width:none;
+  background:var(--panel,#fff);border-top:1px solid var(--line,#e4e7ec);box-shadow:0 -8px 24px rgba(0,0,0,.12);
+  padding:8px max(16px,env(safe-area-inset-right,0px)) calc(8px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.lv-strip::-webkit-scrollbar{display:none}
+.lv-sg{display:inline-flex;align-items:center;gap:7px;flex:none;border:1px solid var(--line,#e4e7ec);background:var(--panel,#fff);border-radius:9px;padding:5px 10px;cursor:pointer;color:var(--ink,#141821)}
+.lv-sg b{font:700 12.5px 'IBM Plex Mono',monospace}
+.lv-sg span{font:500 11px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+.lv-sg.live span{color:var(--lv-red)}
+.lv-sb{flex:none;border:1px solid var(--line,#e4e7ec);background:transparent;border-radius:9px;height:32px;padding:0 10px;cursor:pointer;color:var(--ink-soft,#5b6472);font:600 12px system-ui,sans-serif}
+@media (max-width:759px){
+  .lv-back{padding:8px 8px 8px}
+  .lv{padding:10px 12px 14px;border-radius:12px}
+  .lv-nums{font-size:40px}
+  .lv-tm{font-size:13px;gap:6px}
+  .lv-crest{width:26px;height:26px}
+  .lv-sc{gap:10px}
+  .lv-sides{grid-template-columns:1fr 1fr;gap:6px 10px}
+  .lv-sides > .lv-ar{grid-column:1 / -1;grid-row:2;text-align:center}
+  .lv-two{grid-template-columns:1fr}
+  .lv-pl{grid-template-columns:52px 30px minmax(0,1fr) auto;gap:6px}
+}
+@media (max-width:600px){ .lv-badge{font-size:0;gap:0} .lv-plus{margin-left:4px;width:18px;height:18px} }
+@media (prefers-reduced-motion:reduce){ .lv-dot,.tb-tab[data-view="league"].lv-dot-on::after{animation:none} }
 .lgg-back{position:fixed;top:0;right:0;bottom:0;left:0;z-index:9000;background:rgba(10,13,18,.62);display:flex;justify-content:center;align-items:flex-start;overflow:auto;padding:28px 16px}
 .lgg{--lgh:#c6a15b;--lga:#4a86d8;position:relative;width:min(1080px,100%);background:var(--panel,#fff);color:var(--ink,#141821);border:1px solid var(--line,#e4e7ec);border-radius:16px;padding:18px 22px 22px;box-shadow:0 24px 60px rgba(0,0,0,.35)}
 .lgg-x{position:absolute;top:10px;right:12px;width:32px;height:32px;border-radius:50%;border:1px solid var(--line,#e4e7ec);background:transparent;color:var(--ink-soft,#5b6472);font-size:20px;line-height:1;cursor:pointer}
