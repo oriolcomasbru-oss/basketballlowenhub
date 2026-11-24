@@ -2107,13 +2107,21 @@ exports.handler = async (event) => {
 
     } else if (res === "history") {
       /* A SEASON THAT IS OVER, for the standings' look back (Oriol, 24/11/2026: where each club stood
-         at this same matchday last season and in the last five). Only what a table needs: the clubs
+         at this same matchday last season, and where it finished in the last three). Only what a table needs: the clubs
          of that season and the main-round results with their matchday. The league-wide schedule
          first (one call); only when it is short of a full main round are the clubs' own schedules
          read, as res=all does for the current season. Held a month - the season does not change. */
       if (!sea.active || season >= sea.active) return reply(400, Object.assign(meta, { ok: false, errors: ["res=history is for a season that is over"] }), 0);
-      const teamsRaw = await api("/v2/teams/" + season + "?competition=BBL", key).catch(e => ({ _error: "teams: " + e.message }));
-      if (teamsRaw && teamsRaw._error) meta.errors.push(teamsRaw._error);
+      /* and the league's own final table of that season (Oriol, 24/11/2026: "más que el actual pon la
+         clasificación final de esa temporada"): its order carries the league's tie-breaks (head to head),
+         which a table rebuilt from the results would not - in 2025/26 ALBA is 2nd ahead of Bamberg on the
+         same 24-10 with the smaller difference */
+      const [teamsRaw, standRaw] = await Promise.all([
+        api("/v2/teams/" + season + "?competition=BBL", key).catch(e => ({ _error: "teams: " + e.message })),
+        api("/v2/standings/?season=" + season, key).catch(e => ({ _error: "standings: " + e.message }))]);
+      [teamsRaw, standRaw].forEach(v => { if (v && v._error) meta.errors.push(v._error); });
+      const standings = (Array.isArray(standRaw) ? standRaw.map(normStanding) : [])
+        .filter(r => r.teamId && r.pos).map(r => ({ pos: r.pos, teamId: r.teamId, team: r.team, gp: r.gp, w: r.w, l: r.l, diff: r.diff }));
       const teamList = Array.isArray(teamsRaw) ? teamsRaw.map(normTeam) : [];
       const byId = Object.create(null);
       const take = rows => { (Array.isArray(rows) ? rows : []).forEach(r => { const g = normGame(r); if (!g.id) return;
@@ -2132,7 +2140,7 @@ exports.handler = async (event) => {
       /* the league's feed holds the games of 2022/23 and before without their results (checked 24/11/2026:
          306 main-round games, none with a score): the clubs of the season are still worth having - they
          say who was in the BBL - so the answer stands, marked as having no results */
-      out = Object.assign(meta, { teams: teamList.map(t => ({ id: t.id, name: t.name, tlc: t.tlc })), games: games, expected: want, noResults: !games.length });
+      out = Object.assign(meta, { teams: teamList.map(t => ({ id: t.id, name: t.name, tlc: t.tlc })), games: games, standings: standings, expected: want, noResults: !games.length });
       out.ok = teamList.length > 0;
 
     } else if (res === "four") {

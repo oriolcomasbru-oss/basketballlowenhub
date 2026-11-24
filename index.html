@@ -22561,31 +22561,35 @@ function _lgStdNote(L){
 }
 /* THE CLUB IN PERSPECTIVE (Oriol, 24/11/2026: "al lado de forms, quiero que pongas qué diferencia
    tiene respecto el año pasado en esa misma jornada su posición. Y al lado su posición en referencia a
-   los últimos 5 años. Si estaba fuera de categoría pon una señal especial.")
-   For each of the last five seasons the table is rebuilt from its results as it stood after the same
-   matchday as now (the matchday most clubs have played), ranked as the position-by-matchday chart
-   ranks (win percentage, then point difference). A club that was not in the BBL that season gets a
-   hatched mark. A season that is over never changes, so each is read once from the league
-   (bbl?res=history) and kept in this browser for good. */
-const LG_HIST_YEARS=5;
+   los últimos 5 años. Si estaba fuera de categoría pon una señal especial." Then the same night:
+   "haz solamente 3 temporadas anteriores. Y más que el actual pon la clasificación final de esa temporada.")
+   Against last season: its table rebuilt from its results as it stood after the same matchday as now
+   (the matchday most clubs have played), ranked as the position-by-matchday chart ranks (win
+   percentage, then point difference). The last three seasons: the league's own final table of each
+   (regular season, with its tie-breaks). A club that was not in the BBL that season gets a hatched
+   mark. A season that is over never changes, so each is read once from the league (bbl?res=history)
+   and kept in this browser for good. */
+const LG_HIST_YEARS=3;
 const _lgHist={ data:{}, busy:false, tried:{} };
 function _lgHistLab(y){ y=+y; return String(y%100).padStart(2,"0")+"/"+String((y+1)%100).padStart(2,"0"); }
 function _lgHistGet(y){
   if(_lgHist.data[y]) return _lgHist.data[y];
-  try{ const s=localStorage.getItem("lw_lghist_v1_"+y); if(s){ const d=JSON.parse(s); if(d && d.games && d.teams){ _lgHist.data[y]=d; return d; } } }catch(e){_quiet(e)}
+  try{ const s=localStorage.getItem("lw_lghist_v2_"+y); if(s){ const d=JSON.parse(s); if(d && d.games && d.teams && d.standings){ _lgHist.data[y]=d; return d; } } }catch(e){_quiet(e)}
   return null;
 }
 async function _lgHistLoad(years){
   if(_lgHist.busy) return; _lgHist.busy=true; let got=false;
+  /* the first version kept the table at this matchday only, under v1: dropped */
+  try{ Object.keys(localStorage).filter(k=>k.indexOf("lw_lghist_v1_")===0).forEach(k=>localStorage.removeItem(k)); }catch(e){_quiet(e)}
   try{
     /* one season at a time: each may be a handful of calls to the league */
     for(const y of years){
       if(_lgHistGet(y) || _lgHist.tried[y]) continue; _lgHist.tried[y]=1;
-      const j=await _gpFetchJ("/.netlify/functions/bbl?res=history&season="+encodeURIComponent(y), 30000);
+      const j=await _gpFetchJ("/.netlify/functions/bbl?res=history&v=2&season="+encodeURIComponent(y), 30000);
       if(j && j.ok && (j.teams||[]).length){
         /* a season the league holds without results (2022/23 and before) is kept too: it still says who was in the BBL */
-        const d={ teams:j.teams, games:j.games||[], at:Date.now(), nores:!(j.games||[]).length }; _lgHist.data[y]=d; got=true;
-        try{ localStorage.setItem("lw_lghist_v1_"+y, JSON.stringify(d)); }catch(e){_quiet(e)}
+        const d={ teams:j.teams, games:j.games||[], standings:j.standings||[], at:Date.now(), nores:!(j.games||[]).length }; _lgHist.data[y]=d; got=true;
+        try{ localStorage.setItem("lw_lghist_v2_"+y, JSON.stringify(d)); }catch(e){_quiet(e)}
       }
     }
   }finally{ _lgHist.busy=false; }
@@ -22605,6 +22609,15 @@ function _lgHistTable(d, N){
     T.pos[String(r.id)]=v; const k=_lgClubKey(r.name); if(k) T.key[k]=v; });
   return T;
 }
+/* a past season's final table: the league's own when it has one, else rebuilt from all its results */
+function _lgHistFinal(d){
+  const st=(d.standings||[]).filter(r=>r.pos && r.teamId);
+  if(!st.length) return Object.assign(_lgHistTable(d, 1e9), { built:true });
+  const T={ pos:{}, key:{}, n:st.length };
+  st.forEach(r=>{ const v={ pos:r.pos, w:r.w, l:r.l, n:st.length, name:r.team }; T.pos[String(r.teamId)]=v;
+    const k=_lgClubKey(r.team||""); if(k) T.key[k]=v; });
+  return T;
+}
 /* the matchday the table is at: the number of games most clubs have played */
 function _lgHistMd(rows){
   const c={}; rows.forEach(r=>{ if(r.gp) c[r.gp]=(c[r.gp]||0)+1; });
@@ -22616,18 +22629,20 @@ function _lgHistCtx(L, rows){
   const years=[]; for(let k=LG_HIST_YEARS;k>=1;k--) years.push(cur-k);
   const missing=years.filter(y=>!_lgHistGet(y) && !_lgHist.tried[y]);
   if(missing.length) setTimeout(()=>_lgHistLoad(missing.slice().reverse()), 0);
-  const tabs={}; years.forEach(y=>{ const d=_lgHistGet(y); if(d) tabs[y]=_lgHistTable(d, N); });
-  return { N:N, prev:cur-1, years:years, tabs:tabs, nores:years.filter(y=>{ const d=_lgHistGet(y); return !!(d && d.nores); }) };
+  /* last season at this matchday for the arrow; the final table of each season for the strip */
+  const tabs={}, fin={}; years.forEach(y=>{ const d=_lgHistGet(y); if(d){ fin[y]=_lgHistFinal(d); if(y===cur-1) tabs[y]=_lgHistTable(d, N); } });
+  return { N:N, prev:cur-1, years:years, tabs:tabs, fin:fin, nores:years.filter(y=>{ const d=_lgHistGet(y); return !!(d && d.nores && !(d.standings||[]).length); }) };
 }
 /* where a club stood after matchday N of a season: undefined while that season is being read,
    null when the club was not in the BBL then */
-function _lgHistAt(H, y, id, name){
-  const T=H.tabs[y]; if(!T) return (_lgHist.tried[y] && !_lgHist.busy && !_lgHistGet(y))? false : undefined;
+function _lgHistAt(H, y, id, name, fin){
+  const T=(fin? H.fin : H.tabs)[y]; if(!T) return (_lgHist.tried[y] && !_lgHist.busy && !_lgHistGet(y))? false : undefined;
   const k=_lgClubKey(name||"");
   return T.pos[String(id)] || (k && T.key[k]) || null;
 }
 function _lgHistCells(H, id, name, pos){
   const tip=(y,v)=>_lgHistLab(y)+" after matchday "+H.N+": "+v.pos+"º of "+v.n+" ("+v.w+"–"+v.l+")";
+  const tipF=(y,v)=>_lgHistLab(y)+" final table: "+v.pos+"º of "+v.n+(v.w!=null? " ("+v.w+"–"+v.l+")" : "");
   const p=_lgHistAt(H, H.prev, id, name);
   let c1;
   if(p===undefined) c1=h("td",{class:"lg-hx ld"},"·");
@@ -22637,15 +22652,15 @@ function _lgHistCells(H, id, name, pos){
   else { const d=p.pos-pos;
     c1=h("td",{class:"lg-hx "+(d>0? "up" : d<0? "dn" : "eq"), title:tip(H.prev, p)+" · now "+pos+"º"}, d>0? "▲"+d : d<0? "▼"+(-d) : "="); }
   const cells=[], seen=[];
-  H.years.forEach(y=>{ const v=_lgHistAt(H, y, id, name);
+  H.years.forEach(y=>{ const v=_lgHistAt(H, y, id, name, true);
     if(v===undefined) cells.push(h("i",{class:"lg-h5 ld", title:_lgHistLab(y)+": being read"},"·"));
     else if(v===false) cells.push(h("i",{class:"lg-h5", title:_lgHistLab(y)+": could not be read"},"?"));
     else if(v===null) cells.push(h("i",{class:"lg-h5 out", title:_lgHistLab(y)+": not in the BBL"}));
     else if(v.nores) cells.push(h("i",{class:"lg-h5 nd", title:_lgHistLab(y)+": in the BBL - the league's feed has no results for that season"},"–"));
-    else { seen.push(v.pos); const z=_lgZone(v.pos, v.n); cells.push(h("i",{class:"lg-h5"+(z? " "+z : ""), title:tip(y, v)}, String(v.pos))); } });
+    else { seen.push(v.pos); const z=_lgZone(v.pos, v.n); cells.push(h("i",{class:"lg-h5"+(z? " "+z : ""), title:tipF(y, v)}, String(v.pos))); } });
   const avg=seen.length? seen.reduce((a,b)=>a+b,0)/seen.length : null;
   const c2=h("td",{class:"lg-h5w"}, h("span",{class:"lg-h5s"}, cells),
-    avg!=null? h("b",{class:"lg-h5a", title:"average position after matchday "+H.N+" in the seasons it was in the BBL ("+seen.length+" of "+H.years.length+")"}, "Ø"+(Math.round(avg*10)/10)) : null);
+    avg!=null? h("b",{class:"lg-h5a", title:"average final place in the seasons it was in the BBL ("+seen.length+" of "+H.years.length+")"}, "Ø"+(Math.round(avg*10)/10)) : null);
   return [c1, c2];
 }
 function _lgStdTable(L){
@@ -22658,7 +22673,7 @@ function _lgStdTable(L){
   const tbl=h("table",{class:"lg-tbl lg-std"+(HX? " hx" : "")});
   tbl.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Team"), h("th",{},"GP"), h("th",{},"W"), h("th",{},"L"), h("th",{class:"lg-std-pct"},"PCT"), h("th",{},"DIFF"), h("th",{title:"The last five league games, oldest first. Cup and play-offs are not counted."},"FORM"),
     HX? h("th",{class:"lg-hx-h", title:"Places up or down against the same matchday ("+HX.N+") last season, and the place it had then"},"vs "+_lgHistLab(HX.prev)) : null,
-    HX? h("th",{class:"lg-hx-h l", title:"The place after matchday "+HX.N+" in each of the last "+LG_HIST_YEARS+" seasons, oldest first, and their average · hatched: not in the BBL that season"},"Last "+LG_HIST_YEARS+" seasons") : null));
+    HX? h("th",{class:"lg-hx-h l", title:"Where it finished in each of the last "+LG_HIST_YEARS+" seasons (the league's final table, regular season), oldest first, and the average · hatched: not in the BBL that season"},"Final · last "+LG_HIST_YEARS) : null));
   rows.slice().sort((a,b)=>(a.pos||99)-(b.pos||99)).forEach(r=>{
     const id=r.teamId||r.team;
     const z=_lgZone(r.pos, nTeams);
@@ -22683,7 +22698,7 @@ function _lgStdTable(L){
     h("span",{class:"lg-key-k po"},"Play-offs"),
     h("span",{class:"lg-key-k pi"},"Play-in"),
     h("span",{class:"lg-key-k rl"},"Relegation"),
-    HX? h("span",{class:"lg-key-k hx"}, h("i",{class:"lg-h5 out"}), "not in the BBL that season · seasons compared at matchday "+HX.N+(HX.nores.length? " · – the league's feed has no results for "+HX.nores.map(_lgHistLab).join(", ") : "")) : null);
+    HX? h("span",{class:"lg-key-k hx"}, h("i",{class:"lg-h5 out"}), "not in the BBL that season · vs "+_lgHistLab(HX.prev)+" at matchday "+HX.N+" · final: the regular season's final table"+(HX.nores.length? " · – the league's feed has no results for "+HX.nores.map(_lgHistLab).join(", ") : "")) : null);
   wrap.appendChild(tbl); wrap.appendChild(key);
   return wrap;
 }
