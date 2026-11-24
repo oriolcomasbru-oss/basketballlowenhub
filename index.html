@@ -25896,7 +25896,7 @@ function _lvPlayRows(V, list, cls){
     h("b",{class:"w "+(r.team? (r.home? "h" : "a") : "")}, r.team? (r.home? g.homeTlc : g.awayTlc) : ""),
     h("span",{class:"x"}, r.txt), h("span",{class:"s"}, r.sc))) : h("div",{class:"lv-e"},"No plays yet"));
 }
-const LV_TABS=[["game","Game"],["rot","Rotation"],["cmp","Team comparison"],["ff","Four factors"],["pl","Players"],["sh","Shot chart"],["pbp","Play by play"]];
+const LV_TABS=[["game","Game"],["rot","Rotation"],["cmp","Team comparison"],["ff","Four factors"],["pl","Players"],["ldr","Game leaders"],["sh","Shot chart"],["pbp","Play by play"]];
 /* THE ROTATION AS IT GOES (Oriol, 24/11/2026: "un gráfico de las rotaciones de este estilo pero
    live"): the League's chart of one game's rotation - the SUBS line, every stint with its length,
    each man's minutes at the end - drawn up to the clock, with the stint still going left open and
@@ -25922,6 +25922,83 @@ function _lvRot(V, Mtot, code, P){
   return h("div",{class:"lv-rot"}, h("div",{class:"lgg-sub"}, code===Mtot.hc? V.g.home : V.g.away),
     ids.length? h("div",{class:"rt-wrap"}, svg) : h("div",{class:"lv-e"},"No minutes in the play by play yet"),
     dnp.length? h("div",{class:"lv-dnp"}, "Not on the floor yet: "+dnp.join(" · ")) : null);
+}
+/* THE GAME'S LEADERS (Oriol, 24/11/2026: "haz también un apartado como el de league leaders pero de
+   cada partido, game leaders, que sea una pestaña más. Usa lo mismo que en league"): the League's
+   twelve boards drawn the same way - the top five, the side's code by each name, the bar against
+   the best, the tick at the average, the club picked in gold - for the stretch being read, both
+   sides together. Where the League counts per game, a game counts what was done in the stretch.
+   The noise is taken out as the League takes it out: a count board lists only who has one; a rate
+   waits for ten possessions a side in the stretch and needs its own sample - five shooting chances,
+   three threes, three assists, and for usage and points per 36 minutes on the floor (a quarter of
+   the stretch, never under four or over ten). The average is over the men who played in the stretch,
+   or who qualify for a rate. */
+const LV_LEAD=[
+  { k:"pts", t:"Points",   d:0, cnt:true, get:p=>p.pts },
+  { k:"pir", t:"PIR",      d:0, get:p=>p.pir },
+  { k:"reb", t:"Rebounds", d:0, cnt:true, get:p=>p.reb },
+  { k:"ast", t:"Assists",  d:0, cnt:true, get:p=>p.ast },
+  { k:"stl", t:"Steals",   d:0, cnt:true, get:p=>p.stl },
+  { k:"blk", t:"Blocks",   d:0, cnt:true, get:p=>p.blk },
+  { k:"ts",  t:"True shooting", u:"%", d:1, adv:true, need:p=>p.tsa>=5, get:p=>p.tsa? 100*p.pts/(2*p.tsa) : null,
+    tip:"Points per shooting chance, threes and free throws counted for what they are worth. At least five chances in the stretch." },
+  { k:"usg", t:"Usage", u:"%", d:1, adv:true, need:(p,q)=>p.sec>=q.min, get:p=>p.usg,
+    tip:"The share of his team's possessions he ends - a shot, a trip to the line or a turnover - while he is on the floor." },
+  { k:"p36", t:"Points per 36 min", d:1, adv:true, need:(p,q)=>p.sec>=q.min, get:p=>p.sec? p.pts*2160/p.sec : null,
+    tip:"What he scores per minute on the floor, not in total: it finds the scorer who played less." },
+  { k:"tp",  t:"Three point", u:"%", d:1, adv:true, need:p=>p.p3a>=3, get:p=>p.p3a? 100*p.p3m/p.p3a : null,
+    tip:"At least three attempts in the stretch." },
+  { k:"ato", t:"Assists per turnover", d:2, adv:true, need:p=>p.ast>=3, get:p=>p.ast/Math.max(1, p.tov),
+    show:p=>p.tov? null : p.ast+" / 0",
+    tip:"For men with at least three assists. With no turnover he is ranked as if he had one, and the board shows his assists over nought." },
+  { k:"pm",  t:"Plus / minus", d:0, adv:true, sign:true, get:p=>p.pm,
+    tip:"The score while he is on the floor." }
+];
+function _lvLeaders(V, Mtot, Msel, P){
+  const L=leagueState(), g=V.g;
+  let sel=""; try{ sel=_lgNoClub(L)? "" : String(_lgTeamId(L)||""); }catch(e){ _quiet(e); }
+  const secs=(P.ranges||[]).reduce((a,r)=>a+Math.max(0, r[1]-r[0]), 0);
+  const q={ min:Math.max(240, Math.min(600, secs/4)) };
+  const ps=Math.round(((Msel.H.poss||0)+(Msel.A.poss||0))/2), rates=ps>=10;
+  const men=[];
+  [[Msel.H, Mtot.hc, g.homeTlc, g.homeId],[Msel.A, Mtot.hc==="A"? "B" : "A", g.awayTlc, g.awayId]].forEach(x=>{
+    const S=x[0], tu=(S.fga||0)+0.44*(S.fta||0)+(S.tov||0);
+    S.pl.forEach(p=>{
+      if(!(p.sec>0) && !(p.pts||p.reb||p.ast||p.stl||p.blk||p.fga||p.fta||p.tov)) return;
+      const tsa=(p.fga||0)+0.44*(p.fta||0);
+      const usg=(S.sec && p.sec && tu)? 100*(tsa+(p.tov||0))*(S.sec/5)/(p.sec*tu) : null;
+      men.push({ p:Object.assign({}, p, { tsa:tsa, usg:usg }), code:x[1], tlc:x[2]||"", tid:String(x[3]||"") }); }); });
+  const grid=h("div",{class:"ldr-g"});
+  const TOP=5;
+  LV_LEAD.forEach(c=>{
+    if(c.adv && !rates) return;
+    const base=men.filter(m=>(c.cnt || m.p.sec>0) && (!c.need || c.need(m.p, q)))
+      .map(m=>({ x:m, v:c.get(m.p) })).filter(r=>r.v!=null && isFinite(r.v));
+    const avg=base.length? base.reduce((a,r)=>a+r.v,0)/base.length : null;
+    const rows=base.filter(r=>!c.cnt || r.v>0)
+      .sort((a,b)=>(b.v-a.v) || (c.k==="ato"? (a.x.p.tov||0)-(b.x.p.tov||0) : 0));
+    const fmt=(v,d)=>{ d=d==null? c.d : d; const r=+v.toFixed(d); return (c.sign&&r>0?"+":"")+(r===0? 0 : r).toFixed(d)+(c.u==="%"?"%":""); };
+    /* a count's average has a decimal: half a steal a man is not "0" */
+    const card=h("div",{class:"ldr-c"+(c.adv?" adv":""), title:c.tip||null},
+      h("div",{class:"ldr-h"}, h("b",{}, c.t), h("span",{}, c.adv? "advanced" : ""),
+        avg!=null? h("i",{title:"Average of the men who "+(c.need? "qualify" : "played")+" in the stretch"}, "avg "+fmt(avg, Math.max(1, c.d))) : null));
+    if(!rows.length){ card.appendChild(h("div",{class:"ldr-own none"}, c.need? "Nobody qualifies yet" : "Nobody yet")); grid.appendChild(card); return; }
+    const top=rows[0].v, lo=Math.min(0, Math.min.apply(null, base.map(r=>r.v)));
+    const pc=v=>Math.round(100*(v-lo)/Math.max(1e-9, top-lo));
+    rows.slice(0, TOP).forEach((r,i)=>card.appendChild(h("div",{class:"ldr-r"+(sel && r.x.tid===sel? " mine" : "")+(i===0? " first" : "")},
+      h("span",{class:"ldr-n"}, String(i+1)),
+      _lvFace(V, r.x.p.id, r.x.p.num, r.x.p.name, r.x.code).cloneNode(true),
+      /* the surname, as on the live roster: a board is narrow and the side's code must show */
+      h("span",{class:"ldr-k", title:r.x.p.name}, String(r.x.p.name||"").split(" ").slice(-1)[0]||("#"+r.x.p.num), h("em",{}, r.x.tlc)),
+      h("span",{class:"ldr-bar"}, h("i",{style:"width:"+Math.max(4, pc(r.v))+"%"}),
+        avg!=null? h("u",{style:"left:"+Math.max(0, Math.min(100, pc(avg)))+"%"}) : null),
+      h("b",{class:"ldr-v"}, (c.show && c.show(r.x.p)) || fmt(r.v)))));
+    grid.appendChild(card);
+  });
+  const mine=sel && (sel===String(g.homeId)? g.home : sel===String(g.awayId)? g.away : "");
+  return h("div",{class:"lv-ldr"}, grid, h("div",{class:"lg-sumline"},
+    (mine? "Gold is "+mine+". " : "")+"The tick on each bar is the average of the men who played in the stretch"+
+    (rates? "." : " · the advanced boards come in from 10 possessions a side ("+ps+" so far).")));
 }
 /* the stretch being read, as a row of buttons above the tabs, with its score and its possessions
    (a short stretch is a short sample, and says so) */
@@ -25987,6 +26064,8 @@ function _lvFullBody(V, Mtot, Msel, P){
     else sh.appendChild(h("div",{class:"lgg-shots one"}, _lgGameShots(g.home||"", Msel.H), _lgGameShots(g.away||"", Msel.A)));
   } else if(t==="pbp"){
     sh.appendChild(_lvPlayRows(V, _lvPlays(V, Mtot, 0, true, inP), "all"));
+  } else if(t==="ldr"){
+    if(!(Msel.H.pl.length || Msel.A.pl.length)) none(); else sh.appendChild(_lvLeaders(V, Mtot, Msel, P));
   } else if(t==="rot"){
     sh.appendChild(_lvRot(V, Mtot, Mtot.hc, P)); sh.appendChild(_lvRot(V, Mtot, Mtot.hc==="A"? "B" : "A", P));
   }
@@ -39825,6 +39904,10 @@ body.dark .lv-per-s.few{color:#e2b35a}
 .lv-ro .lv-f,.lv-sheet .lgg-box .lv-f{width:26px;height:26px;border-radius:50%;overflow:hidden;display:inline-block;vertical-align:middle;flex:none;background:var(--panel-2,#f4f5f7)}
 .lv-sheet .lgg-box .lv-f{width:22px;height:22px;margin-right:7px}
 .lv-f img{width:100%;height:100%;object-fit:cover;object-position:50% 25%}
+.lv-ldr .ldr-g{grid-template-columns:repeat(auto-fill,minmax(270px,1fr))}
+.lv-ldr .ldr-r .lv-f{width:22px;height:22px;border-radius:50%;overflow:hidden;display:inline-block;background:var(--panel-2,#f4f5f7)}
+.lv-ldr .ldr-r .lv-f0{line-height:22px}
+.lv-ldr .lg-sumline{margin-top:10px}
 .lv-f0{font:600 10px/26px 'IBM Plex Mono',monospace;text-align:center;color:var(--ink-faint,#8a93a2)}
 .lv-ro tr.on td{background:rgba(208,57,47,.05)}
 .lv-ro tr.on td.fc{box-shadow:inset 3px 0 0 var(--lv-red)}
