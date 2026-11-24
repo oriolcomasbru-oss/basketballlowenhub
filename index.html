@@ -4331,13 +4331,19 @@ function _planMissing(opt){
   const unplaced=(DX.unmatched||[]).filter(f=>f.folder==="practicedoc" || f.folder==="gameplan");
   const all=Object.keys((docsState().files)||{}).length;
   const sumTxt=all? (tMiss.length+" training days · "+gMiss.length+" games · "+weeks.length+" empty weeks") : "reading the Drive…";
-  /* ON THE DASHBOARD: the two tables, the latest first, nothing else */
+  /* ON THE DASHBOARD, COMPACT (Oriol, 24/11/2026: "mucho más compacto"): a line a kind, a chip a day or
+     a game with only what it is missing in it, the latest first; a click opens Planning on it */
   if(opt.dash){
     if(!all){ box.appendChild(h("div",{class:"dash-miss"},"Reading the Drive…")); return box; }
-    const cut=(t, n)=>{ [...t.querySelectorAll("tr")].slice(n+1).forEach(r=>r.remove()); return t; };
-    box.appendChild(h("div",{class:"miss-grid"},
-      h("div",{class:"miss-c"}, h("h5",{},"Training days · "+tMiss.length), tMiss.length? cut(t1, 8) : h("div",{class:"miss-none"},"Nothing missing.")),
-      h("div",{class:"miss-c"}, h("h5",{},"Games · "+gMiss.length), gMiss.length? cut(t2, 8) : h("div",{class:"miss-none"},"Nothing missing."))));
+    const dm=d=>d.slice(8)+"/"+d.slice(5,7);
+    const chip=(lbl, miss, fn, title)=>h("button",{type:"button", class:"mc-chip", title:title||"", onclick:fn}, h("b",{}, lbl), miss.map(x=>h("i",{}, x)));
+    const lineOf=(title, items, more)=>h("div",{class:"mc-line"}, h("span",{class:"mc-k"}, title), items.length? items : h("span",{class:"mc-ok"},"✓ nothing missing"), more? h("span",{class:"mc-more"}, "+"+more) : null);
+    const TN=12;
+    const tItems=tMiss.slice(0,TN).map(d=>{ const miss=[]; if(!((sess[d]||[]).length)) miss.push("plan"); if(!sheetOn(d)) miss.push("sheet"); if(!tagOn(d)) miss.push("tag");
+      return chip(dm(d), miss, goPlan(()=>{ state.ui.sessionDate=d; state.ui.sessionIdx=0; state.ui.planTab="session"; persist(); }), fd(d)+" · missing: "+miss.join(", ")); });
+    const gItems=gMiss.slice(0,TN).map(g=>{ const miss=[]; if(!DX.game[g.id]) miss.push("game plan"); if(g.date<=today && _pmTag.game && !gTag(g)) miss.push("tag");
+      return chip(dm(g.date)+" "+_gTidy(g.opponent).slice(0,10), miss, goPlan(()=>{}), fd(g.date)+" · "+_gTidy(g.opponent)+" · missing: "+miss.join(", ")); });
+    box.appendChild(h("div",{class:"mc"}, lineOf("Trainings · "+tMiss.length, tItems, Math.max(0, tMiss.length-TN)), lineOf("Games · "+gMiss.length, gItems, Math.max(0, gMiss.length-TN))));
     return box;
   }
   /* in Planning it opens folded: the line of what is missing, the tables one press away */
@@ -30809,7 +30815,7 @@ const OWIP=[
   ["Pace", "trends: how fast we play, game by game and inside the games", ()=>_dashOpen("trends",{})]];
 var DASHES={
   Ramon:{ name:"Ramón", role:"Head coach", cards:["oppr","post","league","trends2","week","month"] },
-  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["owork","opend","omiss","scoutv","trends2","oppr","post","week","month"] },
+  Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["owork","omiss","scoutv","trends2","oppr","post","week","month"] },
   Keith:{ name:"Keith", role:"Coaching staff", cards:["pdevc","oppr","post","players","league","trends2","week","monthP"] },
   Liviu:{ name:"Liviu", role:"Coaching staff", cards:["quick","month","pdevc"] },
   /* Joan Marc does the games and sees what Marc has done and owes; Marc the trainings */
@@ -33384,7 +33390,11 @@ function renderDashboard(){
             const ok=!!(S.old || (cov && S.to>=cov)), t=Math.max(S.sec, S.rep), nv=(S.vlist||[]).length, out=!!(SQ && SQ.inSq(r.n, C.x.g)===false), saw=ok && !out && (t>=60 || nv>0);
             if(ok && !out) rec++; if(saw){ n++; sec+=t; }
             return { ok:ok && !out, t:t, nv:nv, vs:S.vsec||0, saw:saw, out:out, rec0:ok, S:S }; });
-          return { r:r, cells:cells, n:n, sec:sec, rec:rec }; }).sort((a,b)=>b.n-a.n || b.sec-a.sec || String(a.r.n).localeCompare(String(b.r.n)));
+          return { r:r, cells:cells, n:n, sec:sec, rec:rec }; })
+          /* one who was out of the squad every night of them is not a row (Oriol, 24/11/2026: "quita los
+             que siempre han sido out") */
+          .filter(m=>!(m.cells.length && m.cells.every(x=>x.out)))
+          .sort((a,b)=>b.n-a.n || b.sec-a.sec || String(a.r.n).localeCompare(String(b.r.n)));
         const code=x=>{ const lg=x.lg; let t=""; try{ if(lg) t=(x.g.venue==="Away"? lg.homeTlc : lg.awayTlc)||""; }catch(e){_quiet(e)}
           return String(t||_lgShort(x.g.opponent)||x.g.opponent||"?").slice(0,3).toUpperCase(); };
         const g5=h("div",{class:"sv5", style:"--n:"+L5.length});
@@ -33521,6 +33531,8 @@ function renderDashboard(){
         window.LowenPostStats.files("practice").then(fs=>{ practice=fs||[]; paint(); }).catch(()=>{ practice=[]; paint(); }); });
     },
     owork:()=>{
+      /* the windows of the national teams in the season, when there is no league game to work towards */
+      const FIBA_WINDOWS=[{ from:"2026-11-23", to:"2026-11-29", name:"FIBA window" }];
       const c=card("wide", "My work · pre games and post games", null);
       const KEY="work:oriol";
       const PRE=[["report","Report"],["keys","Video keys"],["attack","Video how to attack"],["players","Video players"]];
@@ -33534,12 +33546,19 @@ function renderDashboard(){
       /* A PRE GAME IS DONE A GAME AHEAD: it is started when our game two before it ends and
          handed in when the game before it ends - Chemnitz from the end of Vechta to the end
          of Ludwigsburg. "The end" is two hours after the tip-off. */
-      const seq=G.past.concat(G.upcoming);
+      /* a game with no rival yet (a TBD of a cup round we are not in) is not a game of ours: Berlin was
+         started and handed in "after TBD" (Oriol, 24/11/2026: "Berlin también está mal puesto") */
+      const seq=G.past.concat(G.upcoming).filter(x=>!ph(x.g));
       const endOf=g=>{ const t=at(g).split(":"), m=(+t[0])*60+(+t[1])+120; return g.date+"T"+String(Math.min(23,Math.floor(m/60))).padStart(2,"0")+":"+String(m%60).padStart(2,"0")+":00"; };
       preG.forEach(x=>{ const i=seq.indexOf(x), p1=seq[i-1], p2=seq[i-2];
-        W.push({ kind:"pre", g:x.g, p1:p1? p1.g : null, p2:p2? p2.g : null,
+        const w={ kind:"pre", g:x.g, p1:p1? p1.g : null, p2:p2? p2.g : null,
           start:p2? p2.g.date : addDays(x.g.date,-14), due:p1? p1.g.date : addDays(x.g.date,-7),
-          dueAt:p1? endOf(p1.g) : addDays(x.g.date,-7)+"T23:59:59" }); });
+          dueAt:p1? endOf(p1.g) : addDays(x.g.date,-7)+"T23:59:59" };
+        /* A FIBA WINDOW IS WORK TIME (Oriol, 24/11/2026: "dame toda esta semana para acabar Frankfurt, que
+           es ventana FIBA"): a pre game whose hand-in falls before a window that lies between our game
+           before it and its own is handed in at the end of the window */
+        FIBA_WINDOWS.forEach(fw=>{ if(w.p1 && fw.from>w.p1.date && fw.to<x.g.date && w.due<fw.to){ w.due=fw.to; w.dueAt=fw.to+"T23:59:59"; w.fiba=fw.name; } });
+        W.push(w); });
       postG.forEach(x=>W.push({ kind:"post", g:x.g, start:x.g.date, due:addDays(x.g.date,1), dueAt:addDays(x.g.date,1)+"T"+at(x.g)+":00" }));
       W.sort((a,b)=>String(a.dueAt).localeCompare(String(b.dueAt)));
       let ticks={}; const reps={}, info={};
@@ -33600,7 +33619,8 @@ function renderDashboard(){
             h("div",{class:"ow-gh"}, crest(g), h("div",{}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+_lgShort(g.opponent)),
               h("span",{}, (w.kind==="pre"? "PRE · "+_dashFmt(g.date)+" · in "+dd+"d" : "POST · "+_dashFmt(g.date)))),
               r? h("span",{class:"dash-qs "+(r.won? "good" : "bad")}, r.us+"–"+r.them) : null),
-            h("div",{class:"ow-when"}, w.kind==="pre"? "start "+_dashFmt(w.start).slice(4)+(w.p2? " after "+(ph(w.p2)? "TBD" : _lgShort(w.p2.opponent)) : "")+" → hand in "+_dashFmt(w.due).slice(4)+(w.p1? " after "+(ph(w.p1)? "TBD" : _lgShort(w.p1.opponent)) : "") : "hand in "+_dashFmt(w.due).slice(4)+" "+at(g)));
+            h("div",{class:"ow-when", title:w.kind==="pre"? "Started after "+(w.p2? _lgShort(w.p2.opponent) : "two weeks before")+", handed in "+(w.fiba? "at the end of the "+w.fiba : "after "+(w.p1? _lgShort(w.p1.opponent) : "a week before")) : ""},
+              w.kind==="pre"? _dashFmt(w.start).slice(4)+(w.p2? " "+_lgShort(w.p2.opponent) : "")+" → "+_dashFmt(w.due).slice(4)+(w.fiba? " · "+w.fiba : (w.p1? " "+_lgShort(w.p1.opponent) : "")) : "hand in "+_dashFmt(w.due).slice(4)+" "+at(g)));
           /* what What is coming showed: their form, our tagging of them, the key sets, the game plan */
           if(w.kind==="pre") box.appendChild(h("div",{class:"ow-info"},
             h("span",{title:"their place and last five"}, I.form||h("i",{},"…")),
@@ -43617,6 +43637,26 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .ow-gh b{font-size:12.5px}.ow-gh span{font-size:10.5px}
 .ow-when{font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
 .ow-info{display:flex;flex-wrap:wrap;gap:3px}
+/* the cards of My work, compact (Oriol, 24/11/2026): the four parts two a line, smaller marks */
+.ow-g{padding:7px 8px;gap:5px;border-top-width:3px}
+.ow-gh{gap:7px}.ow-gh .lg-bdg.crest{width:22px;height:22px}
+.ow-gh b{font-size:12px}.ow-gh span{font-size:10px}
+.ow-when{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ow-info > span{font-size:10px;padding:1px 4px}
+.ow-parts{grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 6px}
+.ow-p{grid-template-columns:auto minmax(0,1fr);gap:5px;font-size:11.5px;line-height:1.2}
+.ow-parts .vc{min-width:36px;height:20px;font-size:10px;padding:0 4px}
+.ow-btns{display:flex;gap:5px}.ow-btns .dash-gp{padding:4px 8px;font-size:11px}
+/* what is missing on the dashboard: a line of chips a kind */
+.mc{display:grid;gap:6px}
+.mc-line{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.mc-k{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472);min-width:96px}
+.mc-chip{display:inline-flex;align-items:center;gap:3px;border:1px solid var(--line,#e4e7ec);background:var(--panel,#fff);border-radius:6px;padding:2px 5px;cursor:pointer;font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink,#141821)}
+.mc-chip:hover{border-color:var(--ink-faint,#8a93a2)}
+.mc-chip i{font-style:normal;font:700 9px 'IBM Plex Mono',monospace;letter-spacing:.04em;text-transform:uppercase;color:#c0403c;background:rgba(216,82,78,.1);border-radius:3px;padding:0 3px}
+.mc-ok{font-size:11px;color:#17805a}
+.mc-more{font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+body.dark .mc-chip i{color:#ff8f85;background:rgba(216,82,78,.18)}
 .ow-info > span{display:inline-flex;align-items:center;gap:3px;font:700 11px 'IBM Plex Mono',monospace;border-radius:5px;padding:2px 5px;background:var(--panel-2,#f4f5f7)}
 .ow-info > span i{font-weight:500;font-style:normal;color:var(--ink-faint,#8a93a2)}
 .ow-info > span.ok{background:rgba(47,158,134,.15);color:#17805a}.ow-info > span.mid{background:rgba(217,165,33,.18);color:#9a6f0c}.ow-info > span.no{background:rgba(216,82,78,.12);color:#c0403c}
