@@ -22559,13 +22559,106 @@ function _lgStdNote(L){
   }
   return wrap;
 }
+/* THE CLUB IN PERSPECTIVE (Oriol, 24/11/2026: "al lado de forms, quiero que pongas qué diferencia
+   tiene respecto el año pasado en esa misma jornada su posición. Y al lado su posición en referencia a
+   los últimos 5 años. Si estaba fuera de categoría pon una señal especial.")
+   For each of the last five seasons the table is rebuilt from its results as it stood after the same
+   matchday as now (the matchday most clubs have played), ranked as the position-by-matchday chart
+   ranks (win percentage, then point difference). A club that was not in the BBL that season gets a
+   hatched mark. A season that is over never changes, so each is read once from the league
+   (bbl?res=history) and kept in this browser for good. */
+const LG_HIST_YEARS=5;
+const _lgHist={ data:{}, busy:false, tried:{} };
+function _lgHistLab(y){ y=+y; return String(y%100).padStart(2,"0")+"/"+String((y+1)%100).padStart(2,"0"); }
+function _lgHistGet(y){
+  if(_lgHist.data[y]) return _lgHist.data[y];
+  try{ const s=localStorage.getItem("lw_lghist_v1_"+y); if(s){ const d=JSON.parse(s); if(d && d.games && d.teams){ _lgHist.data[y]=d; return d; } } }catch(e){_quiet(e)}
+  return null;
+}
+async function _lgHistLoad(years){
+  if(_lgHist.busy) return; _lgHist.busy=true; let got=false;
+  try{
+    /* one season at a time: each may be a handful of calls to the league */
+    for(const y of years){
+      if(_lgHistGet(y) || _lgHist.tried[y]) continue; _lgHist.tried[y]=1;
+      const j=await _gpFetchJ("/.netlify/functions/bbl?res=history&season="+encodeURIComponent(y), 30000);
+      if(j && j.ok && (j.teams||[]).length){
+        /* a season the league holds without results (2022/23 and before) is kept too: it still says who was in the BBL */
+        const d={ teams:j.teams, games:j.games||[], at:Date.now(), nores:!(j.games||[]).length }; _lgHist.data[y]=d; got=true;
+        try{ localStorage.setItem("lw_lghist_v1_"+y, JSON.stringify(d)); }catch(e){_quiet(e)}
+      }
+    }
+  }finally{ _lgHist.busy=false; }
+  if(got){ try{ _lgRerender(); }catch(e){_quiet(e)} }
+}
+/* a past season's table after matchday N */
+function _lgHistTable(d, N){
+  const rec={};
+  (d.teams||[]).forEach(t=>{ rec[t.id]={ id:t.id, name:t.name, w:0, l:0, pf:0, pa:0 }; });
+  (d.games||[]).forEach(g=>{ if(!(g.day<=N)) return; const H=rec[g.homeId], A=rec[g.awayId]; if(!H || !A) return;
+    H.pf+=g.hs; H.pa+=g.as; A.pf+=g.as; A.pa+=g.hs; if(g.hs>g.as){ H.w++; A.l++; } else { A.w++; H.l++; } });
+  const pct=r=>(r.w+r.l)? r.w/(r.w+r.l) : 0;
+  const rows=Object.keys(rec).map(k=>rec[k]).sort((a,b)=>(pct(b)-pct(a)) || ((b.pf-b.pa)-(a.pf-a.pa)) || String(a.name).localeCompare(String(b.name)));
+  const T={ pos:{}, key:{}, n:rows.length };
+  const nores=!(d.games||[]).length;
+  rows.forEach((r,i)=>{ const v=nores? { nores:true, n:rows.length, name:r.name } : { pos:i+1, w:r.w, l:r.l, n:rows.length, name:r.name };
+    T.pos[String(r.id)]=v; const k=_lgClubKey(r.name); if(k) T.key[k]=v; });
+  return T;
+}
+/* the matchday the table is at: the number of games most clubs have played */
+function _lgHistMd(rows){
+  const c={}; rows.forEach(r=>{ if(r.gp) c[r.gp]=(c[r.gp]||0)+1; });
+  return +(Object.keys(c).sort((a,b)=>(c[b]-c[a]) || (b-a))[0]||0);
+}
+function _lgHistCtx(L, rows){
+  const cur=parseInt(L.season,10), N=_lgHistMd(rows);
+  if(!cur || !N || L.demo) return null;
+  const years=[]; for(let k=LG_HIST_YEARS;k>=1;k--) years.push(cur-k);
+  const missing=years.filter(y=>!_lgHistGet(y) && !_lgHist.tried[y]);
+  if(missing.length) setTimeout(()=>_lgHistLoad(missing.slice().reverse()), 0);
+  const tabs={}; years.forEach(y=>{ const d=_lgHistGet(y); if(d) tabs[y]=_lgHistTable(d, N); });
+  return { N:N, prev:cur-1, years:years, tabs:tabs, nores:years.filter(y=>{ const d=_lgHistGet(y); return !!(d && d.nores); }) };
+}
+/* where a club stood after matchday N of a season: undefined while that season is being read,
+   null when the club was not in the BBL then */
+function _lgHistAt(H, y, id, name){
+  const T=H.tabs[y]; if(!T) return (_lgHist.tried[y] && !_lgHist.busy && !_lgHistGet(y))? false : undefined;
+  const k=_lgClubKey(name||"");
+  return T.pos[String(id)] || (k && T.key[k]) || null;
+}
+function _lgHistCells(H, id, name, pos){
+  const tip=(y,v)=>_lgHistLab(y)+" after matchday "+H.N+": "+v.pos+"º of "+v.n+" ("+v.w+"–"+v.l+")";
+  const p=_lgHistAt(H, H.prev, id, name);
+  let c1;
+  if(p===undefined) c1=h("td",{class:"lg-hx ld"},"·");
+  else if(p===false) c1=h("td",{class:"lg-hx"},"—");
+  else if(p===null) c1=h("td",{class:"lg-hx"}, h("span",{class:"lg-hx-out", title:"Not in the BBL in "+_lgHistLab(H.prev)},"no BBL"));
+  else if(p.nores) c1=h("td",{class:"lg-hx ld", title:"The league's feed has no results for "+_lgHistLab(H.prev)},"—");
+  else { const d=p.pos-pos;
+    c1=h("td",{class:"lg-hx "+(d>0? "up" : d<0? "dn" : "eq"), title:tip(H.prev, p)+" · now "+pos+"º"}, d>0? "▲"+d : d<0? "▼"+(-d) : "="); }
+  const cells=[], seen=[];
+  H.years.forEach(y=>{ const v=_lgHistAt(H, y, id, name);
+    if(v===undefined) cells.push(h("i",{class:"lg-h5 ld", title:_lgHistLab(y)+": being read"},"·"));
+    else if(v===false) cells.push(h("i",{class:"lg-h5", title:_lgHistLab(y)+": could not be read"},"?"));
+    else if(v===null) cells.push(h("i",{class:"lg-h5 out", title:_lgHistLab(y)+": not in the BBL"}));
+    else if(v.nores) cells.push(h("i",{class:"lg-h5 nd", title:_lgHistLab(y)+": in the BBL - the league's feed has no results for that season"},"–"));
+    else { seen.push(v.pos); const z=_lgZone(v.pos, v.n); cells.push(h("i",{class:"lg-h5"+(z? " "+z : ""), title:tip(y, v)}, String(v.pos))); } });
+  const avg=seen.length? seen.reduce((a,b)=>a+b,0)/seen.length : null;
+  const c2=h("td",{class:"lg-h5w"}, h("span",{class:"lg-h5s"}, cells),
+    avg!=null? h("b",{class:"lg-h5a", title:"average position after matchday "+H.N+" in the seasons it was in the BBL ("+seen.length+" of "+H.years.length+")"}, "Ø"+(Math.round(avg*10)/10)) : null);
+  return [c1, c2];
+}
 function _lgStdTable(L){
   const sel=L.team;
   if(!(L.standings||[]).length) return h("div",{class:"lg-empty"},"No standings in the feed.");
   const rows=_lgMergeStandings(L);
   const nTeams=rows.length;
-  const tbl=h("table",{class:"lg-tbl lg-std"});
-  tbl.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Team"), h("th",{},"GP"), h("th",{},"W"), h("th",{},"L"), h("th",{class:"lg-std-pct"},"PCT"), h("th",{},"DIFF"), h("th",{title:"The last five league games, oldest first. Cup and play-offs are not counted."},"FORM")));
+  const HX=_lgHistCtx(L, rows);
+  /* with the look back on, the clubs go by their short name (as on a phone) so the table keeps to its panel */
+  const tbl=h("table",{class:"lg-tbl lg-std"+(HX? " hx" : "")});
+  tbl.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Team"), h("th",{},"GP"), h("th",{},"W"), h("th",{},"L"), h("th",{class:"lg-std-pct"},"PCT"), h("th",{},"DIFF"), h("th",{title:"The last five league games, oldest first. Cup and play-offs are not counted."},"FORM"),
+    HX? h("th",{class:"lg-hx-h", title:"Places up or down against the same matchday ("+HX.N+") last season, and the place it had then"},"vs "+_lgHistLab(HX.prev)) : null,
+    HX? h("th",{class:"lg-hx-h l", title:"The place after matchday "+HX.N+" in each of the last "+LG_HIST_YEARS+" seasons, oldest first, and their average · hatched: not in the BBL that season"},"Last "+LG_HIST_YEARS+" seasons") : null));
   rows.slice().sort((a,b)=>(a.pos||99)-(b.pos||99)).forEach(r=>{
     const id=r.teamId||r.team;
     const z=_lgZone(r.pos, nTeams);
@@ -22581,14 +22674,16 @@ function _lgStdTable(L){
       h("td",{}, r.l!=null?String(r.l):"—"),
       h("td",{class:"lg-std-pct"}, r.pct!=null? (Math.round(r.pct*1000)/10).toFixed(1)+"%" : "—"),
       h("td",{class:(r.diff>0?"pos":(r.diff<0?"neg":""))}, r.diff!=null? (r.diff>0?"+":"")+r.diff : "\u2014"),
-      h("td",{}, _lgFormCell(L, id)));
+      h("td",{}, _lgFormCell(L, id)),
+      HX? _lgHistCells(HX, id, r.team, r.pos) : null);
     tbl.appendChild(tr);
   });
   const wrap=h("div",{});
   const key=h("div",{class:"lg-key"},
     h("span",{class:"lg-key-k po"},"Play-offs"),
     h("span",{class:"lg-key-k pi"},"Play-in"),
-    h("span",{class:"lg-key-k rl"},"Relegation"));
+    h("span",{class:"lg-key-k rl"},"Relegation"),
+    HX? h("span",{class:"lg-key-k hx"}, h("i",{class:"lg-h5 out"}), "not in the BBL that season · seasons compared at matchday "+HX.N+(HX.nores.length? " · – the league's feed has no results for "+HX.nores.map(_lgHistLab).join(", ") : "")) : null);
   wrap.appendChild(tbl); wrap.appendChild(key);
   return wrap;
 }
@@ -25786,7 +25881,33 @@ function _lvPlayRows(V, list, cls){
     h("b",{class:"w "+(r.team? (r.home? "h" : "a") : "")}, r.team? (r.home? g.homeTlc : g.awayTlc) : ""),
     h("span",{class:"x"}, r.txt), h("span",{class:"s"}, r.sc))) : h("div",{class:"lv-e"},"No plays yet"));
 }
-const LV_TABS=[["game","Game"],["cmp","Team comparison"],["ff","Four factors"],["pl","Players"],["sh","Shot chart"],["pbp","Play by play"]];
+const LV_TABS=[["game","Game"],["rot","Rotation"],["cmp","Team comparison"],["ff","Four factors"],["pl","Players"],["sh","Shot chart"],["pbp","Play by play"]];
+/* THE ROTATION AS IT GOES (Oriol, 24/11/2026: "un gráfico de las rotaciones de este estilo pero
+   live"): the League's chart of one game's rotation - the SUBS line, every stint with its length,
+   each man's minutes at the end - drawn up to the clock, with the stint still going left open and
+   the minutes still to play pale. A stint runs on through a substitution of somebody else and is cut
+   only at the end of a period, as in the League's chart. Starters first, then the others in the
+   order they first came on, so a row never moves while the game goes on. */
+function _lvRot(V, Mtot, code, P){
+  const C=_gpCourt(V.feed, code, V.lastT), st={}, nums={}, by={}, first={};
+  (V.feed.starters||[]).filter(s=>s.quarter==="q1" && s.teamcode===code).forEach(s=>{ [1,2,3,4,5].forEach(n=>{ const id=String(s["player_id"+n]||""); if(id && id!=="0") st[id]=1; }); });
+  (V.dress||[]).forEach(p=>{ if(p.code===code) nums[p.id]=p.num; });
+  const edge=t=>t===600 || t===1200 || t===1800 || t===2400 || (t>2400 && (t-2400)%300===0);
+  Object.keys(C).forEach(id=>{
+    const segs=(C[id].segs||[]).filter(s=>s[1]>s[0]).slice().sort((a,b)=>a[0]-b[0]), out=[];
+    segs.forEach(s=>{ const cur=out[out.length-1]; if(cur && s[0]-cur[1]<0.5 && !edge(cur[1])) cur[1]=Math.max(cur[1], s[1]); else out.push([s[0], s[1]]); });
+    if(!out.length) return;
+    by[id]=out.map((s,i)=>({ from:s[0], to:s[1], open:!!(V.live && C[id].on && i===out.length-1) }));
+    first[id]=out[0][0]; });
+  const ids=Object.keys(by).sort((a,b)=>((st[b]? 1 : 0)-(st[a]? 1 : 0)) || (first[a]-first[b]) || ((parseInt(nums[a],10)||0)-(parseInt(nums[b],10)||0)));
+  const names={}; ids.forEach(id=>{ names[id]={ n:nums[id]||"", name:Mtot.names[id]||"" }; });
+  const end=Math.max(2400, V.maxQ<4? 2400 : 2400+(V.maxQ-3)*300);
+  const svg=_lgRotStrip({ end:end }, ids, by, names, true, { now:V.live? V.lastT : null, sel:(P && P.key!=="g")? P.ranges : null });
+  const dnp=(V.dress||[]).filter(p=>p.code===code && !by[p.id]).map(p=>"#"+p.num+" "+((Mtot.names[p.id]||"").split(" ").slice(-1)[0]||""));
+  return h("div",{class:"lv-rot"}, h("div",{class:"lgg-sub"}, code===Mtot.hc? V.g.home : V.g.away),
+    ids.length? h("div",{class:"rt-wrap"}, svg) : h("div",{class:"lv-e"},"No minutes in the play by play yet"),
+    dnp.length? h("div",{class:"lv-dnp"}, "Not on the floor yet: "+dnp.join(" · ")) : null);
+}
 /* the stretch being read, as a row of buttons above the tabs, with its score and its possessions
    (a short stretch is a short sample, and says so) */
 function _lvPerBar(V, P, Msel){
@@ -25851,6 +25972,8 @@ function _lvFullBody(V, Mtot, Msel, P){
     else sh.appendChild(h("div",{class:"lgg-shots one"}, _lgGameShots(g.home||"", Msel.H), _lgGameShots(g.away||"", Msel.A)));
   } else if(t==="pbp"){
     sh.appendChild(_lvPlayRows(V, _lvPlays(V, Mtot, 0, true, inP), "all"));
+  } else if(t==="rot"){
+    sh.appendChild(_lvRot(V, Mtot, Mtot.hc, P)); sh.appendChild(_lvRot(V, Mtot, Mtot.hc==="A"? "B" : "A", P));
   }
   return wrap;
 }
@@ -25874,7 +25997,7 @@ function _lvPanel(id, mini){
   const sigA=JSON.stringify([V.hs, V.as, V.where, V.live, V.fin, n, Math.floor(V.lastT), V.rp? [V.rp.speed, V.rp.playing] : 0, LV.err && !V.feed? LV.err : "", mini? LV.lay : 0, mini? "" : (LV.per[id]||"g")]);
   /* the stretch read (Total, a period, a half, the last 5 or 2 minutes): its own key, and for a moving window the clock */
   const pk=(V.feed && M)? _lvPick(V, LV.per[id]||"g") : null;
-  const tab=LV.tab[id]||"game", sigB=JSON.stringify([n, tab, pk? pk.key : "", (tab==="game" || (pk && pk.last))? Math.floor(V.lastT) : 0, !!M, !!LV.adv]);
+  const tab=LV.tab[id]||"game", sigB=JSON.stringify([n, tab, pk? pk.key : "", (tab==="game" || tab==="rot" || (pk && pk.last))? Math.floor(V.lastT) : 0, !!M, !!LV.adv]);
   const el=P.el;
   if(P.mini!==mini){ el.innerHTML=""; P.a=""; P.b=""; P.t=""; P.mini=mini; }
   el.className="lv-p"+(mini? " mini" : " full")+(V.live && !V.rp? " live" : "")+(V.fin? " fin" : "")+(V.rp? " rp" : "");
@@ -28079,7 +28202,11 @@ function _lgNames(d){
    Everything is geometry in one viewBox, which is what makes it print: no backgrounds that
    a printer drops, no absolute positioning that reflows, and a row height set so that at
    page width the names and the minutes are still readable. */
-function _lgRotStrip(g, ids, by, names, showNames){
+function _lgRotStrip(g, ids, by, names, showNames, opt){
+  /* opt (the League's live window): now - the clock of a game being played, drawn as a line with
+     the minutes still to play left pale; sel - the stretch being read, shaded. A stint still going
+     (sp.open) has no "off" mark and is not a substitution. */
+  opt=opt||{};
   /* ON A PHONE THE NAMES STAY (Oriol, 8/11/2026: "rotation: misma idea que las otras tablas").
      The strip is a 700 px drawing that slides; its names were part of the drawing and slid away
      with it. Under 700 px the names are a column of their own, fixed on the left, and only the
@@ -28117,7 +28244,7 @@ function _lgRotStrip(g, ids, by, names, showNames){
   const subs={};
   ids.forEach(id=>(by[id]||[]).forEach(sp=>{
     if(sp.from>1) subs[Math.round(sp.from)]=(subs[Math.round(sp.from)]||0)+1;
-    if(sp.to<end-1) subs[Math.round(sp.to)]=(subs[Math.round(sp.to)]||0)+1;
+    if(sp.to<end-1 && !sp.open) subs[Math.round(sp.to)]=(subs[Math.round(sp.to)]||0)+1;
   }));
   const subT=Object.keys(subs).map(Number).sort((a,b)=>a-b);
   gg.appendChild(sv("text",{x:LEFT-10, y:HEAD+11, class:"rt-sublb"},"SUBS"));
@@ -28145,7 +28272,7 @@ function _lgRotStrip(g, ids, by, names, showNames){
       gg.appendChild(r);
       /* the two moments that matter: on and off */
       gg.appendChild(sv("rect",{x:x0, y:y-2, width:1.6, height:BAR+4, class:"rt-in"}));
-      gg.appendChild(sv("rect",{x:x1-1.6, y:y-2, width:1.6, height:BAR+4, class:"rt-out"}));
+      if(!sp.open) gg.appendChild(sv("rect",{x:x1-1.6, y:y-2, width:1.6, height:BAR+4, class:"rt-out"}));
       const mins=(sp.to-sp.from)/60;
       if(w>30) gg.appendChild(sv("text",{x:(x0+x1)/2, y:y+BAR-3.5, class:"rt-len"},
         (mins>=10? Math.round(mins) : mins.toFixed(1))));
@@ -28153,6 +28280,11 @@ function _lgRotStrip(g, ids, by, names, showNames){
     const mins=spans.reduce((a,sp)=>a+(sp.to-sp.from),0)/60;
     gg.appendChild(sv("text",{x:W-6, y:y+BAR-2, class:"rt-mn"+(mins?"":" zero")}, mins? mins.toFixed(0)+"'" : "\u2013"));
   });
+  if(opt.sel) opt.sel.forEach(r=>{ if(r[1]>r[0]) gg.insertBefore(sv("rect",{x:x(r[0]), y:TOP-SUBS, width:Math.max(1, x(r[1])-x(r[0])), height:H-TOP+SUBS-6, class:"rt-sel"}), gg.firstChild); });
+  if(opt.now!=null && opt.now<end){
+    gg.appendChild(sv("rect",{x:x(opt.now), y:TOP-SUBS, width:Math.max(0, x(end)-x(opt.now)), height:H-TOP+SUBS-6, class:"rt-future"}));
+    gg.appendChild(sv("line",{x1:x(opt.now), y1:16, x2:x(opt.now), y2:H-6, class:"rt-now"}));
+  }
   const svg=sv("svg",{viewBox:"0 0 "+W+" "+H, width:"100%", class:"rt-svg"}, gg);
   if(!nameCol) return svg;
   /* the drawing at a fixed 720 px, and the names in rows of exactly its rows' height */
@@ -39694,6 +39826,13 @@ body.dark .lv-ro td.pos{color:#4fc08d}
 body.dark .lv-ro td.neg{color:#ff8a7e}
 .lv-sheet .lgg-box tr.lv-oncourt td:first-child{box-shadow:inset 3px 0 0 var(--lv-red)}
 .lv-sheet .lgg-box td.lg-team{white-space:nowrap}
+/* the rotation as it goes */
+.lv-rot{margin-bottom:16px}
+.lv-rot .lgg-sub{margin-top:4px}
+.rt-now{stroke:var(--lv-red,#d0392f);stroke-width:1.6;stroke-dasharray:4 3}
+.rt-future{fill:var(--panel,#fff);opacity:.55}
+.rt-sel{fill:var(--ink,#141821);opacity:.06}
+.lv-dnp{font-size:11.5px;color:var(--ink-faint,#8a93a2);margin-top:4px}
 .lv-sheet{border:0;padding:0;margin:0;background:transparent}
 /* the strip at the bottom, when the window is folded */
 .lv-strip{position:fixed;left:0;right:0;bottom:0;z-index:8980;display:flex;gap:6px;align-items:center;overflow-x:auto;scrollbar-width:none;
@@ -41912,6 +42051,35 @@ body.dark .lg-cmp.cup{color:#4a9fd4}
 .lg-key-k.po{--k:#2f9e86}
 .lg-key-k.pi{--k:rgba(47,158,134,.45)}
 .lg-key-k.rl{--k:#d8524e}
+/* the club in perspective: against last season at this matchday, and the last five seasons */
+.lg-std th.lg-hx-h{white-space:nowrap}
+.lg-std.hx .nm-f{display:none}
+.lg-std.hx .nm-s{display:inline}
+.lg-std td.lg-hx{font:700 12px 'IBM Plex Mono',monospace;white-space:nowrap;text-align:right}
+.lg-std td.lg-hx i{font:500 10.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}
+.lg-std td.lg-hx.up{color:#17805a}
+.lg-std td.lg-hx.dn{color:#c0403c}
+.lg-std td.lg-hx.eq,.lg-std td.lg-hx.ld{color:var(--ink-faint,#8a93a2)}
+body.dark .lg-std td.lg-hx.up{color:#4fc08d}
+body.dark .lg-std td.lg-hx.dn{color:#ff8a7e}
+.lg-hx-out{display:inline-block;font:700 9.5px 'IBM Plex Mono',monospace;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-soft,#5b6472);
+  border:1px dashed var(--line-strong,#cfd4dc);border-radius:4px;padding:1px 4px;
+  background:repeating-linear-gradient(135deg,transparent 0 3px,rgba(20,24,33,.08) 3px 4px)}
+.lg-std td.lg-h5w{white-space:nowrap;text-align:left}
+.lg-h5s{display:inline-flex;gap:2px;vertical-align:middle}
+.lg-h5{display:inline-block;width:17px;height:17px;border-radius:3px;font:600 10px/17px 'IBM Plex Mono',monospace;font-style:normal;text-align:center;
+  color:var(--ink-soft,#5b6472);background:var(--panel-2,#eef0f3)}
+.lg-h5.po{background:#2f9e86;color:#fff}
+.lg-h5.pi{background:rgba(47,158,134,.28);color:#16624f}
+.lg-h5.rl{background:#d8524e;color:#fff}
+body.dark .lg-h5.pi{color:#bfe9dc}
+.lg-h5.out{background:repeating-linear-gradient(135deg,transparent 0 3px,rgba(20,24,33,.22) 3px 4.5px);box-shadow:inset 0 0 0 1px var(--line-strong,#cfd4dc)}
+body.dark .lg-h5.out{background:repeating-linear-gradient(135deg,transparent 0 3px,rgba(255,255,255,.22) 3px 4.5px)}
+.lg-h5.ld{color:var(--ink-faint,#8a93a2);background:transparent}
+.lg-h5.nd{color:var(--ink-faint,#8a93a2);background:transparent;box-shadow:inset 0 0 0 1px var(--line,#e4e7ec)}
+.lg-h5a{font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);margin-left:6px;vertical-align:middle}
+.lg-key-k.hx::before{display:none}
+.lg-key-k.hx .lg-h5{width:14px;height:12px;vertical-align:middle}
 
 /* ===== v53: players stats — tighter, and the two rebounding cards paired ===== */
 .rst-scope .rst-grid{grid-template-columns:repeat(auto-fill,minmax(228px,1fr))!important;gap:10px!important;margin-top:4px!important}

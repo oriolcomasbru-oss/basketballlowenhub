@@ -33,7 +33,9 @@ const S = (v) => (v == null ? "" : String(v));
 /* ---------- cache ----------
    Netlify recycles instances, so this only catches bursts. The real protection is the
    cache-control header below, which lets Netlify's CDN hold the answer. */
-const TTL = { all: 10 * 60e3, four: 6 * 3600e3, game: 20 * 60e3, team: 6 * 3600e3, seasons: 12 * 3600e3, players: 6 * 3600e3, pbpall: 12 * 3600e3, roster: 3 * 3600e3 };
+const TTL = { all: 10 * 60e3, four: 6 * 3600e3, game: 20 * 60e3, team: 6 * 3600e3, seasons: 12 * 3600e3, players: 6 * 3600e3, pbpall: 12 * 3600e3, roster: 3 * 3600e3,
+  /* a season that is over does not change: its results are held for a month */
+  history: 30 * 24 * 3600e3 };
 const cache = Object.create(null);
 
 function getCache(k, ttl) { const c = cache[k]; return (c && Date.now() - c.t < ttl) ? c.d : null; }
@@ -2102,6 +2104,36 @@ exports.handler = async (event) => {
                                    partial: done.pending > 0 });
       out.ok = read > 0;
       if (!out.ok) meta.errors.push("no game sheet could be read");
+
+    } else if (res === "history") {
+      /* A SEASON THAT IS OVER, for the standings' look back (Oriol, 24/11/2026: where each club stood
+         at this same matchday last season and in the last five). Only what a table needs: the clubs
+         of that season and the main-round results with their matchday. The league-wide schedule
+         first (one call); only when it is short of a full main round are the clubs' own schedules
+         read, as res=all does for the current season. Held a month - the season does not change. */
+      if (!sea.active || season >= sea.active) return reply(400, Object.assign(meta, { ok: false, errors: ["res=history is for a season that is over"] }), 0);
+      const teamsRaw = await api("/v2/teams/" + season + "?competition=BBL", key).catch(e => ({ _error: "teams: " + e.message }));
+      if (teamsRaw && teamsRaw._error) meta.errors.push(teamsRaw._error);
+      const teamList = Array.isArray(teamsRaw) ? teamsRaw.map(normTeam) : [];
+      const byId = Object.create(null);
+      const take = rows => { (Array.isArray(rows) ? rows : []).forEach(r => { const g = normGame(r); if (!g.id) return;
+        const had = byId[g.id]; if (!had || (g.hs != null && had.hs == null)) byId[g.id] = g; }); };
+      take(await api("/v2/schedule?seasonId=" + season, key).catch(e => { meta.errors.push("schedule: " + e.message); return null; }));
+      const mainDone = () => Object.keys(byId).filter(k => byId[k].phase === "main" && byId[k].hs != null).length;
+      const want = teamList.length * (teamList.length - 1);
+      if (teamList.length && mainDone() < want) {
+        const perTeam = await batched(teamList, 4, 220, async (t) => {
+          try { return await api("/v2/schedule?seasonId=" + season + "&teamId=" + t.id, key); }
+          catch (e) { meta.errors.push("schedule " + t.short + ": " + e.message); return null; } });
+        perTeam.forEach(take);
+      }
+      const games = Object.keys(byId).map(k => byId[k]).filter(g => g.phase === "main" && g.hs != null && g.as != null && g.day != null)
+        .map(g => ({ id: g.id, day: g.day, homeId: g.homeId, awayId: g.awayId, hs: g.hs, as: g.as }));
+      /* the league's feed holds the games of 2022/23 and before without their results (checked 24/11/2026:
+         306 main-round games, none with a score): the clubs of the season are still worth having - they
+         say who was in the BBL - so the answer stands, marked as having no results */
+      out = Object.assign(meta, { teams: teamList.map(t => ({ id: t.id, name: t.name, tlc: t.tlc })), games: games, expected: want, noResults: !games.length });
+      out.ok = teamList.length > 0;
 
     } else if (res === "four") {
       const want = S(q.round || "").toUpperCase() === "SEASON" ? ["SEASON", "MAIN_ROUND"] : ["MAIN_ROUND", "SEASON"];
