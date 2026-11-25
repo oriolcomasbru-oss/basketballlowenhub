@@ -2629,19 +2629,31 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
 .pcn-fh .pcn-grip{color:rgba(255,255,255,.75);font-size:13px}
 .pcn-fam.c-gold .pcn-fh .pcn-grip{color:rgba(0,0,0,.45)}
 .pcn-fam.c-gold .pcn-fh .pb-x{background:rgba(0,0,0,.12);color:#14130b}
-/* a concept's shade: four of its family's colour, dark to light */
+/* a concept's shade: ten of its family's colour, dark to light */
 .pcn-fam.c-blue{--fc:#226fbf}.pcn-fam.c-navy{--fc:#1e5fae}.pcn-fam.c-green{--fc:#17804a}.pcn-fam.c-red{--fc:#c03a24}
 .pcn-fam.c-purple{--fc:#6b3fa0}.pcn-fam.c-gold{--fc:#c9a227}.pcn-fam.c-dark{--fc:#3a4149}
-.pcn-t1{--tc:color-mix(in srgb,var(--fc) 62%,#000)}
-.pcn-t2{--tc:var(--fc)}
-.pcn-t3{--tc:color-mix(in srgb,var(--fc) 58%,#fff)}
-.pcn-t4{--tc:color-mix(in srgb,var(--fc) 30%,#fff)}
-.pcn-row.pcn-tt{background:color-mix(in srgb,var(--tc) 15%,var(--panel));box-shadow:inset 5px 0 0 var(--tc)}
-.pbp .pcn-row.pcn-tt{background:color-mix(in srgb,var(--tc) 15%,#fff)}
-.pcn-tones{display:inline-flex;align-items:center;gap:2px}
-.pcn-tn{width:12px;height:12px;border-radius:50%;border:1px solid var(--line-strong);padding:0;cursor:pointer;background:var(--tc)}
+.pcn-t1{--tc:color-mix(in srgb,var(--fc) 55%,#000)}
+.pcn-t2{--tc:color-mix(in srgb,var(--fc) 70%,#000)}
+.pcn-t3{--tc:color-mix(in srgb,var(--fc) 85%,#000)}
+.pcn-t4{--tc:var(--fc)}
+.pcn-t5{--tc:color-mix(in srgb,var(--fc) 84%,#fff)}
+.pcn-t6{--tc:color-mix(in srgb,var(--fc) 69%,#fff)}
+.pcn-t7{--tc:color-mix(in srgb,var(--fc) 56%,#fff)}
+.pcn-t8{--tc:color-mix(in srgb,var(--fc) 44%,#fff)}
+.pcn-t9{--tc:color-mix(in srgb,var(--fc) 31%,#fff)}
+.pcn-t10{--tc:color-mix(in srgb,var(--fc) 18%,#fff)}
+/* a shaded line: its band at the left, its line tinted, and a white line of two points between it and the next,
+   across the band too */
+.pcn-row.pcn-tt{background:color-mix(in srgb,var(--tc) 15%,var(--panel));box-shadow:inset 5px 0 0 var(--tc);border-top:2px solid var(--panel)}
+.pcn-row.pcn-tt + .pcn-row{border-top:2px solid var(--panel)}
+.pcn-fh + .pcn-row.pcn-tt{border-top:0}
+.pbp .pcn-row.pcn-tt{background:color-mix(in srgb,var(--tc) 15%,#fff);border-top-color:#fff}
+.pbp .pcn-row.pcn-tt + .pcn-row{border-top-color:#fff}
+.pcn-tn{width:14px;height:14px;border-radius:50%;border:1px solid var(--line-strong);padding:0;cursor:pointer;background:var(--tc);flex:0 0 auto}
 .pcn-tn.pcn-t0{background:linear-gradient(135deg,transparent 44%,var(--ink-faint) 44% 56%,transparent 56%)}
 .pcn-tn.on{outline:2px solid var(--ink);outline-offset:1px}
+.pcn-pop{position:fixed;z-index:9999;display:flex;align-items:center;gap:5px;padding:7px 9px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(16,24,40,.18)}
+.pcn-pop .pcn-tn{width:18px;height:18px}
 
 .pcn-row{display:grid;grid-template-columns:minmax(110px,190px) minmax(0,1fr);gap:4px 12px;align-items:baseline;padding:6px 13px;border-top:1px solid var(--line)}
 .pcn-fh + .pcn-row{border-top:0}
@@ -3428,6 +3440,7 @@ function _pbMergeList(kind, B, L, S, hasBase){
     if(sB && sL.color!==sB.color) sO.color=sL.color;
     if(sB && (sL.fam||"")!==(sB.fam||"")){ if(sL.fam) sO.fam=sL.fam; else delete sO.fam; }
     if(sB && (sL.tone||0)!==(sB.tone||0)){ if(sL.tone) sO.tone=sL.tone; else delete sO.tone; }
+    if(sB && (sL.shade||0)!==(sB.shade||0)){ if(sL.shade) sO.shade=sL.shade; else delete sO.shade; }
     sO.entries=sO.entries||[];
     eL.forEach(e=>{ const eB=sB? findE(sB.entries,e) : null, eO=findE(sO.entries,e);
       if(!eO){ if(!_pbN(e.label) && !_pbN(e.detail)) return; if(eB && same(e,eB)) return; if(!eB && !hasBase && _pbFactoryLine(kind, e.label, sL.title)) return; sO.entries.push(JSON.parse(JSON.stringify(e))); return; }
@@ -22593,6 +22606,28 @@ function _pcnAddFam(data){
   commit(()=>{ data.push({id:uid(), title:"", color:color, fam:nm, entries:[]}); });
   _pcnFocus='input.pcn-fti[data-fam="'+nm+'"]'; renderPlaybook();
 }
+/* TEN SHADES, DARK TO LIGHT (Oriol, 26/11/2026: "dame 10 niveles de gradación dentro de cada"). A concept carries its
+   shade (1-10); the four of the first scale (tone 1-4) are read on this one, as near as they were */
+const PCN_OLD_TONE={1:1, 2:4, 3:7, 4:9};
+function _pcnShade(s){ const v=+s.shade; if(v>=1 && v<=10) return v; return PCN_OLD_TONE[+s.tone]||0; }
+/* the ten, and none, in a small row under the concept's swatch: a tap picks one, a tap elsewhere or Escape closes */
+function _pcnTonePop(anchor, cur, pick){
+  const old=document.querySelector(".pcn-pop"); if(old){ const same=old.__a===anchor; old.__close(); if(same) return; }
+  const pop=h("div",{class:"pcn-pop", role:"listbox", "aria-label":"Shade"});
+  pop.style.setProperty("--fc", getComputedStyle(anchor).getPropertyValue("--fc"));
+  /* it follows its swatch when something scrolls, and goes when the swatch is gone */
+  const place=()=>{ if(!anchor.isConnected){ close(); return; }
+    const r=anchor.getBoundingClientRect(), w=pop.offsetWidth, ph=pop.offsetHeight;
+    let x=Math.min(window.innerWidth-w-8, Math.max(8, r.right-w)), y=r.bottom+6; if(y+ph>window.innerHeight-8) y=Math.max(8, r.top-ph-6);
+    pop.style.left=x+"px"; pop.style.top=y+"px"; };
+  const close=()=>{ pop.remove(); document.removeEventListener("click", onDoc, true); document.removeEventListener("keydown", onKey); window.removeEventListener("scroll", place, true); };
+  const onDoc=e=>{ if(!pop.contains(e.target)) close(); }, onKey=e=>{ if(e.key==="Escape") close(); };
+  for(let t=0;t<=10;t++) pop.appendChild(h("button",{class:"pcn-tn pcn-t"+t+(t===cur? " on" : ""), title:t? "Shade "+t+" of 10" : "No shade", "aria-label":t? "Shade "+t : "No shade",
+    onclick:e=>{ e.stopPropagation(); close(); pick(t); }}));
+  pop.__a=anchor; pop.__close=close;
+  document.body.appendChild(pop); place();
+  setTimeout(()=>{ document.addEventListener("click", onDoc, true); document.addEventListener("keydown", onKey); window.addEventListener("scroll", place, true); }, 0);
+}
 function _pbConFams(data, mode){
   const paper=mode==="paper", ed=mode==="edit";
   const groups={}; (data||[]).forEach(s=>{ const n=_pcnFamOf(s); (groups[n]=groups[n]||[]).push(s); });
@@ -22691,15 +22726,14 @@ function _pbConFams(data, mode){
          colores en las subcategorías; cuando pongo un color es una gradación del mismo... lo debo poder usar en cada
          sección"): four shades, dark to light, of the colour of its family, so concepts that go together inside a
          family read together - a band at its left and its line tinted. None by default */
-      const tone=[1,2,3,4].indexOf(+s.tone)>=0? +s.tone : 0;
+      const tone=_pcnShade(s);
       const row=h("div",{class:"pcn-row"+(ent.length || ed? "" : " e")+(tone? " pcn-tt pcn-t"+tone : "")}, nameCell, sets);
       if(ed){
         const fam=h("select",{class:"pcn-famsel", title:"Family"});
         order.forEach(m=>{ const o=h("option",{value:m}, m); if(m===n) o.selected=true; fam.appendChild(o); });
         fam.addEventListener("change",()=>moveSec(s, null, fam.value));
-        const tones=h("span",{class:"pcn-tones", title:"Shade of the family's colour"});
-        [0,1,2,3,4].forEach(t=>{ tones.appendChild(h("button",{class:"pcn-tn pcn-t"+t+(t===tone? " on" : ""), title:t? "Shade "+t : "No shade", "aria-label":t? "Shade "+t : "No shade",
-          onclick:()=>{ if(t===tone) return; commit(()=>{ if(t) s.tone=t; else delete s.tone; }); redraw(); }})); });
+        const tones=h("button",{class:"pcn-tn pcn-tone-b pcn-t"+tone, title:"Shade of the family's colour · "+(tone? tone+" of 10" : "none"), "aria-label":"Shade"});
+        tones.addEventListener("click", e=>{ e.stopPropagation(); _pcnTonePop(tones, tone, t=>{ if(t===tone) return; commit(()=>{ if(t) s.shade=t; else delete s.shade; delete s.tone; }); redraw(); }); });
         row.appendChild(h("div",{class:"pcn-tools"}, tones, fam,
           h("button",{class:"pcn-x", title:"Delete the concept", onclick:()=>{ commit(()=>{ const i=data.indexOf(s); if(i>=0) data.splice(i,1); }); redraw(); }},"✕")));
         dropOn(row, d=>d.type==="pcncon" && d.s!==s, d=>moveSec(d.s, s, n));
