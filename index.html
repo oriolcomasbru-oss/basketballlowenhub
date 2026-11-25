@@ -17950,7 +17950,23 @@ const _padIO={
   save:async (key, doc)=>{ const w=JSON.parse(await _sbRaw("save_staff_doc",{ p_token:SB_TOKEN, p_key:key, p_data:doc }));
     if(!w || !w.ok) throw new Error((w && w.error) || "not saved"); return w; }
 };
-function _padKey(date){ let d=String(date||"").slice(0,10); if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){ try{ d=todayISO(); }catch(e){ d=new Date().toISOString().slice(0,10); } } return "staff:pad:"+d; }
+/* THE GAME THE TAPS BELONG TO (Oriol, 26/11/2026: "en game plan no veo dónde sale la info que he marcado"). The pad
+   opened from its link, or opening again by itself, wrote to the day it was opened, and the game plan of the next game
+   reads that game's day: the taps were kept and never found. With no game named, the pad now writes to our game of
+   today, or else to our next game in the calendar - the game plan the iPad opens for it */
+function _padDefaultDate(){
+  let t=""; try{ t=todayISO(); }catch(e){ t=new Date().toISOString().slice(0,10); }
+  try{ const gs=(state.games||[]).filter(g=>g && /^\d{4}-\d{2}-\d{2}/.test(String(g.date||"")) && String(g.date).slice(0,10)>=t)
+      .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    if(gs[0]) return String(gs[0].date).slice(0,10); }catch(e){_quiet(e)}
+  return t;
+}
+function _padKey(date){ let d=String(date||"").slice(0,10); if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) d=_padDefaultDate(); return "staff:pad:"+d; }
+/* our game on a day, from the calendar: "vs Skyliners" */
+function _padCalGame(day){
+  try{ const g=(state.games||[]).filter(x=>x && String(x.date||"").slice(0,10)===day)[0]; if(!g) return "";
+    return (g.home===false || /^away$/i.test(String(g.venue||"")) || /^@/.test(String(g.opponent||""))? "@ " : "vs ")+String(g.opponent||"").replace(/^@\s*/,""); }catch(e){ return ""; }
+}
 /* two copies made one: every tap of either, once, in the order they were made; a tap undone on either stays undone */
 function _padMerge(a, b){
   const out={ v:1, taps:[], del:Object.assign({}, (a && a.del)||{}, (b && b.del)||{}) }, seen={};
@@ -18020,6 +18036,13 @@ function _padOpen(date){
   _padClose(true);
   PAD.key=_padKey(date);
   const loc=_padLocalGet(PAD.key); PAD.doc=(loc && loc.doc) || { v:1, taps:[], del:{} }; PAD.dirty=!!(loc && loc.dirty);
+  /* taps this phone kept under today when today is not the game's day (the pad wrote there before 26/11/2026): they go
+     with the game they were made for, once */
+  try{ let t=""; try{ t=todayISO(); }catch(e){ t=new Date().toISOString().slice(0,10); }
+    const tk="staff:pad:"+t;
+    if(!date && tk!==PAD.key){ const old=_padLocalGet(tk);
+      if(old && old.doc && _padLive(old.doc).length && !old.moved){ PAD.doc=_padMerge(PAD.doc, old.doc); PAD.dirty=true;
+        _padLocalPut(tk, Object.assign({}, old, { moved:PAD.key })); _padLocalPut(PAD.key, { doc:PAD.doc, dirty:true }); } } }catch(e){_quiet(e)}
   /* WHERE IT WAS (Oriol, 25/11/2026: "si se pierde la pantalla, salva lo anotado siempre; al abrirla de nuevo vuelves al
      punto donde estabas"): every tap is on the phone the moment it is made, the pad notes that it is open, and the hub
      opened again - a reload, a locked phone, a closed tab - opens the pad on the same game, its last tap on show */
@@ -18063,7 +18086,7 @@ function _padPaint(){
   const live=_padLive(PAD.doc), n={}, lw={};
   live.forEach(x=>{ const k=x.s+"|"+x.c; if(lw[k]!=null && x.w-lw[k]<6000){ lw[k]=x.w; return; } lw[k]=x.w; n[k]=(n[k]||0)+1; });
   PAD.ov.querySelectorAll(".pad-b").forEach(b=>{ const v=n[b.dataset.s+"|"+b.dataset.c]||0; b.querySelector(".pad-n").textContent=v? String(v) : ""; });
-  const g=PAD.game, opp=g? (_lgOurs(g.home||"")? "vs "+_lgShort(g.away||"") : "@ "+_lgShort(g.home||"")) : "";
+  const g=PAD.game, day=PAD.key.slice(10), opp=(g? (_lgOurs(g.home||"")? "vs "+_lgShort(g.away||"") : "@ "+_lgShort(g.home||"")) : _padCalGame(day))+(day? " · "+day.slice(8,10)+"/"+day.slice(5,7) : "");
   const t=_padNowT();
   const st=PAD.err? "err" : PAD.dirty? "wait" : "ok";
   PAD.head.innerHTML="";
@@ -18084,7 +18107,10 @@ window.addEventListener("load", ()=>{ try{
   let was=null; try{ was=JSON.parse(localStorage.getItem("pad:open")||"null"); }catch(e){_quiet(e)}
   if(was && !(was.key && Date.now()-(was.at||0)<8*3600e3)) was=null;
   if(!was && !/^#pad$/i.test(location.hash)) return; let n=0;
-  const go=()=>{ if(SB_TOKEN || n++>120){ _padOpen(was? was.key.slice(10) : undefined); return; } setTimeout(go, 1000); }; setTimeout(go, 1200); }catch(e){_quiet(e)} });
+  /* the game it was open on, if that day is one of our games; otherwise the game it belongs to now */
+  const go=()=>{ if(SB_TOKEN || n++>120){ const d=was? was.key.slice(10) : "";
+      const isGame=d && (state.games||[]).some(g=>g && String(g.date||"").slice(0,10)===d);
+      _padOpen(isGame? d : undefined); return; } setTimeout(go, 1000); }; setTimeout(go, 1200); }catch(e){_quiet(e)} });
 /* back to the phone after a while: the clock and the taps at once; leaving it: what is not sent, sent now */
 document.addEventListener("visibilitychange", ()=>{ try{ if(!PAD.ov || !PAD.ov.isConnected) return;
   if(document.visibilityState==="visible"){ _padClock(); _padSync(); } else if(PAD.dirty) _padSync(); }catch(e){_quiet(e)} });
@@ -20253,6 +20279,8 @@ function renderPlanSection(sec, canEd, save, allSecs){
       L4.appendChild(sect("them", "Their key sets", "call · runs · PPP", null, safe(()=>keySetsBlock())));
       const lv=safe(()=>_gpLiveBlock());
       R4.appendChild(sect("live", "The game", "", lv.__stat||null, lv));
+      if(!isPlayerUser()){ const ph4=h("div",{}), ps4=sect("pad", "Our concepts · the pad", "tapped on the phone · scored from the play by play", null, ph4);
+        ps4.hidden=true; R4.appendChild(ps4); try{ _padSection(ph4, ps4); }catch(e){_quiet(e)} }
       wrap4.classList.add("dash");
       wrap4.appendChild(L4); wrap4.appendChild(R4);
       box.appendChild(wrap4);
@@ -20310,6 +20338,9 @@ function renderPlanSection(sec, canEd, save, allSecs){
         /* under the two boards: their playbook on one half, the game as it is played on the other */
         const under=h("div",{class:"gp3-under"}, ks);
         try{ under.appendChild(_gpLiveBlock()); }catch(e){ try{ console.warn("game plan live", e); }catch(_){_quiet(_)} }
+        if(!isPlayerUser()){ try{ const ph3=h("div",{}), ps3=h("section",{class:"gp4-sec pad"}, h("div",{class:"gp4-h"}, h("b",{},"Our concepts · the pad"),
+            h("span",{class:"sub"},"tapped on the phone · scored from the play by play")), h("div",{class:"gp4-b"}, ph3));
+          ps3.hidden=true; under.appendChild(ps3); _padSection(ph3, ps3); }catch(e){_quiet(e)} }
         (colb||left).appendChild(under); sheet.classList.add("ks-rail"); } }
     catch(e){ try{ console.warn("game plan key sets", e); }catch(_){_quiet(_)} }
     box.appendChild(sheet);
@@ -45681,6 +45712,7 @@ body.dark .pad-rd-v{background:#2c333d;color:#e6e9ee}body.dark .pad-rd-v.e2{back
 body.dark .pad-rd-h .pad-open{background:#242a33;color:#eef1f5}
 /* ---- OUR CONCEPTS, the section under The game */
 .gp4-sec.pad .gp4-h{background:#23395b}
+.gp4-sec[hidden]{display:none!important}
 .pad-v{padding:8px 10px 10px}
 .pad-hls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:12px}
 @media (max-width:820px){ .pad-hls{grid-template-columns:repeat(2,minmax(0,1fr))} }
