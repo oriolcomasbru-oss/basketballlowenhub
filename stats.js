@@ -2683,7 +2683,7 @@
     function paint() {
       var old = host.querySelector("svg"); if (old) old.remove();
       var W = Math.max(320, host.clientWidth || 640);
-      var padL = 44, padR = 74, padT = 12, padB = 30;
+      var padL = 44, padR = 74, padT = 12, padB = 40;
       /* ---------------------------------------------------------- the lower band
          A second measure on a different scale cannot go on this axis: the percentage
          runs to a hundred and the rating sits around one, so one y-axis flattens the
@@ -2892,13 +2892,19 @@
       var every = Math.ceil(n / Math.max(4, Math.floor(iw / 54)));
       /* a training's day beside a game's was printed over it ("09/1010/09"): the game keeps
          its day and the training's next to it is left out */
-      var gameX = [], lastX = -1e9;
+      /* AND TWO GAMES DAYS APART NEVER ONE ON THE OTHER (Oriol, 26/11/2026: "estos números se solapan, también al
+         imprimir"): a game's day that would touch the one before goes down to a second line; when that one is taken
+         too, it is left out (its day is in the point's tooltip) */
+      var gameX = [], rowX = [-1e9, -1e9], GAP = 36;
       points.forEach(function (p, i) { if (p.kind === "game") gameX.push(X(i)); });
       points.forEach(function (p, i) {
-        if (p.kind !== "game" && i % every !== 0 && i !== n - 1) return;
-        if (p.kind !== "game" && (X(i) - lastX < 34 || gameX.some(function (x) { return Math.abs(x - X(i)) < 34; }))) return;
-        lastX = X(i);
-        var tx = sv("text", { x: X(i), y: plotBot + 16, class: "tl-axis" + (p.kind === "game" ? " game" : ""), "text-anchor": "middle" });
+        var isG = p.kind === "game";
+        if (!isG && i % every !== 0 && i !== n - 1) return;
+        if (!isG && (X(i) - rowX[0] < GAP || gameX.some(function (x) { return Math.abs(x - X(i)) < GAP; }))) return;
+        var row = X(i) - rowX[0] >= GAP ? 0 : (isG && X(i) - rowX[1] >= GAP) ? 1 : -1;
+        if (row < 0) return;
+        rowX[row] = X(i);
+        var tx = sv("text", { x: X(i), y: plotBot + 16 + row * 13, class: "tl-axis" + (isG ? " game" : ""), "text-anchor": "middle" });
         tx.textContent = shortDate(p.d);
         svg.appendChild(tx);
       });

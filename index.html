@@ -17969,12 +17969,12 @@ function _padCalGame(day){
 }
 /* two copies made one: every tap of either, once, in the order they were made; a tap undone on either stays undone */
 function _padMerge(a, b){
-  const out={ v:1, taps:[], del:Object.assign({}, (a && a.del)||{}, (b && b.del)||{}) }, seen={};
+  const out={ v:1, taps:[], del:Object.assign({}, (a && a.del)||{}, (b && b.del)||{}), res:Object.assign({}, (a && a.res)||{}, (b && b.res)||{}) }, seen={};
   [].concat((a && a.taps)||[], (b && b.taps)||[]).forEach(x=>{ if(!x || !x.id || seen[x.id]) return; seen[x.id]=1; out.taps.push(x); });
   out.taps.sort((x,y)=>(x.w||0)-(y.w||0));
   return out;
 }
-function _padSig(doc){ return doc? (doc.taps||[]).length+"|"+Object.keys(doc.del||{}).length : "-"; }
+function _padSig(doc){ return doc? (doc.taps||[]).length+"|"+Object.keys(doc.del||{}).length+"|"+Object.keys(doc.res||{}).map(k=>k+doc.res[k]).join(",") : "-"; }
 function _padLive(doc){ return ((doc && doc.taps)||[]).filter(x=>!(doc.del||{})[x.id]); }
 
 /* ---- the phone: the buttons */
@@ -18016,17 +18016,65 @@ function _padNowT(){
   const qi=PAD.gcT<2400? Math.min(3, Math.floor(PAD.gcT/600)) : 4+Math.floor((PAD.gcT-2400)/300), end=qi<4? (qi+1)*600 : 2400+(qi-3)*300;
   return PAD.run? Math.min(end, PAD.gcT+Math.min(6, (Date.now()-PAD.gcAt)/1000)) : PAD.gcT;
 }
-function _padTap(s, c, btn){
-  const t=_padNowT();
-  const tap={ id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), s:s, c:c, w:Date.now(), t:t==null? null : Math.round(t*10)/10,
-    gc:t==null? "" : _lgGameClock(t), by:(SB_ME && (SB_ME.username || SB_ME.name))? String(SB_ME.username || SB_ME.name) : "" };
+/* THE POINTS ON THE PAD, NOT FROM THE PLAY BY PLAY (Oriol, 26/11/2026: "no me fío del play by play y el vínculo; quiero
+   anotar en botonera: tres clics 3 pts, dos clics 2 pts, y tiro libre clic sostenido que hace como que se pausa y me das
+   la opción de anotarlo luego"). Quick taps on one button are one possession and say its points - one tap nothing,
+   two taps 2, three taps 3 - shown on the button as they come; the possession is written when the taps stop. A press
+   held is free throws: the possession waits in a tray at the foot of the pad until its points are given (0 to 3, the
+   possession's whole - an and-one is the 2 or 3 plus the throw). */
+const PAD_MT=420, PAD_HOLD=520;
+function _padPts(doc, x){ if(x.ft) return ((doc && doc.res)||{})[x.id]; return ("p" in x)? x.p : undefined; }
+function _padIsNew(x){ return !!x.ft || ("p" in x); }
+function _padAdd(s, c, extra, b, t){
+  const tap=Object.assign({ id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), s:s, c:c, w:Date.now(), t:t==null? null : Math.round(t*10)/10,
+    gc:t==null? "" : _lgGameClock(t), by:(SB_ME && (SB_ME.username || SB_ME.name))? String(SB_ME.username || SB_ME.name) : "" }, extra);
   PAD.doc=_padMerge(PAD.doc, { taps:[tap] }); PAD.dirty=true; _padLocalPut(PAD.key, { doc:PAD.doc, dirty:true });
-  try{ navigator.vibrate && navigator.vibrate(12); }catch(e){_quiet(e)}
-  if(btn){ btn.classList.remove("hit"); void btn.offsetWidth; btn.classList.add("hit"); }
+  if(b){ b.classList.remove("hit"); void b.offsetWidth; b.classList.add("hit"); }
   PAD.last=tap; _padPaint();
   clearTimeout(PAD.st); PAD.st=setTimeout(_padSync, 350);
 }
+function _padBubble(b, n){
+  if(!b) return; let e=b.querySelector(".pad-bub");
+  if(!n){ if(e) e.remove(); return; }
+  if(!e){ e=h("b",{class:"pad-bub"}); b.appendChild(e); }
+  e.textContent=n>=3? "3" : n===2? "2" : "0";
+}
+function _padFlush(){
+  const G=PAD.grp; if(!G) return; PAD.grp=null; clearTimeout(G.tm); _padBubble(G.b, 0);
+  _padAdd(G.s, G.c, { p:G.n>=3? 3 : G.n===2? 2 : 0 }, G.b, G.t);
+}
+function _padCount(s, c, b){
+  if(PAD.grp && (PAD.grp.s!==s || PAD.grp.c!==c)) _padFlush();
+  const G=PAD.grp || (PAD.grp={ s:s, c:c, n:0, b:b, t:_padNowT() });
+  G.n++; clearTimeout(G.tm);
+  try{ navigator.vibrate && navigator.vibrate(10); }catch(e){_quiet(e)}
+  _padBubble(b, G.n);
+  G.tm=setTimeout(_padFlush, PAD_MT);
+}
+function _padHold(s, c, b){
+  _padFlush();
+  try{ navigator.vibrate && navigator.vibrate([25,40,25]); }catch(e){_quiet(e)}
+  _padAdd(s, c, { ft:true }, b, _padNowT());
+}
+/* a press, a quick tap or a held one, on one button; a finger that slides off is neither */
+function _padWire(b, s, c){
+  let tm=0, down=false, held=false;
+  b.addEventListener("pointerdown", ev=>{ ev.preventDefault(); down=true; held=false; clearTimeout(tm);
+    tm=setTimeout(()=>{ if(!down) return; held=true; _padHold(s, c, b); }, PAD_HOLD); });
+  b.addEventListener("pointerup", ev=>{ ev.preventDefault(); if(!down) return; down=false; clearTimeout(tm); if(!held) _padCount(s, c, b); });
+  b.addEventListener("pointercancel", ()=>{ down=false; clearTimeout(tm); });
+  b.addEventListener("pointerleave", ()=>{ if(down && !held){ down=false; clearTimeout(tm); } });
+  b.addEventListener("click", ev=>ev.preventDefault());
+  b.addEventListener("contextmenu", ev=>ev.preventDefault());
+}
+/* the free throws of a possession, given when they are over */
+function _padResolve(id, pts){
+  PAD.doc.res=Object.assign({}, PAD.doc.res||{}); PAD.doc.res[id]=pts; PAD.dirty=true;
+  _padLocalPut(PAD.key, { doc:PAD.doc, dirty:true }); _padPaint();
+  clearTimeout(PAD.st); PAD.st=setTimeout(_padSync, 350);
+}
 function _padUndo(){
+  _padFlush();
   const mine=_padLive(PAD.doc); const x=mine[mine.length-1]; if(!x) return;
   PAD.doc.del=Object.assign({}, PAD.doc.del||{}); PAD.doc.del[x.id]=1; PAD.dirty=true; PAD.last={ undone:x };
   _padLocalPut(PAD.key, { doc:PAD.doc, dirty:true }); _padPaint();
@@ -18057,7 +18105,7 @@ function _padOpen(date){
     PAD_C.forEach(c=>{
       const b=h("button",{type:"button", class:"pad-b"+(c.g? " sub" : "")+(c.k==="trans"? " tr" : ""), "data-s":sd[0], "data-c":c.k},
         h("span",{class:"pad-bl"}, c.l), h("i",{class:"pad-n"}, ""));
-      b.addEventListener("click", ev=>{ ev.preventDefault(); _padTap(sd[0], c.k, b); });
+      _padWire(b, sd[0], c.k);
       if(c.g) pnr.appendChild(b); else col.appendChild(b);
     });
     col.insertBefore(pnr, col.children[1]);
@@ -18074,6 +18122,7 @@ function _padOpen(date){
   _padSync();
 }
 function _padClose(keep){
+  _padFlush();
   /* closed with its own ✕ it stays closed; anything else (another game opened in it) keeps the note */
   if(!keep){ try{ localStorage.removeItem("pad:open"); }catch(e){_quiet(e)} if(PAD.dirty) _padSync(); }
   clearInterval(PAD.ctm); clearInterval(PAD.tmr); PAD.ctm=PAD.tmr=0;
@@ -18082,10 +18131,10 @@ function _padClose(keep){
 }
 function _padPaint(){
   if(!PAD.ov || !PAD.ov.isConnected) return;
-  /* a button's count is possessions: taps on it within six seconds of each other are one (they go to one possession) */
-  const live=_padLive(PAD.doc), n={}, lw={};
-  live.forEach(x=>{ const k=x.s+"|"+x.c; if(lw[k]!=null && x.w-lw[k]<6000){ lw[k]=x.w; return; } lw[k]=x.w; n[k]=(n[k]||0)+1; });
-  PAD.ov.querySelectorAll(".pad-b").forEach(b=>{ const v=n[b.dataset.s+"|"+b.dataset.c]||0; b.querySelector(".pad-n").textContent=v? String(v) : ""; });
+  /* each button: its possessions and the points they made */
+  const live=_padLive(PAD.doc).filter(_padIsNew), n={}, pt={};
+  live.forEach(x=>{ const k=x.s+"|"+x.c; n[k]=(n[k]||0)+1; const v=_padPts(PAD.doc, x); if(v!=null) pt[k]=(pt[k]||0)+v; });
+  PAD.ov.querySelectorAll(".pad-b").forEach(b=>{ const k=b.dataset.s+"|"+b.dataset.c, v=n[k]||0; b.querySelector(".pad-n").textContent=v? v+" · "+(pt[k]||0) : ""; });
   const g=PAD.game, day=PAD.key.slice(10), opp=(g? (_lgOurs(g.home||"")? "vs "+_lgShort(g.away||"") : "@ "+_lgShort(g.home||"")) : _padCalGame(day))+(day? " · "+day.slice(8,10)+"/"+day.slice(5,7) : "");
   const t=_padNowT();
   const st=PAD.err? "err" : PAD.dirty? "wait" : "ok";
@@ -18096,9 +18145,17 @@ function _padPaint(){
   PAD.head.appendChild(h("button",{type:"button", class:"pad-undo", onclick:_padUndo}, "↶ Undo"));
   PAD.head.appendChild(h("button",{type:"button", class:"pad-x", onclick:()=>_padClose(false), title:"close the pad"}, "✕"));
   PAD.foot.innerHTML="";
+  /* the free throws still to give, the latest first: the possession's whole points, 0 to 3 */
+  const pend=live.filter(x=>x.ft && _padPts(PAD.doc, x)==null).slice(-3).reverse();
+  if(pend.length){ const tray=h("div",{class:"pad-tray"});
+    pend.forEach(x=>tray.appendChild(h("div",{class:"pad-pend "+x.s},
+      h("span",{class:"pad-pl"}, h("b",{}, PAD_NAME[x.c]), h("i",{}, (x.s==="o"? "attack" : "defense")+" · free throws"+(x.gc? " · "+x.gc : ""))),
+      ...[0,1,2,3].map(v=>h("button",{type:"button", class:"pad-pv", onclick:()=>_padResolve(x.id, v)}, String(v))))));
+    PAD.foot.appendChild(tray); }
   const L=PAD.last;
-  if(L) PAD.foot.appendChild(h("div",{class:"pad-last"+(L.undone? " un" : "")}, L.undone? "Undone · "+PAD_NAME[L.undone.c]+" · "+(L.undone.s==="o"? "attack" : "defense")
-    : PAD_NAME[L.c]+" · "+(L.s==="o"? "attack" : "defense")+(L.gc? " · "+L.gc : " · no clock")));
+  if(L){ const lp=L.undone? null : _padPts(PAD.doc, L);
+    PAD.foot.appendChild(h("div",{class:"pad-last"+(L.undone? " un" : "")}, L.undone? "Undone · "+PAD_NAME[L.undone.c]+" · "+(L.undone.s==="o"? "attack" : "defense")
+      : PAD_NAME[L.c]+" · "+(L.s==="o"? "attack" : "defense")+" · "+(L.ft? (lp==null? "free throws to give" : lp+" pts with free throws") : (lp==null? "—" : lp+" pts")))); }
 }
 /* open straight from a link kept on the phone's home screen: …/#pad */
 /* (after the sign-in, so the pad never covers it: up to two minutes waiting for one) - and the same when the pad was
@@ -18113,7 +18170,7 @@ window.addEventListener("load", ()=>{ try{
       _padOpen(isGame? d : undefined); return; } setTimeout(go, 1000); }; setTimeout(go, 1200); }catch(e){_quiet(e)} });
 /* back to the phone after a while: the clock and the taps at once; leaving it: what is not sent, sent now */
 document.addEventListener("visibilitychange", ()=>{ try{ if(!PAD.ov || !PAD.ov.isConnected) return;
-  if(document.visibilityState==="visible"){ _padClock(); _padSync(); } else if(PAD.dirty) _padSync(); }catch(e){_quiet(e)} });
+  if(document.visibilityState==="visible"){ _padClock(); _padSync(); } else { _padFlush(); if(PAD.dirty) _padSync(); } }catch(e){_quiet(e)} });
 
 /* ---- the iPad: what each concept returned */
 /* THE POSSESSIONS OF THE GAME, BOTH SIDES, FROM THE PLAY BY PLAY: who had the ball from when to when, what it
@@ -18231,37 +18288,37 @@ function _padBlock(o){
   paint();
   return host;
 }
-/* WHAT THE TAPS GAVE US, counted once a possession and concept: points scored (our attack) or given (our defense) a
-   possession, transition split into TAG and BACK. inW, when given, keeps the possessions that began in that stretch */
-function _padAgg(feed, uc, taps, lastT, inW){
-  const P=_padPoss(feed), Lk=_padLink(P, taps, uc, lastT), agg={ o:{}, d:{} }, used={};
-  let wait=0, why="";
-  Lk.forEach(x=>{
-    if(!x.p){ wait++; why=why||x.why; return; }
-    if(inW && !inW(x.p)) return;
-    const k=x.tp.s+"|"+x.tp.c+"|"+P.indexOf(x.p); if(used[k]) return; used[k]=1;
-    const A=agg[x.tp.s][x.tp.c]||(agg[x.tp.s][x.tp.c]={ k:x.tp.c, n:0, pts:0, tag:{ n:0, pts:0 }, back:{ n:0, pts:0 } });
-    A.n++; A.pts+=x.p.pts;
-    if(x.tp.c==="trans"){ const tb=_padTB(P, x.p); if(tb){ A[tb].n++; A[tb].pts+=x.p.pts; } }
+/* WHAT THE PAD SAYS, from the points tapped on it (no play by play): each possession once, under its concept and side -
+   its points, or its free throws still to be given. inT, when given, keeps the possessions of a stretch (by the game
+   clock the phone read when they were tapped). Taps from before the points were tapped are left out and counted */
+function _padAgg(doc, inT){
+  const agg={ o:{}, d:{} }; let legacy=0, pend=0;
+  _padLive(doc).forEach(x=>{
+    if(!_padIsNew(x)){ legacy++; return; }
+    if(inT && !inT(x)) return;
+    const A=agg[x.s][x.c]||(agg[x.s][x.c]={ k:x.c, n:0, done:0, pts:0, pend:0 });
+    A.n++; const v=_padPts(doc, x);
+    if(v==null){ A.pend++; pend++; } else { A.done++; A.pts+=v; }
   });
-  return { agg:agg, wait:wait, why:why };
+  return { agg:agg, legacy:legacy, pend:pend };
 }
 const _padStep=v=>v<0.5? 0 : v<0.8? 1 : v<1.0? 2 : v<1.25? 3 : v<1.6? 4 : 5;
 /* the colour of a figure, from our side: in attack more is green, in defense less is; from five possessions */
-const _padTone=(s, r)=>r.n>=5? "e"+(s==="o"? _padStep(r.pts/r.n) : 5-_padStep(r.pts/r.n)) : "few";
-function _padRows(agg, s){ return Object.keys(agg[s]).map(k=>agg[s][k]).sort((a,b)=>b.n-a.n || (b.pts/b.n)-(a.pts/a.n)); }
-function _padTot(rows){ const n=rows.reduce((a,r)=>a+r.n,0), p=rows.reduce((a,r)=>a+r.pts,0); return { n:n, pts:p, v:n? p/n : null }; }
+const _padTone=(s, r)=>r.done>=5? "e"+(s==="o"? _padStep(r.pts/r.done) : 5-_padStep(r.pts/r.done)) : "few";
+function _padRows(agg, s){ return Object.keys(agg[s]).map(k=>agg[s][k]).sort((a,b)=>b.n-a.n || ((b.done? b.pts/b.done : 0)-(a.done? a.pts/a.done : 0))); }
+function _padTot(rows){ const n=rows.reduce((a,r)=>a+r.done,0), p=rows.reduce((a,r)=>a+r.pts,0); return { n:n, pts:p, v:n? p/n : null }; }
+const _padV=r=>r.done? (r.pts/r.done).toFixed(2) : "—";
 /* OUR CONCEPTS, AS A PICTURE: on top the four that stand out - our best and our worst concept in attack, our best and
    our worst in defense, each from five possessions (under five a concept is not ranked); then every concept of each
    side, as long as its share of the side's possessions, with what it gave us a possession */
-function _padView(feed, uc, taps, lastT){
-  const R=_padAgg(feed, uc, taps, lastT), box=h("div",{class:"pad-v"});
-  const ro=_padRows(R.agg,"o"), rd=_padRows(R.agg,"d"), qo=ro.filter(r=>r.n>=5), qd=rd.filter(r=>r.n>=5);
-  const by=(list, hi)=>list.slice().sort((a,b)=>hi? (b.pts/b.n)-(a.pts/a.n) : (a.pts/a.n)-(b.pts/b.n))[0]||null;
+function _padView(doc){
+  const R=_padAgg(doc), box=h("div",{class:"pad-v"});
+  const ro=_padRows(R.agg,"o"), rd=_padRows(R.agg,"d"), qo=ro.filter(r=>r.done>=5), qd=rd.filter(r=>r.done>=5);
+  const by=(list, hi)=>list.slice().sort((a,b)=>hi? (b.pts/b.done)-(a.pts/a.done) : (a.pts/a.done)-(b.pts/b.done))[0]||null;
   const tile=(lab, s, r, tone)=>h("div",{class:"pad-hl "+(r? tone : "none")},
     h("i",{}, lab), r? h("b",{}, PAD_NAME[r.k]) : h("b",{},"—"),
-    r? h("strong",{}, (r.pts/r.n).toFixed(2)) : null,
-    h("em",{}, r? r.n+" poss · "+r.pts+" pts "+(s==="o"? "scored" : "given") : "a concept is ranked from 5 possessions"));
+    r? h("strong",{}, _padV(r)) : null,
+    h("em",{}, r? r.done+" poss · "+r.pts+" pts "+(s==="o"? "scored" : "given") : "a concept is ranked from 5 possessions"));
   const bo=by(qo,true), wo=qo.length>1? by(qo,false) : null, bd=by(qd,false), wd=qd.length>1? by(qd,true) : null;
   box.appendChild(h("div",{class:"pad-hls"},
     tile("Attack · best", "o", bo, "good"), tile("Attack · worst", "o", wo && wo!==bo? wo : null, "bad"),
@@ -18270,48 +18327,48 @@ function _padView(feed, uc, taps, lastT){
     const T=_padTot(rows), mx=rows.reduce((m,r)=>Math.max(m,r.n),1);
     const col=h("div",{class:"pad-vc "+s}, h("div",{class:"pad-vch"}, h("b",{}, title),
       h("span",{}, T.n? T.n+" poss · "+T.v.toFixed(2)+(s==="o"? " scored a possession" : " given a possession") : "nothing tapped yet")));
-    rows.forEach(r=>{ const v=r.pts/r.n;
-      const tb=r.k==="trans" && (r.tag.n||r.back.n)? h("span",{class:"pad-vtb"},
-        r.tag.n? h("u",{class:_padTone(s, r.tag)}, "TAG "+(r.tag.pts/r.tag.n).toFixed(2)+" · "+r.tag.n) : null,
-        r.back.n? h("u",{class:_padTone(s, r.back)}, "BACK "+(r.back.pts/r.back.n).toFixed(2)+" · "+r.back.n) : null) : null;
-      col.appendChild(h("div",{class:"pad-vr", title:PAD_NAME[r.k]+": "+r.pts+" points in "+r.n+" possessions"+(r.n<5? " · under 5, no colour" : "")},
-        h("span",{class:"pad-vk"}, PAD_NAME[r.k], tb),
+    rows.forEach(r=>{
+      col.appendChild(h("div",{class:"pad-vr", title:PAD_NAME[r.k]+": "+r.pts+" points in "+r.done+" possessions"+(r.pend? " · "+r.pend+" with free throws still to give" : "")+(r.done<5? " · under 5, no colour" : "")},
+        h("span",{class:"pad-vk"}, PAD_NAME[r.k], r.pend? h("span",{class:"pad-vtb"}, h("u",{class:"few"}, r.pend+" FT to give")) : null),
         h("span",{class:"pad-vbar"}, h("i",{style:"width:"+Math.max(8, Math.round(100*r.n/mx))+"%"}), h("b",{}, r.n+" poss")),
-        h("span",{class:"pad-vv "+_padTone(s, r)}, v.toFixed(2)))); });
+        h("span",{class:"pad-vv "+_padTone(s, r)}, _padV(r)))); });
     return col; };
   box.appendChild(h("div",{class:"pad-vg"}, side("o","Our attack · what we score", ro), side("d","Our defense · what we give", rd)));
-  if(R.wait) box.appendChild(h("div",{class:"pad-rd-n"}, R.wait+" tap"+(R.wait===1? "" : "s")+" not matched yet · "+
-    (R.why==="waiting"? "the play by play has not reached them" : R.why==="no clock"? "made with no live clock" : "no possession of that side at that moment")));
+  const notes=[];
+  if(R.pend) notes.push(R.pend+" possession"+(R.pend===1? "" : "s")+" with free throws still to give on the phone");
+  if(R.legacy) notes.push(R.legacy+" tap"+(R.legacy===1? "" : "s")+" from before the points were tapped, left out");
+  if(notes.length) box.appendChild(h("div",{class:"pad-rd-n"}, notes.join(" · ")));
   return box;
 }
-/* the section under The game: drawn on every reading of the game and every new copy of the taps, shown once one is in */
+/* the section under The game: drawn on every new copy of the taps, shown once one is in */
 function _padSection(host, sec){
   let sig="";
   const paint=()=>{
     if(host.__drawn && !host.isConnected){ window.removeEventListener("gp-live", paint); return; }
     host.__drawn=true;
     const L=_gpLiveNow, date=(L && L.plan && String(L.plan).split("|")[1]) || _scoutDate || "";
-    const c=_padFetch(_padKey(date), (L && L.live)? 3000 : 60000);
+    const c=_padFetch(_padKey(date), (L && L.live)? 3000 : 15000);
     c.hosts=(c.hosts||[]).filter(f=>f.__h && f.__h.isConnected); if(c.hosts.indexOf(paint)<0){ paint.__h=host; c.hosts.push(paint); }
     const taps=_padLive(c.doc);
     sec.hidden=!taps.length;
     if(!taps.length) return;
-    if(!(L && L.feed)){ host.innerHTML=""; host.appendChild(h("div",{class:"pad-rd-e"}, taps.length+" taps on the pad · this game's play by play is not in yet")); return; }
-    const s2=_padSig(c.doc)+"|"+(L.feed.actions||[]).length+"|"+Math.floor(L.lastT||0);
-    if(s2===sig) return; sig=s2;
-    host.innerHTML=""; host.appendChild(_padView(L.feed, L.uc, taps, L.lastT));
+    const s2=_padSig(c.doc); if(s2===sig) return; sig=s2;
+    host.innerHTML=""; host.appendChild(_padView(c.doc));
   };
   window.addEventListener("gp-live", paint);
+  /* read again every few seconds while the plan is open, game or not: the taps do not wait for the play by play */
+  const tick=setInterval(()=>{ if(!host.isConnected){ clearInterval(tick); return; } paint(); }, 4000);
   paint();
 }
-/* THE PAD IN THE TIMEOUT CARD: what each side's concepts gave since the timeout before, and the game beside it */
+/* THE PAD IN THE TIMEOUT CARD: what each side's concepts gave since the timeout before (by the clock the phone read),
+   and the game beside it */
 function _padCardPart(L, tStart, tEnd){
   const date=String(L.plan||"").split("|")[1] || _scoutDate || "", c=_padFetch(_padKey(date), 3000), taps=_padLive(c.doc);
-  if(!taps.length || !L.feed) return null;
-  const W=_padAgg(L.feed, L.uc, taps, L.lastT, p=>p.t0>=tStart && p.t0<=tEnd), G=_padAgg(L.feed, L.uc, taps, L.lastT);
-  const line=(s, lab)=>{ const rw=_padRows(W.agg, s), rg=_padRows(G.agg, s), Tg=_padTot(rg);
+  if(!taps.length) return null;
+  const W=_padAgg(c.doc, x=>x.t!=null && x.t>tStart && x.t<=tEnd+5), G=_padAgg(c.doc);
+  const line=(s, lab)=>{ const rw=_padRows(W.agg, s).filter(r=>r.done), rg=_padRows(G.agg, s), Tg=_padTot(rg);
     return h("div",{class:"gp7-pl"}, h("b",{}, lab),
-      h("span",{class:"gp7-pc"}, rw.length? rw.slice(0,4).map(r=>h("u",{class:_padTone(s, r)}, PAD_NAME[r.k]+" "+(r.pts/r.n).toFixed(2)+" · "+r.n)) : h("i",{},"nothing tapped in this stretch")),
+      h("span",{class:"gp7-pc"}, rw.length? rw.slice(0,4).map(r=>h("u",{class:_padTone(s, r)}, PAD_NAME[r.k]+" "+_padV(r)+" · "+r.done)) : h("i",{},"nothing tapped in this stretch")),
       h("em",{}, Tg.n? "game "+Tg.v.toFixed(2)+" · "+Tg.n : "")); };
   return h("div",{class:"gp7-pad"}, h("div",{class:"gp7-fh"},"The pad · since "+(tStart? "the timeout before" : "the tip-off")),
     line("o","Our attack"), line("d","Our defense"));
@@ -20223,7 +20280,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
         wrap5.appendChild(sect("live", "The game", "", lv.__stat||null, lv));
         /* OUR CONCEPTS, UNDER THE GAME (Oriol, 26/11/2026: "una vez haya marcado algo debe haber una parte en game plan tras
            THE GAME"): what the taps on the phone gave us, attack and defense - hidden until the first tap is in */
-        if(!isPlayerUser()){ const ph=h("div",{}), ps=sect("pad", "Our concepts · the pad", "tapped on the phone · scored from the play by play", null, ph);
+        if(!isPlayerUser()){ const ph=h("div",{}), ps=sect("pad", "Our concepts · the pad", "tapped on the phone · its points as tapped", null, ph);
           ps.hidden=true; wrap5.appendChild(ps); try{ _padSection(ph, ps); }catch(e){_quiet(e)} }
         { const setsSec=sect("them sets", "Their key sets", "see the call, find the play", null, safe(()=>keySetsBlock()));
           /* in game mode their sets fold to their heading: one tap opens them, another closes them */
@@ -20279,7 +20336,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
       L4.appendChild(sect("them", "Their key sets", "call · runs · PPP", null, safe(()=>keySetsBlock())));
       const lv=safe(()=>_gpLiveBlock());
       R4.appendChild(sect("live", "The game", "", lv.__stat||null, lv));
-      if(!isPlayerUser()){ const ph4=h("div",{}), ps4=sect("pad", "Our concepts · the pad", "tapped on the phone · scored from the play by play", null, ph4);
+      if(!isPlayerUser()){ const ph4=h("div",{}), ps4=sect("pad", "Our concepts · the pad", "tapped on the phone · its points as tapped", null, ph4);
         ps4.hidden=true; R4.appendChild(ps4); try{ _padSection(ph4, ps4); }catch(e){_quiet(e)} }
       wrap4.classList.add("dash");
       wrap4.appendChild(L4); wrap4.appendChild(R4);
@@ -20339,7 +20396,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
         const under=h("div",{class:"gp3-under"}, ks);
         try{ under.appendChild(_gpLiveBlock()); }catch(e){ try{ console.warn("game plan live", e); }catch(_){_quiet(_)} }
         if(!isPlayerUser()){ try{ const ph3=h("div",{}), ps3=h("section",{class:"gp4-sec pad"}, h("div",{class:"gp4-h"}, h("b",{},"Our concepts · the pad"),
-            h("span",{class:"sub"},"tapped on the phone · scored from the play by play")), h("div",{class:"gp4-b"}, ph3));
+            h("span",{class:"sub"},"tapped on the phone · its points as tapped")), h("div",{class:"gp4-b"}, ph3));
           ps3.hidden=true; under.appendChild(ps3); _padSection(ph3, ps3); }catch(e){_quiet(e)} }
         (colb||left).appendChild(under); sheet.classList.add("ks-rail"); } }
     catch(e){ try{ console.warn("game plan key sets", e); }catch(_){_quiet(_)} }
@@ -45680,7 +45737,17 @@ body.pad-on{overflow:hidden}
 @keyframes padHitO{0%{background:#2ecc71;color:#06210f}100%{background:#1c232c}}
 @keyframes padHitD{0%{background:#ff6b5b;color:#2a0905}100%{background:#1c232c}}
 .pad-n{position:absolute;top:4px;right:6px;font:700 10.5px "IBM Plex Mono",monospace;color:#8f9aa8;font-style:normal}
-.pad-ft{flex:none;min-height:26px;display:flex;align-items:center;justify-content:center}
+.pad-ft{flex:none;min-height:26px;display:flex;flex-direction:column;align-items:stretch;gap:5px}
+.pad-ft .pad-last{align-self:center}
+/* the points as they are tapped: the button says what it will write */
+.pad-bub{position:absolute;left:6px;top:4px;min-width:22px;height:22px;padding:0 5px;border-radius:999px;background:#ffd24a;color:#1b1400;font:800 14px/22px Inter,system-ui,sans-serif;text-align:center}
+/* the free throws to give */
+.pad-tray{display:flex;flex-direction:column;gap:5px}
+.pad-pend{display:grid;grid-template-columns:minmax(0,1fr) repeat(4,44px);gap:5px;align-items:center;padding:4px 6px;border-radius:10px;background:#2a2410;border:1px solid #6b5a1c}
+.pad-pl{display:flex;flex-direction:column;min-width:0}.pad-pl b{font:700 13px Inter,system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pad-pl i{font:600 10.5px Inter,system-ui,sans-serif;font-style:normal;color:#ffd98a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pad-pv{height:38px;border-radius:9px;border:1px solid #6b5a1c;background:#3a3214;color:#fff3c4;font:800 17px Inter,system-ui,sans-serif;touch-action:manipulation}
+.pad-pv:active{background:#ffd24a;color:#1b1400}
 .pad-last{font:600 12.5px Inter,system-ui,sans-serif;color:#cfd6df;padding:4px 10px;border-radius:999px;background:#1b222b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .pad-last.un{color:#ffd98a}
 @media (min-width:700px){ .pad-b{font-size:17px} .pad-b.sub{font-size:15px} }
