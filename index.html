@@ -17944,9 +17944,14 @@ function _padUndo(){
   clearTimeout(PAD.st); PAD.st=setTimeout(_padSync, 350);
 }
 function _padOpen(date){
-  _padClose();
+  _padClose(true);
   PAD.key=_padKey(date);
   const loc=_padLocalGet(PAD.key); PAD.doc=(loc && loc.doc) || { v:1, taps:[], del:{} }; PAD.dirty=!!(loc && loc.dirty);
+  /* WHERE IT WAS (Oriol, 25/11/2026: "si se pierde la pantalla, salva lo anotado siempre; al abrirla de nuevo vuelves al
+     punto donde estabas"): every tap is on the phone the moment it is made, the pad notes that it is open, and the hub
+     opened again - a reload, a locked phone, a closed tab - opens the pad on the same game, its last tap on show */
+  try{ localStorage.setItem("pad:open", JSON.stringify({ key:PAD.key, at:Date.now() })); }catch(e){_quiet(e)}
+  { const lv=_padLive(PAD.doc); PAD.last=lv[lv.length-1] || null; }
   const ov=h("div",{id:"padOv", class:"pad-ov"});
   const head=h("div",{class:"pad-hd"});
   const cols=h("div",{class:"pad-cols"});
@@ -17972,7 +17977,9 @@ function _padOpen(date){
   PAD.tmr=setInterval(()=>{ if(PAD.dirty) _padSync(); else _padPaint(); }, 4000);
   _padSync();
 }
-function _padClose(){
+function _padClose(keep){
+  /* closed with its own ✕ it stays closed; anything else (another game opened in it) keeps the note */
+  if(!keep){ try{ localStorage.removeItem("pad:open"); }catch(e){_quiet(e)} if(PAD.dirty) _padSync(); }
   clearInterval(PAD.ctm); clearInterval(PAD.tmr); PAD.ctm=PAD.tmr=0;
   try{ PAD.lock && PAD.lock.release(); }catch(e){_quiet(e)} PAD.lock=null;
   const o=document.getElementById("padOv"); if(o) o.remove(); document.body.classList.remove("pad-on"); PAD.ov=null;
@@ -17988,18 +17995,25 @@ function _padPaint(){
   PAD.head.innerHTML="";
   PAD.head.appendChild(h("div",{class:"pad-ttl"}, h("b",{}, "PAD"), opp? h("span",{}, opp) : null));
   PAD.head.appendChild(h("div",{class:"pad-clk"+(t==null? " off" : "")}, t==null? (g && g.status==="LIVE"? "break" : "no live clock") : _lgGameClock(t)));
-  PAD.head.appendChild(h("span",{class:"pad-st "+st, title:PAD.err||""}, st==="ok"? live.length+" sent" : st==="wait"? "sending…" : "not sent · kept here"));
+  PAD.head.appendChild(h("span",{class:"pad-st "+st, title:PAD.err||""}, st==="ok"? "✓ "+live.length : st==="wait"? "sending" : "kept · not sent"));
   PAD.head.appendChild(h("button",{type:"button", class:"pad-undo", onclick:_padUndo}, "↶ Undo"));
-  PAD.head.appendChild(h("button",{type:"button", class:"pad-x", onclick:_padClose, title:"close the pad"}, "✕"));
+  PAD.head.appendChild(h("button",{type:"button", class:"pad-x", onclick:()=>_padClose(false), title:"close the pad"}, "✕"));
   PAD.foot.innerHTML="";
   const L=PAD.last;
   if(L) PAD.foot.appendChild(h("div",{class:"pad-last"+(L.undone? " un" : "")}, L.undone? "Undone · "+PAD_NAME[L.undone.c]+" · "+(L.undone.s==="o"? "attack" : "defense")
     : PAD_NAME[L.c]+" · "+(L.s==="o"? "attack" : "defense")+(L.gc? " · "+L.gc : " · no clock")));
 }
 /* open straight from a link kept on the phone's home screen: …/#pad */
-/* (after the sign-in, so the pad never covers it: up to two minutes waiting for one) */
-window.addEventListener("load", ()=>{ try{ if(!/^#pad$/i.test(location.hash)) return; let n=0;
-  const go=()=>{ if(SB_TOKEN || n++>120){ _padOpen(); return; } setTimeout(go, 1000); }; setTimeout(go, 1200); }catch(e){_quiet(e)} });
+/* (after the sign-in, so the pad never covers it: up to two minutes waiting for one) - and the same when the pad was
+   open when the hub was last left, the same day, on the same game */
+window.addEventListener("load", ()=>{ try{
+  let was=null; try{ was=JSON.parse(localStorage.getItem("pad:open")||"null"); }catch(e){_quiet(e)}
+  if(was && !(was.key && Date.now()-(was.at||0)<8*3600e3)) was=null;
+  if(!was && !/^#pad$/i.test(location.hash)) return; let n=0;
+  const go=()=>{ if(SB_TOKEN || n++>120){ _padOpen(was? was.key.slice(10) : undefined); return; } setTimeout(go, 1000); }; setTimeout(go, 1200); }catch(e){_quiet(e)} });
+/* back to the phone after a while: the clock and the taps at once; leaving it: what is not sent, sent now */
+document.addEventListener("visibilitychange", ()=>{ try{ if(!PAD.ov || !PAD.ov.isConnected) return;
+  if(document.visibilityState==="visible"){ _padClock(); _padSync(); } else if(PAD.dirty) _padSync(); }catch(e){_quiet(e)} });
 
 /* ---- the iPad: what each concept returned */
 /* THE POSSESSIONS OF THE GAME, BOTH SIDES, FROM THE PLAY BY PLAY: who had the ball from when to when, what it
@@ -18054,11 +18068,12 @@ function _padLink(P, taps, uc, lastT){
   });
 }
 /* TAG or BACK, from the possession before it of the other side: a three or a long two, made or missed, is TAG; a
-   close two or a turnover is BACK (Oriol, 25/11/2026: "Tag tiro de 3pts o 2pts lejano, back tiro de 2pts cercano") */
+   close two missed or a turnover is BACK (Oriol, 25/11/2026: "Tag tiro de 3pts o 2pts lejano, back tiro de 2pts
+   cercano"; "un 2 cercano metido no cuenta como back") - after a close two made the ball is inbounded: neither */
 function _padTB(P, p){
   const i=P.indexOf(p); for(let j=i-1;j>=0;j--){ const q=P[j]; if(q.side===p.side) continue;
     if(q.to) return "back"; if(!q.last) return ""; const k=q.last.kind;
-    return (k==="3"||k==="far2")? "tag" : k==="close2"? "back" : ""; }
+    return (k==="3"||k==="far2")? "tag" : (k==="close2" && !q.last.made)? "back" : ""; }
   return "";
 }
 const _padCache={};
@@ -45413,38 +45428,39 @@ body.dark .gp-sq .sq-t.e2{background:#5a2e28;color:#ffd6cf}body.dark .gp-sq .sq-
    Dark and high contrast whatever the theme - it is read in a hall, at a glance, with a thumb - and nothing that
    moves the page: a tap is a tap, never a zoom or a scroll */
 body.pad-on{overflow:hidden}
-.pad-ov{position:fixed;inset:0;z-index:9500;display:flex;flex-direction:column;gap:6px;background:#0d1116;color:#eef1f5;
+.pad-ov{position:fixed;inset:0;z-index:9500;display:flex;flex-direction:column;gap:5px;overflow:hidden;background:#0d1116;color:#eef1f5;
   padding:calc(6px + env(safe-area-inset-top,0px)) calc(8px + env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) calc(8px + env(safe-area-inset-left,0px));
   font-family:Inter,system-ui,sans-serif;-webkit-user-select:none;user-select:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-.pad-hd{display:flex;align-items:center;gap:8px;min-height:40px}
+.pad-hd{flex:none;display:flex;align-items:center;gap:6px;min-height:38px;flex-wrap:nowrap}
 .pad-ttl{display:flex;align-items:baseline;gap:6px;min-width:0}
 .pad-ttl b{font:700 15px "Oswald",sans-serif;letter-spacing:.14em}
 .pad-ttl span{font:600 12px Inter,system-ui,sans-serif;color:#aeb6c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pad-clk{margin-left:auto;font:700 15px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;padding:3px 8px;border-radius:6px;background:#1b222b}
+.pad-clk{flex:none;margin-left:auto;font:700 15px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;padding:3px 8px;border-radius:6px;background:#1b222b}
 .pad-clk.off{font:600 11px Inter,system-ui,sans-serif;color:#aeb6c2}
-.pad-st{font:600 10.5px Inter,system-ui,sans-serif;padding:3px 7px;border-radius:999px;white-space:nowrap}
+.pad-st{flex:none;font:600 10.5px Inter,system-ui,sans-serif;padding:3px 7px;border-radius:999px;white-space:nowrap}
 .pad-st.ok{background:#173d2f;color:#8fe0bb}.pad-st.wait{background:#4a3b12;color:#ffd98a}.pad-st.err{background:#4a1f1a;color:#ffb0a6}
 .pad-undo,.pad-x{white-space:nowrap;font:700 13px Inter,system-ui,sans-serif;color:#eef1f5;background:#232b35;border:1px solid #34404d;border-radius:8px;min-height:38px;padding:0 10px}
 .pad-x{min-width:38px;padding:0}
-.pad-cols{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:8px;overflow:auto}
-.pad-col{display:flex;flex-direction:column;gap:6px;min-width:0}
-.pad-ch{font:700 13px "Oswald",sans-serif;letter-spacing:.16em;text-transform:uppercase;text-align:center;padding:5px 0;border-radius:7px}
+.pad-cols{flex:1 1 0;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:7px;overflow:hidden}
+.pad-col{display:flex;flex-direction:column;gap:5px;min-width:0;min-height:0}
+.pad-ch{flex:none;font:700 13px "Oswald",sans-serif;letter-spacing:.16em;text-transform:uppercase;text-align:center;padding:5px 0;border-radius:7px}
 .pad-col.o .pad-ch{background:#1f8a4c;color:#fff}.pad-col.d .pad-ch{background:#c0392b;color:#fff}
-.pad-pnr{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:5px;border-radius:10px;background:#151b22;border:1px solid #26303b}
+.pad-pnr{flex:4.4 1 0;min-height:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto repeat(4,minmax(0,1fr));gap:4px;padding:4px;border-radius:10px;background:#151b22;border:1px solid #26303b}
 .pad-gh{grid-column:1/-1;font:700 11px "Oswald",sans-serif;letter-spacing:.16em;color:#aeb6c2;padding:0 2px}
-.pad-b{position:relative;display:flex;align-items:center;justify-content:center;text-align:center;min-height:54px;padding:4px 6px;border-radius:10px;
+.pad-b{position:relative;flex:1 1 0;display:flex;align-items:center;justify-content:center;text-align:center;min-height:0;padding:2px 6px;border-radius:10px;
   background:#1c232c;border:1px solid #303b47;color:#f4f6f9;font:700 15px/1.1 Inter,system-ui,sans-serif;cursor:pointer;touch-action:manipulation}
-.pad-b.sub{min-height:46px;font-size:13.5px}
+.pad-b.sub{font-size:13.5px}
+.pad-pnr .pad-b.sub:last-child{grid-column:1/-1}
 .pad-b.tr{background:#1d2633;border-color:#3d5878}
 .pad-b:active{transform:scale(.97)}
 .pad-col.o .pad-b.hit{animation:padHitO .45s ease-out}.pad-col.d .pad-b.hit{animation:padHitD .45s ease-out}
 @keyframes padHitO{0%{background:#2ecc71;color:#06210f}100%{background:#1c232c}}
 @keyframes padHitD{0%{background:#ff6b5b;color:#2a0905}100%{background:#1c232c}}
 .pad-n{position:absolute;top:4px;right:6px;font:700 10.5px "IBM Plex Mono",monospace;color:#8f9aa8;font-style:normal}
-.pad-ft{min-height:28px;display:flex;align-items:center;justify-content:center}
+.pad-ft{flex:none;min-height:26px;display:flex;align-items:center;justify-content:center}
 .pad-last{font:600 12.5px Inter,system-ui,sans-serif;color:#cfd6df;padding:4px 10px;border-radius:999px;background:#1b222b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .pad-last.un{color:#ffd98a}
-@media (min-width:700px){ .pad-b{min-height:64px;font-size:17px} .pad-b.sub{min-height:54px;font-size:15px} }
+@media (min-width:700px){ .pad-b{font-size:17px} .pad-b.sub{font-size:15px} }
 
 /* ---- the reading in the game plan (iPad) */
 .pad-rd{margin:10px 0 4px;padding:0 8px}
