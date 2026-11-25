@@ -18341,29 +18341,39 @@ function _padView(doc){
   return box;
 }
 /* the section under The game: drawn on every new copy of the taps, shown once one is in */
+/* THE SECTION UNDER THE GAME, LISTENING TO THE PHONE (Oriol, 26/11/2026: "no se sincronizan el iPad y el iPhone, así que
+   no puedo comprobar si funciona la visualización en el iPad mientras marco en el iPhone"). Three things stood between
+   the two: the section took its game from the last game the page had read live - another plan, or a replay - and not
+   from the plan open; outside a game it read the taps every fifteen seconds; and with nothing tapped it showed nothing,
+   so nobody could tell which game it was listening to. Now it is the plan open, read every few seconds, and its head
+   says the game and the time of the last reading, with a line while nothing has come in yet */
 function _padSection(host, sec){
   let sig="";
+  const sub=sec.querySelector(".gp4-h .sub");
   const paint=()=>{
     if(host.__drawn && !host.isConnected){ window.removeEventListener("gp-live", paint); return; }
     host.__drawn=true;
-    const L=_gpLiveNow, date=(L && L.plan && String(L.plan).split("|")[1]) || _scoutDate || "";
-    const c=_padFetch(_padKey(date), (L && L.live)? 3000 : 15000);
+    const date=_scoutDate || "", key=_padKey(date), day=key.slice(10);
+    const c=_padFetch(key, 3000);
     c.hosts=(c.hosts||[]).filter(f=>f.__h && f.__h.isConnected); if(c.hosts.indexOf(paint)<0){ paint.__h=host; c.hosts.push(paint); }
-    const taps=_padLive(c.doc);
-    sec.hidden=!taps.length;
-    if(!taps.length) return;
-    const s2=_padSig(c.doc); if(s2===sig) return; sig=s2;
-    host.innerHTML=""; host.appendChild(_padView(c.doc));
+    const taps=_padLive(c.doc), game=(_padCalGame(day) || "this game")+" · "+day.slice(8,10)+"/"+day.slice(5,7);
+    sec.hidden=false;
+    if(sub){ const at=c.at? new Date(c.at) : null;
+      sub.textContent=game+" · "+(c.err? "not read: "+c.err : at? "read "+String(at.getHours()).padStart(2,"0")+":"+String(at.getMinutes()).padStart(2,"0")+":"+String(at.getSeconds()).padStart(2,"0") : "reading…"); }
+    const s2=taps.length? _padSig(c.doc) : "none|"+key; if(s2===sig) return; sig=s2;
+    host.innerHTML="";
+    if(!taps.length){ host.appendChild(h("div",{class:"pad-rd-e"}, "Nothing tapped yet for "+game+". The pad on the phone writes here when its head shows this same game.")); return; }
+    host.appendChild(_padView(c.doc));
   };
   window.addEventListener("gp-live", paint);
   /* read again every few seconds while the plan is open, game or not: the taps do not wait for the play by play */
-  const tick=setInterval(()=>{ if(!host.isConnected){ clearInterval(tick); return; } paint(); }, 4000);
+  const tick=setInterval(()=>{ if(!host.isConnected){ clearInterval(tick); return; } paint(); }, 3000);
   paint();
 }
 /* THE PAD IN THE TIMEOUT CARD: what each side's concepts gave since the timeout before (by the clock the phone read),
    and the game beside it */
 function _padCardPart(L, tStart, tEnd){
-  const date=String(L.plan||"").split("|")[1] || _scoutDate || "", c=_padFetch(_padKey(date), 3000), taps=_padLive(c.doc);
+  const date=_scoutDate || String(L.plan||"").split("|")[1] || "", c=_padFetch(_padKey(date), 3000), taps=_padLive(c.doc);
   if(!taps.length) return null;
   const W=_padAgg(c.doc, x=>x.t!=null && x.t>tStart && x.t<=tEnd+5), G=_padAgg(c.doc);
   const line=(s, lab)=>{ const rw=_padRows(W.agg, s).filter(r=>r.done), rg=_padRows(G.agg, s), Tg=_padTot(rg);
