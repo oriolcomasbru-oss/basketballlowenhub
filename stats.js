@@ -4277,7 +4277,14 @@
       tip.style.left = Math.round(x) + "px"; tip.style.top = Math.round(y) + "px";
     };
     var cellOf = function (ev) { var t = ev.target; return t && t.closest ? t.closest("td") : null; };
-    tbl.addEventListener("mouseover", function (ev) { var td = cellOf(ev); if (td && td.__tip) xAt(td); else xOff(); });
+    var xRow = function (tr) {
+      if (xOn === tr) return;
+      xOff(); xOn = tr; tbl.classList.add("tr-x"); tr.classList.add("tr-xr");
+    };
+    tbl.addEventListener("mouseover", function (ev) { var td = cellOf(ev);
+      if (td && td.__tip) xAt(td);
+      else if (td && td.parentNode.cells.length === head.length && tbl.tBodies[0].contains(td)) xRow(td.parentNode);
+      else xOff(); });
     tbl.addEventListener("mouseleave", xOff);
     tbl.addEventListener("click", function (ev) { var td = cellOf(ev); if (td && td.__tip) { xOn = null; xAt(td); } });
     var away = function (ev) { if (!document.body.contains(tbl)) { document.removeEventListener("click", away, true); return; }
@@ -5477,7 +5484,6 @@
       "  background:var(--panel,#fff);text-align:left;min-width:150px;max-width:210px;overflow:hidden;text-overflow:ellipsis}",
       ".tr-sets .sx-table td:first-child{font:800 12.5px/1.2 'Oswald',sans-serif;letter-spacing:.04em;text-transform:uppercase;",
       "  color:var(--ink);border-right:2px solid var(--ink,#15181f);border-radius:0}",
-      ".tr-sets .sx-table tbody tr:hover td{box-shadow:inset 0 2px 0 var(--ink,#15181f),inset 0 -2px 0 var(--ink,#15181f)}",
       ".tr-sets .sx-table tbody tr:hover td:first-child{background:var(--panel-2,#f1f3f5)}",
       /* the band is one cell across the table; left unbreakable, its own length was being
          handed to the first column and pushed every set's numbers a screen away from its name */
@@ -5529,9 +5535,8 @@
       ".tr-spark .tr-sp-dot{fill:var(--ink,#141821)}",
       /* pointing at a night: the row and the column, the rest faded, the cell boxed, its head marked */
       ".tr-sets table.tr-x tbody tr:not(.tr-xr) td.tr-mini:not(.tr-xc){opacity:.32}",
-      ".tr-sets table.tr-x tbody td.tr-xc{box-shadow:inset 2px 0 0 var(--ink,#141821),inset -2px 0 0 var(--ink,#141821)!important}",
-      ".tr-sets table.tr-x tbody td.tr-xme{box-shadow:inset 0 0 0 2px var(--ink,#141821)!important;opacity:1}",
-      ".tr-sets .sx-table thead th.tr-xh{background:var(--panel-2,#eef1f5);box-shadow:inset 0 -3px 0 var(--ink,#141821)}",
+      ".tr-sets .sx-table thead th.tr-xh{background:var(--panel-2,#eef1f5)}",
+      ".tr-sets .sx-table thead th.tr-xh b{color:var(--ink,#141821)}",
       ".tr-spark circle.tr-sp-pt.on{fill:var(--ink,#141821);stroke:var(--panel,#fff);stroke-width:1.2}",
       /* the card beside it */
       ".tr-tip{position:fixed;z-index:9000;left:0;top:0;visibility:hidden;pointer-events:none;width:max-content;max-width:260px;padding:9px 11px 8px;border-radius:9px;",
