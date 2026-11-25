@@ -2123,20 +2123,20 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
 .pbx-namewrap{display:flex;align-items:center;gap:4px;min-width:0}
 .pbx-name{font-weight:600;color:#12161d;white-space:normal;outline:none;min-width:0}
 .pbx-name[contenteditable="true"]:focus{background:#fff;box-shadow:0 0 0 2px var(--gold-1,#d8b877);border-radius:4px}
-.pbx-n{font:700 12px ui-monospace,SFMono-Regular,Menlo,monospace;text-align:right;color:#5b6472}
-.pbx-ppp{font:700 12px ui-monospace,SFMono-Regular,Menlo,monospace;text-align:right;
+.pbx-n{font:700 12px 'IBM Plex Mono',ui-monospace,monospace;text-align:right;color:#5b6472}
+.pbx-ppp{font:700 12px 'IBM Plex Mono',ui-monospace,monospace;text-align:right;
   padding:2px 6px;border-radius:5px;color:#12161d}
 .pbx-ppp.on{font-weight:800}
 .pbx-ppp.muted{color:#6c7583}
-.pbx-efg{font:400 11.5px ui-monospace,SFMono-Regular,Menlo,monospace;text-align:right;color:#5b6472}
+.pbx-efg{font:400 11.5px 'IBM Plex Mono',ui-monospace,monospace;text-align:right;color:#5b6472}
 .pbx-callh{font:inherit;text-align:left}
-.pbx-call{display:inline-block;font:800 11px ui-monospace,SFMono-Regular,Menlo,monospace;
+.pbx-call{display:inline-block;font:800 11px 'IBM Plex Mono',ui-monospace,monospace;
   background:var(--accent-soft,#f6efe0);color:#7a5a20;border:1px solid var(--gold-1,#d8b877);
   border-radius:5px;padding:1px 6px;white-space:nowrap;justify-self:start}
-.pbx-nocall{display:inline-block;font:400 11px ui-monospace,monospace;color:#6c7583;
+.pbx-nocall{display:inline-block;font:400 11px 'IBM Plex Mono',ui-monospace,monospace;color:#6c7583;
   border:1px dashed var(--line-strong,#d2d7df);border-radius:5px;padding:1px 6px;
   justify-self:start;opacity:.7}
-.pbx-fl{font:800 9px/1 ui-monospace,monospace;color:#fff;background:var(--alert,#c0392b);
+.pbx-fl{font:800 9px/1 'IBM Plex Mono',ui-monospace,monospace;color:#fff;background:var(--alert,#c0392b);
   border-radius:3px;padding:2px 4px;margin-left:4px}
 .pbx-fl.ppp{background:transparent;color:var(--alert,#c0392b);border:1px solid var(--alert,#c0392b)}
 .pbx-row.flag .pbx-namewrap{box-shadow:inset 3px 0 0 var(--alert,#c0392b);padding-left:7px}
@@ -2725,7 +2725,7 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
   font-weight:800;font-size:12px;letter-spacing:.05em;text-transform:uppercase;cursor:pointer}
 .rimp-open:hover{filter:brightness(1.15)}
 .rimp-bar-note{font-size:11.5px;color:var(--ink-faint,#8b8b8b);flex:1;min-width:200px}
-.rimp .rst-raw{min-height:190px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.rimp .rst-raw{min-height:190px;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px}
 .rimp-filerow{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
 .rimp-out{max-height:46vh;overflow:auto;margin-top:10px}
 .rimp-ok{background:rgba(30,130,76,.10);border-left:3px solid #1e824c;padding:7px 10px;border-radius:5px;font-size:12.5px;margin-bottom:8px}
@@ -2745,7 +2745,50 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
 .rst-hi.bad{border-left:3px solid #c0392b}
 .rst-higrid{margin-bottom:12px}
 </style>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style id="typeSys">
+/* ===================================================================
+   v56 · TYPE SYSTEM — less is more (Oriol, 25/11/2026: "tipografía menos es más, adelante"; the numbers of the
+   tables "como en game plan, sí")
+   Three families, each with one job, and one style a role, in every view:
+   - Oswald: what titles something (the band that opens a part, a block, a panel) and the chips;
+   - Inter: what is read - text, names, the small labels, a table's head, the big figures, the buttons;
+   - IBM Plex Mono: the numbers in the tables, each digit the same width, as the game plan has them.
+   This sheet is kept the last of the page (the reports add theirs later), so it is the one that decides.
+   =================================================================== */
+:root{
+  --tf-head:'Oswald','Arial Narrow',sans-serif;
+  --tf-body:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+  --tf-num:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+}
+/* 1 · the band that opens a part of a page */
+body .rs-banner-t, body .rs-banner-sec .rs-banner-t, body .lg-l1 > b{
+  font-family:var(--tf-head)!important;font-weight:700!important;font-size:18px!important;letter-spacing:.14em!important;text-transform:uppercase!important}
+/* 2 · a block's title */
+body .lg-l2, body .sxp-h2, body .sxp-allh b, body .td-grp{
+  font-family:var(--tf-head)!important;font-weight:700!important;font-size:14px!important;letter-spacing:.14em!important;text-transform:uppercase!important}
+/* 3 · a panel's title */
+body .lg-h, body .scout-h, body .td-t b, body .sx-h, body .sx-post .sx-h, body .trg-box > summary b, body .gp5-review > summary b,
+body .section-title, body .rs-card-title, body .pb-cardtitle, body .dash-ch h3{
+  font-family:var(--tf-head)!important;font-weight:700!important;font-size:13px!important;letter-spacing:.10em!important;text-transform:uppercase!important}
+/* 4 · the small label that names a part of a panel */
+body .td-kpi i, body .ui-card-k, body .tr-rank-h, body .gp-sig-i i, body .us-l, body .us-h, body .sxp-sub, body .trg-src-h,
+body .rst-grouptitle, body .rs-dualhead > div{
+  font-family:var(--tf-body)!important;font-weight:600!important;font-size:10.5px!important;letter-spacing:.10em!important;text-transform:uppercase!important;font-style:normal!important}
+/* 5 · a table's head (the game plan's live tables keep their own, tighter one) */
+body .sx-table th, body .sxp-t th, body .lg-tbl th, body .trg-mx thead th{
+  font-family:var(--tf-body)!important;font-weight:600!important;font-size:10.5px!important;letter-spacing:.06em!important;text-transform:uppercase!important}
+/* 6 · the numbers in a table, as the game plan has them - the page marks every cell that is a number */
+body td.tnum{font-family:var(--tf-num)!important;font-variant-numeric:tabular-nums}
+/* 7 · the big figures */
+body .td-kpi b, body .gp-sig-i b, body .ui-card-v b, body .sxp-big, body .sxp-stats dd, body .tr-tip-b b{
+  font-family:var(--tf-body)!important;font-weight:800!important;font-variant-numeric:tabular-nums}
+/* 8 · chips, segments and the small sort buttons */
+body .tr-fb, body .lg-seg-b, body .sxp-tab, body .sxp-sortb, body .pbx-sortb{
+  font-family:var(--tf-head)!important;font-weight:600!important;font-size:11px!important;letter-spacing:.08em!important;text-transform:uppercase!important}
+/* 9 · buttons */
+body .btn, body .pre-copy-btn{font-family:var(--tf-body)!important;font-weight:600!important}
+</style>
 </head>
 <body>
 <!-- The first thing in the document, so it is the first thing painted. Everything under
@@ -9722,6 +9765,33 @@ window.phxStyleStats=function(){ try{ document.querySelectorAll('.phx .stat-valu
 const FIT_SEL=".lg-emb.emb-cols, .sxp.rst-sxp:not(.pst-top):not(.sxp-rowA):not(.sxp-rowAn), .sxp-sec, .sx-cat, .sx-sec:not(.tl),"
   +" .rs-grid:not(.rs-onecol), .rs-sum-row, .fitgrid";
 const FIT_GAP=16, FIT_MIN=330, FIT_MAXC=4, FIT_CAP=1400;
+/* v56 TYPE SYSTEM, ITS TWO PIECES OF WORK. A table cell that is a number reads as one - IBM Plex Mono, each digit
+   the same width, as the game plan has them: every cell is looked at once, and marked when it is mostly digits
+   (22.6, 5/5, +0.11, 66.7%, 12/21, 1:40, W 87–67). And the type sheet stays the last of the page: the reports add
+   their own styles as they open, and a later sheet would otherwise decide over it. */
+function _tnumPass(){
+  try{
+    document.querySelectorAll("table td").forEach(td=>{
+      if(td.__tn) return; td.__tn=1;
+      if(td.querySelector("table,svg,img,button,input,select,textarea")) return;
+      const t=(td.textContent||"").trim(); if(!t || t.length>14) return;
+      const all=t.replace(/\s/g,"").length, dg=(t.match(/\d/g)||[]).length;
+      if(dg && dg>=all*0.5) td.classList.add("tnum"); });
+  }catch(e){_quiet(e)}
+}
+let _tnumT=0;
+function _typeKeep(){
+  try{ const ts=document.getElementById("typeSys"); if(ts && document.head && document.head.lastElementChild!==ts) document.head.appendChild(ts); }catch(e){_quiet(e)}
+}
+try{
+  new MutationObserver(()=>{ _typeKeep(); }).observe(document.head, { childList:true });
+  const kick=()=>{ if(_tnumT) return; _tnumT=setTimeout(()=>{ _tnumT=0; _tnumPass(); }, 150); };
+  /* only when a table, a row or a cell came in: the rest of the page's changes cost nothing */
+  const seen=ms=>{ for(const m of ms) for(const n of m.addedNodes){ if(n.nodeType!==1) continue;
+    if(/^(TABLE|TBODY|TR|TD)$/.test(n.tagName) || (n.querySelector && n.querySelector("td"))) return true; } return false; };
+  const boot=()=>{ try{ new MutationObserver(ms=>{ if(seen(ms)) kick(); }).observe(document.body, { childList:true, subtree:true }); kick(); }catch(e){_quiet(e)} };
+  if(document.body) boot(); else document.addEventListener("DOMContentLoaded", boot);
+}catch(e){_quiet(e)}
 function _fitIsGrid(el){ return el.nodeType===1 && el.matches && el.matches(FIT_SEL); }
 function _fitKids(el){
   return Array.prototype.filter.call(el.children, n=>n.nodeType===1
@@ -40642,7 +40712,7 @@ body .sx-table tbody tr:hover td:first-child,body .sxp-t tbody tr:hover td:first
 .pre-copy-g{font:700 12px 'IBM Plex Mono',monospace;color:#5a3d0c}
 .pre-copy-sel{font:600 12px 'IBM Plex Mono',monospace;padding:3px 6px;border-radius:6px;border:1px solid rgba(184,134,46,.6);background:var(--panel,#fff);color:var(--ink,#141821)}
 .pre-copy-b{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-left:4px}
-.pre-copy-btn{border:1px solid rgba(184,134,46,.7);background:var(--panel,#fff);color:#5a3d0c;border-radius:999px;padding:4px 11px;font:600 12px 'IBM Plex Sans',sans-serif;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.pre-copy-btn{border:1px solid rgba(184,134,46,.7);background:var(--panel,#fff);color:#5a3d0c;border-radius:999px;padding:4px 11px;font:600 12px Inter,sans-serif;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
 .pre-copy-btn:hover:not(:disabled){background:#b8862e;color:#fff;border-color:#b8862e}
 .pre-copy-btn:disabled{opacity:.45;cursor:default}
 .pre-copy-btn i{font:600 10.5px 'IBM Plex Mono',monospace;font-style:normal;opacity:.75}
@@ -46091,16 +46161,16 @@ body:not(.phx),.app{font-family:var(--f-body)}
    open, amber is being edited right now, green is closed. The word is there
    for the colour-blind case and for print, where the fill goes grey. */
 .st-bar{display:flex;align-items:center;gap:10px;margin:0 0 14px;padding:9px 14px;
-  border-radius:10px;border:1px solid transparent;font:800 12px/1 ui-sans-serif,system-ui,sans-serif;
+  border-radius:10px;border:1px solid transparent;font:800 12px/1 Inter,system-ui,sans-serif;
   letter-spacing:.11em;text-transform:uppercase}
 .st-dot{width:10px;height:10px;border-radius:50%;background:currentColor;flex:0 0 auto}
 .st-txt{flex:0 0 auto}
 .st-bar .spacer{flex:1 1 auto}
 .st-right{display:flex;align-items:center;gap:8px}
-.st-when{font:500 11px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.02em;
+.st-when{font:500 11px/1 Inter,system-ui,sans-serif;letter-spacing:.02em;
   text-transform:none;opacity:.72}
 .st-btn{border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer;
-  font:700 11px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;
+  font:700 11px/1 Inter,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;
   padding:6px 11px;border-radius:999px}
 .st-btn:hover{background:currentColor}
 .st-btn:hover{color:#fff}
@@ -46123,13 +46193,13 @@ body.dark .st-done{color:#6fd7a0;background:rgba(47,163,96,.15)}
 /* and the one that is owed is a filled red dot, on a training row only: a game's open
    report keeps its ring */
 .ym-row.training .ym-st.open{background:#c4494c;box-shadow:none}
-.ym-cnt{margin-left:auto;font:700 11px ui-sans-serif,system-ui,sans-serif;letter-spacing:.06em;
+.ym-cnt{margin-left:auto;font:700 11px Inter,system-ui,sans-serif;letter-spacing:.06em;
   color:var(--ink-faint,#8a919c);font-variant-numeric:tabular-nums}
 .ym-cnt.all{color:#2fa360}
 .ym-head.static{display:flex;align-items:baseline;gap:8px}
 
 /* what a practice is still missing, ticked off one by one */
-.st-req{font:700 11px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.06em;
+.st-req{font:700 11px/1 Inter,system-ui,sans-serif;letter-spacing:.06em;
   padding:5px 9px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
 .st-req::before{margin-right:6px}
 .st-req.ok{color:#227a4b}    .st-req.ok::before{content:"\2713"}
