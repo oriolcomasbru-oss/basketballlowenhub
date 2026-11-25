@@ -2616,6 +2616,19 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
 .pb-add{margin-top:7px;border:1px dashed var(--line);background:transparent;color:var(--ink-faint);border-radius:7px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer}
 .pb-add:hover{border-color:var(--accent);color:var(--accent)}
 @media(max-width:560px){.pb-grid{columns:1}}
+/* special reports (26/11/2026) */
+.ym-row.special{background:color-mix(in srgb,#6b3fa0 9%,var(--panel))}
+.ym-st.sp{background:#6b3fa0}
+.sp-tag{font-family:'Oswald',sans-serif;font-weight:600;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#fff;background:#6b3fa0;border-radius:4px;padding:1px 6px;flex:0 0 auto}
+.ym-row.special .sp-tag{margin-right:4px}
+.plan-head .week-label.sp-wl{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}
+.sp-title{font-weight:800}
+.sp-title-in{min-width:200px;flex:1 1 260px;font:inherit;font-weight:800;font-size:15px;padding:5px 8px;border:1px solid var(--line-strong);border-radius:7px;background:var(--panel);color:var(--ink)}
+.sp-date-in{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line-strong);border-radius:7px;background:var(--panel);color:var(--ink)}
+.sp-head .sp-wl{flex:1 1 auto}
+.sp-new-l{display:flex;align-items:center;gap:10px;margin:12px 0 6px;font-weight:600}
+.sp-new-n{font-size:12.5px;color:var(--ink-soft);min-height:18px}
+.btn.sp-del{color:#b3261e}
 /* Offense by concepts · the list by families (26/11/2026) */
 .pbcon{columns:540px;column-gap:14px}
 .pcn-fam{break-inside:avoid;margin:0 0 14px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel);box-shadow:0 1px 2px rgba(16,24,40,.05),0 8px 20px rgba(16,24,40,.05)}
@@ -7140,6 +7153,9 @@ function loadPraFiles(after){
 const _tsTrgOpen={};
 function seasonGrid(kind){
   const {keys,map}=seasonMonths();
+  /* a special report in a month with nothing else in it still gets its month */
+  if(kind==="teamscout" && !isPlayerUser()){ (_spIdx.list||[]).forEach(x=>{ const k=String((x && x.date)||"").slice(0,7);
+    if(/^\d{4}-\d{2}$/.test(k) && keys.indexOf(k)<0){ keys.push(k); map[k]=map[k]||[]; } }); keys.sort(); }
   const wrap=h("div",{class:"year-wrap"+_anSoftOnce("season:"+kind)});
   const slot = kind==="gameplan" ? "plan" : (kind==="oppscout" ? "pre" : "post");
   /* The list is drawn again when the calendar, the Drive or the statuses answer, and for
@@ -7172,7 +7188,8 @@ function seasonGrid(kind){
     items=items.filter(x=> x.type==="training" || ["BBL","CUP"].includes(x.g.competition));
     if(kind==="oppscout"||kind==="gameplan") items=items.filter(x=>x.type==="game");
     else items=items.filter(x=> x.type==="game"? tsFilterOn("game") : tsFilterOn("training"));
-    if(!items.length) return;
+    const spHere=(kind==="teamscout" && !isPlayerUser())? _spInMonth(k) : [];
+    if(!items.length && !spHere.length) return;
     /* how many of this month are closed, so the season reads at a glance. A player counts
        only what he is allowed to open, or a month would read 1/4 with one row under it. */
     let done=0, tot=0;
@@ -7204,7 +7221,9 @@ function seasonGrid(kind){
       curGrp.paint();
       return curGrp.body;
     };
+    if(spHere.length) items=_spMerge(items, spHere);
     items.forEach(x=>{
+      if(x.type==="special"){ curGrp=null; col.appendChild(_spRow(x.sp)); return; }
       if(x.type==="game"){ curGrp=null; const g=x.g; const key=gameKey(g); wanted.push(key);
         if(!playerMaySeeGame(key, kind)) return;
         /* the file behind the row, so a game whose tagging or plan is in Drive says so
@@ -7250,6 +7269,7 @@ function seasonGrid(kind){
   const softRedraw = ()=>softRender(redraw);
   loadRepStats(wanted, softRedraw);
   if(kind==="teamscout") loadPraFiles(softRedraw);
+  if(kind==="teamscout") _spLoad().then(ch=>{ if(ch) softRedraw(); }).catch(_quiet);
   /* this grid used to be the one screen that never asked Drive what was in it, so a plan
      or a tagging only showed up after a visit to Planning */
   if(!_docsTried){ try{ syncDocs(false).then(softRedraw); }catch(e){_quiet(e)} }
@@ -11181,6 +11201,8 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
   /* "only" narrows what is drawn, never what is stored: the Game plan screen
      renders one section of the same report and saves it the same way. */
   const ONLY = opts && opts.only;
+  /* a special report (see specialCard): the written sections and nothing of a game */
+  const SPECIAL = !!(opts && opts.special);
   /* A player account reads four blocks of the pre-game report and nothing else: who the
      opponent's men are, where they play, what they do in the team, and how their season
      has gone. The sections the staff writes, the shot chart, the rotations and the
@@ -11203,7 +11225,8 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
   const _isQuarters = (sc)=> kind==="postgame" &&
     (sc.dualLbl==="sides" || /^\s*game\s*by\s*quarters\s*$/i.test(String(sc.title||"")));
   rep.data = rep.data || {};
-  if(!Array.isArray(rep.data[bag]) || !rep.data[bag].length) rep.data[bag] = (kind==="postgame") ? defaultPostSections() : defaultReportSections();
+  if(!Array.isArray(rep.data[bag]) || !rep.data[bag].length) rep.data[bag] = SPECIAL ? [{ id:uid(), title:"NOTES", items:[{ t:"Item", v:"" }] }]
+    : (kind==="postgame") ? defaultPostSections() : defaultReportSections();
   const secs=rep.data[bag];
   try{ if(kind!=="postgame" && typeof g!=="undefined" && g && _preAreasNow(secs, g.date) && canEd) setTimeout(()=>{ try{ save(); }catch(e){_quiet(e)} }, 0); }catch(e){_quiet(e)}
   const wrap=h("div",{class:"rs-sections rs-"+kind});
@@ -11318,7 +11341,7 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
   }
   /* the migration runs for everyone, so a player opening the report sees the
      new shape too; only a coach's session writes the result back */
-  { const _before=JSON.stringify(secs.map(s=>s&&(s.kind||s.role||s.title))); ensureCanonical(secs,kind);
+  if(!SPECIAL){ const _before=JSON.stringify(secs.map(s=>s&&(s.kind||s.role||s.title))); ensureCanonical(secs,kind);
     if(canEd && JSON.stringify(secs.map(s=>s&&(s.kind||s.role||s.title)))!==_before) save(); }
 
   if(canEd){
@@ -11414,7 +11437,7 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
      has none. */
   let _postExtraDone=false;
   const addPostExtra=()=>{
-    if(_postExtraDone || kind!=="postgame" || ONLY || PV) return;
+    if(_postExtraDone || kind!=="postgame" || ONLY || PV || SPECIAL) return;
     _postExtraDone=true;
     const blk=(title, build)=>{ const b=h("div",{class:"rs-block rs-block-auto"},
         h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"}, title)));
@@ -11495,7 +11518,7 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
     } else if(sec.role==="summary"){
       block.appendChild(renderSummarySection(sec, canEd, save));
     } else {
-      const isDual = sec.dual || RE_PRE_OFF.test((sec.title||"").trim()) || RE_PRE_DEF.test((sec.title||"").trim());
+      const isDual = sec.dual || (!SPECIAL && (RE_PRE_OFF.test((sec.title||"").trim()) || RE_PRE_DEF.test((sec.title||"").trim())));
       const grid=h("div",{class:"rs-grid"+(isDual?" rs-onecol rs-dual-table":"")});
       const cctx={from:-1};
       const moveItem=(from,to)=>{ if(from<0||to<0||from===to||to>=sec.items.length||from>=sec.items.length) return; const [x]=sec.items.splice(from,1); sec.items.splice(to,0,x); save(); reRender(); };
@@ -11528,7 +11551,7 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
       }
       (sec.items||[]).forEach((it,ii)=>{ let card; if(isDual && it.kind!=="table" && sec.dualLbl==="sets" && kind!=="postgame") card=renderPlaybookCard(sec,it,ii,canEd,save,reRender,cctx,L); else if(isDual && it.kind!=="table") card=renderDualCard(sec,it,ii,canEd,save,reRender,cctx,L); else if(it.kind==="table") card=renderTableCard(sec,it,ii,canEd,save,reRender,cctx); else card=renderReportCard(sec,it,ii,canEd,save,reRender,cctx); if(canEd){ card.addEventListener("dragover",e=>{ if(cctx.from<0) return; e.preventDefault(); card.classList.add("rs-card-drop"); }); card.addEventListener("dragleave",()=>card.classList.remove("rs-card-drop")); card.addEventListener("drop",e=>{ if(cctx.from<0) return; e.preventDefault(); card.classList.remove("rs-card-drop"); moveItem(cctx.from, ii); }); } grid.appendChild(card); });
       block.appendChild(grid);
-      if(canEd){ const addbar=h("div",{class:"rs-add-cardrow"}, h("button",{class:"rs-add-card", onclick:()=>{ sec.items.push(isDual?{t:"New item",them:"",us:""}:{t:"New item",v:""}); save(); reRender(); }},"＋ item"), h("button",{class:"rs-add-card", onclick:()=>{ sec.items.push({t:"Table",kind:"table",table:{headers:["System","Poss","PPP"],rows:[["","",""]]}}); save(); reRender(); }},"＋ table")); block.appendChild(addbar); }
+      if(canEd){ const addbar=h("div",{class:"rs-add-cardrow"}, h("button",{class:"rs-add-card", onclick:()=>{ sec.items.push(isDual?{t:"New item",them:"",us:""}:{t:"New item",v:""}); save(); reRender(); }},"＋ item"), SPECIAL? null : h("button",{class:"rs-add-card", onclick:()=>{ sec.items.push({t:"Table",kind:"table",table:{headers:["System","Poss","PPP"],rows:[["","",""]]}}); save(); reRender(); }},"＋ table")); block.appendChild(addbar); }
     }
     wrap.appendChild(block);
     /* The five panels off the feed used to hang off "the first stats section that is not
@@ -11585,8 +11608,8 @@ function _rrsBuild(body, rep, key, g, canEd, kind, opts){
     wrap.appendChild(h("div",{class:"rs-add-row"},
       h("button",{class:"rs-add-sec", onclick:()=>{ secs.push({id:uid(),title:"NEW SECTION",items:[{t:"Item",v:""}]}); save(); reRender(); }},"＋ Add section"),
 
-      h("button",{class:"rs-add-sec", onclick:()=>{ secs.push({id:uid(),title:"New THEY / WE section",dual:true,items:[{t:"Item",them:"",us:""}]}); save(); reRender(); }},"＋ THEY / WE section"),
-      h("button",{class:"rs-add-sec", onclick:()=>{ secs.push(playbookSection()); save(); reRender(); }},"＋ Playbook")));
+      SPECIAL? null : h("button",{class:"rs-add-sec", onclick:()=>{ secs.push({id:uid(),title:"New THEY / WE section",dual:true,items:[{t:"Item",them:"",us:""}]}); save(); reRender(); }},"＋ THEY / WE section"),
+      SPECIAL? null : h("button",{class:"rs-add-sec", onclick:()=>{ secs.push(playbookSection()); save(); reRender(); }},"＋ Playbook")));
   }
   body.appendChild(wrap);
 }
@@ -20592,15 +20615,152 @@ function gpPrintFit(sheetEl){
   };
   setTimeout(go, 600);
 }
+/* SPECIAL REPORTS (Oriol, 26/11/2026: "dame la posibilidad de añadir un informe post cuando me apetezca aunque no haya
+   rival... son informes especiales que les pongo el título que crea conveniente... pon un + ... me preguntas la fecha
+   y ya me abres el informe... dentro lo debo poder eliminar arriba... mismo formato de post game pero solamente con la
+   parte de texto, secciones y subsecciones... imprimir en 1-2 hojas máximo").
+   A report of the staff's own, on a day, with no game. Their list is the staff document staff:special-reports
+   ({ v, list:[{ id, date, title, at, by }] }), read and written whole - always read again just before it is written,
+   so two people adding one each keep both. Each report is a record of its own under "special|<id>", written by the
+   post game's own sections - autosave, undo, versions, print - with nothing of a game in it: only the written part.
+   Taking one off takes it off the list; what was written in it stays on the server */
+const SPECIAL_IDX_KEY="staff:special-reports";
+const _spIdx={ list:null, at:0, busy:null, err:"" };
+async function _spRead(){
+  const r=JSON.parse(await _sbRaw("get_report",{ p_token:SB_TOKEN, p_key:SPECIAL_IDX_KEY }));
+  /* only a clear answer is an answer: a list that could not be read is never taken for an empty one */
+  if(!r || r.ok!==true) throw new Error((r && r.error) || "the server did not answer");
+  const d=r.report && r.report.data; return Array.isArray(d && d.list)? d.list : [];
+}
+function _spLoad(force){
+  if(!SB_TOKEN || isPlayerUser()) return Promise.resolve(false);
+  if(_spIdx.busy) return _spIdx.busy;
+  if(!force && _spIdx.list && Date.now()-_spIdx.at<30000) return Promise.resolve(false);
+  const was=JSON.stringify(_spIdx.list);
+  _spIdx.busy=(async ()=>{
+    try{ _spIdx.list=await _spRead(); _spIdx.at=Date.now(); _spIdx.err=""; }
+    catch(e){ _spIdx.err=(e && e.message) || String(e); }
+    finally{ _spIdx.busy=null; }
+    return JSON.stringify(_spIdx.list)!==was; })();
+  return _spIdx.busy;
+}
+async function _spEdit(fn){
+  const list=await _spRead(); fn(list);
+  const w=JSON.parse(await _sbRaw("save_staff_doc",{ p_token:SB_TOKEN, p_key:SPECIAL_IDX_KEY, p_data:{ v:1, list:list } }));
+  if(!w || !w.ok) throw new Error((w && w.error) || "the server did not keep it");
+  _spIdx.list=list; _spIdx.at=Date.now(); return list;
+}
+function _spDay(d){ try{ return new Date(d+"T00:00:00").toLocaleDateString("en-GB",{ weekday:"short", day:"numeric", month:"short", year:"numeric" }); }catch(e){ return d||""; } }
+/* the ＋ on Post game / practice: the day, and the report opens - in edit mode, to be written */
+function _spNew(){
+  if(!SB_TOKEN){ toast("Sign in first"); return; }
+  const day=h("input",{type:"date", class:"sp-date-in"}); try{ day.value=todayISO(); }catch(e){ day.value=new Date().toISOString().slice(0,10); }
+  const go=h("button",{class:"btn primary"},"Open the report");
+  const note=h("div",{class:"sp-new-n"},"");
+  go.onclick=async ()=>{
+    const d=String(day.value||"");
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){ note.textContent="Pick the day first."; return; }
+    go.disabled=true; note.textContent="Saving it in the list…";
+    const id=uid();
+    try{ await _spEdit(list=>{ list.push({ id:id, date:d, title:"Special report", at:new Date().toISOString(), by:currentUser||"" }); }); }
+    catch(e){ go.disabled=false; note.textContent="Not saved: "+((e && e.message) || e); return; }
+    closeDialog();
+    setEditMode(true);
+    state.ui.ts={ mode:"special", id:id }; persist(); renderTeamScout();
+  };
+  openDialog(h("div",{class:"sp-new"},
+    h("h3",{},"New special report"),
+    h("p",{},"A report of your own, with no game: the day it is about. Its title, its sections and what goes in them are written inside."),
+    h("label",{class:"sp-new-l"}, h("span",{},"Day"), day),
+    note,
+    h("div",{class:"dialog-foot"}, h("button",{class:"btn", onclick:closeDialog},"Cancel"), h("div",{class:"spacer"}), go)));
+  setTimeout(()=>{ try{ day.focus(); }catch(e){_quiet(e)} }, 50);
+}
+/* the reports of one month, as rows of the season's list */
+function _spInMonth(k){ return (_spIdx.list||[]).filter(x=>x && String(x.date||"").slice(0,7)===k).sort((a,b)=>String(a.date).localeCompare(String(b.date))); }
+function _spMerge(items, sp){
+  const out=[], dOf=x=>x.date || (x.g && x.g.date) || ""; let j=0;
+  items.forEach(x=>{ while(j<sp.length && String(sp[j].date)<String(dOf(x))) out.push({ type:"special", date:sp[j].date, sp:sp[j++] }); out.push(x); });
+  while(j<sp.length) out.push({ type:"special", date:sp[j].date, sp:sp[j++] });
+  return out;
+}
+function _spRow(x){
+  return h("div",{class:"ym-row special clk", title:"Special report", onclick:()=>{ state.ui.ts={ mode:"special", id:x.id }; renderTeamScout(); }},
+    h("span",{class:"ym-st sp"}),
+    h("span",{class:"ym-date"}, String(x.date||"").slice(8)+"/"+String(x.date||"").slice(5,7)),
+    h("span",{class:"sp-tag"},"Report"),
+    h("span",{class:"ym-opp"}, x.title||"Special report"));
+}
+function specialCard(id){
+  const key="special|"+id;
+  const back=()=>{ state.ui.ts={ mode:"overview" }; persist(); renderTeamScout(); };
+  try{ const ws0=document.getElementById("workspace"); if(ws0 && specialCard._last!==id){ specialCard._last=id; ws0.scrollTop=0; } }catch(e){_quiet(e)}
+  const wrap=h("div",{class:"rep-enter sp-rep"});
+  setTimeout(()=>{ try{ wrap.classList.remove("rep-enter"); }catch(e){_quiet(e)} }, 1500);
+  const head=h("div",{class:"plan-head scout-head sp-head"}, h("button",{class:"btn", onclick:back},"‹ Back"), h("div",{class:"week-label"},"Special report"));
+  const body=h("div",{}, h("div",{class:"ld"},"Loading the report…", h("span",{class:"ld-bar"})));
+  wrap.appendChild(head); wrap.appendChild(body);
+  let rep=null, it=null;
+  const paint=()=>{
+    const mayEdit=canEdit("teamscout") && !isPlayerUser(), editable=mayEdit && EDIT_MODE;
+    head.innerHTML="";
+    head.appendChild(h("button",{class:"btn", onclick:back},"‹ Back"));
+    if(editable){
+      /* the title and the day, written in the head, kept in the list */
+      const ti=h("input",{class:"sp-title-in", placeholder:"Title of the report"}); ti.value=it.title||"";
+      const dd=h("input",{type:"date", class:"sp-date-in"}); dd.value=it.date||"";
+      const keep=(f, v)=>{ _spEdit(list=>{ const x=list.find(y=>y.id===id); if(x) x[f]=v; })
+        .then(()=>{ it[f]=v; }).catch(e=>toast("Not saved: "+((e && e.message) || e))); };
+      ti.addEventListener("change",()=>{ const v=ti.value.trim()||"Special report"; ti.value=v; keep("title", v); });
+      ti.addEventListener("keydown",e=>{ if(e.key==="Enter") ti.blur(); });
+      dd.addEventListener("change",()=>{ if(/^\d{4}-\d{2}-\d{2}$/.test(dd.value)) keep("date", dd.value); else dd.value=it.date||""; });
+      head.appendChild(h("div",{class:"week-label sp-wl"}, h("span",{class:"sp-tag"},"Special report"), dd, ti));
+    } else {
+      head.appendChild(h("div",{class:"week-label sp-wl"}, h("span",{class:"sp-tag"},"Special report"), h("span",{}, _spDay(it.date)+" · "), h("b",{class:"sp-title"}, it.title||"Special report")));
+    }
+    head.appendChild(h("div",{class:"spacer"}));
+    if(mayEdit){
+      head.appendChild(h("button",{class:"btn"+(EDIT_MODE? " primary" : ""), onclick:()=>{ setEditMode(!EDIT_MODE); paint(); }}, EDIT_MODE? "✓ Done editing" : "✎ Edit"));
+      head.appendChild(h("button",{class:"btn sp-del", title:"Take this report off the list", onclick:()=>confirmDialog("Delete this report?",
+        "“"+(it.title||"Special report")+"” comes off Post game / practice. What was written in it stays kept on the server.", "Delete", async ()=>{
+          try{ await _spEdit(list=>{ const i=list.findIndex(x=>x.id===id); if(i>=0) list.splice(i,1); }); toast("Report deleted"); back(); }
+          catch(e){ toast("Not deleted: "+((e && e.message) || e)); } }, true)},"🗑 Delete"));
+    }
+    body.innerHTML="";
+    renderReportSections(body, rep, key, { id:key, date:it.date||"", opponent:"" }, editable, "postgame", { special:true });
+  };
+  const fail=(t, n)=>{ body.innerHTML="";
+    body.appendChild(h("div",{class:"rs-loadfail"}, h("div",{class:"rs-loadfail-t"}, t), h("div",{class:"rs-loadfail-n"}, n),
+      h("div",{style:"display:flex;gap:8px;justify-content:center;flex-wrap:wrap"},
+        h("button",{class:"btn primary", onclick:()=>{ state.ui.ts={ mode:"special", id:id }; renderTeamScout(); }},"Try again"),
+        h("button",{class:"btn", onclick:back},"‹ Back")))); };
+  (async ()=>{
+    if(!SB_TOKEN){ fail("Sign in to open this report", "Special reports are kept on the server."); return; }
+    await _spLoad(!(_spIdx.list||[]).some(x=>x.id===id));
+    it=(_spIdx.list||[]).find(x=>x.id===id) || null;
+    if(!it){ if(_spIdx.err) fail("The list of reports did not come back", _spIdx.err); else fail("This report is not in the list any more", "It may have been deleted."); return; }
+    try{
+      const r=await Promise.race([ sbrpc("get_report",{ p_token:SB_TOKEN, p_key:key }), new Promise((_,rej)=>setTimeout(()=>rej(new Error("slow")), 15000)) ]);
+      if(!(r && r.ok===true)) throw new Error((r && r.error) || "the server did not answer");
+      rep=r.report || null;
+    }catch(e){ fail("This report did not come back", "The connection took too long. Nothing is lost - it is on the server."); return; }
+    rep=rep || { key:key, data:{} };
+    if(rep.data && Array.isArray(rep.data.postSections)) _vault.put(key, rep, "opened", true);
+    if(state.ui.ts && state.ui.ts.mode==="special" && state.ui.ts.id===id) paint();
+  })();
+  return wrap;
+}
 function renderTeamScout(){
   syncPrintBtn(); try{ _navPush(); }catch(e){_quiet(e)}
   phxHideSub(); const root=$("#viewTeamScout"); root.innerHTML="";
   const ts=state.ui.ts||(state.ui.ts={mode:"overview"});
   if(ts.mode==="training"){ root.appendChild(trainingCard(ts.date, ts.idx)); return; }
   if(ts.mode==="game"){ root.appendChild(gameCard(ts.gameId, "teamscout")); return; }
+  if(ts.mode==="special"){ root.appendChild(specialCard(ts.id)); return; }
   root.appendChild(h("div",{class:"plan-head"},
     h("div",{class:"week-label"},"Post game / practice · season"),
     h("div",{class:"spacer"}),
+    (canEdit("teamscout") && !isPlayerUser())? h("button",{class:"btn sp-add", title:"A report of your own, on a day, with no game", onclick:_spNew},"＋ Special report") : null,
     h("span",{class:"leg-lbl"},"Show:"), tsChip("game","Games"), tsChip("training","Trainings")));
   /* Trends & comparison has a screen of its own now — see renderTrends. It was a fold at
      the top of this list, which meant the season-wide question and the one-session cards
@@ -36951,6 +37111,9 @@ function printSpec(){
        so minZoom is what the printed body size allows and not the usual floor. */
     if(m==="game")     return {key:"postgame",     el:"#viewTeamScout", paper:"landscape", margin:8,
                                fit:false, textOnly:true, maxPages:3, minZoom:11/11.5};
+    /* a special report: the same paper, held to two sides */
+    if(m==="special")  return {key:"postgame",     el:"#viewTeamScout", paper:"landscape", margin:8,
+                               fit:false, textOnly:true, maxPages:2, special:true};
     return null;
   }
   if(v==="planification"){
@@ -37247,7 +37410,7 @@ function printCurrentView(){
     const written=Array.prototype.filter.call(
       el.querySelectorAll(".rs-sections>.rs-block"),
       n=>!n.classList.contains("rs-block-stats"));
-    if(written.length>1) written[written.length-1].classList.add("prt-lastsec");
+    if(written.length>1 && !spec.special) written[written.length-1].classList.add("prt-lastsec");
   }
   /* the shell around the view is a full-height scroller with its own padding;
      on paper every one of those wrappers is just reserved emptiness */
