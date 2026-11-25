@@ -1016,6 +1016,8 @@
         /* a drawing before the text (a trend's small line), and data the page's CSS reads (a rank's label) */
         if (c && typeof c === "object" && c.node) td.insertBefore(c.node, td.firstChild);
         if (c && typeof c === "object" && c.data) Object.keys(c.data).forEach(function (k) { td.dataset[k] = c.data[k]; });
+        /* and what the card shown over it says (the Trends sets table) */
+        if (c && typeof c === "object" && c.tip) td.__tip = c.tip;
         /* a small mark after the text: a rank, in the colour of what it ranks */
         if (c && typeof c === "object" && c.sup != null) td.appendChild(el("sup", c.supCls || null, String(c.sup)));
         /* and a small second line under it - the fouls a set drew that night */
@@ -4010,8 +4012,8 @@
            solamente el OER") - every Foul Drawn the possession carries */
         var fd = count(q.tags, "Foul Drawn");
         e.n++; e.pts += q.pts || 0; e.fd += fd;
-        var c = e.per[gi] || (e.per[gi] = { n: 0, pts: 0, fd: 0 });
-        c.n++; c.pts += q.pts || 0; c.fd += fd;
+        var c = e.per[gi] || (e.per[gi] = { n: 0, pts: 0, fd: 0, ps: [] });
+        c.n++; c.pts += q.pts || 0; c.fd += fd; c.ps.push(q);
       });
     });
     var rows = order.map(function (k) { return bySet[k]; })
@@ -4065,6 +4067,7 @@
       mk("line", { x1: 0, x2: W, y1: Y(1).toFixed(1), y2: Y(1).toFixed(1), "class": "tr-sp-ref" });
       mk("polyline", { points: seq.map(function (v, i) { return X(i).toFixed(1) + "," + Y(v).toFixed(1); }).join(" "), "class": "tr-sp-line" });
       if (f) mk("line", { x1: X(0).toFixed(1), x2: X(k - 1).toFixed(1), y1: Y(f.a).toFixed(1), y2: Y(f.a + f.b * (k - 1)).toFixed(1), "class": "tr-sp-fit " + tone });
+      seq.forEach(function (v, i) { mk("circle", { cx: X(i).toFixed(1), cy: Y(v).toFixed(1), r: 0, "class": "tr-sp-pt", "data-i": i }); });
       mk("circle", { cx: X(k - 1).toFixed(1), cy: Y(seq[k - 1]).toFixed(1), r: 1.8, "class": "tr-sp-dot" });
       return sv;
     };
@@ -4083,7 +4086,7 @@
        that phase, named set or not - and the sets called in it are listed under it. A phase
        with no named set (transition, early offense) is its line alone. */
     var phG = games.map(function (g) { var m = {}, tot = 0;
-      (g.m && g.m.poss ? g.m.poss : []).forEach(function (q) { var k = phaseOf(q.first); var e = m[k] || (m[k] = { n: 0, pts: 0, fd: 0 }); e.n++; e.pts += q.pts || 0; e.fd += count(q.tags, "Foul Drawn"); tot++; });
+      (g.m && g.m.poss ? g.m.poss : []).forEach(function (q) { var k = phaseOf(q.first); var e = m[k] || (m[k] = { n: 0, pts: 0, fd: 0, ps: [] }); e.n++; e.pts += q.pts || 0; e.fd += count(q.tags, "Foul Drawn"); e.ps.push(q); tot++; });
       return { m: m, tot: tot }; });
     var PHASE_SETS = PHASE_ROW.map(function (x) { return x.k; }).concat(["Inbound — unnamed"]);
     phG.forEach(function (p) { Object.keys(p.m).forEach(function (k) { if (PHASE_SETS.indexOf(k) < 0) PHASE_SETS.push(k); }); });
@@ -4126,7 +4129,7 @@
           var pp = e.pts / e.n, sh = Math.round(100 * e.n / Math.max(1, p.tot));
           bc.push({ v: f2(pp), sup: sh + "%", supCls: "tr-runs", cls: "sx-band sx-cell tr-mini " + (e.n >= MIN ? pppStep(pp) : "tr-few"),
             tail: e.fd ? "•" : null, tailCls: "tr-fd",
-            title: g.band + " · " + games[gi].label + " · " + sh + "% of the game · " + e.n + " possessions · " + f2(pp) + " a possession" + (e.fd ? " · " + e.fd + " FD" : "") }); });
+            tip: { band: true, name: g.band, gi: gi, c: e, share: sh, season: tp } }); });
         bc.push({ v: "", cls: "sx-band" });
         if (body.length) body.push({ cls: "tr-gaprow", cells: [{ span: head.length, v: "" }] });
         body.push({ cls: "tr-bandrow", cells: bc });
@@ -4147,7 +4150,7 @@
         seq.push(v);
         gcells.push({ v: f2(v), sup: c.n, supCls: "tr-runs", cls: "sx-cell tr-mini " + (c.n >= MIN ? pppStep(v) : "tr-few"),
           tail: c.fd ? "•" : null, tailCls: "tr-fd",
-          title: r.k + " · " + gm.label + " · " + c.n + " run" + (c.n === 1 ? "" : "s") + " · " + f2(v) + " a possession" + (c.fd ? " · " + c.fd + " FD" : "") });
+          tip: { name: r.k, gi: gi, c: c, si: seq.length - 1, season: r.n ? r.pts / r.n : NaN } });
       });
       cells.push(r.n);
       cells.push(r.n >= MIN
@@ -4200,6 +4203,82 @@
       var pt = (fits && sc && sc !== document.body) ? parseFloat(getComputedStyle(sc).paddingTop) || 0 : 0;
       tw.style.setProperty("--trs-top", (-pt) + "px"); } catch (e) { _quiet(e); } };
     try { new ResizeObserver(fit).observe(tw); } catch (e) { _quiet(e); setTimeout(fit, 300); }
+
+    /* POINTING AT A NIGHT (Oriol, 25/11/2026: "de lo de antes haz 1-2-3 juntas"): the row and that night's
+       column light up and the rest fades, the night's head is marked; a card beside the cell sets the
+       night against the set's season and says how those possessions ended; and the night is marked on
+       the row's trend line. A tap does the same on a tablet */
+    var tbl = tw.querySelector("table"), xOn = null;
+    var tipEl = function () {
+      var t = document.getElementById("trTip");
+      if (!t) { t = el("div", "tr-tip"); t.id = "trTip"; document.body.appendChild(t);
+        document.addEventListener("scroll", function () { t.classList.remove("on"); }, true); }
+      return t;
+    };
+    var fillTip = function (box, T) {
+      var g = games[T.gi], rs = resultOf(g), d = String(g.d || g.date || ""), c = T.c, v = c.pts / c.n, few = c.n < MIN;
+      box.appendChild(el("div", "tr-tip-h", T.name + " · " + gameCode(g.label) + (d.length >= 10 ? " " + d.slice(8, 10) + "/" + d.slice(5, 7) : "")));
+      /* the club's whole name from the league; the file's name is cut at 18 letters */
+      var nm = g.label;
+      try { var L = window.leagueState && window.leagueState(), id = L && window._lgTeamIdByName && window._lgTeamIdByName(L, g.label);
+        var tm = id && (L.teams || []).filter(function (x) { return String(x.id) === String(id); })[0]; if (tm && tm.name) nm = tm.name; } catch (e) { _quiet(e); }
+      var sub = el("div", "tr-tip-o", nm);
+      if (rs) sub.appendChild(el("span", "tr-tip-r " + (rs.win ? "w" : "l"), (rs.win ? "W " : "L ") + rs.us + "–" + rs.them));
+      box.appendChild(sub);
+      var big = el("div", "tr-tip-b");
+      big.appendChild(el("b", null, f2(v)));
+      big.appendChild(el("span", null, "a possession"));
+      box.appendChild(big);
+      box.appendChild(el("div", "tr-tip-v", c.n + (T.band ? " possessions · " + T.share + "% of the game" : " run" + (c.n === 1 ? "" : "s"))));
+      if (isFinite(T.season)) {
+        var dv = v - T.season, mv = !few && Math.abs(dv) >= 0.10;
+        box.appendChild(el("div", "tr-tip-s" + (mv ? (dv > 0 ? " up" : " down") : ""),
+          "Season " + f2(T.season) + "  ·  " + (dv >= 0 ? "+" : "−") + f2(Math.abs(dv)) + " that night"));
+        if (few) box.appendChild(el("div", "tr-tip-n", "Under " + MIN + " runs: a number, not a reading"));
+      }
+      /* how they ended, from the same marks as everywhere else in the hub */
+      var o = { m2: 0, a2: 0, m3: 0, a3: 0, m1: 0, a1: 0, to: 0 };
+      (c.ps || []).forEach(function (q) { var t = q.tags;
+        o.m2 += count(t, "C2") + count(t, "CL2"); o.a2 += count(t, "C2") + count(t, "CL2") + count(t, "M2") + count(t, "ML2");
+        o.m3 += count(t, "C3"); o.a3 += count(t, "C3") + count(t, "M3");
+        o.m1 += count(t, "C1"); o.a1 += count(t, "C1") + count(t, "M1");
+        var tv = count(t, "Turnover"), of = count(t, "Offensive foul"); o.to += tv + Math.max(0, of - tv); });
+      var row = el("div", "tr-tip-e");
+      [["2s", o.a2 ? o.m2 + "/" + o.a2 : null], ["3s", o.a3 ? o.m3 + "/" + o.a3 : null], ["FT", o.a1 ? o.m1 + "/" + o.a1 : null],
+       ["TO", o.to || null], ["FD", c.fd || null]].forEach(function (x) {
+        if (x[1] == null) return; var it = el("span", null); it.appendChild(el("i", null, x[0])); it.appendChild(document.createTextNode(String(x[1]))); row.appendChild(it); });
+      if (!row.firstChild) row.appendChild(el("span", null, "no shot, free throw or turnover tagged"));
+      box.appendChild(row);
+    };
+    var xOff = function () {
+      if (!xOn) return;
+      tbl.classList.remove("tr-x");
+      [].forEach.call(tbl.querySelectorAll(".tr-xc,.tr-xr,.tr-xh,.tr-xme"), function (e) { e.classList.remove("tr-xc", "tr-xr", "tr-xh", "tr-xme"); });
+      [].forEach.call(tbl.querySelectorAll("circle.tr-sp-pt.on"), function (p) { p.classList.remove("on"); p.setAttribute("r", "0"); });
+      var t = document.getElementById("trTip"); if (t) t.classList.remove("on");
+      xOn = null;
+    };
+    var xAt = function (td) {
+      if (xOn === td) return;
+      xOff();
+      var tr = td.parentNode, ci = td.cellIndex, T = td.__tip;
+      xOn = td; tbl.classList.add("tr-x"); tr.classList.add("tr-xr"); td.classList.add("tr-xme");
+      [].forEach.call(tbl.tBodies[0].rows, function (r) { if (r.cells.length === head.length && r.cells[ci]) r.cells[ci].classList.add("tr-xc"); });
+      var th = tbl.tHead && tbl.tHead.rows[0].cells[ci]; if (th) th.classList.add("tr-xh");
+      if (T.si != null) { var p = tr.querySelector('circle.tr-sp-pt[data-i="' + T.si + '"]'); if (p) { p.classList.add("on"); p.setAttribute("r", "3"); } }
+      var tip = tipEl(); tip.innerHTML = ""; fillTip(tip, T); tip.classList.add("on");
+      var rc = td.getBoundingClientRect(), w = tip.offsetWidth, hh = tip.offsetHeight;
+      var x = rc.right + 10; if (x + w > window.innerWidth - 8) x = rc.left - w - 10; if (x < 8) x = 8;
+      var y = rc.top - 6; if (y + hh > window.innerHeight - 8) y = window.innerHeight - hh - 8; if (y < 8) y = 8;
+      tip.style.left = Math.round(x) + "px"; tip.style.top = Math.round(y) + "px";
+    };
+    var cellOf = function (ev) { var t = ev.target; return t && t.closest ? t.closest("td") : null; };
+    tbl.addEventListener("mouseover", function (ev) { var td = cellOf(ev); if (td && td.__tip) xAt(td); else xOff(); });
+    tbl.addEventListener("mouseleave", xOff);
+    tbl.addEventListener("click", function (ev) { var td = cellOf(ev); if (td && td.__tip) { xOn = null; xAt(td); } });
+    var away = function (ev) { if (!document.body.contains(tbl)) { document.removeEventListener("click", away, true); return; }
+      if (!tbl.contains(ev.target)) xOff(); };
+    document.addEventListener("click", away, true);
     return rows.filter(function (r) { return r.n >= MIN && SET_FAMS[r.fam]; });
   }
 
@@ -5444,6 +5523,28 @@
       ".tr-spark .tr-sp-fit.up{stroke:#17805a}.tr-spark .tr-sp-fit.down{stroke:#c53727}.tr-spark .tr-sp-fit.flat{stroke:var(--ink-faint,#8a93a2)}",
       ".dark .tr-spark .tr-sp-fit.up{stroke:#4cc392}.dark .tr-spark .tr-sp-fit.down{stroke:#ff7a6b}",
       ".tr-spark .tr-sp-dot{fill:var(--ink,#141821)}",
+      /* pointing at a night: the row and the column, the rest faded, the cell boxed, its head marked */
+      ".tr-sets table.tr-x tbody tr:not(.tr-xr) td.tr-mini:not(.tr-xc){opacity:.32}",
+      ".tr-sets table.tr-x tbody td.tr-xc{box-shadow:inset 2px 0 0 var(--ink,#141821),inset -2px 0 0 var(--ink,#141821)!important}",
+      ".tr-sets table.tr-x tbody td.tr-xme{box-shadow:inset 0 0 0 2px var(--ink,#141821)!important;opacity:1}",
+      ".tr-sets .sx-table thead th.tr-xh{background:var(--panel-2,#eef1f5);box-shadow:inset 0 -3px 0 var(--ink,#141821)}",
+      ".tr-spark circle.tr-sp-pt.on{fill:var(--ink,#141821);stroke:var(--panel,#fff);stroke-width:1.2}",
+      /* the card beside it */
+      ".tr-tip{position:fixed;z-index:9000;left:0;top:0;visibility:hidden;pointer-events:none;width:max-content;max-width:260px;padding:9px 11px 8px;border-radius:9px;",
+      "  background:var(--panel,#fff);color:var(--ink,#141821);border:1px solid var(--line-strong,#d7dbe0);box-shadow:0 10px 28px rgba(16,24,40,.22);font-size:12px;line-height:1.35}",
+      ".tr-tip.on{visibility:visible}",
+      ".tr-tip-h{font:800 12.5px/1.2 'Oswald',sans-serif;letter-spacing:.04em;text-transform:uppercase}",
+      ".tr-tip-o{display:flex;gap:8px;align-items:baseline;font-size:11px;color:var(--ink-faint,#8a93a2);margin:1px 0 7px}",
+      ".tr-tip-r{font:700 11px 'IBM Plex Mono',monospace}.tr-tip-r.w{color:#17805a}.tr-tip-r.l{color:#c53727}",
+      ".tr-tip-b{display:flex;gap:6px;align-items:baseline}.tr-tip-b b{font:700 22px/1 'IBM Plex Mono',monospace}.tr-tip-b span{color:var(--ink-soft,#5b6472)}",
+      ".tr-tip-s{margin-top:5px;font:600 11.5px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472);white-space:pre}",
+      ".tr-tip-s.up{color:#17805a}.tr-tip-s.down{color:#c53727}",
+      ".tr-tip-n{margin-top:2px;font-size:11px;color:var(--ink-faint,#8a93a2)}",
+      ".tr-tip-v{margin-top:2px;font-size:11.5px;color:var(--ink-soft,#5b6472)}",
+      ".tr-tip-e{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:7px;padding-top:7px;border-top:1px solid var(--line,#e6e9ee);font:600 11.5px 'IBM Plex Mono',monospace}",
+      ".tr-tip-e i{font:600 10px 'Oswald',sans-serif;letter-spacing:.06em;color:var(--ink-faint,#8a93a2);margin-right:3px;font-style:normal}",
+      ".dark .tr-tip{box-shadow:0 10px 28px rgba(0,0,0,.5)}",
+      ".dark .tr-tip-s.up,.dark .tr-tip-r.w{color:#4cc392}.dark .tr-tip-s.down,.dark .tr-tip-r.l{color:#ff7a6b}",
       ".tr-sets .sx-table th.tr-gh b{display:block;font:700 10.5px 'IBM Plex Mono',monospace}",
       ".tr-sets .sx-table th.tr-gh i{display:block;font:500 8.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}",
       ".tr-sets .sx-table tr.tr-bandrow td:first-child{font:800 13px/1.1 'Oswald',sans-serif!important;letter-spacing:.12em;text-transform:uppercase;padding-left:10px!important}",
