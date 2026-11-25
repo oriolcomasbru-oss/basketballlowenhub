@@ -10042,7 +10042,7 @@ function _preInj(){
     const parts=[
       part("pace", "", _lgEmbed(X.tid, [ L=>_prePaceView(L, X.tid) ])),
       part("reb", "", _lgEmbed(X.tid, [ L=>_preRebView(L, X.tid, X.rep? _preCardsStore(X.rep) : null) ])) ];
-    if(!X.pv && X.g){ try{ parts.push(part("games", "", _preLast5(X.g))); }catch(e){_quiet(e)} }
+    if(!X.pv && X.g){ try{ parts.push(part("over", "", _preLast5(X.g, { panels:true }))); parts.push(part("games", "", _preLast5(X.g))); }catch(e){_quiet(e)} }
     I=blk.__inj={ key:X.key, parts:parts };
   }
   const sxp=blk.querySelector(".sxp");
@@ -29597,12 +29597,15 @@ function _preRebView(L, tid, cards){
    panels, oldest on the left: the result, the margin minute by minute, the four quarters and three numbers;
    under them one table with the five and their average, each number against the league's. From the play by
    play; it replaces the tagged game-by-game tables and the quarter cards in Games. */
-let _pl5Keep=null;
-function _preLast5(sg){
-  const kk=String((sg&&sg.opponent)||"")+"|"+String((sg&&sg.date)||"");
-  if(_pl5Keep && _pl5Keep.k===kk && _pl5Keep.el.firstChild) return _pl5Keep.el;
-  const box=h("div",{class:"pl5"});
-  _pl5Keep={ k:kk, el:box };
+/* the overview carries the five panels too (Oriol, 25/11/2026: "añade esto a overview"): opt.panels draws them
+   without the table, in an element of its own */
+let _pl5Keep={};
+function _preLast5(sg, opt){
+  opt=opt||{};
+  const kk=String((sg&&sg.opponent)||"")+"|"+String((sg&&sg.date)||"")+(opt.panels? "|p" : "");
+  if(_pl5Keep[kk] && _pl5Keep[kk].firstChild) return _pl5Keep[kk];
+  const box=h("div",{class:"pl5"+(opt.panels? " pl5-only" : "")});
+  _pl5Keep[kk]=box;
   if(!sg || !sg.opponent || _gamePlaceholder(sg.opponent)) return box;
   const none=t=>{ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"}, t)); };
   box.appendChild(h("div",{class:"ld"},"Reading their last games…", h("span",{class:"ld-bar"})));
@@ -29638,8 +29641,9 @@ function _preLast5(sg){
         spark(r),
         h("div",{class:"pl5-qs"}, (r.q||[]).map((m,i)=>h("span",{class:m>0? "up" : m<0? "dn" : ""}, h("i",{}, "Q"+(i+1)), (m>0? "+" : "")+m))),
         h("div",{class:"pl5-n"}, h("span",{}, h("i",{},"ORtg"), h("b",{}, S.ortg==null? "—" : Math.round(S.ortg))), h("span",{}, h("i",{},"DRtg"), h("b",{}, O.ortg==null? "—" : Math.round(O.ortg))), h("span",{}, h("i",{},"Pace"), h("b",{}, S.pace==null? "—" : Math.round(S.pace)))))); });
-    box.appendChild(h("div",{class:"pl5-h"}, h("b",{}, "Their last "+rows.length+" games"), h("span",{}, "oldest first · the line: their margin minute by minute, above when they lead")));
+    box.appendChild(h("div",{class:"pl5-h"}, h("b",{}, "Their last "+rows.length+" games"), h("span",{}, "oldest first · the line: their margin minute by minute, above when they lead"+(opt.panels? " · the table in Games" : ""))));
     box.appendChild(grid);
+    if(opt.panels) return;
     /* one table: the five and their average, each number against the league's (red hurts us, green helps us) */
     const cols=[["ORtg", r=>r.S.ortg, "ortg", -1, 0], ["DRtg", r=>r.O.ortg, "drtg", 1, 0], ["Net", r=>(r.S.ortg!=null && r.O.ortg!=null)? r.S.ortg-r.O.ortg : null, null, -1, 0],
       ["Pace", r=>r.S.pace, "pace", 0, 0], ["eFG%", r=>r.S.efg, "efg", -1, 1], ["Opp eFG%", r=>r.O.efg, "oefg", 1, 1], ["TOV%", r=>r.S.tovp, "tov", 1, 1], ["OREB%", r=>r.S.orbp, "orb", -1, 1], ["3PAr", r=>r.S.p3r, null, 0, 1]];

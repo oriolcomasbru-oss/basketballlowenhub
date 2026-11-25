@@ -2037,7 +2037,8 @@
     }
     return out;
   }
-  function treemap(rows, title, sub, side) {
+  function treemap(rows, title, sub, side, opt) {
+    opt = opt || {};
     var use = (rows || []).filter(function (r) { return r && r.poss > 0; }).slice().sort(function (a, b) { return b.poss - a.poss; });
     var tot = 0; use.forEach(function (r) { tot += r.poss; });
     if (!tot || use.length < 2) return null;
@@ -2046,7 +2047,8 @@
       if (r.poss / tot < 0.04 && items.length >= 3) { oth.poss += r.poss; oth.pts += (r.ppp || 0) * r.poss; oth.n++; oth.names.push(r.label); }
       else items.push(r); });
     if (oth.n) items.push({ label: oth.n === 1 ? oth.names[0] : "Other (" + oth.n + ")", poss: oth.poss, ppp: oth.poss ? oth.pts / oth.poss : null, other: oth.names });
-    var W = 300, H = 100;
+    /* laid out in the shape it is drawn in: the small ones of the ball screen block are 280 by 120 */
+    var W = opt.W || 300, H = opt.H || 100;
     var rects = squarify(items.map(function (r) { return W * H * r.poss / tot; }), 0, 0, W, H);
     var box = el("div", "ui-vis sxp-tmw");
     var hd = el("div", "ui-vis-h", title); if (sub) hd.appendChild(el("span", "", sub)); box.appendChild(hd);
@@ -2063,7 +2065,10 @@
       c.title = r.label + " · " + pct + "% · " + (r.ppp == null ? "—" : Number(r.ppp).toFixed(2)) + " PPP · " + Math.round(r.poss) + " poss" +
         (r.ref != null && !r.other ? " · scouted teams " + Number(r.ref).toFixed(2) : "") + (r.other ? " · " + r.other.join(", ") : "");
       c.appendChild(el("b", "", r.label));
-      c.appendChild(el("span", "", pct + "%" + (r.ppp == null ? "" : " · " + Number(r.ppp).toFixed(2))));
+      /* a small one gives the share and the points a line each, so a narrow part is still read whole
+         (Oriol, 25/11/2026: "se corta la info") */
+      if (opt.mini) { c.appendChild(el("span", "", pct + "%")); if (r.ppp != null) c.appendChild(el("span", "pp", Number(r.ppp).toFixed(2))); }
+      else c.appendChild(el("span", "", pct + "%" + (r.ppp == null ? "" : " · " + Number(r.ppp).toFixed(2))));
       tm.appendChild(c);
     });
     box.appendChild(tm);
@@ -2335,7 +2340,7 @@
       [["4", "Their 4"], ["5", "Their 5"], ["G", "Two guards"]].forEach(function (k) {
         var rows = (CM[k[0]] || []).filter(function (r) { return r.share >= 5; });
         if (!rows.length) return;
-        var tm = treemap(rows, k[1] + " · " + (D.covbig || []).reduce(function (a, r) { return a + ((r.label === BIG_LABEL[k[0]]) ? r.n : 0); }, 0) + "×", "", "D");
+        var tm = treemap(rows, k[1] + " · " + (D.covbig || []).reduce(function (a, r) { return a + ((r.label === BIG_LABEL[k[0]]) ? r.n : 0); }, 0) + "×", "", "D", { mini: true, W: 280, H: 140 });
         if (tm) { tm.classList.add("mini"); var kk = tm.querySelector(".sxp-tm-k"); if (kk) kk.remove(); zc.appendChild(tm); }
       });
       if (zc.children.length > 1) drawn.appendChild(zc);
@@ -3370,10 +3375,13 @@
       ".sxp-pnr-z{display:grid;gap:4px;align-content:start}",
       ".sxp-tmw.mini{border:0;padding:0;background:none}",
       ".sxp-tmw.mini .ui-vis-h{margin:0 0 2px;font-size:10px}",
-      ".sxp-tmw.mini .sxp-tm{aspect-ratio:auto;height:96px;min-height:0}",
-      ".sxp-tmw.mini .sxp-tm-c{padding:2px 4px;border-radius:5px;border-width:1.5px}",
-      ".sxp-tmw.mini .sxp-tm-c b{font-size:10.5px}.sxp-tmw.mini .sxp-tm-c span{font-size:9.5px}",
-      ".sxp-tmw.mini .sxp-tm-c.lg b{font-size:12px}.sxp-tmw.mini .sxp-tm-c.lg span{font-size:10.5px}",
+      ".sxp-tmw.mini .sxp-tm{aspect-ratio:auto;height:140px;min-height:0}",
+      ".sxp-tmw.mini .sxp-tm-c{padding:2px 3px;border-radius:5px;border-width:1.5px;gap:0}",
+      ".sxp-tmw.mini .sxp-tm-c b{font-size:10.5px;line-height:1.1;white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}",
+      ".sxp-tmw.mini .sxp-tm-c span{font-size:10px;line-height:1.15;text-overflow:clip}",
+      ".sxp-tmw.mini .sxp-tm-c span.pp{font-size:9.5px;opacity:.85}",
+      ".sxp-tmw.mini .sxp-tm-c.lg b{font-size:13px}.sxp-tmw.mini .sxp-tm-c.lg span{font-size:11.5px}",
+      ".sxp-tmw.mini .sxp-tm-c.xs span{display:block}",
       /* EVERYTHING WITH A HIERARCHY (Oriol, 25/11/2026): the parts in the order of the tabs, each under its own heading */
       ".sxp[data-tab='all'],body.prt .sxp:not(.sxp-row){display:flex;flex-direction:column}",
       ".sxp[data-tab='all'] > *,body.prt .sxp:not(.sxp-row) > *{order:50}",
