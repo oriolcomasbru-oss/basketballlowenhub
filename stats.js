@@ -1012,6 +1012,7 @@
       var row = el("tr", r.cls || null);
       (r.cells || r).forEach(function (c) {
         var td = el("td", (c && c.cls) || null, c && c.v != null ? c.v : c);
+        if (c && typeof c === "object" && c.title) td.title = c.title;
         /* a small mark after the text: a rank, in the colour of what it ranks */
         if (c && typeof c === "object" && c.sup != null) td.appendChild(el("sup", c.supCls || null, String(c.sup)));
         /* and a small second line under it - the fouls a set drew that night */
@@ -3983,8 +3984,10 @@
       for it, it is silence, and a zero would drag the line down for not playing.        */
   function trSets(root, games) {
     var sec = trSection(root, "05", "Every set we called, game by game",
-      "Grouped by the phase it is called in, and sorted by volume inside each one. Each " +
-      "cell is runs and points per possession for that night. The trend is read only " +
+      "Grouped by the phase it is called in, and sorted by volume inside each one. The " +
+      "season first (runs, points per possession, fouls drawn, trend), then a column a game: the " +
+      "points per possession that night, the runs small beside it, a dot when it drew a foul; " +
+      "coloured from 5 runs, grey below. The trend is read only " +
       "over the games the set was run in: a game it was never called in says nothing about " +
       "it and is left out of the line rather than counted as a nought.");
     var bySet = {}, order = [];
@@ -4013,8 +4016,20 @@
     if (!rows.length) { sec.appendChild(el("div", "sx-empty", "No called set in the tagging yet.")); return null; }
     var MIN = 5;     /* under this a season PPP is an anecdote and is left uncoloured */
     var MINGAMES = 5;  /* the hub's rule: a trend from five games */
-    var head = ["Set"].concat(games.map(function (g) { return g.label; }),
-      ["Runs", "PPP", "FD", "Trend"]);
+    /* COMPACT, THE SEASON FIRST (Oriol, 25/11/2026: "la primera, pero con los totales al principio"): the
+       set, its runs, PPP, fouls drawn and trend, then one narrow column a game - the points a possession
+       in the cell, the runs small beside it, a dot when it drew a foul; coloured only from 5 runs, the
+       hub's rule (a single run is a number, not a colour) */
+    var head = ["Set", "Runs", "PPP", "FD", "Trend"].concat(games.map(function (g) { return g.label; }));
+    var gameCode = function (label) {
+      try {
+        var L = window.leagueState && window.leagueState(), id = L && window._lgTeamIdByName && window._lgTeamIdByName(L, label);
+        var t = id && (L.teams || []).filter(function (x) { return String(x.id) === String(id); })[0];
+        if (t && t.tlc) return t.tlc;
+      } catch (e) { _quiet(e); }
+      var w = String(label || "").split(/[\s\-]+/).sort(function (a, b) { return b.length - a.length; })[0] || "?";
+      return (w.match(/[A-Za-zÄÖÜäöü]/g) || []).join("").slice(0, 3).toUpperCase();
+    };
 
     /* Thirty sets in one list sorted by volume reads as thirty unrelated rows: a half
        court set and a sideline inbound sit next to each other because they happened to
@@ -4065,14 +4080,16 @@
         /* the phase's own line: share of the game and points a possession, each game */
         var T = phTot[g.band] || { n: 0, pts: 0 }, tp = T.n ? T.pts / T.n : NaN;
         var bc = [{ v: g.band + (g.sets ? "  ·  " + g.sets + " set" + (g.sets === 1 ? "" : "s") : ""), cls: "sx-band" }];
-        phG.forEach(function (p) { var e = p.m[g.band];
-          if (!e || !e.n) { bc.push({ v: "—", cls: "sx-band tr-none" }); return; }
-          var pp = e.pts / e.n;
-          bc.push({ v: Math.round(100 * e.n / Math.max(1, p.tot)) + "% · " + f2(pp), cls: "sx-band sx-cell " + (e.n >= 4 ? pppStep(pp) : ""), tail: e.fd ? e.fd + " FD" : null }); });
         bc.push({ v: T.n + " · " + (allPoss ? Math.round(100 * T.n / allPoss) : 0) + "%", cls: "sx-band" });
-        bc.push({ v: f2(tp), cls: "sx-band sx-cell " + (T.n >= 4 ? pppStep(tp) : "") });
+        bc.push({ v: f2(tp), cls: "sx-band sx-cell " + (T.n >= MIN ? pppStep(tp) : "") });
         bc.push({ v: T.fd ? String(T.fd) : "—", cls: "sx-band tr-fdt" });
         bc.push({ v: "", cls: "sx-band" });
+        phG.forEach(function (p, gi) { var e = p.m[g.band];
+          if (!e || !e.n) { bc.push({ v: "·", cls: "sx-band tr-mini tr-none" }); return; }
+          var pp = e.pts / e.n, sh = Math.round(100 * e.n / Math.max(1, p.tot));
+          bc.push({ v: f2(pp), sup: sh + "%", supCls: "tr-runs", cls: "sx-band sx-cell tr-mini " + (e.n >= MIN ? pppStep(pp) : "tr-few"),
+            tail: e.fd ? "•" : null, tailCls: "tr-fd",
+            title: g.band + " · " + games[gi].label + " · " + sh + "% of the game · " + e.n + " possessions · " + f2(pp) + " a possession" + (e.fd ? " · " + e.fd + " FD" : "") }); });
         if (body.length) body.push({ cls: "tr-gaprow", cells: [{ span: head.length, v: "" }] });
         body.push({ cls: "tr-bandrow", cells: bc });
         return;
@@ -4081,14 +4098,15 @@
       var ppp = r.n ? r.pts / r.n : NaN;
       var cells = [bestAt[r.k] ? { v: r.k, sup: bestAt[r.k], supCls: "tr-sup good", cls: "tr-supc" }
         : worstAt[r.k] ? { v: r.k, sup: worstAt[r.k], supCls: "tr-sup bad", cls: "tr-supc" } : r.k];
-      var seq = [];
+      var seq = [], gcells = [];
       games.forEach(function (gm, gi) {
         var c = r.per[gi];
-        if (!c) { cells.push({ v: "—", cls: "tr-none" }); return; }
+        if (!c) { gcells.push({ v: "·", cls: "tr-mini tr-none" }); return; }
         var v = c.pts / c.n;
         seq.push(v);
-        cells.push({ v: c.n + " · " + f2(v),
-          cls: "sx-cell " + pppStep(v), tail: c.fd ? c.fd + " FD" : null });
+        gcells.push({ v: f2(v), sup: c.n, supCls: "tr-runs", cls: "sx-cell tr-mini " + (c.n >= MIN ? pppStep(v) : "tr-few"),
+          tail: c.fd ? "•" : null, tailCls: "tr-fd",
+          title: r.k + " · " + gm.label + " · " + c.n + " run" + (c.n === 1 ? "" : "s") + " · " + f2(v) + " a possession" + (c.fd ? " · " + c.fd + " FD" : "") });
       });
       cells.push(r.n);
       cells.push(r.n >= MIN
@@ -4105,11 +4123,20 @@
           : { v: (f.b > 0 ? "▲ +" : "▼ −") + f2(Math.abs(f.b)) + " / game",
               cls: f.b > 0 ? "tr-up" : "tr-down" });
       }
-      body.push(cells);
+      body.push(cells.concat(gcells));
     });
     /* the band rows stay where they are when a column is sorted, which is what the
        page's sorter does with a single-cell row that spans the table */
-    sec.appendChild(trTable(head, body));
+    var tw = trTable(head, body);
+    /* the games as short codes with their date, the full name on the hover */
+    try {
+      var ths = tw.querySelectorAll("thead th");
+      games.forEach(function (g, gi) { var th = ths[5 + gi]; if (!th) return;
+        th.textContent = ""; th.className = "tr-gh"; var gd = String(g.d || g.date || ""); th.title = g.label + (gd ? " · " + gd : "");
+        th.appendChild(el("b", null, gameCode(g.label)));
+        var d = gd; if (d.length >= 10) th.appendChild(el("i", null, d.slice(8, 10) + "/" + d.slice(5, 7))); });
+    } catch (e) { _quiet(e); }
+    sec.appendChild(tw);
     return rows.filter(function (r) { return r.n >= MIN && SET_FAMS[r.fam]; });
   }
 
@@ -5322,6 +5349,16 @@
       ".tr-sets .sx-table tr.tr-bandrow td{box-shadow:inset 0 2px 0 #141821!important;padding:9px 6px 8px!important}",
       ".tr-sets .sx-table tr.tr-bandrow td:not(.s0):not(.s1):not(.s2):not(.s3):not(.s4):not(.s5){background:#eef1f5!important}",
       ".tr-sets .sx-table tr.tr-gaprow td{height:14px;padding:0!important;border:0!important;background:none!important}",
+      /* compact: one narrow column a game, the points in it, the runs small, a dot for a foul drawn */
+      ".tr-sets .sx-table td.tr-mini{min-width:34px;max-width:46px;padding:3px 2px!important;font:600 11px/1.1 'IBM Plex Mono',monospace;border-radius:4px}",
+      ".tr-sets .sx-table tr.tr-bandrow td.tr-mini{padding:7px 2px 6px!important;text-align:center}",
+      ".tr-sets .sx-table td.tr-mini sup.tr-runs{font:500 8.5px 'IBM Plex Mono',monospace;margin-left:1px;opacity:.75;vertical-align:4px}",
+      ".tr-sets .sx-table td.tr-mini .tr-fd{display:inline;font-size:10px;margin-left:1px}",
+      ".tr-sets .sx-table td.tr-few{color:var(--ink-soft,#5b6472);background:transparent}",
+      ".tr-sets .sx-table td.tr-mini.tr-none{color:var(--ink-faint,#8a93a2)}",
+      ".tr-sets .sx-table th.tr-gh{padding:2px 1px!important;min-width:34px;line-height:1.05}",
+      ".tr-sets .sx-table th.tr-gh b{display:block;font:700 10.5px 'IBM Plex Mono',monospace}",
+      ".tr-sets .sx-table th.tr-gh i{display:block;font:500 8.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}",
       ".tr-sets .sx-table tr.tr-bandrow td:first-child{font:800 13px/1.1 'Oswald',sans-serif!important;letter-spacing:.12em;text-transform:uppercase;padding-left:10px!important}",
       ".tr-sets .sx-table tr.tr-bandrow td.sx-cell{box-shadow:inset 0 2px 0 #141821!important}",
 
