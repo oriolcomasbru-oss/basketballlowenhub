@@ -22668,28 +22668,27 @@ function _lgHistAt(H, y, id, name, fin){
   const k=_lgClubKey(name||"");
   return T.pos[String(id)] || (k && T.key[k]) || null;
 }
+/* ONE COLUMN (Oriol, 25/11/2026: "unifica esta última parte: 3 últimos años + diferencia con el último;
+   simplifica el título"): the final place of each of the last three seasons, oldest first, and the places
+   gained or lost since last season's final table. The arrow used to compare the same matchday last
+   season, which put Braunschweig ▼1 when it finished last season 17th, relegated: against the final
+   table it is ▲1. */
 function _lgHistCells(H, id, name, pos){
-  const tip=(y,v)=>_lgHistLab(y)+" after matchday "+H.N+": "+v.pos+"º of "+v.n+" ("+v.w+"–"+v.l+")";
   const tipF=(y,v)=>_lgHistLab(y)+" final table: "+v.pos+"º of "+v.n+(v.w!=null? " ("+v.w+"–"+v.l+")" : "");
-  const p=_lgHistAt(H, H.prev, id, name);
-  let c1;
-  if(p===undefined) c1=h("td",{class:"lg-hx ld"},"·");
-  else if(p===false) c1=h("td",{class:"lg-hx"},"—");
-  else if(p===null) c1=h("td",{class:"lg-hx"}, h("span",{class:"lg-hx-out", title:"Not in the BBL in "+_lgHistLab(H.prev)},"no BBL"));
-  else if(p.nores) c1=h("td",{class:"lg-hx ld", title:"The league's feed has no results for "+_lgHistLab(H.prev)},"—");
-  else { const d=p.pos-pos;
-    c1=h("td",{class:"lg-hx "+(d>0? "up" : d<0? "dn" : "eq"), title:tip(H.prev, p)+" · now "+pos+"º"}, d>0? "▲"+d : d<0? "▼"+(-d) : "="); }
-  const cells=[], seen=[];
+  const cells=[];
   H.years.forEach(y=>{ const v=_lgHistAt(H, y, id, name, true);
     if(v===undefined) cells.push(h("i",{class:"lg-h5 ld", title:_lgHistLab(y)+": being read"},"·"));
     else if(v===false) cells.push(h("i",{class:"lg-h5", title:_lgHistLab(y)+": could not be read"},"?"));
     else if(v===null) cells.push(h("i",{class:"lg-h5 out", title:_lgHistLab(y)+": not in the BBL"}));
     else if(v.nores) cells.push(h("i",{class:"lg-h5 nd", title:_lgHistLab(y)+": in the BBL - the league's feed has no results for that season"},"–"));
-    else { seen.push(v.pos); const z=_lgZone(v.pos, v.n); cells.push(h("i",{class:"lg-h5"+(z? " "+z : ""), title:tipF(y, v)}, String(v.pos))); } });
-  const avg=seen.length? seen.reduce((a,b)=>a+b,0)/seen.length : null;
-  const c2=h("td",{class:"lg-h5w"}, h("span",{class:"lg-h5s"}, cells),
-    avg!=null? h("b",{class:"lg-h5a", title:"average final place in the seasons it was in the BBL ("+seen.length+" of "+H.years.length+")"}, "Ø"+(Math.round(avg*10)/10)) : null);
-  return [c1, c2];
+    else { const z=_lgZone(v.pos, v.n); cells.push(h("i",{class:"lg-h5"+(z? " "+z : ""), title:tipF(y, v)}, String(v.pos))); } });
+  /* against the last one: the place now against where it finished last season */
+  const p=_lgHistAt(H, H.prev, id, name, true);
+  let df=null;
+  if(p===null) df=h("b",{class:"lg-h5d new", title:"Not in the BBL in "+_lgHistLab(H.prev)},"new");
+  else if(p && !p.nores && p.pos){ const d=p.pos-pos;
+    df=h("b",{class:"lg-h5d "+(d>0? "up" : d<0? "dn" : "eq"), title:"Now "+pos+"º · "+_lgHistLab(H.prev)+" it finished "+p.pos+"º of "+p.n}, d>0? "▲"+d : d<0? "▼"+(-d) : "="); }
+  return [h("td",{class:"lg-h5w"}, h("span",{class:"lg-h5s"}, cells), df)];
 }
 function _lgStdTable(L){
   const sel=L.team;
@@ -22700,8 +22699,7 @@ function _lgStdTable(L){
   /* with the look back on, the clubs go by their short name (as on a phone) so the table keeps to its panel */
   const tbl=h("table",{class:"lg-tbl lg-std"+(HX? " hx" : "")});
   tbl.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Team"), h("th",{},"GP"), h("th",{},"W"), h("th",{},"L"), h("th",{class:"lg-std-pct"},"PCT"), h("th",{},"DIFF"), h("th",{title:"The last five league games, oldest first. Cup and play-offs are not counted."},"FORM"),
-    HX? h("th",{class:"lg-hx-h", title:"Places up or down against the same matchday ("+HX.N+") last season, and the place it had then"},"vs "+_lgHistLab(HX.prev)) : null,
-    HX? h("th",{class:"lg-hx-h l", title:"Where it finished in each of the last "+LG_HIST_YEARS+" seasons (the league's final table, regular season), oldest first, and the average · hatched: not in the BBL that season"},"Final · last "+LG_HIST_YEARS) : null));
+    HX? h("th",{class:"lg-hx-h l", title:"Where it finished in each of the last "+LG_HIST_YEARS+" seasons (the league's final table, regular season), oldest first, and the places gained or lost since last season's final place · hatched: not in the BBL that season"},"Last "+LG_HIST_YEARS) : null));
   rows.slice().sort((a,b)=>(a.pos||99)-(b.pos||99)).forEach(r=>{
     const id=r.teamId||r.team;
     const z=_lgZone(r.pos, nTeams);
@@ -22726,7 +22724,7 @@ function _lgStdTable(L){
     h("span",{class:"lg-key-k po"},"Play-offs"),
     h("span",{class:"lg-key-k pi"},"Play-in"),
     h("span",{class:"lg-key-k rl"},"Relegation"),
-    HX? h("span",{class:"lg-key-k hx"}, h("i",{class:"lg-h5 out"}), "not in the BBL that season · vs "+_lgHistLab(HX.prev)+" at matchday "+HX.N+" · final: the regular season's final table"+(HX.nores.length? " · – the league's feed has no results for "+HX.nores.map(_lgHistLab).join(", ") : "")) : null);
+    HX? h("span",{class:"lg-key-k hx"}, h("i",{class:"lg-h5 out"}), "not in the BBL that season · last 3: the regular season's final place · ▲▼ against last season's"+(HX.nores.length? " · – the league's feed has no results for "+HX.nores.map(_lgHistLab).join(", ") : "")) : null);
   wrap.appendChild(tbl); wrap.appendChild(key);
   return wrap;
 }
@@ -42263,6 +42261,10 @@ body.dark .lg-h5.out{background:repeating-linear-gradient(135deg,transparent 0 3
 .lg-h5.ld{color:var(--ink-faint,#8a93a2);background:transparent}
 .lg-h5.nd{color:var(--ink-faint,#8a93a2);background:transparent;box-shadow:inset 0 0 0 1px var(--line,#e4e7ec)}
 .lg-h5a{font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);margin-left:6px;vertical-align:middle}
+.lg-h5d{display:inline-block;min-width:30px;margin-left:6px;font:700 11.5px 'IBM Plex Mono',monospace;vertical-align:middle;text-align:right}
+.lg-h5d.up{color:#17805a}.lg-h5d.dn{color:#c0403c}.lg-h5d.eq{color:var(--ink-faint,#8a93a2)}
+.lg-h5d.new{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}
+body.dark .lg-h5d.up{color:#4fc08d} body.dark .lg-h5d.dn{color:#ff8a7e}
 .lg-key-k.hx::before{display:none}
 .lg-key-k.hx .lg-h5{width:14px;height:12px;vertical-align:middle}
 

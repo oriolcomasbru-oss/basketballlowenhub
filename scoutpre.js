@@ -2001,6 +2001,129 @@
         tone: (x == null || ref == null) ? "neutral" : (k[3] == null ? "neutral" : K.tone(x, ref, k[3], k[4])) };
     });
   }
+  /* AREAS AS LARGE AS THEIR SHARE (Oriol, 25/11/2026: "gráfico rectangular por áreas según porcentaje y con el
+     nombre dentro que se vea bien"): what their offense is made of, what they have to defend and how they
+     cover the ball screen. Each part a rectangle with its name, its share and its points per possession
+     inside; the colour is that PPP against the teams we tagged (green good for us, red bad for us, grey
+     within 0.10 or on fewer than 5 possessions); parts under 4% are gathered as Other. Squarified, so
+     the rectangles stay as close to square as the shares allow. */
+  function squarify(vals, x, y, w, h) {
+    var out = [], i = 0, sum = function (a) { return a.reduce(function (s, v) { return s + v; }, 0); };
+    while (i < vals.length) {
+      var side = Math.min(w, h), row = [vals[i]], j = i + 1;
+      var worst = function (r) { var s = sum(r), mx = Math.max.apply(null, r), mn = Math.min.apply(null, r);
+        return Math.max(side * side * mx / (s * s), (s * s) / (side * side * mn)); };
+      while (j < vals.length && worst(row.concat([vals[j]])) <= worst(row)) { row.push(vals[j]); j++; }
+      var s = sum(row);
+      if (w >= h) { var cw = s / h, cy = y; row.forEach(function (v) { var ch = v / cw; out.push([x, cy, cw, ch]); cy += ch; }); x += cw; w -= cw; }
+      else { var rh = s / w, cx = x; row.forEach(function (v) { var cw2 = v / rh; out.push([cx, y, cw2, rh]); cx += cw2; }); y += rh; h -= rh; }
+      i = j;
+    }
+    return out;
+  }
+  function treemap(rows, title, sub, side) {
+    var use = (rows || []).filter(function (r) { return r && r.poss > 0; }).slice().sort(function (a, b) { return b.poss - a.poss; });
+    var tot = 0; use.forEach(function (r) { tot += r.poss; });
+    if (!tot || use.length < 2) return null;
+    var items = [], oth = { poss: 0, pts: 0, n: 0, names: [] };
+    use.forEach(function (r) {
+      if (r.poss / tot < 0.04 && items.length >= 3) { oth.poss += r.poss; oth.pts += (r.ppp || 0) * r.poss; oth.n++; oth.names.push(r.label); }
+      else items.push(r); });
+    if (oth.n) items.push({ label: oth.n === 1 ? oth.names[0] : "Other (" + oth.n + ")", poss: oth.poss, ppp: oth.poss ? oth.pts / oth.poss : null, other: oth.names });
+    var W = 300, H = 100;
+    var rects = squarify(items.map(function (r) { return W * H * r.poss / tot; }), 0, 0, W, H);
+    var box = el("div", "ui-vis sxp-tmw");
+    var hd = el("div", "ui-vis-h", title); if (sub) hd.appendChild(el("span", "", sub)); box.appendChild(hd);
+    var tm = el("div", "sxp-tm");
+    items.forEach(function (r, i) {
+      var q = rects[i]; if (!q) return;
+      var edge = (r.ref == null || r.other) ? null : (side === "O" ? r.ref - r.ppp : r.ppp - r.ref);
+      var tone = (edge == null || r.poss < 5 || Math.abs(edge) < 0.10) ? "neutral" : (edge > 0 ? "good" : "bad");
+      var size = (q[2] >= 34 && q[3] >= 20) ? "lg" : (q[2] >= 20 && q[3] >= 12) ? "md" : (q[2] >= 11 && q[3] >= 8) ? "sm" : "xs";
+      var c = el("div", "sxp-tm-c " + tone + " " + size);
+      c.style.left = (100 * q[0] / W).toFixed(3) + "%"; c.style.top = (100 * q[1] / H).toFixed(3) + "%";
+      c.style.width = (100 * q[2] / W).toFixed(3) + "%"; c.style.height = (100 * q[3] / H).toFixed(3) + "%";
+      var pct = Math.round(100 * r.poss / tot);
+      c.title = r.label + " · " + pct + "% · " + (r.ppp == null ? "—" : Number(r.ppp).toFixed(2)) + " PPP · " + Math.round(r.poss) + " poss" +
+        (r.ref != null && !r.other ? " · scouted teams " + Number(r.ref).toFixed(2) : "") + (r.other ? " · " + r.other.join(", ") : "");
+      c.appendChild(el("b", "", r.label));
+      c.appendChild(el("span", "", pct + "%" + (r.ppp == null ? "" : " · " + Number(r.ppp).toFixed(2))));
+      tm.appendChild(c);
+    });
+    box.appendChild(tm);
+    box.appendChild(el("div", "sxp-tm-k", "Area: share of possessions · inside: share · points per possession · colour against the teams we tagged: green good for us, red bad for us, grey within 0.10 or under 5 possessions"));
+    return box;
+  }
+
+  /* WHO FINISHES THEIR POSSESSIONS, AS A PICTURE (Oriol, 25/11/2026: "con la foto y mucho más visual, debe
+     tener peso quien acaba, porcentaje, OER y sobre qué concepto acaba; que no quede una suelta debajo"):
+     a line a man, his face, a bar as long as his share of the team's plays (the league's season), his OER -
+     his points per 100 plays he finished, against the team's - and what he finishes on in our tagging,
+     the first two with their share */
+  var ROLE_SHORT = { "PnR Ball Handler": "PnR handler", "PnR Roll Man": "Roll", "Pick & Pop": "Pop", "Catch & Drive": "Drive",
+    "Spot Up": "Spot up", "Iso 1n1": "Iso", "Off Screen": "Off screen", "Hand Off": "Hand off", "Post Up": "Post up", "Cut": "Cut", "Putback": "Putback" };
+  function whoBlock(D) {
+    var M = D.meta || {};
+    try {
+      var Lw = window.leagueState && window.leagueState();
+      var tw = Lw && window._lgTeamIdByName && window._lgTeamIdByName(Lw, M.team || "");
+      var dw = tw && Lw.players && Lw.players[tw];
+      var Uw = (dw && typeof window._preUsage === "function") ? window._preUsage(Lw, tw) : null;
+      if (!Uw && tw && !D.__shell && typeof window.syncPlayers === "function") { try { window.syncPlayers(tw, false); } catch(e){_quiet(e)} }
+      if (!Uw || !dw) return null;
+      var plays = function (t) { return (t.p2a || 0) + (t.p3a || 0) + 0.44 * (t.fta || 0) + (t.tov || 0); };
+      var Tw = (dw.team_tot && dw.team_tot.all) || null;
+      var ptov = (dw.players || []).reduce(function (a, p) { return a + (((p.all || {}).tov) || 0); }, 0);
+      var teamPl = Tw ? (Tw.fga != null ? Tw.fga : (Tw.p2a || 0) + (Tw.p3a || 0)) + 0.44 * (Tw.fta || 0) + Math.max(Tw.tov || 0, ptov) : 0;
+      var teamO = teamPl ? 100 * (Tw.pts || 0) / teamPl : null;
+      var byId = {}; (dw.players || []).forEach(function (p) { byId[String(p.id || "")] = p; });
+      var tagged = (D.players && D.players.rows) || [];
+      var tagOf = function (num) { return tagged.filter(function (r) { return (/#\s*(\d+)/.exec(r.label) || [])[1] === String(parseInt(num, 10)); })[0] || null; };
+      var last = function (nm) { try { return (typeof window._lgLastName === "function" ? window._lgLastName(nm) : "") || nm; } catch (e) { return nm; } };
+      var men = Uw.rows.filter(function (r) { return r.ok; }).sort(function (a, b) { return b.share - a.share; }).slice(0, 6).map(function (r) {
+        var p = byId[r.id], t = p && p.all; if (!t) return null;
+        var pl = plays(t);
+        return { r: r, p: p, oer: pl ? 100 * (t.pts || 0) / pl : null, pl: pl, tg: tagOf(r.num) };
+      }).filter(Boolean);
+      if (!men.length) return null;
+      var mx = Math.max.apply(null, men.map(function (m) { return m.r.share; }));
+      var box = el("div", "sxp-who");
+      var hd = el("div", "sxp-who-h");
+      hd.appendChild(el("b", "", "Who finishes their possessions"));
+      var c1 = srcChip("lg"); if (c1) hd.appendChild(c1);
+      hd.appendChild(el("span", "", "share of the team's plays · OER, points per 100 plays he finishes" + (teamO != null ? " · the team " + Math.round(teamO) : "")));
+      var c2 = srcChip("tag"); if (c2) hd.appendChild(c2);
+      hd.appendChild(el("span", "", "what he finishes on"));
+      box.appendChild(hd);
+      var g = el("div", "sxp-who-g");
+      men.forEach(function (m) {
+        var row = el("div", "sxp-who-r");
+        var face = null;
+        try { if (typeof window._lgFace === "function") face = window._lgFace(Lw, { n: m.r.num, name: m.p.name, first: m.p.first, last: m.p.last, photo: m.p.photo, pid: m.p.pid, id: m.p.id }, "sxp-who-f"); } catch (e) { face = null; }
+        row.appendChild(face || el("span", "sxp-who-f sxp-who-f0", String(m.r.num || "")));
+        var nm = el("div", "sxp-who-n"); nm.appendChild(el("b", "", last(m.r.name || ""))); nm.appendChild(el("i", "", "#" + m.r.num)); row.appendChild(nm);
+        var bar = el("div", "sxp-who-bar"), fill = el("i", ""); fill.style.width = Math.max(6, Math.round(100 * m.r.share / (mx || 1))) + "%";
+        bar.appendChild(fill); bar.appendChild(el("b", "", Math.round(m.r.share) + "%")); bar.title = Math.round(m.r.share) + "% of the team's plays this season (" + Math.round(m.pl) + " plays)";
+        row.appendChild(bar);
+        var d = (m.oer != null && teamO != null) ? m.oer - teamO : 0;
+        var oe = el("div", "sxp-who-o " + (d >= 8 ? "bad" : d <= -8 ? "good" : ""));
+        oe.appendChild(el("b", "", m.oer == null ? "—" : String(Math.round(m.oer)))); oe.appendChild(el("i", "", "OER"));
+        oe.title = "Points per 100 plays he finished (shots, trips to the line, turnovers) · the team " + (teamO == null ? "—" : Math.round(teamO)) + " · red: he scores more than his team, green: less";
+        row.appendChild(oe);
+        var cc = el("div", "sxp-who-c");
+        var tg = m.tg;
+        if (tg && tg.tagged) {
+          Object.keys(tg.roles || {}).filter(function (k) { return tg.roles[k] > 0; }).sort(function (a, b) { return tg.roles[b] - tg.roles[a]; }).slice(0, 2).forEach(function (k) {
+            var ch = el("span", "", (ROLE_SHORT[k] || k) + " " + Math.round(100 * tg.roles[k] / tg.tagged) + "%");
+            ch.title = k + ": " + tg.roles[k] + " of the " + tg.tagged + " actions he is tagged finishing"; cc.appendChild(ch); });
+        } else cc.appendChild(el("em", "", "not in the tagging"));
+        row.appendChild(cc);
+        g.appendChild(row);
+      });
+      box.appendChild(g);
+      return box;
+    } catch (e) { _quiet(e); return null; }
+  }
   function teamDash(D) {
     var K = (typeof window !== "undefined") && window.UIKit;
     if (!K || !D) return null;
@@ -2078,45 +2201,14 @@
     var six = K.pick(cand, 6), mxN = 0;
     six.forEach(function (x) { mxN = Math.max(mxN, x.n || 0); });
     six.forEach(function (x) { x.nw = mxN ? (x.n || 0) / mxN : null; });
-    /* WHO FINISHES THEIR POSSESSIONS (Oriol, 25/11/2026, "Who finishes, OK"): the number is the league's -
-       his points over the plays he finished in the season (shots, trips to the line, turnovers), against
-       the team's own over the same plays, and his share of them (the card's Use) - and how he does it is
-       the tagging's, under it. It used to set his points a shot, turnovers out, against the team's points
-       a possession, turnovers in, which made nearly every man red. */
-    var gWho = [];
-    try {
-      var Lw = window.leagueState && window.leagueState();
-      var tw = Lw && window._lgTeamIdByName && window._lgTeamIdByName(Lw, M.team || "");
-      var dw = tw && Lw.players && Lw.players[tw];
-      var Uw = (dw && typeof window._preUsage === "function") ? window._preUsage(Lw, tw) : null;
-      if (!Uw && tw && !D.__shell && typeof window.syncPlayers === "function") { try { window.syncPlayers(tw, false); } catch(e){_quiet(e)} }
-      if (Uw && dw) {
-        var plays = function (t) { return (t.p2a || 0) + (t.p3a || 0) + 0.44 * (t.fta || 0) + (t.tov || 0); };
-        var Tw = (dw.team_tot && dw.team_tot.all) || null;
-        var ptov = (dw.players || []).reduce(function (a, p) { return a + (((p.all || {}).tov) || 0); }, 0);
-        var teamPl = Tw ? (Tw.fga != null ? Tw.fga : (Tw.p2a || 0) + (Tw.p3a || 0)) + 0.44 * (Tw.fta || 0) + Math.max(Tw.tov || 0, ptov) : 0;
-        var teamP = teamPl ? (Tw.pts || 0) / teamPl : null;
-        var byId = {}; (dw.players || []).forEach(function (p) { byId[String(p.id || "")] = p; });
-        var tagged = (D.players && D.players.rows) || [];
-        var tagOf = function (num) { return tagged.filter(function (r) { return (/#\s*(\d+)/.exec(r.label) || [])[1] === String(parseInt(num, 10)); })[0] || null; };
-        var last = function (nm) { try { return (typeof window._lgLastName === "function" ? window._lgLastName(nm) : "") || nm; } catch (e) { return nm; } };
-        Uw.rows.filter(function (r) { return r.ok; }).sort(function (a, b) { return b.share - a.share; }).slice(0, 6).forEach(function (r) {
-          var p = byId[r.id], t = p && p.all; if (!t) return;
-          var pl = plays(t), ppp = pl ? (t.pts || 0) / pl : null, d = (ppp != null && teamP != null) ? ppp - teamP : 0;
-          var tg = tagOf(r.num), top = tg ? Object.keys(tg.roles || {}).sort(function (a, b) { return tg.roles[b] - tg.roles[a]; })[0] : null;
-          gWho.push({ k: last(r.name || "") + " #" + r.num, v: f2n(ppp), src: "lg",
-            text: Math.round(r.share) + "% of their plays · the team " + f2n(teamP),
-            sub2: (tg && top && tg.roles[top]) ? { src: "tag", text: "mostly " + top.toLowerCase() + " · " + tg.n + " tagged poss" } : null,
-            tone: d >= 0.08 ? "bad" : d <= -0.08 ? "good" : "neutral", size: Math.min(1, r.share / 25), n: Math.round(pl), unit: "plays" });
-        });
-      }
-    } catch(e){_quiet(e)}
-    return K.summary({ title: "The opponent",
+    var card = K.summary({ title: "The opponent",
       sub: "red is what hurts us · green is what we can go at · each number is measured against its own source",
       head: overviewHead(D), figRows: figRows,
-      groups: [ { title: "What stands out · at most six", ideas: six },
-        { title: "Who finishes their possessions", ideas: gWho.slice(0, 6) } ],
+      groups: [ { title: "What stands out · at most six", ideas: six } ],
       empty: "Not enough tagged possessions to say anything yet." });
+    /* who finishes their possessions, under the findings: a line a man (whoBlock) */
+    try { var wb = whoBlock(D); if (wb) card.appendChild(wb); } catch(e){_quiet(e)}
+    return card;
   }
   /* THE CHARTS, EACH IN ITS TAB (Oriol, 24/11/2026, "gráficos ok"): what their offense is made of,
      what they have to defend, how they cover the ball screen, the games and the quarters */
@@ -2135,9 +2227,9 @@
         if (rest.length) { var rp = 0; rest.forEach(function (r) { rp += r.poss; }); parts.push({ label: "Other (" + rest.length + ")", share: rp / tot }); }
         return K.split({ title: title, sub: sub, parts: parts });
       };
-      out.off.push(mixOf(D.mix, "Their offense is made of", "share of possessions · points per possession"));
-      out.def.push(mixOf(D.defsit, "What they have to defend", "share · points allowed"));
-      out.bs.push(mixOf(D.coverage, "How they cover the ball screen", "share · points allowed"));
+      out.off.push(treemap(D.mix, "Their offense is made of", "share of possessions · points per possession", "O"));
+      out.def.push(treemap(D.defsit, "What they have to defend", "share of possessions · points allowed", "D"));
+      out.bs.push(treemap(D.coverage, "How they cover the ball screen", "share of their ball screens · points allowed", "D"));
       var ggs = (D.gamebygame || []).filter(function (r) { return !r.total; }), dt = (D.meta && D.meta.dates) || {};
       if (ggs.length >= 2) out.games.push(K.strip({ title: "Game by game", sub: "their offense minus their defense, per possession · oldest first", signed: true,
         items: ggs.map(function (r) { return { label: String(r.label).slice(0, 9) + (dt[r.label] ? " " + ddmm(dt[r.label]) : ""), value: r.net, text: (r.net > 0 ? "+" : r.net < 0 ? "−" : "") + Math.abs(r.net).toFixed(2),
@@ -2159,25 +2251,38 @@
   function pnrBlock(D) {
     var box = el("div", "sxp-pnr");
     var hd = el("div", "sxp-pnr-h"), c = srcChip("tag"); if (c) hd.appendChild(c);
-    hd.appendChild(document.createTextNode("Pick & roll · who runs it, who sets it, how they defend it"));
+    hd.appendChild(document.createTextNode("Pick & roll · who runs it and how they defend it"));
     box.appendChild(hd);
     var cols = el("div", "sxp-pnr-cols"); box.appendChild(cols);
     var off = el("div", "sxp-pnr-o"); cols.appendChild(off);
     var f2n = function (v) { return (v == null || !isFinite(v)) ? "—" : Number(v).toFixed(2); };
     off.appendChild(el("div", "dash-covh", "Their offense"));
+    /* WHY IT DID NOT ADD UP (Oriol, 25/11/2026): the three were shares of ALL their possessions - the ones that
+       ENDED with the ball handler, the roller or the popper; a ball screen that ends in a kick-out three is a
+       spot up. Now the line says how many of their possessions end in the ball screen, and the three are
+       shares of those, adding up to 100. "Who sets it" is off. */
     var fin = D.finish || [], get = function (k) { return fin.filter(function (r) { return r.label === k; })[0] || null; };
-    var ends = el("div", "sxp-pnr-ends");
-    [["PnR Ball Handler", "The ball handler finishes"], ["PnR Roll Man", "The roller finishes"], ["Pick & Pop", "The popper finishes"]].forEach(function (k) {
-      var r = get(k[0]); if (!r) return;
-      var d = el("div", "sxp-pnr-e");
-      d.appendChild(el("span", "k", k[1]));
-      d.appendChild(el("b", "", (r.freq != null ? r.freq + "%" : "—")));
-      d.appendChild(el("i", "", f2n(r.ppp) + " PPP · " + Math.round(r.poss) + " poss"));
-      d.title = "Possessions that end with this action: share of their offense, points per possession and possessions";
-      ends.appendChild(d);
-    });
-    if (ends.children.length) off.appendChild(ends);
-    else off.appendChild(el("div", "dash-miss", "No ball screen finish tagged in their offense."));
+    var parts = [["PnR Ball Handler", "The ball handler"], ["PnR Roll Man", "The roller"], ["Pick & Pop", "The popper"]]
+      .map(function (k) { return { k: k, r: get(k[0]) }; }).filter(function (x) { return x.r && x.r.n; });
+    var pn = 0, pp = 0, pts = 0; parts.forEach(function (x) { pn += x.r.n; pp += x.r.poss; pts += (x.r.ppp || 0) * x.r.poss; });
+    var offN = (D.meta && D.meta.offN) || 0;
+    if (pn) {
+      var top = el("div", "sxp-pnr-tot");
+      top.appendChild(el("b", "", Math.round(100 * pn / Math.max(1, offN)) + "%"));
+      top.appendChild(el("span", "", "of their possessions end in the ball screen · " + f2n(pp ? pts / pp : null) + " PPP · " + Math.round(pp) + " poss"));
+      top.title = "A possession counts by how it ends: with the ball handler, the roller or the popper finishing it. A ball screen that ends in a kick-out three is a spot up and is not here.";
+      off.appendChild(top);
+      var ends = el("div", "sxp-pnr-ends");
+      parts.forEach(function (x) {
+        var d = el("div", "sxp-pnr-e");
+        d.appendChild(el("span", "k", x.k[1]));
+        d.appendChild(el("b", "", Math.round(100 * x.r.n / pn) + "%"));
+        d.appendChild(el("i", "", f2n(x.r.ppp) + " PPP · " + Math.round(x.r.poss) + " poss"));
+        d.title = "Of their possessions that end in the ball screen, the share " + x.k[1].toLowerCase() + " finishes, his points per possession and possessions";
+        ends.appendChild(d);
+      });
+      off.appendChild(ends);
+    } else off.appendChild(el("div", "dash-miss", "No ball screen finish tagged in their offense."));
     var rows = (D.players && D.players.rows) || [];
     var who = function (roles, title) {
       var list = rows.map(function (p) { var n = 0; roles.forEach(function (r) { n += (p.roles && p.roles[r]) || 0; }); return { p: p, n: n }; })
@@ -2190,17 +2295,6 @@
     };
     who(["PnR Ball Handler"], "Handlers");
     who(["PnR Roll Man", "Pick & Pop"], "Screeners who finish");
-    var OS = D.offScreen;
-    if (OS && OS.n) {
-      var bar = el("div", "sxp-pnr-set"), parts = [["4", "Their 4"], ["5", "Their 5"], ["G", "Two guards"]];
-      bar.appendChild(el("span", "k", "Who sets it · " + OS.n + " ball screens with no call"));
-      var b = el("span", "bar");
-      parts.forEach(function (p, i) { var n = OS.by[p[0]] || 0; if (!n) return;
-        var s = el("i", "p" + i, Math.round(100 * n / OS.n) >= 14 ? p[1] + " " + Math.round(100 * n / OS.n) + "%" : "");
-        s.style.flex = String(n); s.title = p[1] + " · " + n + " of " + OS.n; b.appendChild(s); });
-      bar.appendChild(b);
-      off.appendChild(bar);
-    }
     var def = el("div", "sxp-pnr-d"); cols.appendChild(def);
     def.appendChild(el("div", "dash-covh", "Their defense"));
     var drawn = el("div", "sxp-pnr-b"); def.appendChild(drawn);
@@ -2896,7 +2990,7 @@
     } catch(e){_quiet(e)}
     var pnr = el("div", "sxp-pnr");
     var pnrH = el("div", "sxp-pnr-h"), pnrC = srcChip("tag"); if (pnrC) pnrH.appendChild(pnrC);
-    pnrH.appendChild(document.createTextNode("Pick & roll · who runs it, who sets it, how they defend it"));
+    pnrH.appendChild(document.createTextNode("Pick & roll · who runs it and how they defend it"));
     pnr.appendChild(pnrH);
     pend(pnr, "Comes with the tagging: who runs it, who sets it, which coverage each big plays and what it costs them.");
     root.appendChild(tabOf(pnr, "over"));
@@ -3215,7 +3309,56 @@
       ".sxp-pnr-set .bar{display:flex;height:22px;border-radius:6px;overflow:hidden;margin-top:4px;gap:2px}",
       ".sxp-pnr-set .bar i{display:flex;align-items:center;justify-content:center;font:600 10.5px 'Inter',sans-serif;font-style:normal;color:#fff;white-space:nowrap;overflow:hidden}",
       ".sxp-pnr-set .bar i.p0{background:#2f6cc0}.sxp-pnr-set .bar i.p1{background:#8a6829}.sxp-pnr-set .bar i.p2{background:#5b6472}",
-      ".sxp-pnr-d .sxp-pnr-b{grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}",
+      ".sxp-pnr-d .sxp-pnr-b{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:4px 18px}",
+      ".sxp-pnr-tot{display:flex;align-items:baseline;gap:8px;margin:0 0 6px}",
+      ".sxp-pnr-tot b{font:800 22px/1 'Inter',sans-serif;color:var(--ink)}",
+      ".sxp-pnr-tot span{font-size:11.5px;color:var(--ink-soft)}",
+      /* their defense on the ball screen, compact (Oriol, 25/11/2026: "una ficha mucho más compacta") */
+      ".sxp-pnr-d .dash-covh{margin:1px 0 2px;font-size:10px}",
+      ".sxp-pnr-d .dash-cov{gap:2px 4px;font-size:11px;grid-template-columns:minmax(64px,1fr) repeat(2,minmax(0,1fr))}",
+      ".sxp-pnr-d .dash-cov .hd{font-size:8.5px;letter-spacing:.03em}",
+      ".sxp-pnr-d .dash-cov .c{padding:0 5px;border-radius:4px;line-height:18px}",
+      ".sxp-pnr-d .dash-cov .c b{font-size:10.5px}.sxp-pnr-d .dash-cov .c i{font-size:10px}",
+      ".sxp-pnr-d .dash-mixes{gap:3px}.sxp-pnr-d .dash-mixr{grid-template-columns:76px minmax(0,1fr) 30px;gap:6px;font-size:11px}",
+      ".sxp-pnr-d .dash-mixr .bar{height:15px}.sxp-pnr-d .dash-mixr .bar i{font-size:10px}",
+      /* the areas */
+      ".sxp-tmw{margin:0}",
+      ".sxp-tm{position:relative;width:100%;aspect-ratio:3/1;min-height:200px;max-height:340px}",
+      ".sxp-tm-c{position:absolute;box-sizing:border-box;border:2px solid var(--panel,#fff);border-radius:7px;padding:6px 8px;overflow:hidden;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:2px;background:rgba(20,24,33,.07);color:var(--ink)}",
+      ".sxp-tm-c.good{background:rgba(47,158,134,.24)}.sxp-tm-c.bad{background:rgba(216,82,78,.22)}",
+      ".sxp-tm-c b{font:700 13px/1.15 'Inter',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".sxp-tm-c span{font:600 12px 'IBM Plex Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".sxp-tm-c.good span{color:#0f6b4a}.sxp-tm-c.bad span{color:#a92f2b}",
+      ".sxp-tm-c.lg b{font-size:19px}.sxp-tm-c.lg span{font-size:15px}.sxp-tm-c.md b{font-size:14px}",
+      ".sxp-tm-c.sm{padding:3px 5px}.sxp-tm-c.sm b{font-size:11px}.sxp-tm-c.sm span{font-size:10px}",
+      ".sxp-tm-c.xs{padding:2px 4px}.sxp-tm-c.xs b{font-size:9.5px}.sxp-tm-c.xs span{display:none}",
+      "body.dark .sxp-tm-c{background:rgba(255,255,255,.07)}body.dark .sxp-tm-c.good{background:rgba(47,158,134,.3)}body.dark .sxp-tm-c.bad{background:rgba(216,82,78,.3)}",
+      "body.dark .sxp-tm-c.good span{color:#7fdcb7}body.dark .sxp-tm-c.bad span{color:#ffb0a8}",
+      ".sxp-tm-k{margin-top:6px;font-size:10.5px;color:var(--ink-faint)}",
+      /* who finishes */
+      ".sxp-who{margin-top:14px}",
+      ".sxp-who-h{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;margin:0 0 8px}",
+      ".sxp-who-h b{font:700 11px 'Oswald',sans-serif;letter-spacing:.15em;text-transform:uppercase;color:#fff;background:var(--ink,#141821);border-radius:5px;padding:4px 9px}",
+      ".sxp-who-h span:not(.ui-src){font-size:11px;color:var(--ink-faint)}",
+      "body.dark .sxp-who-h b{background:#2a313d}",
+      ".sxp-who-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:6px 18px}",
+      ".sxp-who-r{display:grid;grid-template-columns:34px minmax(84px,120px) minmax(0,1fr) 52px minmax(110px,1fr);align-items:center;gap:8px;padding:4px 6px;border-radius:9px;background:var(--panel-2,#f4f5f7)}",
+      ".sxp-who-f{width:34px;height:34px;border-radius:50%;overflow:hidden;display:inline-block;background:var(--panel,#fff)}.sxp-who-f img{width:100%;height:100%;object-fit:cover;object-position:50% 20%}",
+      ".sxp-who-f0{font:700 11px/34px 'IBM Plex Mono',monospace;text-align:center;color:var(--ink-faint)}",
+      ".sxp-who-n{min-width:0;display:flex;flex-direction:column}.sxp-who-n b{font:700 13px 'Inter',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sxp-who-n i{font:600 10.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint)}",
+      ".sxp-who-bar{position:relative;height:20px;border-radius:5px;background:rgba(20,24,33,.06);overflow:hidden}",
+      ".sxp-who-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:5px;background:#3d4a5c}",
+      ".sxp-who-bar b{position:relative;padding:0 8px;font:700 12px/20px 'IBM Plex Mono',monospace;color:#fff}",
+      "body.dark .sxp-who-bar{background:rgba(255,255,255,.07)}body.dark .sxp-who-bar i{background:#7d8aa0}",
+      ".sxp-who-o{display:flex;flex-direction:column;align-items:center;border-radius:7px;padding:2px 0;background:var(--panel,#fff)}",
+      ".sxp-who-o b{font:800 17px/1.1 'Inter',sans-serif}.sxp-who-o i{font:600 8.5px 'IBM Plex Mono',monospace;font-style:normal;letter-spacing:.08em;color:var(--ink-faint)}",
+      ".sxp-who-o.bad{background:rgba(216,82,78,.14)}.sxp-who-o.bad b{color:#c0403c}.sxp-who-o.good{background:rgba(47,158,134,.15)}.sxp-who-o.good b{color:#17805a}",
+      "body.dark .sxp-who-o.bad b{color:#ff8f85}body.dark .sxp-who-o.good b{color:#5fcf9f}",
+      ".sxp-who-c{display:flex;flex-wrap:wrap;gap:3px;min-width:0}",
+      ".sxp-who-c span{font:600 10.5px 'Inter',sans-serif;padding:2px 6px;border-radius:5px;background:#f3e6c4;color:#6b4f12;white-space:nowrap}",
+      "body.dark .sxp-who-c span{background:rgba(214,170,80,.18);color:#e8c77e}",
+      ".sxp-who-c em{font-size:10.5px;color:var(--ink-faint)}",
+      "@media (max-width:640px){.sxp-who-r{grid-template-columns:30px minmax(0,1fr) 46px;}.sxp-who-bar,.sxp-who-c{grid-column:1/-1}}",
       /* a part of the row above it (open court: fastbreak, early offense; TAG and BACK's lines) */
       ".sxp-t tbody tr.sxp-subr td.sxp-lbl{padding-left:22px;font-weight:500;color:var(--ink-soft)}",
       ".sxp-vis{margin:0 0 14px}",
@@ -3419,17 +3562,17 @@
       /* the last cell takes whatever the row has left: an odd number of figures used to
          leave a grey hole beside the fifth one, which reads as a number that failed to
          load rather than as a row that happens to be odd */
-      ".sxp-stats>div:last-child:nth-child(odd){grid-column:1/-1}",
+
       /* Two to a row, always. auto-fit made three or four columns of a panel this wide and
          then left the tail of the last row as empty grey cells - the grid's own background
          showing through where there was nothing to put - which reads as data that failed
          to arrive rather than as a list with an odd number of figures in it. */
-      ".sxp-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;",
-      "background:var(--line);border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:8px}",
-      ".sxp-stats>div{background:var(--panel,#fff);padding:10px 12px;min-width:0}",
-      ".sxp-stats dt{font-size:11px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-faint)}",
-      ".sxp-stats dd{margin:5px 0 0;font:800 20px ui-monospace,monospace;line-height:1.1}",
-      ".sxp-stats small{display:block;margin-top:4px;font-size:11px;color:var(--ink-faint);line-height:1.4}",
+      /* SECOND CHANCE, COMPACT (Oriol, 25/11/2026): small tiles that wrap, no grid holes */
+      ".sxp-stats{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}",
+      ".sxp-stats>div{flex:1 1 120px;background:var(--panel-2,#f4f5f7);border-radius:7px;padding:5px 8px;min-width:0}",
+      ".sxp-stats dt{font-size:9.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint);display:flex;align-items:center;gap:4px}",
+      ".sxp-stats dd{margin:2px 0 0;font:800 16px ui-monospace,monospace;line-height:1.1}",
+      ".sxp-stats small{display:block;margin-top:1px;font-size:10px;color:var(--ink-faint);line-height:1.3}",
 
       ".sxp-nv{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:9px}",
       ".sxp-nv li{background:var(--panel,#fff);border:1px solid var(--line);border-left:3px solid #b0873c;",
