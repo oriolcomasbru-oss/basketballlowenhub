@@ -3611,12 +3611,12 @@ async function _pbCopySave(doc, why, lost){
   const slot=(+idx.next||0)%PB_COPY_N, at=new Date().toISOString();
   const copy={ v:1, at:at, by:currentUser||"", why:why, lost:(lost||[]).slice(0,60),
     playbookOff:doc.playbookOff||null, playbookDef:doc.playbookDef||null, playbookAto:doc.playbookAto||null, playbookVideo:doc.playbookVideo||null, playbookCon:doc.playbookCon||null, plays:doc.plays||null };
-  const w=JSON.parse(await _sbRaw("save_staff_doc",{ p_token:SB_TOKEN, p_key:"staff:playbook-copy:"+slot, p_data:copy }));
+  const w=await _staffSaveRaw("staff:playbook-copy:"+slot, copy);
   if(!w || !w.ok) return false;
   idx.list=idx.list.filter(x=>x && x.slot!==slot);
   idx.list.unshift({ slot:slot, at:at, by:copy.by, why:why, lost:copy.lost.slice(0,14), n:(lost||[]).length });
   idx.next=slot+1;
-  try{ await _sbRaw("save_staff_doc",{ p_token:SB_TOKEN, p_key:PB_COPY_INDEX, p_data:idx }); }catch(e){_quiet(e)}
+  try{ await _staffSaveRaw(PB_COPY_INDEX, idx); }catch(e){_quiet(e)}
   return true; }
 /* what a copy has and the Playbook on the screen has not goes back in - nothing is taken off, nothing
    written over; the old ATO's sheet's sections go into the offense */
@@ -13908,6 +13908,23 @@ async function _clubDocPut(key, data){
     return !!(r && r.ok===true);
   }catch(e){ return false; }
 }
+/* A STAFF DOCUMENT WRITTEN EVEN WHERE supabase/006 HAS NOT BEEN RUN (Oriol, 26/11/2026, opening a special report:
+   "Could not find the function public.save_staff_doc(p_data, p_key, p_token) in the schema cache"). save_staff_doc is
+   how any coach writes a staff document; the server does not have it yet. Planning already fell back to the admin's
+   old way; the special reports' list, the pad's taps and the Playbook's copies did not, and went nowhere. All three
+   go through here now: save_staff_doc, and when it is not there, the admin writes it as the club's documents are */
+async function _staffSaveRaw(key, data){
+  let w=null;
+  try{ w=JSON.parse(await _sbRaw("save_staff_doc",{ p_token:SB_TOKEN, p_key:key, p_data:data })); }catch(e){ w={ ok:false, error:(e && e.message) || "" }; }
+  if(w && w.ok) return w;
+  if(isAdmin()){
+    try{ const w2=JSON.parse(await _sbRaw("save_report",{ p_token:SB_TOKEN, p_key:key, p_kind:CLUB_DOC_KIND, p_opponent:"", p_date:null, p_data:data, p_html:null }));
+      if(w2 && w2.ok) return w2; w=w2 || w; }catch(e){ w={ ok:false, error:(e && e.message) || "" }; }
+  } else if(w && /schema cache|could not find the function/i.test(String(w.error||""))){
+    w={ ok:false, error:"the server cannot take it from this account yet (supabase/006 not run) - the admin can" };
+  }
+  return w || { ok:false, error:"not saved" };
+}
 /* DOCUMENTS ANY MEMBER OF STAFF WRITES: the video staff's ticks, the S&C note. Kept under
    staff:<key> and written through save_staff_doc (supabase/006_staff_docs.sql), which any
    coach account may call. Until that has been run, the admin's write goes the old way and
@@ -18072,7 +18089,7 @@ const PAD_NAME={}; PAD_C.forEach(c=>{ PAD_NAME[c.k]=(c.g? c.g+" "+c.l.toLowerCas
 /* where the taps are kept: the server's staff documents (the tests swap these two for a store in memory) */
 const _padIO={
   load:async key=>{ const r=JSON.parse(await _sbRaw("get_report",{ p_token:SB_TOKEN, p_key:key })); return (r && r.report && r.report.data) || null; },
-  save:async (key, doc)=>{ const w=JSON.parse(await _sbRaw("save_staff_doc",{ p_token:SB_TOKEN, p_key:key, p_data:doc }));
+  save:async (key, doc)=>{ const w=await _staffSaveRaw(key, doc);
     if(!w || !w.ok) throw new Error((w && w.error) || "not saved"); return w; }
 };
 /* THE GAME THE TAPS BELONG TO (Oriol, 26/11/2026: "en game plan no veo dónde sale la info que he marcado"). The pad
@@ -20646,7 +20663,7 @@ function _spLoad(force){
 }
 async function _spEdit(fn){
   const list=await _spRead(); fn(list);
-  const w=JSON.parse(await _sbRaw("save_staff_doc",{ p_token:SB_TOKEN, p_key:SPECIAL_IDX_KEY, p_data:{ v:1, list:list } }));
+  const w=await _staffSaveRaw(SPECIAL_IDX_KEY, { v:1, list:list });
   if(!w || !w.ok) throw new Error((w && w.error) || "the server did not keep it");
   _spIdx.list=list; _spIdx.at=Date.now(); return list;
 }
