@@ -1013,6 +1013,9 @@
       (r.cells || r).forEach(function (c) {
         var td = el("td", (c && c.cls) || null, c && c.v != null ? c.v : c);
         if (c && typeof c === "object" && c.title) td.title = c.title;
+        /* a drawing before the text (a trend's small line), and data the page's CSS reads (a rank's label) */
+        if (c && typeof c === "object" && c.node) td.insertBefore(c.node, td.firstChild);
+        if (c && typeof c === "object" && c.data) Object.keys(c.data).forEach(function (k) { td.dataset[k] = c.data[k]; });
         /* a small mark after the text: a rank, in the colour of what it ranks */
         if (c && typeof c === "object" && c.sup != null) td.appendChild(el("sup", c.supCls || null, String(c.sup)));
         /* and a small second line under it - the fouls a set drew that night */
@@ -4020,7 +4023,8 @@
        set, its runs, PPP, fouls drawn and trend, then one narrow column a game - the points a possession
        in the cell, the runs small beside it, a dot when it drew a foul; coloured only from 5 runs, the
        hub's rule (a single run is a number, not a colour) */
-    var head = ["Set", "Runs", "PPP", "FD", "Trend"].concat(games.map(function (g) { return g.label; }));
+    /* and the trend at the end, after the games it is read from (Oriol, 25/11/2026) */
+    var head = ["Set", "Runs", "PPP", "FD"].concat(games.map(function (g) { return g.label; }), ["Trend"]);
     var gameCode = function (label) {
       try {
         var L = window.leagueState && window.leagueState(), id = L && window._lgTeamIdByName && window._lgTeamIdByName(L, label);
@@ -4029,6 +4033,40 @@
       } catch (e) { _quiet(e); }
       var w = String(label || "").split(/[\s\-]+/).sort(function (a, b) { return b.length - a.length; })[0] || "?";
       return (w.match(/[A-Za-zÄÖÜäöü]/g) || []).join("").slice(0, 3).toUpperCase();
+    };
+    /* THE RESULT OF EACH NIGHT, under its date (Oriol, 25/11/2026: "cabecera fija ok"), from the league's
+       own feed: our game on that day. A night the feed does not have shows no result, not a guessed one */
+    var resultOf = function (g) {
+      try {
+        var L = window.leagueState && window.leagueState(), ours = window._lgOurs;
+        if (!L || typeof ours !== "function") return null;
+        var d = String(g.d || g.date || "").slice(0, 10); if (d.length < 10) return null;
+        var x = (L.games || []).concat(L.cup || [], L.euro || []).filter(function (y) {
+          return String(y.date || "").slice(0, 10) === d && (ours(y.home) || ours(y.away)); })[0];
+        if (!x || x.hs == null || x.as == null) return null;
+        var home = ours(x.home), us = +(home ? x.hs : x.as), them = +(home ? x.as : x.hs);
+        if (!isFinite(us) || !isFinite(them) || (us === 0 && them === 0)) return null;
+        return { win: us > them, us: us, them: them };
+      } catch (e) { _quiet(e); return null; }
+    };
+    /* THE TREND AS A LINE (Oriol, 25/11/2026: "tendencia en gráfico al final + número"): the nights the
+       set was run, in order and no others, the dashed line at 1.00 a possession, and over them the
+       straight line the trend is read off, in its colour - green up, red down, grey when it does not move */
+    var spark = function (seq, f, tone) {
+      var NS = "http://www.w3.org/2000/svg", W = 62, H = 20, k = seq.length;
+      var top = Math.min(3, Math.max(2, Math.max.apply(null, seq)));
+      var X = function (i) { return 2 + (W - 4) * (k > 1 ? i / (k - 1) : 0.5); };
+      var Y = function (v) { return H - 2 - (H - 4) * Math.max(0, Math.min(v, top)) / top; };
+      var sv = document.createElementNS(NS, "svg");
+      sv.setAttribute("class", "tr-spark"); sv.setAttribute("width", W); sv.setAttribute("height", H);
+      sv.setAttribute("viewBox", "0 0 " + W + " " + H); sv.setAttribute("aria-hidden", "true");
+      var mk = function (tag, at) { var e = document.createElementNS(NS, tag);
+        Object.keys(at).forEach(function (a) { e.setAttribute(a, at[a]); }); sv.appendChild(e); return e; };
+      mk("line", { x1: 0, x2: W, y1: Y(1).toFixed(1), y2: Y(1).toFixed(1), "class": "tr-sp-ref" });
+      mk("polyline", { points: seq.map(function (v, i) { return X(i).toFixed(1) + "," + Y(v).toFixed(1); }).join(" "), "class": "tr-sp-line" });
+      if (f) mk("line", { x1: X(0).toFixed(1), x2: X(k - 1).toFixed(1), y1: Y(f.a).toFixed(1), y2: Y(f.a + f.b * (k - 1)).toFixed(1), "class": "tr-sp-fit " + tone });
+      mk("circle", { cx: X(k - 1).toFixed(1), cy: Y(seq[k - 1]).toFixed(1), r: 1.8, "class": "tr-sp-dot" });
+      return sv;
     };
 
     /* Thirty sets in one list sorted by volume reads as thirty unrelated rows: a half
@@ -4083,21 +4121,24 @@
         bc.push({ v: T.n + " · " + (allPoss ? Math.round(100 * T.n / allPoss) : 0) + "%", cls: "sx-band" });
         bc.push({ v: f2(tp), cls: "sx-band sx-cell " + (T.n >= MIN ? pppStep(tp) : "") });
         bc.push({ v: T.fd ? String(T.fd) : "—", cls: "sx-band tr-fdt" });
-        bc.push({ v: "", cls: "sx-band" });
         phG.forEach(function (p, gi) { var e = p.m[g.band];
           if (!e || !e.n) { bc.push({ v: "·", cls: "sx-band tr-mini tr-none" }); return; }
           var pp = e.pts / e.n, sh = Math.round(100 * e.n / Math.max(1, p.tot));
           bc.push({ v: f2(pp), sup: sh + "%", supCls: "tr-runs", cls: "sx-band sx-cell tr-mini " + (e.n >= MIN ? pppStep(pp) : "tr-few"),
             tail: e.fd ? "•" : null, tailCls: "tr-fd",
             title: g.band + " · " + games[gi].label + " · " + sh + "% of the game · " + e.n + " possessions · " + f2(pp) + " a possession" + (e.fd ? " · " + e.fd + " FD" : "") }); });
+        bc.push({ v: "", cls: "sx-band" });
         if (body.length) body.push({ cls: "tr-gaprow", cells: [{ span: head.length, v: "" }] });
         body.push({ cls: "tr-bandrow", cells: bc });
         return;
       }
       var r = g.set;
       var ppp = r.n ? r.pts / r.n : NaN;
-      var cells = [bestAt[r.k] ? { v: r.k, sup: bestAt[r.k], supCls: "tr-sup good", cls: "tr-supc" }
-        : worstAt[r.k] ? { v: r.k, sup: worstAt[r.k], supCls: "tr-sup bad", cls: "tr-supc" } : r.k];
+      /* the rank in front of the name, a label (Oriol, 25/11/2026: "ranking al principio"); every set
+         keeps the room for one, so the names still start in one line */
+      var rk = bestAt[r.k] ? ["Top " + bestAt[r.k], " good", "Best"] : worstAt[r.k] ? ["Low " + worstAt[r.k], " bad", "Worst"] : ["", "", ""];
+      var cells = [{ v: r.k, cls: "tr-rk" + rk[1], data: { rk: rk[0] },
+        title: rk[0] ? rk[2] + " " + rk[0].split(" ")[1] + " on points a possession, among the sets run " + MIN + " times or more" : null }];
       var seq = [], gcells = [];
       games.forEach(function (gm, gi) {
         var c = r.per[gi];
@@ -4113,17 +4154,21 @@
         ? { v: f2(ppp), cls: "sx-cell " + pppStep(ppp) }
         : { v: f2(ppp), cls: "tr-thin" });
       cells.push({ v: r.fd ? String(r.fd) : "—", cls: "tr-fdt" });
-      /* the trend, over the nights it was run and no others */
-      if (seq.length < MINGAMES) cells.push({ v: seq.length + " game" + (seq.length === 1 ? "" : "s"), cls: "tr-thin" });
+      /* the trend, over the nights it was run and no others - last in the row, after the games it is
+         read from: the line of those nights, then the number */
+      var tc;
+      if (seq.length < MINGAMES) tc = { v: seq.length + " game" + (seq.length === 1 ? "" : "s"), cls: "tr-thin tr-trend" };
       else {
         var f = linfit(seq);
         /* and only a move of 0.10 a possession or more over its games is a move */
         var flat = !f || Math.abs(f.b) * (seq.length - 1) < 0.10;
-        cells.push(flat ? { v: "flat", cls: "tr-thin" }
-          : { v: (f.b > 0 ? "▲ +" : "▼ −") + f2(Math.abs(f.b)) + " / game",
-              cls: f.b > 0 ? "tr-up" : "tr-down" });
+        tc = { v: flat ? "flat" : (f.b > 0 ? "▲ +" : "▼ −") + f2(Math.abs(f.b)),
+          cls: (flat ? "tr-thin" : f.b > 0 ? "tr-up" : "tr-down") + " tr-trend",
+          node: spark(seq, f, flat ? "flat" : f.b > 0 ? "up" : "down"),
+          title: seq.length + " games it was run · " + (flat ? "no move of 0.10 a possession over them"
+            : (f.b > 0 ? "+" : "−") + f2(Math.abs(f.b)) + " a possession a game") };
       }
-      body.push(cells.concat(gcells));
+      body.push(cells.concat(gcells, [tc]));
     });
     /* the band rows stay where they are when a column is sorted, which is what the
        page's sorter does with a single-cell row that spans the table */
@@ -4131,12 +4176,30 @@
     /* the games as short codes with their date, the full name on the hover */
     try {
       var ths = tw.querySelectorAll("thead th");
-      games.forEach(function (g, gi) { var th = ths[5 + gi]; if (!th) return;
+      games.forEach(function (g, gi) { var th = ths[4 + gi]; if (!th) return;
         th.textContent = ""; th.className = "tr-gh"; var gd = String(g.d || g.date || ""); th.title = g.label + (gd ? " · " + gd : "");
         th.appendChild(el("b", null, gameCode(g.label)));
-        var d = gd; if (d.length >= 10) th.appendChild(el("i", null, d.slice(8, 10) + "/" + d.slice(5, 7))); });
+        var d = gd; if (d.length >= 10) th.appendChild(el("i", null, d.slice(8, 10) + "/" + d.slice(5, 7)));
+        var rs = resultOf(g);
+        if (rs) { th.appendChild(el("span", "tr-res " + (rs.win ? "w" : "l"), (rs.win ? "W " : "L ") + rs.us + "–" + rs.them));
+          th.title += " · " + (rs.win ? "won " : "lost ") + rs.us + "–" + rs.them; } });
     } catch (e) { _quiet(e); }
     sec.appendChild(tw);
+    /* THE HEAD STAYS ON SCREEN while the sets go by under it. A box that slides sideways would hold it
+       inside itself, so the box only slides when the table is wider than the page; when it fits it lets
+       the head stick to the page */
+    var fit = function () { try { if (!tw.clientWidth) return;
+      var fits = tw.scrollWidth <= tw.clientWidth + 2;
+      tw.classList.toggle("tr-fit", fits);
+      /* and it sticks to the screen's edge, not to the inside of the page's margin: the rows going by
+         would show in that margin above it (12 to 22 px, by the screen) */
+      var sc = tw.parentElement;
+      while (sc && sc !== document.body) { var oy = getComputedStyle(sc).overflowY; if (oy === "auto" || oy === "scroll") break; sc = sc.parentElement; }
+      /* a table wider than the screen (a tablet, a phone) scrolls in its own box, the head sticking
+         to that box's top, which has no margin */
+      var pt = (fits && sc && sc !== document.body) ? parseFloat(getComputedStyle(sc).paddingTop) || 0 : 0;
+      tw.style.setProperty("--trs-top", (-pt) + "px"); } catch (e) { _quiet(e); } };
+    try { new ResizeObserver(fit).observe(tw); } catch (e) { _quiet(e); setTimeout(fit, 300); }
     return rows.filter(function (r) { return r.n >= MIN && SET_FAMS[r.fam]; });
   }
 
@@ -5357,6 +5420,30 @@
       ".tr-sets .sx-table td.tr-few{color:var(--ink-soft,#5b6472);background:transparent}",
       ".tr-sets .sx-table td.tr-mini.tr-none{color:var(--ink-faint,#8a93a2)}",
       ".tr-sets .sx-table th.tr-gh{padding:2px 1px!important;min-width:34px;line-height:1.05}",
+      /* the head stays on screen while the sets go by */
+      ".tr-sets .sx-tablewrap.tr-fit{overflow:visible}",
+      ".tr-sets .sx-tablewrap:not(.tr-fit){max-height:82vh;overflow:auto}",
+      ".tr-sets .sx-table thead th{position:-webkit-sticky;position:sticky;top:var(--trs-top,0px);z-index:2;background:var(--panel,#fff);box-shadow:2px 0 0 var(--panel,#fff),-2px 0 0 var(--panel,#fff),0 2px 0 var(--line-strong,#d7dbe0)}",
+      ".tr-sets .sx-table thead th:first-child{z-index:3}",
+      ".tr-sets .sx-table th.tr-gh .tr-res{display:block;margin-top:2px;font:700 8.5px/1.1 'IBM Plex Mono',monospace;letter-spacing:-.02em}",
+      ".tr-sets .sx-table th.tr-gh .tr-res.w{color:#17805a}.tr-sets .sx-table th.tr-gh .tr-res.l{color:#c53727}",
+      ".dark .tr-sets .sx-table th.tr-gh .tr-res.w{color:#4cc392}.dark .tr-sets .sx-table th.tr-gh .tr-res.l{color:#ff7a6b}",
+      /* the rank, a label in front of the name; an empty one keeps the room */
+      ".tr-sets .sx-table td.tr-rk::before{content:attr(data-rk);display:inline-block;box-sizing:border-box;min-width:42px;margin-right:7px;padding:1px 0;border-radius:4px;",
+      "  font:700 9px/1.4 'IBM Plex Mono',monospace;letter-spacing:.02em;text-align:center;vertical-align:1px}",
+      ".tr-sets .sx-table td.tr-rk.good::before{background:#dcefe6;color:#0f5c3f}",
+      ".tr-sets .sx-table td.tr-rk.bad::before{background:#f8dedb;color:#8e2418}",
+      ".dark .tr-sets .sx-table td.tr-rk.good::before{background:#173d2f;color:#8fe0bb}",
+      ".dark .tr-sets .sx-table td.tr-rk.bad::before{background:#4a1f1a;color:#ffb0a6}",
+      /* the trend: its line, then the number */
+      ".tr-sets .sx-table td.tr-trend{text-align:left;min-width:118px;padding:3px 8px!important;font-size:12px}",
+      ".tr-sets .sx-table td.tr-trend svg.tr-spark{vertical-align:middle;margin-right:6px;overflow:visible}",
+      ".tr-spark .tr-sp-ref{stroke:var(--ink-faint,#8a93a2);stroke-width:.6;stroke-dasharray:2 2}",
+      ".tr-spark .tr-sp-line{fill:none;stroke:var(--ink-soft,#5b6472);stroke-width:1;stroke-linejoin:round;opacity:.75}",
+      ".tr-spark .tr-sp-fit{stroke-width:2.2;stroke-linecap:round}",
+      ".tr-spark .tr-sp-fit.up{stroke:#17805a}.tr-spark .tr-sp-fit.down{stroke:#c53727}.tr-spark .tr-sp-fit.flat{stroke:var(--ink-faint,#8a93a2)}",
+      ".dark .tr-spark .tr-sp-fit.up{stroke:#4cc392}.dark .tr-spark .tr-sp-fit.down{stroke:#ff7a6b}",
+      ".tr-spark .tr-sp-dot{fill:var(--ink,#141821)}",
       ".tr-sets .sx-table th.tr-gh b{display:block;font:700 10.5px 'IBM Plex Mono',monospace}",
       ".tr-sets .sx-table th.tr-gh i{display:block;font:500 8.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2)}",
       ".tr-sets .sx-table tr.tr-bandrow td:first-child{font:800 13px/1.1 'Oswald',sans-serif!important;letter-spacing:.12em;text-transform:uppercase;padding-left:10px!important}",
