@@ -2634,12 +2634,35 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
 .pcn-row.e .pcn-c{color:var(--ink-faint);font-weight:600}
 .pcn-s.e{border-style:dashed;background:transparent;color:var(--ink-faint);font-size:11.5px}
 @media(max-width:560px){.pbcon{columns:1}.pcn-row{grid-template-columns:1fr}}
+/* editing in the same list */
+.pcn-fam.ed .pcn-row{grid-template-columns:minmax(150px,230px) minmax(0,1fr) auto;align-items:center}
+.pcn-fam.ed .pcn-c{display:flex;align-items:center;gap:6px;min-width:0}
+.pcn-ti{flex:1;min-width:0;border:0;border-bottom:1px solid transparent;background:transparent;font:inherit;font-weight:700;font-size:13px;color:var(--ink);padding:2px 0;outline:none}
+.pcn-ti:focus{border-bottom-color:var(--line-strong)}
+.pcn-ti::placeholder{color:var(--ink-faint);font-weight:500}
+.pcn-grip{cursor:grab;color:var(--ink-faint);font-size:12px;line-height:1;user-select:none;-webkit-user-select:none;flex:0 0 auto}
+.pcn-s .pcn-grip{margin-left:-3px}
+.pcn-sl{font-weight:800;outline:none;min-width:1ch}
+.pcn-sd{font-size:11px;color:var(--ink-soft);outline:none;min-width:1ch}
+.pcn-sl:empty:before,.pcn-sd:empty:before{content:attr(data-ph);color:var(--ink-faint);font-weight:500}
+.pcn-s.ed:not(:focus-within) .pcn-sd:empty{display:none}
+.pcn-s.ed:focus-within{border-color:var(--accent,#c9a227);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#c9a227) 25%,transparent)}
+.pcn-x{border:0;background:transparent;color:var(--ink-faint);cursor:pointer;font-size:11px;padding:0 2px;line-height:1}
+.pcn-x:hover{color:#c0392b}
+.pcn-add{border:1px dashed var(--line-strong);background:transparent;border-radius:999px;padding:2px 10px;font:inherit;font-size:12px;font-weight:600;color:var(--ink-soft);cursor:pointer}
+.pcn-add:hover,.pcn-addc:hover{color:var(--ink);border-color:var(--ink-faint)}
+.pcn-tools{display:flex;align-items:center;gap:6px}
+.pcn-famsel{font:inherit;font-size:11.5px;padding:2px 4px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink-soft)}
+.pcn-addc{display:block;width:calc(100% - 26px);margin:6px 13px 10px;border:1px dashed var(--line-strong);background:transparent;border-radius:8px;padding:6px;font:inherit;font-size:12.5px;font-weight:600;color:var(--ink-soft);cursor:pointer}
+.pcn-row.pb-drop,.pcn-sets.pb-drop{background:rgba(201,162,39,.10)}
+.pcn-s.pb-drop,.pcn-fam.pb-drop{outline:2px dashed var(--gold,#c9a227);outline-offset:2px}
+@media(max-width:560px){.pcn-fam.ed .pcn-row{grid-template-columns:1fr}.pcn-tools{justify-content:flex-end}}
+
 /* on paper: the light card, the size of the other tabs' cards */
-.pbp .pcn-fam{margin:0;border-color:#dfe3e8;border-radius:8px;background:#fff;box-shadow:none}
-.pbp .pcn-fh{padding:5px 10px}
-.pbp .pcn-row{padding:4px 10px;border-top-color:#eceef2;grid-template-columns:minmax(80px,120px) minmax(0,1fr)}
-.pbp .pcn-c{color:#141821;font-size:12px}
-.pbp .pcn-s{background:#f3f4f6;border-color:#dfe3e8;color:#141821;font-size:11.5px;padding:1px 8px}
+.pbp .pcn-fam{margin:0;border-color:#dfe3e8;background:#fff;box-shadow:none}
+.pbp .pcn-row{border-top-color:#eceef2}
+.pbp .pcn-c{color:#141821}
+.pbp .pcn-s{background:#f3f4f6;border-color:#dfe3e8;color:#141821}
 .pbp .pcn-s i{color:#4d5663}
 .pbp .pcn-row.e .pcn-c,.pbp .pcn-s.e{color:#8a919c;background:transparent}
 
@@ -3501,7 +3524,7 @@ try{ document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) _p
    What one copy of the Playbook has that another has not: a section by its name, a call by its name
    (or its detail when it has no name). The offense and the old ATO's sheet count as one list. */
 function _pbItemsOf(doc){ const M=new Map();
-  ["playbookOff","playbookAto","playbookDef","playbookCon"].forEach(k=>{ const side=k==="playbookDef"? "def" : k==="playbookCon"? "con" : "off", lab=side==="def"? "Defense" : side==="con"? "Offense by concepts" : "Offense";
+  ["playbookOff","playbookAto","playbookDef","playbookCon"].forEach(k=>{ const side=k==="playbookDef"? "def" : k==="playbookCon"? "con" : "off", lab=side==="def"? "Defense" : side==="con"? "Offense by concepts" : "Offense by series";
     ((doc && doc[k])||[]).forEach(s=>{ const t=_pbN(s.title), es=(s.entries||[]).filter(_pbSaid);
       if(!t && !es.length) return;
       M.set(side+"|"+t, { sec:true, side:side, t:t, lab:lab+" › "+(s.title||"(no name)") });
@@ -22510,28 +22533,94 @@ async function _pbPlayerLoad(){
   try{ if(state.ui.view==="playbook") renderPlaybook(); }catch(e){_quiet(e)}
 }
 /* OFFENSE BY CONCEPTS AS A LIST BY FAMILIES (Oriol, 26/11/2026: of five ways to show the many concepts, "lista por
-   familias ok"). One block a family - the colour a concept carries is its family - and one line a concept, its sets
-   beside it as chips, the detail small inside the chip; a concept with nothing under it yet says so. Editing keeps the
-   cards of the other tabs (✎ Edit), and the colour chosen there moves a concept to its family. On paper the same
-   blocks, packed onto the sheet like the cards of the other tabs */
+   familias ok"; then "al imprimir debes mantener el formato. Al editar debes mantener el formato"). One block a family -
+   the colour a concept carries is its family - and one line a concept, its sets beside it as chips, the detail small
+   inside the chip; a concept with nothing under it yet says so. It is edited in this same list: the name in its place,
+   a set typed in its own chip (Enter goes to its detail), ＋ set and ＋ concept where they go, the family chosen beside
+   the concept, and a concept or a set dragged by its ⠿ - to another family or another concept too. On paper the same
+   list in the same two columns, on the light card */
 const PBC_FAM=[["green","Off the ball"],["purple","Spain"],["gold","Ball inside"],["navy","Pick and roll"],["red","Vs coverages"]];
-function _pbConFams(data, paper){
+let _pcnFocus=null;
+function _pcnFamOf(s){ return PBC_FAM.some(f=>f[0]===s.color)? s.color : "other"; }
+function _pbConFams(data, mode){
+  const paper=mode==="paper", ed=mode==="edit";
   const by={}, order=PBC_FAM.map(f=>f[0]).concat(["other"]);
-  (data||[]).forEach(s=>{ const c=PBC_FAM.some(f=>f[0]===s.color)? s.color : "other"; (by[c]=by[c]||[]).push(s); });
-  return order.filter(c=>by[c]).map(c=>{
-    const L=by[c], name=(PBC_FAM.find(f=>f[0]===c)||[0,"Other"])[1];
-    const box=h("div",{class:"pcn-fam c-"+(c==="other"? "dark" : c)},
-      h("div",{class:"pcn-fh"}, h("b",{}, name), h("span",{}, L.length+" concept"+(L.length>1? "s" : ""))));
+  if(ed) PBC_FAM.forEach(f=>{ by[f[0]]=[]; });
+  (data||[]).forEach(s=>{ const c=_pcnFamOf(s); (by[c]=by[c]||[]).push(s); });
+  const redraw=()=>renderPlaybook();
+  /* a concept goes before another one (and takes its family), or to the end of a family */
+  const moveSec=(s, before, color)=>{ commit(()=>{ const i=data.indexOf(s); if(i<0) return; data.splice(i,1);
+      if(color) s.color=color;
+      let at=before? data.indexOf(before) : -1;
+      if(at<0){ let last=-1; data.forEach((x,k)=>{ if(_pcnFamOf(x)===_pcnFamOf(s)) last=k; }); at=last<0? data.length : last+1; }
+      data.splice(at,0,s); }); redraw(); };
+  /* a set goes before another set, of this concept or of another one, or to the end of a concept */
+  const moveSet=(fromS, en, toS, before)=>{ commit(()=>{ const i=fromS.entries.indexOf(en); if(i<0) return; fromS.entries.splice(i,1);
+      toS.entries=toS.entries||[]; let at=before? toS.entries.indexOf(before) : -1; if(at<0) at=toS.entries.length; toS.entries.splice(at,0,en); }); redraw(); };
+  const dropOn=(el, ok, fn)=>{
+    el.addEventListener("dragover",e=>{ if(_pbDrag && ok(_pbDrag)){ e.preventDefault(); e.stopPropagation(); el.classList.add("pb-drop"); } });
+    el.addEventListener("dragleave",()=>el.classList.remove("pb-drop"));
+    el.addEventListener("drop",e=>{ if(_pbDrag && ok(_pbDrag)){ e.preventDefault(); e.stopPropagation(); el.classList.remove("pb-drop"); const d=_pbDrag; _pbDrag=null; fn(d); } }); };
+  const grip=(title, start)=>{ const g=h("span",{class:"pcn-grip", draggable:"true", title:title},"⠿");
+    g.addEventListener("dragstart",e=>{ _pbDrag=start(); e.dataTransfer.effectAllowed="move"; e.stopPropagation(); try{ e.dataTransfer.setData("text/plain","x"); }catch(_){_quiet(_)} });
+    g.addEventListener("dragend",()=>{ _pbDrag=null; }); return g; };
+  const ce=(cls, ph, val, set)=>{ const n=h("span",{class:cls, contenteditable:"true", "data-ph":ph}); n.textContent=val||"";
+    n.addEventListener("input",()=>{ set(n.textContent); persist(); });
+    n.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); const nx=n.nextElementSibling; if(nx && nx.isContentEditable) nx.focus(); else n.blur(); } });
+    return n; };
+  return order.filter(c=>by[c] && (by[c].length || ed)).map(c=>{
+    const L=by[c], name=(PBC_FAM.find(f=>f[0]===c)||[0,"Other"])[1], col=c==="other"? "dark" : c;
+    const box=h("div",{class:"pcn-fam c-"+col+(ed? " ed" : "")},
+      h("div",{class:"pcn-fh"}, h("b",{}, name), h("span",{}, L.length+" concept"+(L.length===1? "" : "s"))));
     L.forEach(s=>{
-      const ent=(s.entries||[]).filter(_pbSaid), sets=h("div",{class:"pcn-sets"});
-      if(!ent.length) sets.appendChild(h("span",{class:"pcn-s e"}, "to fill in"));
+      s.entries=s.entries||[];
+      const ent=ed? s.entries : s.entries.filter(_pbSaid), sets=h("div",{class:"pcn-sets"});
+      if(!ent.length && !ed) sets.appendChild(h("span",{class:"pcn-s e"}, "to fill in"));
       ent.forEach(e=>{
-        const chip=h("span",{class:"pcn-s"}, e.label? h("b",{}, e.label) : null, e.detail? h("i",{}, e.detail) : null);
-        if(e.img){ chip.appendChild(h("img",{src:e.img, alt:""}));
-          if(!paper){ chip.classList.add("img"); chip.title="Open the image"; chip.addEventListener("click", ()=>openImgPopup(e.img)); } }
+        if(!ed){
+          const chip=h("span",{class:"pcn-s"}, e.label? h("b",{}, e.label) : null, e.detail? h("i",{}, e.detail) : null);
+          if(e.img){ chip.appendChild(h("img",{src:e.img, alt:""}));
+            if(!paper){ chip.classList.add("img"); chip.title="Open the image"; chip.addEventListener("click", ()=>openImgPopup(e.img)); } }
+          sets.appendChild(chip); return; }
+        const chip=h("span",{class:"pcn-s ed", "data-eid":e.id||""},
+          grip("Drag the set - to another concept too", ()=>({type:"pcnset", s:s, e:e})),
+          ce("pcn-sl","Set",e.label,v=>{ e.label=v; }), ce("pcn-sd","detail",e.detail,v=>{ e.detail=v; }));
+        /* an image pasted (Ctrl+V) while the chip is being written goes to this set, as on the cards */
+        chip.addEventListener("focusin",()=>{ _pbPasteEn=e; });
+        if(e.img){ const th=h("img",{src:e.img, alt:"", title:"Open the image"}); th.addEventListener("click",()=>openImgPopup(e.img)); chip.appendChild(th);
+          chip.appendChild(h("button",{class:"pcn-x", title:"Remove the image", onclick:()=>{ commit(()=>{ delete e.img; }); redraw(); }},"🗑")); }
+        chip.appendChild(h("button",{class:"pcn-x", title:"Remove the set", onclick:()=>{ commit(()=>{ const i=s.entries.indexOf(e); if(i>=0) s.entries.splice(i,1); }); redraw(); }},"✕"));
+        dropOn(chip, d=>d.type==="pcnset" && d.e!==e, d=>moveSet(d.s, d.e, s, e));
         sets.appendChild(chip); });
-      box.appendChild(h("div",{class:"pcn-row"+(ent.length? "" : " e")}, h("div",{class:"pcn-c"}, s.title||""), sets));
+      if(ed){
+        sets.appendChild(h("button",{class:"pcn-add", title:"Add a set to "+(s.title||"this concept"), onclick:()=>{ const id=uid();
+          commit(()=>{ s.entries.push({id:id, label:"", detail:""}); }); _pcnFocus='[data-eid="'+id+'"] .pcn-sl'; redraw(); }},"＋ set"));
+        dropOn(sets, d=>d.type==="pcnset", d=>moveSet(d.s, d.e, s, null));
+      }
+      let nameCell;
+      if(ed){
+        const ti=h("input",{class:"pcn-ti", placeholder:"Concept", "data-sid":s.id||""}); ti.value=s.title||"";
+        ti.addEventListener("input",()=>{ s.title=ti.value; persist(); });
+        nameCell=h("div",{class:"pcn-c"}, grip("Drag the concept - to another family too", ()=>({type:"pcncon", s:s})), ti);
+      } else nameCell=h("div",{class:"pcn-c"}, s.title||"");
+      const row=h("div",{class:"pcn-row"+(ent.length || ed? "" : " e")}, nameCell, sets);
+      if(ed){
+        const fam=h("select",{class:"pcn-famsel", title:"Family"});
+        PBC_FAM.forEach(f=>{ const o=h("option",{value:f[0]}, f[1]); if(s.color===f[0]) o.selected=true; fam.appendChild(o); });
+        if(c==="other"){ const o=h("option",{value:s.color||"blue"}, "Other"); o.selected=true; fam.appendChild(o); }
+        fam.addEventListener("change",()=>moveSec(s, null, fam.value));
+        row.appendChild(h("div",{class:"pcn-tools"}, fam,
+          h("button",{class:"pcn-x", title:"Delete the concept", onclick:()=>{ commit(()=>{ const i=data.indexOf(s); if(i>=0) data.splice(i,1); }); redraw(); }},"✕")));
+        dropOn(row, d=>d.type==="pcncon" && d.s!==s, d=>moveSec(d.s, s, s.color));
+      }
+      box.appendChild(row);
     });
+    if(ed && c!=="other"){
+      box.appendChild(h("button",{class:"pcn-addc", onclick:()=>{ const id=uid(), ns={id:id, title:"", color:c, entries:[]};
+        commit(()=>{ let last=-1; data.forEach((x,k)=>{ if(_pcnFamOf(x)===c) last=k; }); data.splice(last<0? data.length : last+1, 0, ns); });
+        _pcnFocus='[data-sid="'+id+'"]'; redraw(); }},"＋ concept"));
+      dropOn(box, d=>d.type==="pcncon", d=>moveSec(d.s, null, c));
+    }
     return box;
   });
 }
@@ -22559,20 +22648,22 @@ function renderPlaybook(){
   });
   const head=h("div",{class:"pb-head"},
     h("div",{class:"pb-toggle"},
-      h("button",{class:"pb-tg"+(kind==="off"?" active":""),onclick:()=>{state.ui.pbTab="off";persist();renderPlaybook();}},"Offense"),
+      h("button",{class:"pb-tg"+(kind==="off"?" active":""),onclick:()=>{state.ui.pbTab="off";persist();renderPlaybook();}},"Offense by series"),
       isPlayerUser()? null : h("button",{class:"pb-tg"+(kind==="con"?" active":""),onclick:()=>{state.ui.pbTab="con";persist();renderPlaybook();}},"Offense by concepts"),
       h("button",{class:"pb-tg"+(kind==="def"?" active":""),onclick:()=>{state.ui.pbTab="def";persist();renderPlaybook();}},"Defense")),
     isPlayerUser()? null : h("button",{class:"btn pb-editbtn"+(canEd?" primary":""),onclick:()=>{state.ui.pbEdit=!state.ui.pbEdit;persist();renderPlaybook();}}, canEd?"✓ Done":"✎ Edit"));
   /* THE COPIES KEPT BEFORE ANYTHING WAS TAKEN OFF (16/11/2026): the staff who edit can bring back what
      is missing from any of them */
   if(!isPlayerUser() && (canEdit("playbook") || isAdmin())) head.appendChild(h("button",{class:"btn pb-copiesbtn", title:"Copies kept before a section or a call was taken off · bring back what is missing", onclick:_pbCopiesOpen},"⟲ Copies"));
-  if(canEd) head.appendChild(h("button",{class:"btn pb-addsec",onclick:()=>{ commit(()=>{ data.push({id:uid(),title:"New section",color:kind==="def"?"dark":"blue",entries:[{id:uid(),label:"",detail:""}]}); }); renderPlaybook(); }},"＋ section"));
+  if(canEd && kind!=="con") head.appendChild(h("button",{class:"btn pb-addsec",onclick:()=>{ commit(()=>{ data.push({id:uid(),title:"New section",color:kind==="def"?"dark":"blue",entries:[{id:uid(),label:"",detail:""}]}); }); renderPlaybook(); }},"＋ section"));
   wrap.appendChild(head);
-  if(kind==="con" && !canEd){
-    const list=h("div",{class:"pbcon"});
-    if(!data.length) list.appendChild(h("div",{class:"pb-empty"}, "Nothing here yet."+(isPlayerUser()? "" : " Add one with ✎ Edit.")));
-    _pbConFams(data, false).forEach(b=>list.appendChild(b));
-    wrap.appendChild(list); wrap.appendChild(pbVideoPanel(canEd)); root.appendChild(wrap); return;
+  if(kind==="con"){
+    const list=h("div",{class:"pbcon"+(canEd? " ed" : "")});
+    if(!data.length && !canEd) list.appendChild(h("div",{class:"pb-empty"}, "Nothing here yet."+(isPlayerUser()? "" : " Add one with ✎ Edit.")));
+    _pbConFams(data, canEd? "edit" : "read").forEach(b=>list.appendChild(b));
+    wrap.appendChild(list); wrap.appendChild(pbVideoPanel(canEd)); root.appendChild(wrap);
+    if(_pcnFocus){ const sel=_pcnFocus; _pcnFocus=null; setTimeout(()=>{ const el=root.querySelector(sel); if(el) el.focus(); }, 0); }
+    return;
   }
   const grid=h("div",{class:"pb-grid"});
   const COLORS=["blue","navy","green","red","purple","gold","dark"];
@@ -36931,7 +37022,7 @@ function _pbCut(hs, C, gap){
 }
 function _pbPrintSheets(){
   const area=$("#print-area"); if(!area) return;
-  const tabs=[["off","Offense"],["con","Offense by concepts"],["def","Defense"]].filter(x=>x[0]!=="con" || !isPlayerUser()).map(x=>({ t:x[1], k:x[0],
+  const tabs=[["off","Offense by series"],["con","Offense by concepts"],["def","Defense"]].filter(x=>x[0]!=="con" || !isPlayerUser()).map(x=>({ t:x[1], k:x[0],
     secs: x[0]==="con"? (pbData("con").some(s=>(s.entries||[]).some(_pbSaid))? pbData("con") : [])
       : pbData(x[0]).map(s=>({ title:s.title, color:s.color, entries:(s.entries||[]).filter(_pbSaid) })).filter(s=>s.entries.length) })).filter(x=>x.secs.length);
   if(!tabs.length){ toast("Nothing written in the playbook yet"); return; }
@@ -36943,7 +37034,7 @@ function _pbPrintSheets(){
   area.innerHTML="";
   document.body.classList.add("dop-measure");
   const sheets=tabs.map(tab=>{
-    const cards=tab.k==="con"? _pbConFams(tab.secs, true) : tab.secs.map(card), cols=h("div",{class:"pbp-cols"}), col=h("div",{class:"pbp-col"});
+    const cards=tab.k==="con"? _pbConFams(tab.secs, "paper") : tab.secs.map(card), cols=h("div",{class:"pbp-cols"}), col=h("div",{class:"pbp-col"});
     const p=h("div",{class:"dop-fit pbp"}, h("div",{class:"dop-top"}, h("b",{}, "Playbook"), h("span",{}, tab.t)), cols);
     area.appendChild(h("div",{class:"dop-page"}, p));
     p.style.zoom="1"; p.style.setProperty("--pbp-gap", GAP+"px");
@@ -36958,17 +37049,18 @@ function _pbPrintSheets(){
     for(let W=640; W<=2800; W=Math.round(W*1.03)){
       if(PW/W<=best.s) break;
       for(let C=1; C<=Math.min(7,cards.length); C++){
-        const cw=(W-(C-1)*GAP)/C; if(cw<170) break;
+        const cw=(W-(C-1)*GAP)/C; if(cw<(tab.k==="con"? 540 : 170)) break;
         const R=_pbCut(heights(cw), C, GAP), sc=Math.min(PW/W, PH/(headH+R.h));
         if(sc>best.s+0.0005) best={ s:sc, W:W, C:C, cols:R.cols };
       }
     }
     cols.innerHTML="";
     for(let i=0;i<best.C;i++){ const c=h("div",{class:"pbp-col"}); (best.cols[i]||[]).forEach(n=>c.appendChild(cards[n])); cols.appendChild(c); }
-    return { p:p, W:best.W };
+    return { p:p, W:best.W, k:tab.k };
   });
-  /* the sum above is checked against the sheet as it really is, on the screen and again on paper */
-  const fit=()=>sheets.forEach(S=>{ S.p.style.zoom="1"; S.p.style.width=S.W+"px"; S.p.style.zoom=Math.min(PW/S.W, PH/Math.max(1,S.p.scrollHeight)).toFixed(4); });
+  /* the sum above is checked against the sheet as it really is, on the screen and again on paper. The concepts
+     fill their sheet to the foot, and the paper cut its last line by a few points: that sheet keeps a little air */
+  const fit=()=>sheets.forEach(S=>{ S.p.style.zoom="1"; S.p.style.width=S.W+"px"; S.p.style.zoom=Math.min(PW/S.W, (S.k==="con"? PH-18 : PH)/Math.max(1,S.p.scrollHeight)).toFixed(4); });
   fit();
   const mq=window.matchMedia? window.matchMedia("print") : null, onMq=e=>{ if(e.matches) fit(); };
   if(mq){ if(mq.addEventListener) mq.addEventListener("change", onMq); else if(mq.addListener) mq.addListener(onMq); }
