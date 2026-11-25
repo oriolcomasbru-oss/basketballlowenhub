@@ -16950,6 +16950,7 @@ function _gpToCard(L, onClose){
       kp("Off. rebounds", String(W.u.or), String(W.t.or), W.u.or===W.t.or? null : W.u.or>W.t.or),
       kp("Free throws", W.u.ftm+"/"+W.u.fta, W.t.ftm+"/"+W.t.fta, W.u.fta===W.t.fta? null : W.u.fta>W.t.fta)),
     h("div",{class:"gp7-two"}, h("div",{}, h("div",{class:"gp7-fh"},"Where the points came from"), srcT), fives),
+    (()=>{ try{ return _padCardPart(L, tStart, tEnd); }catch(e){ _quiet(e); return null; } })(),
     h("div",{class:"gp7-ls"},
       line("Scored for us", top(true)), line("Scored for them", top(false)),
       line("Our foul trouble", trouble, trouble.length? "bad" : ""),
@@ -17356,6 +17357,8 @@ function _gpAlertBar(){
     if(!_gpAlertSeen[k]){ _gpAlertSeen[k]={ first:Date.now() }; openCard(); } };
   /* the cards sit in the bar itself, between the score and the buttons: they never cover the board */
   wrap.appendChild(h("div",{class:"gp5-al-row"}, scEl, stack,
+    /* the phone's pad, at the top beside the timeout card (Oriol, 26/11/2026) */
+    isPlayerUser()? null : h("button",{type:"button", class:"gp5-al-btn", title:"the phone's button panel: one tap a possession, attack or defense", onclick:()=>_padOpen(_scoutDate||"")}, "Open the pad"),
     h("button",{type:"button", class:"gp5-al-btn", onclick:()=>openCard()}, "⏱ Timeout card"), gmBtn));
   const paintAll=()=>{ paint(); scPaint(); applyMode(); watchTo(); refreshCard(); };
   paintAll();
@@ -18056,8 +18059,9 @@ function _padClose(keep){
 }
 function _padPaint(){
   if(!PAD.ov || !PAD.ov.isConnected) return;
-  const live=_padLive(PAD.doc), n={};
-  live.forEach(x=>{ const k=x.s+"|"+x.c; n[k]=(n[k]||0)+1; });
+  /* a button's count is possessions: taps on it within six seconds of each other are one (they go to one possession) */
+  const live=_padLive(PAD.doc), n={}, lw={};
+  live.forEach(x=>{ const k=x.s+"|"+x.c; if(lw[k]!=null && x.w-lw[k]<6000){ lw[k]=x.w; return; } lw[k]=x.w; n[k]=(n[k]||0)+1; });
   PAD.ov.querySelectorAll(".pad-b").forEach(b=>{ const v=n[b.dataset.s+"|"+b.dataset.c]||0; b.querySelector(".pad-n").textContent=v? String(v) : ""; });
   const g=PAD.game, opp=g? (_lgOurs(g.home||"")? "vs "+_lgShort(g.away||"") : "@ "+_lgShort(g.home||"")) : "";
   const t=_padNowT();
@@ -18201,6 +18205,91 @@ function _padBlock(o){
   paint();
   return host;
 }
+/* WHAT THE TAPS GAVE US, counted once a possession and concept: points scored (our attack) or given (our defense) a
+   possession, transition split into TAG and BACK. inW, when given, keeps the possessions that began in that stretch */
+function _padAgg(feed, uc, taps, lastT, inW){
+  const P=_padPoss(feed), Lk=_padLink(P, taps, uc, lastT), agg={ o:{}, d:{} }, used={};
+  let wait=0, why="";
+  Lk.forEach(x=>{
+    if(!x.p){ wait++; why=why||x.why; return; }
+    if(inW && !inW(x.p)) return;
+    const k=x.tp.s+"|"+x.tp.c+"|"+P.indexOf(x.p); if(used[k]) return; used[k]=1;
+    const A=agg[x.tp.s][x.tp.c]||(agg[x.tp.s][x.tp.c]={ k:x.tp.c, n:0, pts:0, tag:{ n:0, pts:0 }, back:{ n:0, pts:0 } });
+    A.n++; A.pts+=x.p.pts;
+    if(x.tp.c==="trans"){ const tb=_padTB(P, x.p); if(tb){ A[tb].n++; A[tb].pts+=x.p.pts; } }
+  });
+  return { agg:agg, wait:wait, why:why };
+}
+const _padStep=v=>v<0.5? 0 : v<0.8? 1 : v<1.0? 2 : v<1.25? 3 : v<1.6? 4 : 5;
+/* the colour of a figure, from our side: in attack more is green, in defense less is; from five possessions */
+const _padTone=(s, r)=>r.n>=5? "e"+(s==="o"? _padStep(r.pts/r.n) : 5-_padStep(r.pts/r.n)) : "few";
+function _padRows(agg, s){ return Object.keys(agg[s]).map(k=>agg[s][k]).sort((a,b)=>b.n-a.n || (b.pts/b.n)-(a.pts/a.n)); }
+function _padTot(rows){ const n=rows.reduce((a,r)=>a+r.n,0), p=rows.reduce((a,r)=>a+r.pts,0); return { n:n, pts:p, v:n? p/n : null }; }
+/* OUR CONCEPTS, AS A PICTURE: on top the four that stand out - our best and our worst concept in attack, our best and
+   our worst in defense, each from five possessions (under five a concept is not ranked); then every concept of each
+   side, as long as its share of the side's possessions, with what it gave us a possession */
+function _padView(feed, uc, taps, lastT){
+  const R=_padAgg(feed, uc, taps, lastT), box=h("div",{class:"pad-v"});
+  const ro=_padRows(R.agg,"o"), rd=_padRows(R.agg,"d"), qo=ro.filter(r=>r.n>=5), qd=rd.filter(r=>r.n>=5);
+  const by=(list, hi)=>list.slice().sort((a,b)=>hi? (b.pts/b.n)-(a.pts/a.n) : (a.pts/a.n)-(b.pts/b.n))[0]||null;
+  const tile=(lab, s, r, tone)=>h("div",{class:"pad-hl "+(r? tone : "none")},
+    h("i",{}, lab), r? h("b",{}, PAD_NAME[r.k]) : h("b",{},"—"),
+    r? h("strong",{}, (r.pts/r.n).toFixed(2)) : null,
+    h("em",{}, r? r.n+" poss · "+r.pts+" pts "+(s==="o"? "scored" : "given") : "a concept is ranked from 5 possessions"));
+  const bo=by(qo,true), wo=qo.length>1? by(qo,false) : null, bd=by(qd,false), wd=qd.length>1? by(qd,true) : null;
+  box.appendChild(h("div",{class:"pad-hls"},
+    tile("Attack · best", "o", bo, "good"), tile("Attack · worst", "o", wo && wo!==bo? wo : null, "bad"),
+    tile("Defense · best", "d", bd, "good"), tile("Defense · worst", "d", wd && wd!==bd? wd : null, "bad")));
+  const side=(s, title, rows)=>{
+    const T=_padTot(rows), mx=rows.reduce((m,r)=>Math.max(m,r.n),1);
+    const col=h("div",{class:"pad-vc "+s}, h("div",{class:"pad-vch"}, h("b",{}, title),
+      h("span",{}, T.n? T.n+" poss · "+T.v.toFixed(2)+(s==="o"? " scored a possession" : " given a possession") : "nothing tapped yet")));
+    rows.forEach(r=>{ const v=r.pts/r.n;
+      const tb=r.k==="trans" && (r.tag.n||r.back.n)? h("span",{class:"pad-vtb"},
+        r.tag.n? h("u",{class:_padTone(s, r.tag)}, "TAG "+(r.tag.pts/r.tag.n).toFixed(2)+" · "+r.tag.n) : null,
+        r.back.n? h("u",{class:_padTone(s, r.back)}, "BACK "+(r.back.pts/r.back.n).toFixed(2)+" · "+r.back.n) : null) : null;
+      col.appendChild(h("div",{class:"pad-vr", title:PAD_NAME[r.k]+": "+r.pts+" points in "+r.n+" possessions"+(r.n<5? " · under 5, no colour" : "")},
+        h("span",{class:"pad-vk"}, PAD_NAME[r.k], tb),
+        h("span",{class:"pad-vbar"}, h("i",{style:"width:"+Math.max(8, Math.round(100*r.n/mx))+"%"}), h("b",{}, r.n+" poss")),
+        h("span",{class:"pad-vv "+_padTone(s, r)}, v.toFixed(2)))); });
+    return col; };
+  box.appendChild(h("div",{class:"pad-vg"}, side("o","Our attack · what we score", ro), side("d","Our defense · what we give", rd)));
+  if(R.wait) box.appendChild(h("div",{class:"pad-rd-n"}, R.wait+" tap"+(R.wait===1? "" : "s")+" not matched yet · "+
+    (R.why==="waiting"? "the play by play has not reached them" : R.why==="no clock"? "made with no live clock" : "no possession of that side at that moment")));
+  return box;
+}
+/* the section under The game: drawn on every reading of the game and every new copy of the taps, shown once one is in */
+function _padSection(host, sec){
+  let sig="";
+  const paint=()=>{
+    if(host.__drawn && !host.isConnected){ window.removeEventListener("gp-live", paint); return; }
+    host.__drawn=true;
+    const L=_gpLiveNow, date=(L && L.plan && String(L.plan).split("|")[1]) || _scoutDate || "";
+    const c=_padFetch(_padKey(date), (L && L.live)? 3000 : 60000);
+    c.hosts=(c.hosts||[]).filter(f=>f.__h && f.__h.isConnected); if(c.hosts.indexOf(paint)<0){ paint.__h=host; c.hosts.push(paint); }
+    const taps=_padLive(c.doc);
+    sec.hidden=!taps.length;
+    if(!taps.length) return;
+    if(!(L && L.feed)){ host.innerHTML=""; host.appendChild(h("div",{class:"pad-rd-e"}, taps.length+" taps on the pad · this game's play by play is not in yet")); return; }
+    const s2=_padSig(c.doc)+"|"+(L.feed.actions||[]).length+"|"+Math.floor(L.lastT||0);
+    if(s2===sig) return; sig=s2;
+    host.innerHTML=""; host.appendChild(_padView(L.feed, L.uc, taps, L.lastT));
+  };
+  window.addEventListener("gp-live", paint);
+  paint();
+}
+/* THE PAD IN THE TIMEOUT CARD: what each side's concepts gave since the timeout before, and the game beside it */
+function _padCardPart(L, tStart, tEnd){
+  const date=String(L.plan||"").split("|")[1] || _scoutDate || "", c=_padFetch(_padKey(date), 3000), taps=_padLive(c.doc);
+  if(!taps.length || !L.feed) return null;
+  const W=_padAgg(L.feed, L.uc, taps, L.lastT, p=>p.t0>=tStart && p.t0<=tEnd), G=_padAgg(L.feed, L.uc, taps, L.lastT);
+  const line=(s, lab)=>{ const rw=_padRows(W.agg, s), rg=_padRows(G.agg, s), Tg=_padTot(rg);
+    return h("div",{class:"gp7-pl"}, h("b",{}, lab),
+      h("span",{class:"gp7-pc"}, rw.length? rw.slice(0,4).map(r=>h("u",{class:_padTone(s, r)}, PAD_NAME[r.k]+" "+(r.pts/r.n).toFixed(2)+" · "+r.n)) : h("i",{},"nothing tapped in this stretch")),
+      h("em",{}, Tg.n? "game "+Tg.v.toFixed(2)+" · "+Tg.n : "")); };
+  return h("div",{class:"gp7-pad"}, h("div",{class:"gp7-fh"},"The pad · since "+(tStart? "the timeout before" : "the tip-off")),
+    line("o","Our attack"), line("d","Our defense"));
+}
 function _gpLiveBlock(){
   const wrap=h("div",{class:"gp-live"});
   /* where all the numbers go when the panel has a half-time zone to put them in */
@@ -18209,10 +18298,7 @@ function _gpLiveBlock(){
   wrap.__tabs2=h("div",{class:"gp-live-tabs gp-live-tabs2"});
   const opp=_scoutOpponent||"", date=_scoutDate||"";
   const stat=h("span",{class:"gp-live-st"},"");
-  wrap.appendChild(h("div",{class:"gp2-sec gp-live-h"}, "The game · from the play by play",
-    /* the phone's button panel, opened from here (or from …/#pad on its home screen) */
-    isPlayerUser()? null : h("button",{type:"button", class:"gp-pad-b", title:"the phone's button panel: one tap a possession, attack or defense", onclick:()=>_padOpen(_scoutDate||"")}, "Pad"),
-    stat));
+  wrap.appendChild(h("div",{class:"gp2-sec gp-live-h"}, "The game · from the play by play", stat));
   wrap.__stat=stat;
   const tabs=h("div",{class:"gp-live-tabs"}), body=h("div",{class:"gp-live-b"});
   wrap.appendChild(tabs); wrap.appendChild(body);
@@ -18544,7 +18630,7 @@ function _gpLiveBlock(){
             const sh=Math.round(100*e.a/Math.max(1,n)), pps=e.m*ZN[k][1]/e.a;
             strip.appendChild(h("div",{class:"sq-t "+(e.a>=5? "e"+step(pps) : "few"), style:"flex:"+e.a+" 1 0",
               title:ZN[k][0]+": "+e.m+"/"+e.a+" · "+sh+"% of the shots · "+pps.toFixed(2)+" points a shot"+(e.a<5? " · under 5 shots, no colour" : "")},
-              h("i",{}, ZN[k][0]+" · "+sh+"%"), h("b",{}, pps.toFixed(2)), h("em",{}, e.m+"/"+e.a))); });
+              h("i",{}, ZN[k][0]), h("b",{}, pps.toFixed(2)), h("em",{}, e.m+"/"+e.a+" · "+sh+"%"))); });
           const pts=2*(z.in.m+z.mid.m)+3*z.three.m, fgm=z.in.m+z.mid.m+z.three.m;
           return h("div",{class:"sq-r2"}, h("b",{class:"sq-who"}, lab), strip,
             h("div",{class:"sq-tot", title:"points a shot from the field, all areas"}, h("b",{}, n? (pts/n).toFixed(2) : "—"), h("em",{}, fgm+"/"+n+" FG"))); };
@@ -18552,8 +18638,6 @@ function _gpLiveBlock(){
           h("span",{class:"sq-k"}, "width: share of the shots · colour: points a shot")), row("US", zu), row("THEM", zt)));
       }
     }
-    /* the pad's reading: what each concept tapped on the phone returned, from this game's play by play */
-    if(!isPlayerUser()){ try{ body.appendChild(_padBlock({ feed:feed, uc:uc, date:date, live:live, lastT:lastT })); }catch(e){_quiet(e)} }
     /* all the numbers live in the half-time zone of the panel when there is one; elsewhere one tap
        away here */
     if(wrap.__statsHost && wrap.__statsHost.isConnected){ wrap.__statsHost.innerHTML=""; wrap.__statsHost.appendChild(more); }
@@ -20111,6 +20195,10 @@ function renderPlanSection(sec, canEd, save, allSecs){
           sect("them", "Their team", "players · last games and live", null, safe(()=>oppFiveBlock(true))));
         wrap5.appendChild(row2);
         wrap5.appendChild(sect("live", "The game", "", lv.__stat||null, lv));
+        /* OUR CONCEPTS, UNDER THE GAME (Oriol, 26/11/2026: "una vez haya marcado algo debe haber una parte en game plan tras
+           THE GAME"): what the taps on the phone gave us, attack and defense - hidden until the first tap is in */
+        if(!isPlayerUser()){ const ph=h("div",{}), ps=sect("pad", "Our concepts · the pad", "tapped on the phone · scored from the play by play", null, ph);
+          ps.hidden=true; wrap5.appendChild(ps); try{ _padSection(ph, ps); }catch(e){_quiet(e)} }
         { const setsSec=sect("them sets", "Their key sets", "see the call, find the play", null, safe(()=>keySetsBlock()));
           /* in game mode their sets fold to their heading: one tap opens them, another closes them */
           const hd=setsSec.querySelector(".gp4-h"); if(hd) hd.addEventListener("click", ()=>{ if(wrap5.classList.contains("gm")) setsSec.classList.toggle("open"); });
@@ -29786,6 +29874,39 @@ function _rebClubRows(L){
         us:g.us || (()=>{ const fb=((((L.players||{})[tid]||{}).by_game)||[]).filter(x=>x.date===g.d)[0]; return fb && fb.us? { o:fb.us.oreb||0, d:fb.us.dreb||0 } : null; })(),
         rb:(g.rb||[]).map(x=>({ p:pls.filter(p=>String(p.id)===String(x.i)||String(p.pid)===String(x.i))[0]||{ num:"", name:"" }, r:x.r, o:x.o })) })) }; });
 }
+/* THE BEST ON THE GLASS (Oriol, 26/11/2026: "en rebounding añade también los mejores jugadores de cada reb off y def
+   reb, foto, dorsal y nombre"): the league leaders' boards for the offensive and the defensive rebounds a game, over the
+   season - the top five with face, number and name, the league average (the tick on the bar), and the club picked's best
+   three underneath with the place they hold. The same players qualify as for the leaders: four in ten of their club's
+   games and ten minutes a game */
+function _lgRebBoards(){
+  const L=leagueState(), P=_lgLeadPool(L);
+  try{ _lgLeadLoad(L); }catch(e){_quiet(e)}
+  /* as the leaders: while clubs are still being read only the count shows; a club that could not be read is left out */
+  const T0=_lgLeadTodo(L), reading=_lgLeadBusy>0 || T0.ids.some(id=>!_lgLeadInFlight[id]);
+  if((P.clubs<P.of && reading) || P.pool.length<10) return h("div",{class:"ld"},"Reading every club's players for the best rebounders… "+P.clubs+" of "+P.of+" clubs", h("span",{class:"ld-bar"}));
+  const sel=_lgNoClub(L)? "" : _lgTeamId(L);
+  const grid=h("div",{class:"ldr-g"});
+  [{ t:"Offensive rebounds", get:t=>(t.oreb||0)/t.gp }, { t:"Defensive rebounds", get:t=>(t.dreb||0)/t.gp }].forEach(c=>{
+    const rows=P.pool.map(x=>({ x:x, v:c.get(x.t) })).filter(r=>isFinite(r.v)).sort((a,b)=>b.v-a.v);
+    if(rows.length<5) return;
+    const avg=rows.reduce((a,r)=>a+r.v,0)/rows.length, top=rows[0].v||1;
+    const card=h("div",{class:"ldr-c"}, h("div",{class:"ldr-h"}, h("b",{}, c.t), h("span",{},"a game"),
+      h("i",{title:"League average over the players who qualify"}, "avg "+avg.toFixed(1))));
+    const line=(r, rank, mine)=>h("div",{class:"ldr-r"+(mine? " mine" : "")+(rank===1? " first" : "")},
+      h("span",{class:"ldr-n"}, String(rank)),
+      _lgFace(L, { n:r.x.num, photo:r.x.rec.photo, pid:r.x.rec.pid, id:r.x.id }),
+      h("span",{class:"ldr-k"}, (r.x.num!=null && r.x.num!==""? "#"+r.x.num+" " : "")+r.x.name, h("em",{}, r.x.tlc)),
+      h("span",{class:"ldr-bar"}, h("i",{style:"width:"+Math.max(4, Math.round(100*r.v/top))+"%"}),
+        h("u",{style:"left:"+Math.max(0, Math.min(100, Math.round(100*avg/top)))+"%"})),
+      h("b",{class:"ldr-v"}, r.v.toFixed(1)));
+    rows.slice(0,5).forEach((r,i)=>card.appendChild(line(r, i+1, r.x.tid===sel)));
+    if(sel){ const mine=rows.map((r,i)=>({ r:r, i:i })).filter(o=>o.r.x.tid===sel).slice(0,3);
+      if(mine.length) card.appendChild(h("div",{class:"ldr-own"}, mine.map(o=>line(o.r, o.i+1, true)))); }
+    grid.appendChild(card);
+  });
+  return h("div",{class:"ldr ldr-reb"}, grid);
+}
 function _lgReb(L){
   const box=_lgPanel("Rebounding", null,
     "OREB%: the share of its own misses a club gets back. DREB%: the share of the other side's misses it keeps. Margin: OREB% minus the OREB% it allows - above zero, a club wins the glass. Off. and def. reb a game: the club's rebounds a game from its players' lines. Best rebounders: the club's three with the most rebounds a game, the offensive ones in brackets. Green or red: 3 points better or worse than the league's average.");
@@ -29812,6 +29933,7 @@ function _lgReb(L){
     t.appendChild(tr); });
   t.appendChild(h("tr",{class:"pace-lg"}, h("td",{}), h("td",{class:"l"},"League · average"), ...Object.keys(K).map(k=>h("td",{class:"pnum"+(k==="og"? " grp" : "")}, A[k]==null? "—" : K[k].f(A[k])))));
   box.appendChild(h("div",{class:"pb-scroll"}, t));
+  try{ box.appendChild(_lgRebBoards()); }catch(e){_quiet(e)}
   try{ _lgLeadLoad(L); }catch(e){_quiet(e)}
   return box;
 }
@@ -45483,7 +45605,7 @@ body.dark .gp5-toast.info{background:#e9ecf1;color:#141821}
 .gp-sq .sq-who{align-self:center;font:800 11px "Oswald",sans-serif;letter-spacing:.08em}
 .gp-sq .sq-strip{display:flex;gap:3px;min-width:0}
 .gp-sq .sq-t{min-width:70px;border-radius:7px;padding:5px 8px 4px;display:flex;flex-direction:column;gap:1px;overflow:hidden;background:#eef0f3;color:var(--ink,#141821)}
-.gp-sq .sq-t i{font:600 10px Inter,system-ui,sans-serif;font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.85}
+.gp-sq .sq-t i{font:700 14px/1.1 "Oswald",sans-serif;letter-spacing:.06em;text-transform:uppercase;font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .gp-sq .sq-t b{font:800 19px/1.05 Inter,system-ui,sans-serif;font-variant-numeric:tabular-nums}
 .gp-sq .sq-t em{font:600 10.5px "IBM Plex Mono",monospace;font-style:normal;opacity:.8}
 .gp-sq .sq-t.few{color:var(--ink-soft,#5b6472)}
@@ -45557,6 +45679,54 @@ body.pad-on{overflow:hidden}
 .pad-rd-v.e3{background:#d6eee2;color:#0f4a34}.pad-rd-v.e4{background:#8fd0b0;color:#0b3b28}.pad-rd-v.e5{background:#17805a;color:#fff}
 body.dark .pad-rd-v{background:#2c333d;color:#e6e9ee}body.dark .pad-rd-v.e2{background:#5a2e28;color:#ffd6cf}body.dark .pad-rd-v.e3{background:#1f4a3a;color:#c9f0dd}
 body.dark .pad-rd-h .pad-open{background:#242a33;color:#eef1f5}
+/* ---- OUR CONCEPTS, the section under The game */
+.gp4-sec.pad .gp4-h{background:#23395b}
+.pad-v{padding:8px 10px 10px}
+.pad-hls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:12px}
+@media (max-width:820px){ .pad-hls{grid-template-columns:repeat(2,minmax(0,1fr))} }
+.pad-hl{border-radius:10px;padding:9px 11px;display:flex;flex-direction:column;gap:2px;border:1px solid var(--line,#e3e6ea);background:#f3f5f8;min-width:0}
+.pad-hl i{font:700 10.5px Inter,system-ui,sans-serif;font-style:normal;letter-spacing:.1em;text-transform:uppercase;opacity:.8}
+.pad-hl b{font:700 15px "Oswald",sans-serif;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pad-hl strong{font:800 26px/1.05 Inter,system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.pad-hl em{font:500 11px Inter,system-ui,sans-serif;font-style:normal;opacity:.85}
+.pad-hl.good{background:#d9f2e3;border-color:#a6dcbd;color:#0f4a34}
+.pad-hl.bad{background:#fbe1df;border-color:#f0b4ae;color:#7a2216}
+.pad-hl.none{color:var(--ink-soft,#5b6472)}
+body.dark .pad-hl{background:#2c333d;border-color:#3a434f}
+body.dark .pad-hl.good{background:#173d2f;border-color:#2b6b52;color:#c9f0dd}
+body.dark .pad-hl.bad{background:#4a1f1a;border-color:#7a3a31;color:#ffd6cf}
+.pad-vg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 20px}
+@media (max-width:820px){ .pad-vg{grid-template-columns:minmax(0,1fr)} }
+.pad-vch{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding-bottom:5px;margin-bottom:5px;border-bottom:3px solid #1f8a4c}
+.pad-vc.d .pad-vch{border-color:#c0392b}
+.pad-vch b{font:700 13px "Oswald",sans-serif;letter-spacing:.1em;text-transform:uppercase}
+.pad-vch span{font:600 11.5px "IBM Plex Mono",monospace;color:var(--ink-soft,#5b6472)}
+.pad-vr{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) 58px;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line,#eceef1)}
+.pad-vk{display:flex;flex-direction:column;gap:2px;font:700 13px Inter,system-ui,sans-serif;min-width:0}
+.pad-vtb{display:flex;gap:4px;flex-wrap:wrap}
+.pad-vtb u,.gp7-pc u{text-decoration:none;font:700 10.5px "IBM Plex Mono",monospace;padding:1px 6px;border-radius:5px;background:#eef0f3;color:var(--ink,#141821)}
+.pad-vbar{position:relative;height:20px;border-radius:5px;background:var(--line,#eceef1);overflow:hidden}
+.pad-vbar i{position:absolute;left:0;top:0;bottom:0;background:#9fd3b6}
+.pad-vc.d .pad-vbar i{background:#f0b4ae}
+.pad-vbar b{position:relative;padding-left:7px;font:700 11px/20px "IBM Plex Mono",monospace}
+.pad-vv{text-align:center;font:800 15px Inter,system-ui,sans-serif;font-variant-numeric:tabular-nums;border-radius:7px;padding:4px 0;background:#eef0f3;color:var(--ink,#141821)}
+.pad-vv.few,.pad-vtb u.few,.gp7-pc u.few{color:var(--ink-soft,#5b6472)}
+.pad-vv.e0,.pad-vtb u.e0,.gp7-pc u.e0{background:#c53727;color:#fff}.pad-vv.e1,.pad-vtb u.e1,.gp7-pc u.e1{background:#ea8b77;color:#3d1009}
+.pad-vv.e2,.pad-vtb u.e2,.gp7-pc u.e2{background:#f7d3cb;color:#7a2216}.pad-vv.e3,.pad-vtb u.e3,.gp7-pc u.e3{background:#d6eee2;color:#0f4a34}
+.pad-vv.e4,.pad-vtb u.e4,.gp7-pc u.e4{background:#8fd0b0;color:#0b3b28}.pad-vv.e5,.pad-vtb u.e5,.gp7-pc u.e5{background:#17805a;color:#fff}
+body.dark .pad-vv,body.dark .pad-vtb u,body.dark .gp7-pc u{background:#2c333d;color:#e6e9ee}
+body.dark .pad-vv.e2,body.dark .pad-vtb u.e2,body.dark .gp7-pc u.e2{background:#5a2e28;color:#ffd6cf}
+body.dark .pad-vv.e3,body.dark .pad-vtb u.e3,body.dark .gp7-pc u.e3{background:#1f4a3a;color:#c9f0dd}
+/* ---- the pad in the timeout card */
+.gp7-pad{margin:10px 16px 4px;padding:8px 10px;border-radius:10px;background:var(--panel-2,#f3f5f8)}
+.gp7-pl{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:8px;align-items:center;padding:3px 0}
+.gp7-pl > b{font:700 11px "Oswald",sans-serif;letter-spacing:.08em;text-transform:uppercase}
+.gp7-pc{display:flex;gap:5px;flex-wrap:wrap}.gp7-pc i{font:500 11.5px Inter,system-ui,sans-serif;color:var(--ink-soft,#5b6472);font-style:normal}
+.gp7-pl > em{font:600 10.5px "IBM Plex Mono",monospace;font-style:normal;color:var(--ink-soft,#5b6472);white-space:nowrap}
+body.dark .gp7-pad{background:#242a33}
+/* ---- League: the best on the glass */
+.ldr-reb{margin-top:12px}
+.ldr-reb .ldr-g{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
 /* the button in the game plan's head, to open the pad on the phone */
 .gp-live-h .gp-pad-b{margin-left:10px;font:700 11px "Oswald",sans-serif;letter-spacing:.08em;text-transform:uppercase;padding:4px 10px;border-radius:999px;
   border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer;vertical-align:middle}

@@ -3998,6 +3998,48 @@
       "coloured from 5 runs, grey below. The trend is read only " +
       "over the games the set was run in: a game it was never called in says nothing about " +
       "it and is left out of the line rather than counted as a nought.");
+    /* WHO FINISHED IT (Oriol, 26/11/2026: "una columna más con los jugadores que están tageados como finalizadores, el top 3
+       de cada con una imagen, dorsal y nombre"): the man tagged beside the possession's last result - the shot, the free
+       throws or the turnover - in the clip that carries it: the first player after it, else the nearest before it. A
+       possession with nobody tagged beside its end names nobody. */
+    var RES_TOK = /^(C2|M2|CL2|ML2|C3|M3|C1|M1|Turnover)$/;
+    var MAN_TOK = /^([A-Z][a-z][A-Za-z.'-]*(?: [A-Z][a-z][A-Za-z.'-]*)?) (\d{1,2})$/;
+    var NOT_MAN = /^(PnR|Pop|Chest|Elbow|Thumb|Side|Zoom|Flash|Down|Head|Low|Punch|Other|Sob|Bob|Pio|Random|Hip|Spain|Drag|Post|Press|Special)\b/i;
+    var manOf = function (x) { var m = MAN_TOK.exec(String(x || "").trim()); return (m && !NOT_MAN.test(m[1])) ? { name: m[1], num: m[2] } : null; };
+    var finisherOf = function (q) {
+      var clips = (q.clips && q.clips.length) ? q.clips : [{ tags: q.tags || [] }];
+      for (var ci = clips.length - 1; ci >= 0; ci--) {
+        var t = (clips[ci].tags || []).map(function (x) { return String(x).trim(); }), r = -1;
+        t.forEach(function (x, i) { if (RES_TOK.test(x)) r = i; });
+        if (r < 0) continue;
+        for (var i = r + 1; i < t.length && i <= r + 3; i++) { var a = manOf(t[i]); if (a) return a; }
+        for (var j = r - 1; j >= 0 && j >= r - 3; j--) { var b = manOf(t[j]); if (b) return b; }
+        return null;
+      }
+      return null;
+    };
+    var finAdd = function (bag, q) { var fm = finisherOf(q); if (!fm) return;
+      var f = bag[fm.num] || (bag[fm.num] = { num: fm.num, name: fm.name, n: 0 }); f.n++; };
+    /* the man by his number in our roster from the league: his face and his surname; failing it, the tag's name */
+    var manRec = function (num, tagName) {
+      var nm = tagName, id = null;
+      try { var L = window.leagueState && window.leagueState(), tid = L && window._lgOurTeamId && window._lgOurTeamId(L);
+        var ro = (((L && L.players) || {})[tid] || {}).players || [];
+        var r = ro.filter(function (x) { return x && String(parseInt(x.num, 10)) === String(parseInt(num, 10)); })[0];
+        if (r) { nm = (window._lgLastName && window._lgLastName(r.name || "")) || r.name || nm; id = r.id; } } catch (e) { _quiet(e); }
+      return { nm: nm, id: id };
+    };
+    var finCell = function (fin, extra) {
+      var list = Object.keys(fin || {}).map(function (k) { return fin[k]; }).sort(function (a, b) { return b.n - a.n; }).slice(0, 3);
+      if (!list.length) return { v: "", cls: "tr-fin tr-thin" + extra };
+      var box = el("span", "tr-finl");
+      list.forEach(function (f) { var R = manRec(f.num, f.name), it = el("span", "tr-fm"), face = null;
+        try { face = window._gpFace && window._gpFace(R.id, f.num, R.nm, true, "trf"); } catch (e) { _quiet(e); }
+        it.appendChild(face ? face.cloneNode(true) : el("i", "tr-fm-n", "#" + f.num));
+        var tx = el("span", "tr-fm-t"); tx.appendChild(el("b", null, "#" + f.num + " · " + f.n)); tx.appendChild(el("em", null, R.nm));
+        it.appendChild(tx); it.title = "#" + f.num + " " + R.nm + " finished " + f.n + " of these possessions"; box.appendChild(it); });
+      return { v: "", cls: "tr-fin" + extra, node: box };
+    };
     var bySet = {}, order = [];
     var SET_FAMS = { "Half court set": 1, "OOB (SLOB/BLOB)": 1, "ATO": 1 };
     /* WHAT IS RANKED (Oriol, 25/11/2026: "todo early offense"): the sets, and the whole of the early
@@ -4021,6 +4063,7 @@
         e.n++; e.pts += q.pts || 0; e.fd += fd;
         var c = e.per[gi] || (e.per[gi] = { n: 0, pts: 0, fd: 0, ps: [] });
         c.n++; c.pts += q.pts || 0; c.fd += fd; c.ps.push(q);
+        finAdd(e.fin || (e.fin = {}), q);
       });
     });
     var rows = order.map(function (k) { return bySet[k]; })
@@ -4047,7 +4090,7 @@
        in the cell, the runs small beside it, a dot when it drew a foul; coloured only from 5 runs, the
        hub's rule (a single run is a number, not a colour) */
     /* and the trend at the end, after the games it is read from (Oriol, 25/11/2026) */
-    var head = ["Set", "Runs", "PPP", "FD"].concat(games.map(function (g) { return g.label; }), ["Last 3", "Trend"]);
+    var head = ["Set", "Runs", "PPP", "FD"].concat(games.map(function (g) { return g.label; }), ["Last 3", "Trend", "Finishers"]);
     var gameCode = function (label) {
       try {
         var L = window.leagueState && window.leagueState(), id = L && window._lgTeamIdByName && window._lgTeamIdByName(L, label);
@@ -4171,6 +4214,8 @@
         var perB = {}; phG.forEach(function (p, gi) { var e = p.m[g.band]; if (e && e.n) perB[gi] = e; });
         bc.push(l3Cell(movedOf(perB), " sx-band"));
         bc.push({ v: "", cls: "sx-band" });
+        var finB = {}; phG.forEach(function (p) { var e = p.m[g.band]; ((e && e.ps) || []).forEach(function (q) { finAdd(finB, q); }); });
+        bc.push(finCell(finB, " sx-band"));
         if (body.length) { body.push({ cls: "tr-gaprow", cells: [{ span: head.length, v: "" }] }); meta.push(null); }
         body.push({ cls: "tr-bandrow", cells: bc }); meta.push({ band: g.band });
         return;
@@ -4211,8 +4256,9 @@
           node: spark(seq, f, flat ? "flat" : f.b > 0 ? "up" : "down"),
           trend: { r: r, seq: seq, gis: seqGi, f: f, flat: flat } };
       }
-      body.push(cells.concat(gcells, [l3Cell(r.mv, ""), tc]));
-      meta.push({ k: r.k, best: bestAt[r.k], worst: worstAt[r.k], up: upAt[r.k], down: downAt[r.k] });
+      body.push(cells.concat(gcells, [l3Cell(r.mv, ""), tc, finCell(r.fin, "")]));
+      meta.push({ k: r.k, best: bestAt[r.k], worst: worstAt[r.k], up: upAt[r.k], down: downAt[r.k],
+        n: r.n, ppp: r.n ? r.pts / r.n : null, mvd: (r.mv && !r.mv.thin) ? r.mv.d : null });
     });
     /* the band rows stay where they are when a column is sorted, which is what the
        page's sorter does with a single-cell row that spans the table */
@@ -4234,25 +4280,33 @@
        the sets at a glance that sat on top of the page are gone - the table holds the volume, the return
        and every night - and a button shows the best, the worst, the improved or the dropped, in their order */
     var allRows = [].slice.call(tbl.tBodies[0].rows), fbar = el("div", "tr-fbar"), fbtns = [];
+    /* THE SAME TABLE, IN ANOTHER ORDER (Oriol, 26/11/2026: "en best, worst, improved, dropped los metes todos pero los
+       ordenas en ese sentido; es la misma tabla"): every set stays, in the order asked for - best and worst by points a
+       possession (the sets run five times or more first), improved and dropped by the last three games against the ones
+       before (five runs a side) - and the sets that cannot be read that way go last, the most run first. The phases'
+       lines step aside while the table is in a ranked order; All sets puts it back as it was */
     var applyF = function (k) {
       fbtns.forEach(function (b) { b.classList.toggle("on", b.__k === k); });
       var tb = tbl.tBodies[0];
       if (k === "all") { allRows.forEach(function (tr) { tr.hidden = false; tb.appendChild(tr); }); tbl.classList.remove("tr-filtered"); return; }
-      var keep = allRows.filter(function (tr) { return tr.__meta && tr.__meta[k]; })
-        .sort(function (a, b) { return a.__meta[k] - b.__meta[k]; });
-      allRows.forEach(function (tr) { tr.hidden = keep.indexOf(tr) < 0; });
-      keep.forEach(function (tr) { tb.appendChild(tr); });
+      var hi = (k === "best" || k === "up");
+      var key = function (m) { return (k === "best" || k === "worst") ? (m.n >= MIN ? m.ppp : null) : m.mvd; };
+      var sets = allRows.filter(function (tr) { return tr.__meta && tr.__meta.k; });
+      sets.sort(function (a, b) { var x = key(a.__meta), y = key(b.__meta);
+        if (x == null && y == null) return b.__meta.n - a.__meta.n;
+        if (x == null) return 1; if (y == null) return -1;
+        return (hi ? y - x : x - y) || (b.__meta.n - a.__meta.n); });
+      allRows.forEach(function (tr) { tr.hidden = !(tr.__meta && tr.__meta.k); });
+      sets.forEach(function (tr) { tb.appendChild(tr); });
       tbl.classList.add("tr-filtered");
     };
-    [["all", "All sets"], ["best", "Best " + nMark], ["worst", "Worst " + nMark], ["up", "Improved"], ["down", "Dropped"]].forEach(function (fl) {
-      var cnt = fl[0] === "all" ? 1 : allRows.filter(function (tr) { return tr.__meta && tr.__meta[fl[0]]; }).length;
-      if (!cnt) return;
-      var b = el("button", "tr-fb" + (fl[0] === "all" ? " on" : ""), (fl[0] === "up" || fl[0] === "down") ? fl[1] + " · " + cnt : fl[1]);
+    [["all", "All sets"], ["best", "Best"], ["worst", "Worst"], ["up", "Improved"], ["down", "Dropped"]].forEach(function (fl) {
+      var b = el("button", "tr-fb" + (fl[0] === "all" ? " on" : ""), fl[1]);
       b.type = "button"; b.__k = fl[0];
       b.addEventListener("click", function () { applyF(fl[0]); });
       fbtns.push(b); fbar.appendChild(b);
     });
-    fbar.appendChild(el("span", "tr-fnote", "Best and worst: points a possession, sets run " + MIN + " times or more · improved and dropped: " +
+    fbar.appendChild(el("span", "tr-fnote", "Every set, in that order · best and worst: points a possession, sets run " + MIN + " times or more first · improved and dropped: " +
       "the last 3 games a set was run in against the ones before, " + MINSIDE + " runs on each side at least"));
     sec.appendChild(fbar);
     sec.appendChild(tw);
@@ -5578,9 +5632,20 @@
       ".dark .tr-spark .tr-sp-fit.up{stroke:#4cc392}.dark .tr-spark .tr-sp-fit.down{stroke:#ff7a6b}",
       ".tr-spark .tr-sp-dot{fill:var(--ink,#141821)}",
       /* pointing at a night: the row and the column, the rest faded, the cell boxed, its head marked */
-      ".tr-sets table.tr-x tbody tr:not(.tr-xr) td.tr-mini:not(.tr-xc){opacity:.32}",
-      ".tr-sets .sx-table thead th.tr-xh{background:var(--panel-2,#eef1f5)}",
-      ".tr-sets .sx-table thead th.tr-xh b{color:var(--ink,#141821)}",
+      /* pointing at a row: that row a shade deeper and nothing else changes (Oriol, 26/11/2026: "solamente marcas la
+         hilera que estás marcando con un poco más de color, el resto sigue igual") */
+      ".tr-sets table.tr-x tbody tr.tr-xr > td{box-shadow:inset 0 0 0 999px rgba(20,24,33,.08)}",
+      ".dark .tr-sets table.tr-x tbody tr.tr-xr > td{box-shadow:inset 0 0 0 999px rgba(255,255,255,.08)}",
+      /* the finishers: three faces, each with his number, how many he finished and his name */
+      ".tr-sets .sx-table td.tr-fin{text-align:left;padding:2px 6px!important;min-width:228px}",
+      ".tr-sets .sx-table tr.tr-bandrow td.tr-fin{text-transform:none;letter-spacing:0}",
+      ".tr-finl{display:flex;gap:8px;align-items:center}",
+      ".tr-fm{display:inline-flex;align-items:center;gap:4px;min-width:0}",
+      ".tr-fm .gp5-f{margin:0;width:24px;height:24px}",
+      ".tr-fm-n{font:700 10px 'IBM Plex Mono',monospace;font-style:normal;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--panel-2,#eef1f5)}",
+      ".tr-fm-t{display:flex;flex-direction:column;line-height:1.1;min-width:0}",
+      ".tr-fm-t b{font:700 10.5px 'IBM Plex Mono',monospace}",
+      ".tr-fm-t em{font:600 10.5px Inter,system-ui,sans-serif;font-style:normal;color:var(--ink-soft,#5b6472);max-width:66px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
       ".tr-spark circle.tr-sp-pt.on{fill:var(--ink,#141821);stroke:var(--panel,#fff);stroke-width:1.2}",
       /* a night and a trend open their card on a click */
       ".tr-sets .sx-table td.tr-mini.sx-cell,.tr-sets .sx-table td.tr-trend{cursor:pointer}",
