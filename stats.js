@@ -4037,6 +4037,9 @@
     var phTot = {}; phG.forEach(function (p) { Object.keys(p.m).forEach(function (k) { var t = phTot[k] || (phTot[k] = { n: 0, pts: 0, fd: 0 }); t.n += p.m[k].n; t.pts += p.m[k].pts; t.fd += p.m[k].fd || 0; }); });
     var allPoss = phG.reduce(function (a, p) { return a + p.tot; }, 0);
     PHASE_SETS.sort(function (a, b) { return ((phTot[b] || {}).n || 0) - ((phTot[a] || {}).n || 0); });
+    /* transition before early offense, the order they happen in (Oriol, 25/11/2026) */
+    var iT = PHASE_SETS.indexOf("Transition"), iE = PHASE_SETS.indexOf("Early offense");
+    if (iE >= 0 && iT > iE) { PHASE_SETS.splice(iT, 1); PHASE_SETS.splice(iE, 0, "Transition"); }
     var grouped = [];
     PHASE_SETS.forEach(function (ph) {
       var mine = rows.filter(function (r) { return phaseOf(r.k) === ph; });
