@@ -10037,12 +10037,12 @@ function _preInj(){
     const part=(tab, title, node)=>{ const p=h("div",{class:"pre-inj-p sxp-blk sxp-card", "data-tabs":tab}); if(title) p.appendChild(h("div",{class:"sxp-sub"}, h("b",{}, title))); p.appendChild(node); return p; };
     /* each in the team stats box under its own tab: pace (both sides, then each with its
        picture), rebounding them and us, their last games with the games and quarters */
+    /* one panel each (25/11/2026): pace (do they play fast, then volume and efficiency by the clock),
+       rebounding (the two battles and the men who crash), their last five games */
     const parts=[
-      part("pace", "", _lgEmbed(X.tid, [ L=>_prePaceSummary(L, X.tid) ])),
-      part("pace", "", _lgEmbed(X.tid, [ L=>_prePaceSide(L, X.tid, "o") ])),
-      part("pace", "", _lgEmbed(X.tid, [ L=>_prePaceSide(L, X.tid, "d") ])),
-      part("reb", "", _lgEmbed(X.tid, [ L=>_preRebCompare(L, X.tid, X.rep? _preCardsStore(X.rep) : null) ])) ];
-    if(!X.pv && X.g){ try{ parts.push(part("games", "Their last games · from the play by play", _preRecentForm(X.g))); }catch(e){_quiet(e)} }
+      part("pace", "", _lgEmbed(X.tid, [ L=>_prePaceView(L, X.tid) ])),
+      part("reb", "", _lgEmbed(X.tid, [ L=>_preRebView(L, X.tid, X.rep? _preCardsStore(X.rep) : null) ])) ];
+    if(!X.pv && X.g){ try{ parts.push(part("games", "", _preLast5(X.g))); }catch(e){_quiet(e)} }
     I=blk.__inj={ key:X.key, parts:parts };
   }
   const sxp=blk.querySelector(".sxp");
@@ -22699,7 +22699,7 @@ function _lgStdTable(L){
   /* with the look back on, the clubs go by their short name (as on a phone) so the table keeps to its panel */
   const tbl=h("table",{class:"lg-tbl lg-std"+(HX? " hx" : "")});
   tbl.appendChild(h("tr",{class:"lg-tbl-h"}, h("th",{},"#"), h("th",{class:"l"},"Team"), h("th",{},"GP"), h("th",{},"W"), h("th",{},"L"), h("th",{class:"lg-std-pct"},"PCT"), h("th",{},"DIFF"), h("th",{title:"The last five league games, oldest first. Cup and play-offs are not counted."},"FORM"),
-    HX? h("th",{class:"lg-hx-h l", title:"Where it finished in each of the last "+LG_HIST_YEARS+" seasons (the league's final table, regular season), oldest first, and the places gained or lost since last season's final place · hatched: not in the BBL that season"},"Last "+LG_HIST_YEARS) : null));
+    HX? h("th",{class:"lg-hx-h l", title:"Where it finished in each of the last "+LG_HIST_YEARS+" seasons (the league's final table, regular season), oldest first, and the places gained or lost since last season's final place · hatched: not in the BBL that season"},"Last "+LG_HIST_YEARS+" seasons") : null));
   rows.slice().sort((a,b)=>(a.pos||99)-(b.pos||99)).forEach(r=>{
     const id=r.teamId||r.team;
     const z=_lgZone(r.pos, nTeams);
@@ -24771,7 +24771,9 @@ function _lgFormRows(tid, beforeDate, N){
       const sheet=((home? (j.game||{}).homeTeam : (j.game||{}).guestTeam)||{}).roster||[];
       /* the shots of a game are not needed here and are the heaviest thing in it */
       S.shots=[]; O.shots=[];
-      rows.push({ g:x, home:home, S:S, O:O, win:S.pts>O.pts, sheet:sheet,
+      /* the margin at every basket, from this club's side: the last five games' panels draw it */
+      const fl=((M.flow && M.flow.ev)||[]).map(e=>[Math.round(e.t), home? e.h-e.a : e.a-e.h]);
+      rows.push({ g:x, home:home, S:S, O:O, win:S.pts>O.pts, sheet:sheet, fl:fl,
         q:(x.quarters||[]).slice(0,4).map(q=>home? q[0]-q[1] : q[1]-q[0]) }); };
     if(games.length<=5){
       const feeds=await Promise.all(games.map(x=>(_lgGameMemo[x.id]||(_lgGameMemo[x.id]=
@@ -29504,6 +29506,157 @@ function _lgPace(L){
 }
 /* Pre game: them, us and the league in League's own table, both sides for the overview and
    one side in each of the offense and defense tabs, with the picture of that side under it */
+/* PACE, CLEAR (Oriol, 25/11/2026: "no entiendo nada; hazlo más visual y claro, elimina duplicados; quiero
+   saber si juegan o no con ritmo y luego el porcentaje de volumen y eficiencia por tiempos, por ellos y
+   comparado con la liga"). One panel, two parts: do they play fast - their possessions a game and the
+   second of their first shot, each against the league's clubs - and then, for each part of the shot
+   clock, how many of their possessions end there (the bar, the league's share as the tick) and what
+   they score there (against the league's points in that part). Their defense beside it: when they let
+   teams shoot and what that gives up. The colour is the pre game's: red hurts us, green helps us. */
+function _prePaceView(L, tid){
+  const box=h("div",{class:"lg-panel ppv"});
+  const R=_paceLeague(L), f=_paceFirst(L, tid);
+  if(!f){ box.appendChild(h("div",{class:"ld"},"Their season is being read for this; it fills in by itself.", h("span",{class:"ld-bar"}))); try{ _lgLeadLoad(L); }catch(e){_quiet(e)} return box; }
+  const o=_paceOf(f,"team"), d=_paceOf(f,"opp"), lg=R.lg, lgD=R.lgD, rows=R.rows||[], n=rows.length;
+  if(!o || !lg){ box.appendChild(h("div",{class:"lg-empty"},"Not read yet.")); return box; }
+  const f1=v=>v==null? "—" : v.toFixed(1), pc=v=>v==null? "—" : Math.round(100*v)+"%";
+  /* 1. do they play fast */
+  const rkP=1+rows.filter(r=>r.o && r.o.ppg!=null && r.o.ppg>o.ppg).length;
+  const dp=(o.ppg!=null && lg.ppg!=null)? o.ppg-lg.ppg : 0, ds=o.avg-lg.avg;
+  const verdict=(dp>=2 || ds<=-0.8)? ["fast","They play fast"] : (dp<=-2 || ds>=0.8)? ["slow","They play slow"] : ["mid","League pace"];
+  const tile=(lab, val, sub, sc, cls)=>h("div",{class:"ppv-t "+(cls||"")}, h("i",{}, lab), h("b",{}, val), h("span",{}, sub), sc);
+  box.appendChild(h("div",{class:"ppv-h"}, h("b",{class:"ppv-v "+verdict[0]}, verdict[1]),
+    h("span",{}, "from the league's play by play · their season against the "+n+" clubs")));
+  box.appendChild(h("div",{class:"ppv-top"},
+    tile("Possessions a game", f1(o.ppg), "league "+f1(lg.ppg)+" · #"+rkP+" of "+n+" fastest", lg.rPpg? _paceScale(o.ppg, lg.rPpg, lg.ppg, f1) : null, dp>=2? "fast" : dp<=-2? "slow" : ""),
+    tile("Their first shot", f1(o.avg)+" s", "league "+f1(lg.avg)+" s · "+(ds<0? Math.abs(ds).toFixed(1)+" s sooner" : ds>0? ds.toFixed(1)+" s later" : "the same"), lg.rAvg? _paceScale(o.avg, lg.rAvg, lg.avg, v=>v.toFixed(1)+" s") : null, ds<=-0.6? "fast" : ds>=0.6? "slow" : ""),
+    d && lgD? tile("Teams' first shot against them", f1(d.avg)+" s", "league "+f1(lgD.avg)+" s · "+(d.avg<lgD.avg? "they let teams shoot sooner" : "they make teams shoot later"), lgD.rAvg? _paceScale(d.avg, lgD.rAvg, lgD.avg, v=>v.toFixed(1)+" s") : null, d.avg-lgD.avg<=-0.6? "fast" : d.avg-lgD.avg>=0.6? "slow" : "") : null));
+  /* 2. volume and efficiency by the part of the clock */
+  const tone=(v, lv, def)=>{ if(v==null || lv==null) return ""; const x=def? v-lv : lv-v; return x>=0.05? "good" : x<=-0.05? "bad" : ""; };
+  const mx=Math.max(0.01, ...PACE_BANDS.map(b=>Math.max(o[b[2]]||0, lg[b[2]]||0, d? d[b[2]]||0 : 0, lgD? lgD[b[2]]||0 : 0)));
+  const cell=(P, ref, b, def)=>{ if(!P) return h("div",{class:"ppv-c"}, "—");
+    const sh=P[b[2]], ls=ref? ref[b[2]] : null, v=P[b[1]], lv=ref? ref[b[1]] : null, t=tone(v, lv, def);
+    return h("div",{class:"ppv-c", title:b[3]+": "+pc(sh)+" of the possessions (league "+pc(ls)+") · "+(v==null? "—" : v.toFixed(2))+" points a possession (league "+(lv==null? "—" : lv.toFixed(2))+")"},
+      h("div",{class:"ppv-vol"}, h("span",{class:"ppv-bar"}, h("i",{style:"width:"+Math.round(100*sh/mx)+"%"}), ls!=null? h("u",{style:"left:"+Math.round(100*ls/mx)+"%"}) : null),
+        h("b",{}, pc(sh)), h("em",{}, "league "+pc(ls))),
+      h("div",{class:"ppv-eff "+t}, h("b",{}, v==null? "—" : v.toFixed(2)), h("em",{}, (def? "allowed" : "scored")+" · league "+(lv==null? "—" : lv.toFixed(2))))); };
+  const g=h("div",{class:"ppv-g"}, h("span",{class:"hd"}), h("span",{class:"hd"}, "Their offense · when they shoot"), h("span",{class:"hd"}, "Their defense · when they let you shoot"));
+  PACE_BANDS.forEach(b=>{ g.appendChild(h("span",{class:"ppv-k"}, h("b",{}, b[3]), h("i",{}, b[2]==="early"? "early" : b[2]==="mid"? "middle" : "late")));
+    g.appendChild(cell(o, lg, b, false)); g.appendChild(cell(d, lgD, b, true)); });
+  box.appendChild(g);
+  box.appendChild(h("div",{class:"ppv-key"}, "Bar: share of the possessions whose first shot (or the turnover) comes in that part of the clock · the tick the league's · number: points a possession there against the league's · red hurts us, green helps us"));
+  return box;
+}
+
+/* REBOUNDING, AS A PICTURE (Oriol, 25/11/2026: "más visual, demasiado texto"): the two battles on the glass
+   - their offensive glass against our defensive glass, ours against theirs - each as two bars on one scale
+   with the league's average, and who has the edge; then the men who crash, with their faces. */
+function _preRebView(L, tid, cards){
+  const box=h("div",{class:"lg-panel rbv"});
+  _lgFourFresh(L);
+  const rows=_rebClubRows(L), us=String(_lgOurTeamId(L)||"");
+  const T=rows.filter(r=>r.id===String(tid))[0], U=rows.filter(r=>r.id===us)[0];
+  if(!T || !U){ box.appendChild(h("div",{class:"ld"},"The league's four factors are being read.", h("span",{class:"ld-bar"}))); return box; }
+  const avg=k=>{ const v=rows.map(r=>r[k]).filter(x=>x!=null); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; };
+  const rk=(k,v)=>1+rows.map(r=>r[k]).filter(x=>x!=null).sort((a,b)=>b-a).indexOf(v);
+  const aO=avg("o"), aD=avg("d"), n=rows.length;
+  try{ if(!((L.roster||{})[tid]) && !_lgRosBusy[tid] && !_lgRosTried[tid] && !L.demo) syncRoster(tid, false); }catch(e){_quiet(e)}
+  const lo=15, hi=45, X=v=>Math.max(0, Math.min(100, 100*(v-lo)/(hi-lo)));
+  const bar=(lab, v, ref, cls, note)=>h("div",{class:"rbv-r"}, h("span",{class:"rbv-l"}, lab),
+    h("span",{class:"rbv-bar"}, h("i",{class:cls, style:"width:"+X(v).toFixed(1)+"%"}), h("u",{style:"left:"+X(ref).toFixed(1)+"%", title:"league average "+ref.toFixed(1)+"%"})),
+    h("b",{}, v.toFixed(1)+"%"), h("em",{}, note||""));
+  const battle=(title, a, b, who, la, lb)=>{ const ed=(a-aO)+((100-b)-(100-aD));
+    const v=ed>=3? (who==="them"? ["bad","Edge them +"+ed.toFixed(1)] : ["good","Edge us +"+ed.toFixed(1)]) : ed<=-3? (who==="them"? ["good","Edge us +"+(-ed).toFixed(1)] : ["bad","Edge them +"+(-ed).toFixed(1)]) : ["", "Even"];
+    return h("div",{class:"rbv-b"}, h("div",{class:"rbv-bh"}, h("b",{}, title), h("span",{class:"rbv-ed "+v[0], title:"how far above the league the attacking glass and the defending leak are, added: 3 points or more is an edge"}, v[1])),
+      bar(la, a, aO, who==="them"? "them" : "us", "#"+rk("o",a)+" of "+n), bar(lb, 100-b, 100-aD, who==="them"? "us" : "them", "#"+rk("d",b)+" of "+n+" in DREB%")); };
+  box.appendChild(h("div",{class:"rbv-h"}, h("b",{},"Rebounding · the two battles"), h("span",{}, "the league's season · bars on one scale, "+lo+"–"+hi+"% · the tick the league's average")));
+  box.appendChild(h("div",{class:"rbv-two"},
+    battle("Their offensive glass · our defensive glass", T.o, U.d, "them", "They get back", "We let teams have"),
+    battle("Our offensive glass · their defensive glass", U.o, T.d, "us", "We get back", "They let teams have")));
+  /* the men who go to the offensive glass, theirs and ours, with their faces */
+  const pmT=_rebPosMap(L, String(tid), cards), pmU=_rebPosMap(L, us);
+  const crash=(id, pm, lab)=>{ const ld=(L.lead||{})[id];
+    const l=((ld && ld.players)||[]).map(p=>{ const a=p.all||{}, min=(a.sec||0)/60; return { p:p, a:a, min:min, o10:min? 10*(a.oreb||0)/min : 0, g:pm.byNum[String(p.num)]||pm.byId[String(p.id)]||null }; })
+      .filter(x=>x.min>=40 && (x.a.oreb||0)>0).sort((a,b)=>b.o10-a.o10).slice(0,4);
+    const c=h("div",{class:"rbv-m"}, h("h5",{}, lab));
+    if(!l.length){ c.appendChild(h("div",{class:"ld"},"Their players' lines are being read.", h("span",{class:"ld-bar"}))); return c; }
+    const mxo=Math.max(...l.map(x=>x.o10), 0.1);
+    l.forEach(x=>{ let face=null; try{ face=_lgFace(L, { n:x.p.num, name:x.p.name, photo:x.p.photo, pid:x.p.pid, id:x.p.id }, "rbv-f"); }catch(e){ face=null; }
+      c.appendChild(h("div",{class:"rbv-p", title:"#"+(x.p.num||"")+" "+(x.p.name||"")+" · "+((x.a.oreb||0)/Math.max(1,x.a.gp||1)).toFixed(1)+" offensive rebounds a game · "+(x.min/Math.max(1,x.a.gp||1)).toFixed(0)+" min a game"},
+        face||h("span",{class:"rbv-f"}), h("span",{class:"rbv-pn"}, _lgLastName(x.p.name||""), x.g? h("i",{}, x.g==="B"? "int." : "ext.") : null),
+        h("span",{class:"rbv-pb"}, h("i",{style:"width:"+Math.round(100*x.o10/mxo)+"%"})), h("b",{}, x.o10.toFixed(1)))); });
+    c.appendChild(h("div",{class:"rbv-mk"}, "offensive rebounds every 10 minutes on the floor"));
+    return c; };
+  box.appendChild(h("div",{class:"rbv-two"}, crash(String(tid), pmT, "Theirs on the offensive glass · to box out"), crash(us, pmU, "Ours on the offensive glass")));
+  try{ _lgLeadLoad(L); }catch(e){_quiet(e)}
+  return box;
+}
+
+/* THEIR LAST FIVE GAMES, ONE LOOK (Oriol, 25/11/2026: "una imagen general de los últimos 5 partidos dividiendo
+   la pantalla en 5 partes, cómo es cada partido y cómo evoluciona; una tabla con todos ellos y punto"). Five
+   panels, oldest on the left: the result, the margin minute by minute, the four quarters and three numbers;
+   under them one table with the five and their average, each number against the league's. From the play by
+   play; it replaces the tagged game-by-game tables and the quarter cards in Games. */
+let _pl5Keep=null;
+function _preLast5(sg){
+  const kk=String((sg&&sg.opponent)||"")+"|"+String((sg&&sg.date)||"");
+  if(_pl5Keep && _pl5Keep.k===kk && _pl5Keep.el.firstChild) return _pl5Keep.el;
+  const box=h("div",{class:"pl5"});
+  _pl5Keep={ k:kk, el:box };
+  if(!sg || !sg.opponent || _gamePlaceholder(sg.opponent)) return box;
+  const none=t=>{ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"}, t)); };
+  box.appendChild(h("div",{class:"ld"},"Reading their last games…", h("span",{class:"ld-bar"})));
+  (async ()=>{
+    const all=await _lgAll(); const L=leagueState();
+    const tid=_lgTeamIdByName({ teams:(all&&all.teams)||[], alias:L.alias }, sg.opponent) || _lgTeamIdByName(L, sg.opponent);
+    if(!tid){ none("This opponent is not in the league feed, so there is no play by play to read."); return; }
+    const F=await _lgFormRows(tid, sg.date, 5);
+    if(F.rows.length<2){ none(F.games.length<2? "Fewer than two finished games in the league feed yet." : "The league has not published the sheets of their last games."); return; }
+    box.innerHTML="";
+    const rows=F.rows.slice().sort((a,b)=>String(a.g.date).localeCompare(String(b.g.date)));
+    /* the league's averages, for the colours of the table */
+    const four=(L.four||[]).filter(x=>x && x.ortg!=null);
+    const la=f=>{ const v=four.map(f).filter(x=>x!=null && isFinite(x)); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; };
+    const LA={ ortg:la(x=>x.ortg), drtg:la(x=>x.drtg), pace:la(x=>x.pace), efg:la(x=>x.off && x.off.efg!=null? 100*x.off.efg : null), tov:la(x=>x.off && x.off.tov!=null? 100*x.off.tov : null),
+      orb:la(x=>x.off && x.off.reb!=null? 100*x.off.reb : null), oefg:la(x=>x.def && x.def.efg!=null? 100*x.def.efg : null) };
+    const opp=r=>{ const nm=r.home? r.g.away : r.g.home; return _lgShort(nm||""); };
+    const mxM=Math.max(8, ...rows.map(r=>Math.max(...(r.fl||[[0,0]]).map(p=>Math.abs(p[1])))));
+    const W=240, H=76;
+    const spark=r=>{ const fl=(r.fl||[]).slice(), end=Math.max(2400, ...fl.map(p=>p[0]));
+      const x=t=>(W*t/end).toFixed(1), y=m=>(H/2-(H/2-3)*m/mxM).toFixed(1);
+      let d="M0 "+y(0), last=0; fl.forEach(p=>{ d+=" L"+x(p[0])+" "+y(last)+" L"+x(p[0])+" "+y(p[1]); last=p[1]; }); d+=" L"+W+" "+y(last);
+      const ar=d+" L"+W+" "+y(0)+" Z";
+      const qs=[600,1200,1800].concat(end>2400? [2400] : []).map(t=>sv("line",{x1:x(t), x2:x(t), y1:0, y2:H, class:"pl5-q"}));
+      return sv("svg",{viewBox:"0 0 "+W+" "+H, class:"pl5-svg", preserveAspectRatio:"none"},
+        sv("defs",{}, sv("clipPath",{id:"pl5u"+r.g.id}, sv("rect",{x:0, y:0, width:W, height:H/2})), sv("clipPath",{id:"pl5d"+r.g.id}, sv("rect",{x:0, y:H/2, width:W, height:H/2}))),
+        ...qs, sv("path",{d:ar, class:"pl5-up", "clip-path":"url(#pl5u"+r.g.id+")"}), sv("path",{d:ar, class:"pl5-dn", "clip-path":"url(#pl5d"+r.g.id+")"}),
+        sv("line",{x1:0, x2:W, y1:y(0), y2:y(0), class:"pl5-0"}), sv("path",{d:d, class:"pl5-l"})); };
+    const grid=h("div",{class:"pl5-g"});
+    rows.forEach(r=>{ const S=r.S, O=r.O, dd=String(r.g.date||"");
+      grid.appendChild(h("div",{class:"pl5-c "+(r.win? "w" : "l")},
+        h("div",{class:"pl5-ch"}, h("span",{class:"pl5-r"}, r.win? "W" : "L"), h("b",{}, S.pts+"–"+O.pts), h("i",{}, (r.home? "vs " : "@ ")+opp(r)), h("em",{}, dd.slice(8,10)+"/"+dd.slice(5,7))),
+        spark(r),
+        h("div",{class:"pl5-qs"}, (r.q||[]).map((m,i)=>h("span",{class:m>0? "up" : m<0? "dn" : ""}, h("i",{}, "Q"+(i+1)), (m>0? "+" : "")+m))),
+        h("div",{class:"pl5-n"}, h("span",{}, h("i",{},"ORtg"), h("b",{}, S.ortg==null? "—" : Math.round(S.ortg))), h("span",{}, h("i",{},"DRtg"), h("b",{}, O.ortg==null? "—" : Math.round(O.ortg))), h("span",{}, h("i",{},"Pace"), h("b",{}, S.pace==null? "—" : Math.round(S.pace)))))); });
+    box.appendChild(h("div",{class:"pl5-h"}, h("b",{}, "Their last "+rows.length+" games"), h("span",{}, "oldest first · the line: their margin minute by minute, above when they lead")));
+    box.appendChild(grid);
+    /* one table: the five and their average, each number against the league's (red hurts us, green helps us) */
+    const cols=[["ORtg", r=>r.S.ortg, "ortg", -1, 0], ["DRtg", r=>r.O.ortg, "drtg", 1, 0], ["Net", r=>(r.S.ortg!=null && r.O.ortg!=null)? r.S.ortg-r.O.ortg : null, null, -1, 0],
+      ["Pace", r=>r.S.pace, "pace", 0, 0], ["eFG%", r=>r.S.efg, "efg", -1, 1], ["Opp eFG%", r=>r.O.efg, "oefg", 1, 1], ["TOV%", r=>r.S.tovp, "tov", 1, 1], ["OREB%", r=>r.S.orbp, "orb", -1, 1], ["3PAr", r=>r.S.p3r, null, 0, 1]];
+    const t=h("table",{class:"lg-tbl pl5-t"}, h("tr",{}, h("th",{class:"l"},"Game"), h("th",{},"Result"), ...cols.map(c=>h("th",{}, c[0]))));
+    const cellOf=(c, v)=>{ if(v==null || !isFinite(v)) return h("td",{class:"mu"},"—");
+      const ref=c[2]? LA[c[2]] : null, d=ref!=null? (v-ref)*(c[3]||0) : 0, band=c[4]? 2 : 3;
+      return h("td",{class:"pnum"+(c[3] && ref!=null? (d>=band? " good" : d<=-band? " bad" : "") : ""), title:ref!=null? "league "+ref.toFixed(1) : ""}, (c[0]==="Net" && v>0? "+" : "")+v.toFixed(c[4]? 1 : 0)); };
+    rows.forEach(r=>{ const dd=String(r.g.date||"");
+      t.appendChild(h("tr",{}, h("td",{class:"l"}, dd.slice(8,10)+"/"+dd.slice(5,7)+" · "+(r.home? "vs " : "@ ")+opp(r)), h("td",{class:r.win? "res-w" : "res-l"}, (r.win? "W " : "L ")+r.S.pts+"–"+r.O.pts), ...cols.map(c=>cellOf(c, c[1](r))))); });
+    const av=f=>{ const v=rows.map(f).filter(x=>x!=null && isFinite(x)); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; };
+    const wins=rows.filter(r=>r.win).length;
+    t.appendChild(h("tr",{class:"tot"}, h("td",{class:"l"},"Average"), h("td",{}, wins+"–"+(rows.length-wins)), ...cols.map(c=>cellOf(c, av(c[1])))));
+    box.appendChild(h("div",{class:"pb-scroll"}, t));
+    box.appendChild(h("div",{class:"pl5-k"}, "Against the league's average: red hurts us, green helps us · ORtg and DRtg points per 100 possessions"));
+  })().catch(()=>{ none("Their last games could not be read."); });
+  return box;
+}
 function _prePaceRows(L, R, tid){
   const out=[]; const them=R.rows.filter(r=>String(r.id)===String(tid))[0];
   if(them) out.push(Object.assign({}, them, { label:"Them · "+them.name, cls:"them" }));
@@ -31056,7 +31209,8 @@ function _dashCoverInto(box, opp){
 }
 /* the drawing itself, from a report already read: the dashboard's card and the pre game's
    stats summary draw the same block (Oriol, 14/11/2026: "aplica esto también en pregame") */
-function _dashCoverDraw(box, D){
+function _dashCoverDraw(box, D, opt){
+  opt=opt||{};
   {
     const cb=D && D.covbybig;
     const cbT=D && D.covbybigTr, has=x=>x && (x.rows||[]).length;
@@ -31075,7 +31229,9 @@ function _dashCoverDraw(box, D){
       return h("span",{class:"c "+cls+((c.poss||0)<MS_POSS? " sm" : ""), title:c.n+" clips · "+c.poss+" possessions"},
         h("b",{}, c.share!=null? c.share+"%" : "—"), h("i",{}, c.ppp==null? "—" : Number(c.ppp).toFixed(2)+" PPP")); };
     const vol=r=>(r.cells[0].poss||0)+(r.cells[1].poss||0);
-    cb.rows.slice().sort((a,b)=>vol(b)-vol(a)).slice(0,7).forEach(r=>{ t.appendChild(h("span",{class:"k"}, r.label)); t.appendChild(cell(r.cells[0])); t.appendChild(cell(r.cells[1])); });
+    /* a coverage under minShare % of what each big defends is residue (Oriol, 25/11/2026: "2 y 4% me parece descartable") */
+    const keep=r=>!opt.minShare || (r.cells||[]).some(c=>c && c.n && c.share!=null && c.share>=opt.minShare);
+    cb.rows.slice().filter(keep).sort((a,b)=>vol(b)-vol(a)).slice(0,7).forEach(r=>{ t.appendChild(h("span",{class:"k"}, r.label)); t.appendChild(cell(r.cells[0])); t.appendChild(cell(r.cells[1])); });
     grp.appendChild(t);
     };
     draw(cb, "Half court"); draw(cbT, "Transition · drag PnR");
@@ -31084,7 +31240,7 @@ function _dashCoverDraw(box, D){
     const COVC=["#4a86d8","#2f9e86","#d9a521","#8a6fd1","#d8524e","#5b6472"];
     const mixes=(D.covbig||[]).filter(r=>r.mix).map(r=>({ label:String(r.label||"").replace(/^Defended by their /,"Their ").replace(/^Two guards$/,"Two guards"),
       parts:String(r.mix).split("·").map(s=>{ const m=/^(.*?)\s+(\d+)\s*$/.exec(s.trim()); return m? { k:m[1], n:+m[2] } : null; }).filter(Boolean) })).filter(x=>x.parts.length);
-    if(mixes.length){ const grp=h("div",{class:"dash-covg mix"}); box.appendChild(grp);
+    if(mixes.length && !opt.noMix){ const grp=h("div",{class:"dash-covg mix"}); box.appendChild(grp);
       grp.appendChild(h("div",{class:"dash-covh"},"How each of them defends it"));
       grp.appendChild(h("div",{class:"dash-mixes"}, mixes.map(x=>{ const tot=x.parts.reduce((a,p)=>a+p.n,0)||1;
         return h("div",{class:"dash-mixr"}, h("span",{class:"l"}, x.label), h("span",{class:"bar"}, x.parts.map((p,i)=>h("i",{style:"flex:"+p.n+";background:"+COVC[i%COVC.length], title:p.k+" · "+p.n+" times · "+Math.round(100*p.n/tot)+"%"}, 100*p.n/tot>=12? p.k+" "+p.n : ""))),
@@ -43677,6 +43833,79 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .ow-btns{display:flex;gap:5px}.ow-btns .dash-gp{padding:4px 8px;font-size:11px}
 /* what is missing on the dashboard: a line of chips a kind */
 .mc{display:grid;gap:6px}
+/* pace, clear */
+.ppv{display:grid;gap:12px}
+.ppv-h{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 12px}
+.ppv-v{font:700 15px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;padding:4px 10px;border-radius:6px;background:var(--panel-2,#f4f5f7);color:var(--ink,#141821)}
+.ppv-v.fast{background:#2f6cc0;color:#fff}.ppv-v.slow{background:#8a6829;color:#fff}
+.ppv-h > span{font-size:11.5px;color:var(--ink-faint,#8a93a2)}
+.ppv-top{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
+.ppv-t{display:flex;flex-direction:column;gap:2px;padding:9px 12px;border-radius:9px;background:var(--panel-2,#f4f5f7);border-left:4px solid transparent;min-width:0}
+.ppv-t.fast{border-left-color:#2f6cc0}.ppv-t.slow{border-left-color:#8a6829}
+.ppv-t > i{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.ppv-t > b{font:800 24px/1.1 'Inter',sans-serif;color:var(--ink,#141821)}
+.ppv-t > span{font-size:11.5px;color:var(--ink-soft,#5b6472)}
+.ppv-g{display:grid;grid-template-columns:110px repeat(2,minmax(0,1fr));gap:6px 14px;align-items:stretch}
+.ppv-g > .hd{font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink,#141821);padding-bottom:4px;border-bottom:2px solid var(--ink,#141821)}
+.ppv-k{display:flex;flex-direction:column;justify-content:center}.ppv-k b{font:700 14px 'IBM Plex Mono',monospace}.ppv-k i{font-style:normal;font-size:11px;color:var(--ink-faint,#8a93a2)}
+.ppv-c{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:10px;align-items:center;padding:7px 10px;border-radius:9px;background:var(--panel-2,#f4f5f7)}
+.ppv-vol{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;align-items:center}
+.ppv-bar{position:relative;height:14px;border-radius:4px;background:rgba(20,24,33,.08)}
+.ppv-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:#3d4a5c}
+.ppv-bar u{position:absolute;top:-3px;bottom:-3px;width:2px;background:#c6a15b}
+.ppv-vol b{font:700 14px 'IBM Plex Mono',monospace}.ppv-vol em{grid-column:1/-1;font-style:normal;font-size:10.5px;color:var(--ink-faint,#8a93a2)}
+.ppv-eff{display:flex;flex-direction:column;align-items:flex-start;padding:4px 8px;border-radius:7px;background:var(--panel,#fff)}
+.ppv-eff b{font:800 18px/1.1 'Inter',sans-serif}.ppv-eff em{font-style:normal;font-size:10.5px;color:var(--ink-faint,#8a93a2)}
+.ppv-eff.good{background:rgba(47,158,134,.15)}.ppv-eff.good b{color:#17805a}.ppv-eff.bad{background:rgba(216,82,78,.13)}.ppv-eff.bad b{color:#c0403c}
+.ppv-key{font-size:10.5px;color:var(--ink-faint,#8a93a2)}
+body.dark .ppv-bar{background:rgba(255,255,255,.08)}body.dark .ppv-bar i{background:#9aa6b8}body.dark .ppv-eff.good b{color:#5fcf9f}body.dark .ppv-eff.bad b{color:#ff8f85}
+@media (max-width:700px){ .ppv-g{grid-template-columns:minmax(0,1fr)} .ppv-g > .hd:first-child{display:none} }
+/* rebounding, as a picture */
+.rbv{display:grid;gap:12px}
+.rbv-h{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 12px}.rbv-h b{font:700 13px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase}.rbv-h span{font-size:11px;color:var(--ink-faint,#8a93a2)}
+.rbv-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:10px 16px}
+.rbv-b{padding:9px 12px;border-radius:10px;background:var(--panel-2,#f4f5f7);display:grid;gap:6px}
+.rbv-bh{display:flex;align-items:center;justify-content:space-between;gap:8px}.rbv-bh b{font:700 12px 'Inter',sans-serif}
+.rbv-ed{font:700 11px 'IBM Plex Mono',monospace;padding:2px 8px;border-radius:5px;background:var(--panel,#fff);color:var(--ink-soft,#5b6472)}
+.rbv-ed.bad{background:rgba(216,82,78,.15);color:#c0403c}.rbv-ed.good{background:rgba(47,158,134,.16);color:#17805a}
+.rbv-r{display:grid;grid-template-columns:130px minmax(0,1fr) 52px 96px;gap:8px;align-items:center;font-size:12px}
+.rbv-l{color:var(--ink-soft,#5b6472)}
+.rbv-bar{position:relative;height:16px;border-radius:4px;background:rgba(20,24,33,.07)}
+.rbv-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:4px}.rbv-bar i.them{background:#8a2f2b}.rbv-bar i.us{background:#c6a15b}
+.rbv-bar u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink,#141821)}
+.rbv-r b{font:700 13px 'IBM Plex Mono',monospace;text-align:right}.rbv-r em{font-style:normal;font-size:10.5px;color:var(--ink-faint,#8a93a2)}
+.rbv-m{padding:9px 12px;border-radius:10px;border:1px solid var(--line,#e4e7ec);display:grid;gap:5px}
+.rbv-m h5{margin:0;font:700 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}
+.rbv-p{display:grid;grid-template-columns:28px minmax(80px,140px) minmax(0,1fr) 40px;gap:8px;align-items:center}
+.rbv-f{width:28px;height:28px;border-radius:50%;overflow:hidden;display:inline-block;background:var(--panel-2,#f4f5f7)}.rbv-f img{width:100%;height:100%;object-fit:cover;object-position:50% 20%}
+.rbv-pn{font:600 12.5px 'Inter',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rbv-pn i{font-style:normal;font-size:10px;color:var(--ink-faint,#8a93a2);margin-left:5px}
+.rbv-pb{height:10px;border-radius:3px;background:rgba(20,24,33,.07);overflow:hidden}.rbv-pb i{display:block;height:100%;background:#3d4a5c;border-radius:3px}
+.rbv-p b{font:700 12.5px 'IBM Plex Mono',monospace;text-align:right}
+.rbv-mk{font-size:10.5px;color:var(--ink-faint,#8a93a2)}
+body.dark .rbv-bar,body.dark .rbv-pb{background:rgba(255,255,255,.08)}body.dark .rbv-pb i{background:#9aa6b8}body.dark .rbv-bar u{background:#e6e9ef}
+@media (max-width:640px){ .rbv-r{grid-template-columns:96px minmax(0,1fr) 46px} .rbv-r em{display:none} }
+/* their last five games */
+.pl5{display:grid;gap:10px}
+.pl5-h{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 12px}.pl5-h b{font:700 13px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase}.pl5-h span{font-size:11px;color:var(--ink-faint,#8a93a2)}
+.pl5-g{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+@media (max-width:1000px){ .pl5-g{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))} }
+.pl5-c{border:1px solid var(--line,#e4e7ec);border-radius:10px;padding:8px 9px;display:grid;gap:6px;border-top:4px solid #8a93a2;min-width:0}
+.pl5-c.w{border-top-color:#2f9e86}.pl5-c.l{border-top-color:#d8524e}
+.pl5-ch{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.pl5-r{font:800 11px 'IBM Plex Mono',monospace;color:#fff;border-radius:4px;padding:1px 5px;background:#8a93a2}.pl5-c.w .pl5-r{background:#2f9e86}.pl5-c.l .pl5-r{background:#d8524e}
+.pl5-ch b{font:800 16px 'Inter',sans-serif}.pl5-ch i{font-style:normal;font:600 12px 'Inter',sans-serif;color:var(--ink,#141821)}.pl5-ch em{margin-left:auto;font-style:normal;font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+.pl5-svg{width:100%;height:76px;display:block;border-radius:6px;background:var(--panel-2,#f4f5f7)}
+.pl5-up{fill:rgba(47,108,192,.35)}.pl5-dn{fill:rgba(198,161,91,.45)}.pl5-l{fill:none;stroke:var(--ink,#141821);stroke-width:1.3;vector-effect:non-scaling-stroke}
+.pl5-0{stroke:var(--ink-faint,#8a93a2);stroke-width:1;vector-effect:non-scaling-stroke}.pl5-q{stroke:rgba(20,24,33,.12);stroke-width:1;vector-effect:non-scaling-stroke}
+.pl5-qs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}
+.pl5-qs span{display:flex;flex-direction:column;align-items:center;font:700 12px 'IBM Plex Mono',monospace;border-radius:5px;padding:2px 0;background:var(--panel-2,#f4f5f7)}
+.pl5-qs span i{font-style:normal;font-size:9px;color:var(--ink-faint,#8a93a2)}.pl5-qs span.up{color:#2f6cc0}.pl5-qs span.dn{color:#8a6829}
+.pl5-n{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px}
+.pl5-n span{display:flex;flex-direction:column;align-items:center}.pl5-n i{font-style:normal;font:600 9px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}.pl5-n b{font:700 13px 'IBM Plex Mono',monospace}
+.pl5-t td.good{background:rgba(47,158,134,.14);color:#17805a;font-weight:700}.pl5-t td.bad{background:rgba(216,82,78,.12);color:#c0403c;font-weight:700}
+.pl5-t td.res-w{color:#17805a;font-weight:700}.pl5-t td.res-l{color:#c0403c;font-weight:700}.pl5-t tr.tot td{border-top:2px solid var(--ink,#141821);font-weight:700}
+.pl5-k{font-size:10.5px;color:var(--ink-faint,#8a93a2)}
+body.dark .pl5-up{fill:rgba(110,160,230,.4)}body.dark .pl5-dn{fill:rgba(214,170,80,.4)}body.dark .pl5-q{stroke:rgba(255,255,255,.12)}
 /* a report not marked done: one line in place of the card's parts */
 .dash-pendrep{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-top:10px;padding:12px 14px;border:1px dashed var(--line-strong,#cfd4dc);border-radius:10px;background:rgba(127,127,127,.04)}
 .dash-pendrep b{font:700 12px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#c0403c}
