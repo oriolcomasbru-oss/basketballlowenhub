@@ -81,7 +81,9 @@
     { nm: "Chip Flanigan", m: /flanigan/i }, { nm: "Tajh Green", m: /tajh|\bgreen\b/i }, { nm: "Sheldon Edwards", m: /sheldon|edwards/i },
     { nm: "Ferdinand Zylka", m: /zylka/i }, { nm: "Gian Aydinoglu", m: /aydinoglu/i }, { nm: "De'Jour Reaves", m: /reaves/i },
     { nm: "Devin Askew", m: /askew/i }, { nm: "Benjamin Schröder", m: /schr[oö]der/i }, { nm: "Felipe Haase Thiers", m: /haase|thiers/i },
-    { nm: "Zaba Bangala", m: /bangala/i }
+    { nm: "Zaba Bangala", m: /bangala/i },
+    /* in the programme with a card of his own (Oriol, 26/11/2026: "Eddy Edigin: mételo en la mejora con una ficha") */
+    { nm: "Eddy Edigin Jr", m: /\beddy\b|edigin jr/i }
   ];
   var DL = [
     { nm: "Noah Eklou", m: /eklou/i }, { nm: "Esli Edigin", m: /esli/i }, { nm: "Liam", m: /^liam\b/i, missing: true },
@@ -112,6 +114,8 @@
       "Zaba Bangala": [G("Energy and rebounding", "Rebounds as a share of the chances there were, not only the count; the team's rebounding with him on. Effort is rated by the staff.", ["orbp", "drbp", "or", "dr", "torb", "tdrb", "stl"], ["effort"]),
         G("Team impact", "The team with him on the floor, at both ends.", ["net", "ortg", "drtg"])]
     };
+    /* the same goals as Zaba Bangala (Oriol, 26/11/2026: "usas lo mismo para Zaba Bangala que con él") */
+    S["Eddy Edigin Jr"] = S["Zaba Bangala"];
     return S[nm] || [];
   }
 
@@ -328,16 +332,30 @@
 
   /* ------------------------------------------------------------ small charts */
   function svg(tag, attrs) { var n = document.createElementNS("http://www.w3.org/2000/svg", tag); Object.keys(attrs || {}).forEach(function (k) { n.setAttribute(k, attrs[k]); }); return n; }
-  /* a line of values, a dashed line at the season, a marker where a goal began */
+  /* THE USUAL RANGE (Oriol, 26/11/2026: "los gráficos sobremuestran lo que realmente es; debe haber un rango, aunque
+     no sea exacto, en el que te mantienes en promedio"). The charts scaled themselves to the lowest and the highest value
+     read, so a change of a few tenths filled the whole height. Now each shows a grey band - his average, give or take
+     the same margin the cards already judge "the same" by (5 points in a percentage, 3 in a rating, 12% of the value
+     elsewhere) - and never zooms in closer than a span the measure can honestly be read on (30 points in a
+     percentage, 20 in a rating, else four times the margin), nor below nought where nought is the floor */
+  function sameTh(m, base) { return m.pct ? 5 : (m.k === "ortg" || m.k === "drtg" || m.k === "net") ? 3 : Math.max(0.3, Math.abs(base || 0) * 0.12); }
+  function minSpan(m, avg, th) { return m.pct ? 30 : (m.k === "ortg" || m.k === "drtg" || m.k === "net") ? 20 : Math.max(4 * th, Math.abs(avg || 0) * 0.6); }
+  function canNeg(m) { return !!m.sign || m.k === "net" || m.k === "pm"; }
+  function bandOpts(m, avg) { if (avg == null || !isFinite(avg)) return {}; var th = sameTh(m, avg);
+    return { ref: avg, band: [avg - th, avg + th], span: minSpan(m, avg, th), floor0: !canNeg(m) }; }
+  /* a line of values, a dashed line at his average inside the band of his usual range, a marker where a goal began */
   function spark(vals, opts) {
     opts = opts || {}; var W = opts.w || 110, H = opts.h || 26, P = 2;
     var pts = vals.map(function (v, i) { return { i: i, v: v }; }).filter(function (x) { return x.v != null && isFinite(x.v); });
     var s = svg("svg", { viewBox: "0 0 " + W + " " + H, width: W, height: H, class: "pd-spark" });
     if (pts.length < 2) return s;
-    var lo = Math.min.apply(null, pts.map(function (x) { return x.v; }).concat(opts.ref != null ? [opts.ref] : [])),
-        hi = Math.max.apply(null, pts.map(function (x) { return x.v; }).concat(opts.ref != null ? [opts.ref] : []));
+    var vs = pts.map(function (x) { return x.v; }).concat(opts.ref != null ? [opts.ref] : []).concat(opts.band || []);
+    var lo = Math.min.apply(null, vs), hi = Math.max.apply(null, vs);
+    if (opts.span && hi - lo < opts.span) { var mid = (hi + lo) / 2; lo = mid - opts.span / 2; hi = mid + opts.span / 2; }
+    if (opts.floor0 && lo < 0) { hi -= lo; lo = 0; }
     if (hi === lo) { hi += 1; lo -= 1; }
     var X = function (i) { return P + (W - 2 * P) * i / Math.max(1, vals.length - 1); }, Y = function (v) { return H - P - (H - 2 * P) * (v - lo) / (hi - lo); };
+    if (opts.band) s.appendChild(svg("rect", { x: P, y: Y(opts.band[1]).toFixed(1), width: W - 2 * P, height: Math.max(1, Y(opts.band[0]) - Y(opts.band[1])).toFixed(1), class: "band" }));
     if (opts.mark != null && opts.mark >= 0) s.appendChild(svg("line", { x1: X(opts.mark), x2: X(opts.mark), y1: 0, y2: H, class: "mk" }));
     if (opts.ref != null) s.appendChild(svg("line", { x1: P, x2: W - P, y1: Y(opts.ref), y2: Y(opts.ref), class: "ref" }));
     s.appendChild(svg("polyline", { points: pts.map(function (x) { return X(x.i).toFixed(1) + "," + Y(x.v).toFixed(1); }).join(" "), class: "ln " + (opts.tone || "") }));
@@ -351,10 +369,14 @@
     var per = lines.map(function (x) { return value(m, sum([x]), mode); });
     var roll = lines.map(function (x, i) { return value(m, sum(lines.slice(Math.max(0, i - 2), i + 1)), mode); });
     var season = lv ? null : value(m, sum(lines), mode);
-    var all = per.concat(roll).concat([season]).concat(lv ? [lv.b, lv.n] : []).filter(function (v) { return v != null && isFinite(v); });
+    var avgC = value(m, sum(lines), mode), thC = (avgC != null && isFinite(avgC)) ? sameTh(m, avgC) : null;
+    var all = per.concat(roll).concat([season]).concat(lv ? [lv.b, lv.n] : []).concat(thC != null ? [avgC - thC, avgC + thC] : []).filter(function (v) { return v != null && isFinite(v); });
     var s = svg("svg", { viewBox: "0 0 " + W + " " + H, class: "pd-chart", preserveAspectRatio: "none" });
     if (all.length < 2) return s;
-    var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all); if (hi === lo) { hi += 1; lo -= 1; }
+    var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all);
+    if (thC != null) { var spC = minSpan(m, avgC, thC); if (hi - lo < spC) { var mdC = (hi + lo) / 2; lo = mdC - spC / 2; hi = mdC + spC / 2; } }
+    if (!canNeg(m) && lo < 0) { hi -= lo; lo = 0; }
+    if (hi === lo) { hi += 1; lo -= 1; }
     var pad = (hi - lo) * 0.1; lo -= pad; hi += pad;
     var X = function (i) { return L + (W - L - Rr) * (lines.length > 1 ? i / (lines.length - 1) : 0.5); }, Y = function (v) { return T + (H - T - B) * (hi - v) / (hi - lo); };
     [lo + pad, (lo + hi) / 2, hi - pad].forEach(function (v) {
@@ -362,6 +384,7 @@
       var t = svg("text", { x: L - 4, y: Y(v) + 3, class: "ax", "text-anchor": "end" }); t.textContent = fmt(m, v); s.appendChild(t); });
     (marks || []).forEach(function (mk) { if (mk.i < 0) return; s.appendChild(svg("line", { x1: X(mk.i), x2: X(mk.i), y1: T, y2: H - B, class: "mk" }));
       var t = svg("text", { x: X(mk.i) + 3, y: T + 8, class: "mkt" }); t.textContent = mk.t; s.appendChild(t); });
+    if (thC != null) s.appendChild(svg("rect", { x: L, y: Y(avgC + thC), width: W - Rr - L, height: Math.max(1, Y(avgC - thC) - Y(avgC + thC)), class: "band" }));
     if (season != null) s.appendChild(svg("line", { x1: L, x2: W - Rr, y1: Y(season), y2: Y(season), class: "ref" }));
     /* the two levels a goal is judged on: the average before, and the average now */
     if (lv && lv.gi > 0) {
@@ -630,7 +653,7 @@
       t.appendChild(el("span", { class: "c seas" }, fmt(m, seas)));
       var series = r.lines.map(function (x, i) { return value(m, sum(r.lines.slice(Math.max(0, i - 2), i + 1)), UI.mode); });
       var tr = trend(m, r.lines, "3", UI.mode);
-      t.appendChild(el("span", { class: "c tr" }, spark(series, { ref: seas, tone: tr.tone, w: 90, h: 22 })));
+      t.appendChild(el("span", { class: "c tr" }, spark(series, Object.assign({ tone: tr.tone, w: 90, h: 22 }, bandOpts(m, seas)))));
     });
     return el("div", { class: "pd-mxw" }, t);
   }
@@ -674,11 +697,11 @@
          "1.01.02.02.01.0"): a share without its %, ten or more without decimals. The whole
          figure is in the cell's title. */
       return el("span", { class: c + (o.sm ? " sm" : ""), title: ddmm(o.x.d) + " " + (o.x.home ? "vs " : "@ ") + o.x.opp + " · " + m.l + " " + fmt(m, o.v) }, o.v == null ? "—" : (m.pct || Math.abs(o.v) >= 10 ? String(Math.round(o.v)) : fmt(m, o.v))); }));
-    return { t: t, el: el("div", { class: "pd-tile " + t.tone + (t.small ? " sm" : ""), title: (m.note ? m.note + " · " : "") + (t.base != null ? "before " + fmt(m, t.base) : "") + (t.small ? " · small sample" : "") },
+    return { t: t, el: el("div", { class: "pd-tile " + t.tone + (t.small ? " sm" : ""), title: (m.note ? m.note + " · " : "") + (t.base != null ? "before " + fmt(m, t.base) : "") + " · grey band: his usual range, his average give or take " + fmt(Object.assign({}, m, { pct: false, f: m.pct ? 0 : 1 }), sameTh(m, value(m, sum(lines), UI.mode))) + (m.pct ? " points" : "") + (t.small ? " · small sample" : "") },
       el("i", {}, m.l),
       el("div", { class: "tv" }, el("b", {}, fmt(m, t.v)),
         t.d != null ? el("em", {}, (t.tone === "up" ? "▲" : t.tone === "dn" ? "▼" : "▸") + " " + fmt(Object.assign({}, m, { sign: true }), t.d)) : null),
-      spark(series, { ref: t.base, tone: t.tone, w: 120, h: 28 }), gl, lyChip(m, lines, pv)) };
+      spark(series, Object.assign({ tone: t.tone, w: 120, h: 28 }, bandOpts(m, value(m, sum(lines), UI.mode)))), gl, lyChip(m, lines, pv)) };
   }
   /* the players outside the programme: one small line each - who, how much he has played,
      and three numbers - and the full page one tap away */
@@ -1330,6 +1353,7 @@
       ".pd-cards.dash{grid-template-columns:repeat(auto-fill,minmax(440px,1fr))}@media (max-width:640px){.pd-cards.dash{grid-template-columns:minmax(0,1fr)}}",
       ".pd-sep{font:700 11px 'Oswald',sans-serif;letter-spacing:.15em;text-transform:uppercase;margin:14px 0 4px;padding-bottom:4px;border-bottom:2px solid var(--ink,#141821)}",
       ".pd-foot{font-size:11.5px;color:var(--ink-soft,#5b6472);max-width:90ch}",
+      ".pd-spark .band{fill:rgba(120,132,150,.18)}.pd-chart .band{fill:rgba(120,132,150,.13)}",
       ".pd-spark{display:block}.pd-spark .ln{fill:none;stroke:#8a93a2;stroke-width:1.6}.pd-spark .ln.up{stroke:#2f9e86}.pd-spark .ln.dn{stroke:#d8524e}.pd-spark .ref{stroke:#cfd4dc;stroke-dasharray:2 2}.pd-spark .mk{stroke:#c6a15b;stroke-width:1.5}.pd-spark .dot{fill:#5b6472}.pd-spark .dot.up{fill:#2f9e86}.pd-spark .dot.dn{fill:#d8524e}",
       ".pd-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px}.pd-h b{font:700 12px 'Oswald',sans-serif;letter-spacing:.15em;text-transform:uppercase}.pd-hs{font-size:11px;color:var(--ink-faint,#8a93a2)}",
       ".pd-add{margin-left:auto;border:1px solid var(--line-strong,#cfd4dc);background:transparent;border-radius:6px;padding:3px 10px;cursor:pointer;font:700 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink,#141821)}",
