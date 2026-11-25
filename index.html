@@ -17852,6 +17852,270 @@ function _gpCourt(feed, uc, now){
     else p.rest=now-p.last; });
   return P;
 }
+/* ================================================================== THE PAD
+   A BUTTON PANEL FOR THE PHONE, A READING FOR THE iPAD (Oriol, 25/11/2026: "quisiera tener una botonera arriba para
+   yo poder controlar la eficiencia en defensa y ataque. Debe ser muy fácil de anotar y solamente quiero los
+   conceptos. El iPad me da visualización y la botonera la uso en el teléfono móvil"). One tap a possession, no
+   sequence: the phone shows our attack and our defense side by side, the same concepts in both, and a tap writes
+   the concept, the side and the moment - the league's game clock as the phone reads it. Nothing else is asked:
+   the points come from the league's play by play, where the iPad finds the possession of that side at that moment.
+   Transition is one button and the play by play says which it was: after our long shot (a three or a long two)
+   it is TAG, after our close two or a turnover it is BACK - and the same, the other way round, in our attack.
+   The taps are a staff document of their own, one a game day (staff:pad:YYYY-MM-DD), written whole and merged
+   tap by tap, so a second phone or a lost connection loses nothing; the phone keeps them until they are in. */
+const PAD_C=[
+  { k:"pnr_mid",   l:"Middle",      g:"PnR" }, { k:"pnr_side", l:"Side",  g:"PnR" }, { k:"pnr_drag", l:"Drag", g:"PnR" },
+  { k:"pnr_spain", l:"Spain",       g:"PnR" }, { k:"pnr_gg",   l:"Guard–guard", g:"PnR" }, { k:"pnr_pop", l:"Pop", g:"PnR" },
+  { k:"pnr_hip",   l:"Hip",         g:"PnR" },
+  { k:"post",  l:"Post up" }, { k:"off", l:"Off screen" }, { k:"trans", l:"Transition", sub:"TAG / BACK from the play by play" },
+  { k:"iso",   l:"1×1" }, { k:"spec", l:"Special D" }, { k:"press", l:"Full court press" }, { k:"oreb", l:"Off. rebound" }
+];
+const PAD_NAME={}; PAD_C.forEach(c=>{ PAD_NAME[c.k]=(c.g? c.g+" "+c.l.toLowerCase() : c.l); });
+/* where the taps are kept: the server's staff documents (the tests swap these two for a store in memory) */
+const _padIO={
+  load:async key=>{ const r=JSON.parse(await _sbRaw("get_report",{ p_token:SB_TOKEN, p_key:key })); return (r && r.report && r.report.data) || null; },
+  save:async (key, doc)=>{ const w=JSON.parse(await _sbRaw("save_staff_doc",{ p_token:SB_TOKEN, p_key:key, p_data:doc }));
+    if(!w || !w.ok) throw new Error((w && w.error) || "not saved"); return w; }
+};
+function _padKey(date){ let d=String(date||"").slice(0,10); if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){ try{ d=todayISO(); }catch(e){ d=new Date().toISOString().slice(0,10); } } return "staff:pad:"+d; }
+/* two copies made one: every tap of either, once, in the order they were made; a tap undone on either stays undone */
+function _padMerge(a, b){
+  const out={ v:1, taps:[], del:Object.assign({}, (a && a.del)||{}, (b && b.del)||{}) }, seen={};
+  [].concat((a && a.taps)||[], (b && b.taps)||[]).forEach(x=>{ if(!x || !x.id || seen[x.id]) return; seen[x.id]=1; out.taps.push(x); });
+  out.taps.sort((x,y)=>(x.w||0)-(y.w||0));
+  return out;
+}
+function _padSig(doc){ return doc? (doc.taps||[]).length+"|"+Object.keys(doc.del||{}).length : "-"; }
+function _padLive(doc){ return ((doc && doc.taps)||[]).filter(x=>!(doc.del||{})[x.id]); }
+
+/* ---- the phone: the buttons */
+const PAD={ key:"", doc:null, dirty:false, busy:false, err:"", gc:null, gcT:null, gcAt:0, run:false, game:null, tmr:0, ctm:0, lock:null };
+function _padLocalGet(key){ try{ const s=localStorage.getItem("pad:"+key); return s? JSON.parse(s) : null; }catch(e){ return null; } }
+function _padLocalPut(key, o){ try{ localStorage.setItem("pad:"+key, JSON.stringify(o)); }catch(e){_quiet(e)} }
+async function _padSync(){
+  if(PAD.busy || !PAD.key) return; PAD.busy=true;
+  try{
+    if(!SB_TOKEN) throw new Error("sign in to send the taps");
+    const srv=await _padIO.load(PAD.key);
+    const m=_padMerge(srv, PAD.doc);
+    if(_padSig(m)!==_padSig(srv)) await _padIO.save(PAD.key, m);
+    PAD.doc=m; PAD.dirty=false; PAD.err=""; _padLocalPut(PAD.key, { doc:m, dirty:false });
+  }catch(e){ PAD.err=(e && e.message) || "not sent"; _padLocalPut(PAD.key, { doc:PAD.doc, dirty:true }); }
+  PAD.busy=false; _padPaint();
+}
+/* the league's clock, read every three seconds while the pad is open: the moment a tap is stamped with */
+async function _padClock(){
+  try{
+    const g2=await _gpFetchJ("/.netlify/functions/bbl?res=gamecenter&b="+Math.floor(Date.now()/2000), 4000);
+    const all=g2? [].concat(g2.present||[], g2.past||[], g2.future||[]) : [];
+    const ours=all.filter(x=>_lgOurs(x.home||"") || _lgOurs(x.away||""));
+    const g=ours.filter(x=>x.status==="LIVE")[0] || ours.filter(x=>String(x.start||"").slice(0,10)===PAD.key.slice(10))[0] || null;
+    PAD.game=g;
+    if(g && g.status==="LIVE" && !/_break/i.test(String(g.progress||""))){
+      const qi=_gpGcQ(g), tm=String(g.time||"").split(":").map(Number), left=tm.length>=2? tm[tm.length-2]*60+tm[tm.length-1] : NaN;
+      if(qi>=0 && isFinite(left)){
+        const base=qi<4? qi*600 : 2400+(qi-4)*300, len=qi<4? 600 : 300, t=base+Math.max(0, Math.min(len, len-left));
+        PAD.run=PAD.gcT!=null && t!==PAD.gcT; PAD.gcT=t; PAD.gcAt=Date.now(); PAD.gc=g;
+      }
+    } else { PAD.gc=g; PAD.gcT=null; PAD.run=false; }
+  }catch(e){_quiet(e)}
+  _padPaint();
+}
+/* the moment now, in game seconds: the last clock read, run on by the time since if it was running */
+function _padNowT(){
+  if(PAD.gcT==null) return null;
+  const qi=PAD.gcT<2400? Math.min(3, Math.floor(PAD.gcT/600)) : 4+Math.floor((PAD.gcT-2400)/300), end=qi<4? (qi+1)*600 : 2400+(qi-3)*300;
+  return PAD.run? Math.min(end, PAD.gcT+Math.min(6, (Date.now()-PAD.gcAt)/1000)) : PAD.gcT;
+}
+function _padTap(s, c, btn){
+  const t=_padNowT();
+  const tap={ id:Date.now().toString(36)+Math.random().toString(36).slice(2,6), s:s, c:c, w:Date.now(), t:t==null? null : Math.round(t*10)/10,
+    gc:t==null? "" : _lgGameClock(t), by:(SB_ME && (SB_ME.username || SB_ME.name))? String(SB_ME.username || SB_ME.name) : "" };
+  PAD.doc=_padMerge(PAD.doc, { taps:[tap] }); PAD.dirty=true; _padLocalPut(PAD.key, { doc:PAD.doc, dirty:true });
+  try{ navigator.vibrate && navigator.vibrate(12); }catch(e){_quiet(e)}
+  if(btn){ btn.classList.remove("hit"); void btn.offsetWidth; btn.classList.add("hit"); }
+  PAD.last=tap; _padPaint();
+  clearTimeout(PAD.st); PAD.st=setTimeout(_padSync, 350);
+}
+function _padUndo(){
+  const mine=_padLive(PAD.doc); const x=mine[mine.length-1]; if(!x) return;
+  PAD.doc.del=Object.assign({}, PAD.doc.del||{}); PAD.doc.del[x.id]=1; PAD.dirty=true; PAD.last={ undone:x };
+  _padLocalPut(PAD.key, { doc:PAD.doc, dirty:true }); _padPaint();
+  clearTimeout(PAD.st); PAD.st=setTimeout(_padSync, 350);
+}
+function _padOpen(date){
+  _padClose();
+  PAD.key=_padKey(date);
+  const loc=_padLocalGet(PAD.key); PAD.doc=(loc && loc.doc) || { v:1, taps:[], del:{} }; PAD.dirty=!!(loc && loc.dirty);
+  const ov=h("div",{id:"padOv", class:"pad-ov"});
+  const head=h("div",{class:"pad-hd"});
+  const cols=h("div",{class:"pad-cols"});
+  [["o","Attack"],["d","Defense"]].forEach(sd=>{
+    const col=h("div",{class:"pad-col "+sd[0]}, h("div",{class:"pad-ch"}, sd[1]));
+    const pnr=h("div",{class:"pad-pnr"}, h("div",{class:"pad-gh"},"PnR"));
+    PAD_C.forEach(c=>{
+      const b=h("button",{type:"button", class:"pad-b"+(c.g? " sub" : "")+(c.k==="trans"? " tr" : ""), "data-s":sd[0], "data-c":c.k},
+        h("span",{class:"pad-bl"}, c.l), h("i",{class:"pad-n"}, ""));
+      b.addEventListener("click", ev=>{ ev.preventDefault(); _padTap(sd[0], c.k, b); });
+      if(c.g) pnr.appendChild(b); else col.appendChild(b);
+    });
+    col.insertBefore(pnr, col.children[1]);
+    cols.appendChild(col);
+  });
+  const foot=h("div",{class:"pad-ft"});
+  ov.appendChild(head); ov.appendChild(cols); ov.appendChild(foot);
+  document.body.appendChild(ov); document.body.classList.add("pad-on");
+  PAD.ov=ov; PAD.head=head; PAD.foot=foot;
+  /* the screen stays on while the pad is open */
+  try{ if(navigator.wakeLock) navigator.wakeLock.request("screen").then(l=>{ PAD.lock=l; }).catch(_quiet); }catch(e){_quiet(e)}
+  _padClock(); PAD.ctm=setInterval(_padClock, 3000);
+  PAD.tmr=setInterval(()=>{ if(PAD.dirty) _padSync(); else _padPaint(); }, 4000);
+  _padSync();
+}
+function _padClose(){
+  clearInterval(PAD.ctm); clearInterval(PAD.tmr); PAD.ctm=PAD.tmr=0;
+  try{ PAD.lock && PAD.lock.release(); }catch(e){_quiet(e)} PAD.lock=null;
+  const o=document.getElementById("padOv"); if(o) o.remove(); document.body.classList.remove("pad-on"); PAD.ov=null;
+}
+function _padPaint(){
+  if(!PAD.ov || !PAD.ov.isConnected) return;
+  const live=_padLive(PAD.doc), n={};
+  live.forEach(x=>{ const k=x.s+"|"+x.c; n[k]=(n[k]||0)+1; });
+  PAD.ov.querySelectorAll(".pad-b").forEach(b=>{ const v=n[b.dataset.s+"|"+b.dataset.c]||0; b.querySelector(".pad-n").textContent=v? String(v) : ""; });
+  const g=PAD.game, opp=g? (_lgOurs(g.home||"")? "vs "+_lgShort(g.away||"") : "@ "+_lgShort(g.home||"")) : "";
+  const t=_padNowT();
+  const st=PAD.err? "err" : PAD.dirty? "wait" : "ok";
+  PAD.head.innerHTML="";
+  PAD.head.appendChild(h("div",{class:"pad-ttl"}, h("b",{}, "PAD"), opp? h("span",{}, opp) : null));
+  PAD.head.appendChild(h("div",{class:"pad-clk"+(t==null? " off" : "")}, t==null? (g && g.status==="LIVE"? "break" : "no live clock") : _lgGameClock(t)));
+  PAD.head.appendChild(h("span",{class:"pad-st "+st, title:PAD.err||""}, st==="ok"? live.length+" sent" : st==="wait"? "sending…" : "not sent · kept here"));
+  PAD.head.appendChild(h("button",{type:"button", class:"pad-undo", onclick:_padUndo}, "↶ Undo"));
+  PAD.head.appendChild(h("button",{type:"button", class:"pad-x", onclick:_padClose, title:"close the pad"}, "✕"));
+  PAD.foot.innerHTML="";
+  const L=PAD.last;
+  if(L) PAD.foot.appendChild(h("div",{class:"pad-last"+(L.undone? " un" : "")}, L.undone? "Undone · "+PAD_NAME[L.undone.c]+" · "+(L.undone.s==="o"? "attack" : "defense")
+    : PAD_NAME[L.c]+" · "+(L.s==="o"? "attack" : "defense")+(L.gc? " · "+L.gc : " · no clock")));
+}
+/* open straight from a link kept on the phone's home screen: …/#pad */
+/* (after the sign-in, so the pad never covers it: up to two minutes waiting for one) */
+window.addEventListener("load", ()=>{ try{ if(!/^#pad$/i.test(location.hash)) return; let n=0;
+  const go=()=>{ if(SB_TOKEN || n++>120){ _padOpen(); return; } setTimeout(go, 1000); }; setTimeout(go, 1200); }catch(e){_quiet(e)} });
+
+/* ---- the iPad: what each concept returned */
+/* THE POSSESSIONS OF THE GAME, BOTH SIDES, FROM THE PLAY BY PLAY: who had the ball from when to when, what it
+   scored, how it ended - by a turnover, or with what shot (a three, a long two, a close two). A defensive rebound,
+   a turnover or the other side's play hands the ball over; a made basket keeps its and-one with it. */
+function _padPoss(feed){
+  const acts=(feed.actions||[]).map((a,i)=>{ const e=_lgGameElapsed(a.quarter, a.time); return { a:a, t:e.t, qi:e.qi, i:i }; }).sort((p,q)=>(p.t-q.t)||(p.i-q.i));
+  const out=[]; let cur=null, lastQ=-1;
+  const other=c=>c==="A"? "B" : "A";
+  const close=t=>{ if(cur){ cur.t1=Math.max(cur.t0, t); out.push(cur); cur=null; } };
+  const open=(c,t)=>{ cur={ side:c, t0:t, t1:null, pts:0, to:false, last:null }; };
+  const kindOf=a=>{ if(a.action==="P3") return "3";
+    const x=Number(a.x), y=Number(a.y); if(!(x||y)) return "2";
+    try{ const p=_lgShotXY([0,0,0,x,y], { x0:LG_SHOT_X0, scale:1500/280 }), z=_lgZoneOf(p.x, p.y, false); return (z==="rim"||z==="paint")? "close2" : "far2"; }catch(e){ return "2"; } };
+  acts.forEach(o=>{
+    const a=o.a, c=a.teamcode, k=a.action;
+    if(o.qi!==lastQ){ close(o.qi<4? o.qi*600 : 2400+(o.qi-4)*300); lastQ=o.qi; }
+    if(c!=="A" && c!=="B") return;
+    const mine=!!(cur && cur.side===c);
+    if(k==="REB"||k==="TREB"){ if(!mine){ close(o.t); open(c, o.t); } return; }
+    if(k==="TO"||k==="TTO"||(k==="FOUL" && a.info1==="O")){
+      if(!mine){ close(o.t); open(c, o.t); }
+      cur.to=true; cur.last=null; close(o.t); open(other(c), o.t); return; }
+    if(k==="P2"||k==="P3"){
+      if(!mine){ close(o.t); open(c, o.t); }
+      const made=a.result==="+"; cur.last={ kind:kindOf(a), made:made };
+      if(made) cur.pts+=(k==="P3"? 3 : 2);
+      return; }
+    if(k==="FT"){
+      if(!mine){ const prev=out[out.length-1];
+        if(!cur && prev && prev.side===c && prev.t1===o.t){ if(a.result==="+") prev.pts++; return; }
+        close(o.t); open(c, o.t); }
+      if(a.result==="+") cur.pts++;
+    }
+  });
+  close(acts.length? acts[acts.length-1].t : 0);
+  return out;
+}
+/* each tap to its possession: the one of that side under way at that moment, or that ended up to twelve seconds
+   before it (a tap made as the play finished); failing both, one of that side that starts within fifteen seconds
+   after it. A tap later than the last play written waits for the play by play */
+function _padLink(P, taps, uc, lastT){
+  const other=c=>c==="A"? "B" : "A";
+  return taps.map(tp=>{
+    if(tp.t==null || !isFinite(tp.t)) return { tp:tp, p:null, why:"no clock" };
+    if(tp.t>lastT+1) return { tp:tp, p:null, why:"waiting" };
+    const side=tp.s==="o"? uc : other(uc), mine=P.filter(p=>p.side===side);
+    let hit=null;
+    for(let i=mine.length-1;i>=0;i--){ const p=mine[i]; if(p.t0<=tp.t+0.5 && tp.t<=p.t1+12){ hit=p; break; } }
+    if(!hit) hit=mine.filter(p=>p.t0>tp.t && p.t0-tp.t<=15)[0] || null;
+    return { tp:tp, p:hit, why:hit? "" : "no possession" };
+  });
+}
+/* TAG or BACK, from the possession before it of the other side: a three or a long two, made or missed, is TAG; a
+   close two or a turnover is BACK (Oriol, 25/11/2026: "Tag tiro de 3pts o 2pts lejano, back tiro de 2pts cercano") */
+function _padTB(P, p){
+  const i=P.indexOf(p); for(let j=i-1;j>=0;j--){ const q=P[j]; if(q.side===p.side) continue;
+    if(q.to) return "back"; if(!q.last) return ""; const k=q.last.kind;
+    return (k==="3"||k==="far2")? "tag" : k==="close2"? "back" : ""; }
+  return "";
+}
+const _padCache={};
+function _padFetch(key, maxAge){
+  const c=_padCache[key]||(_padCache[key]={ doc:null, at:0, busy:false, sig:"" });
+  if(c.busy || Date.now()-c.at<maxAge) return c;
+  c.busy=true;
+  _padIO.load(key).then(d=>{ c.doc=d; c.err=""; }).catch(e=>{ c.err=(e && e.message) || "not read"; })
+    .then(()=>{ c.at=Date.now(); c.busy=false; const s=_padSig(c.doc); if(s!==c.sig){ c.sig=s; (c.hosts||[]).forEach(f=>{ try{ f(); }catch(e){_quiet(e)} }); } });
+  return c;
+}
+/* THE READING, ON THE iPAD: for our attack and for our defense, each concept tapped - how many possessions, and
+   what they scored or gave away a possession, coloured from five possessions (our defense the other way round:
+   green is little given away). Transition split into TAG and BACK. The whole game, as the play by play has it */
+function _padBlock(o){
+  const key=_padKey(o.date), host=h("div",{class:"pad-rd"});
+  const paint=()=>{
+    if(!host.isConnected && host.__drawn) return;
+    host.__drawn=true;
+    const c=_padFetch(key, o.live? 3000 : 60000);
+    /* drawn again when a newer copy of the taps comes in, as long as this reading is on the page */
+    c.hosts=(c.hosts||[]).filter(f=>f.__h && f.__h.isConnected);
+    if(c.hosts.indexOf(paint)<0){ paint.__h=host; c.hosts.push(paint); }
+    host.innerHTML="";
+    const taps=_padLive(c.doc);
+    const head=h("div",{class:"gp-lv-l pad-rd-h"}, "Concepts · from the pad", h("span",{class:"sq-k"}, "the game · tapped on the phone, scored from the play by play"),
+      h("button",{type:"button", class:"pad-open", onclick:()=>_padOpen(o.date)}, "Open the pad"));
+    host.appendChild(head);
+    if(!taps.length){ host.appendChild(h("div",{class:"pad-rd-e"}, c.doc==null && c.busy? "Reading the pad…" :
+      "Nothing tapped yet. On the phone: Game plan › Open the pad, or the link …/#pad on its home screen. One tap a possession, attack or defense.")); return; }
+    const P=_padPoss(o.feed), L=_padLink(P, taps, o.uc, o.lastT);
+    const agg={ o:{}, d:{} }, used={};
+    L.forEach(x=>{ if(!x.p) return; const k=x.tp.s+"|"+x.tp.c+"|"+P.indexOf(x.p); if(used[k]) return; used[k]=1;
+      const A=agg[x.tp.s][x.tp.c]||(agg[x.tp.s][x.tp.c]={ n:0, pts:0, tag:{ n:0, pts:0 }, back:{ n:0, pts:0 } });
+      A.n++; A.pts+=x.p.pts;
+      if(x.tp.c==="trans"){ const tb=_padTB(P, x.p); if(tb){ A[tb].n++; A[tb].pts+=x.p.pts; } } });
+    const step=v=>v<0.5? 0 : v<0.8? 1 : v<1.0? 2 : v<1.25? 3 : v<1.6? 4 : 5;
+    const side=(s, title)=>{
+      const rows=Object.keys(agg[s]).map(k=>Object.assign({ k:k }, agg[s][k])).sort((a,b)=>b.n-a.n);
+      const max=rows.reduce((m,r)=>Math.max(m,r.n),1), N=rows.reduce((a,r)=>a+r.n,0), PT=rows.reduce((a,r)=>a+r.pts,0);
+      const col=h("div",{class:"pad-rd-c "+s}, h("div",{class:"pad-rd-ch"}, h("b",{}, title), h("span",{}, N? N+" poss · "+(PT/N).toFixed(2)+(s==="o"? " scored" : " given") : "nothing yet")));
+      rows.forEach(r=>{ const v=r.pts/r.n, e=r.n>=5? (s==="o"? step(v) : 5-step(v)) : -1;
+        const tb=r.k==="trans" && (r.tag.n||r.back.n)? h("em",{class:"pad-tb"},
+          r.tag.n? "TAG "+(r.tag.pts/r.tag.n).toFixed(2)+" ("+r.tag.n+")" : "", r.tag.n && r.back.n? " · " : "", r.back.n? "BACK "+(r.back.pts/r.back.n).toFixed(2)+" ("+r.back.n+")" : "") : null;
+        col.appendChild(h("div",{class:"pad-rd-r", title:PAD_NAME[r.k]+": "+r.pts+" points in "+r.n+" possessions"+(r.n<5? " · under 5, no colour" : "")},
+          h("span",{class:"pad-rd-k"}, PAD_NAME[r.k], tb),
+          h("span",{class:"pad-rd-bar"}, h("i",{style:"width:"+Math.max(6, Math.round(100*r.n/max))+"%"}), h("b",{}, String(r.n))),
+          h("span",{class:"pad-rd-v "+(e<0? "few" : "e"+e)}, v.toFixed(2)))); });
+      return col; };
+    host.appendChild(h("div",{class:"pad-rd-g"}, side("o","Our attack"), side("d","Our defense")));
+    const wait=L.filter(x=>!x.p).length;
+    if(wait) host.appendChild(h("div",{class:"pad-rd-n"}, wait+" tap"+(wait===1? "" : "s")+" not matched yet - "+
+      (L.some(x=>x.why==="waiting")? "the play by play has not reached them" : L.some(x=>x.why==="no clock")? "made with no live clock" : "no possession of that side at that moment")));
+  };
+  paint();
+  return host;
+}
 function _gpLiveBlock(){
   const wrap=h("div",{class:"gp-live"});
   /* where all the numbers go when the panel has a half-time zone to put them in */
@@ -17860,7 +18124,10 @@ function _gpLiveBlock(){
   wrap.__tabs2=h("div",{class:"gp-live-tabs gp-live-tabs2"});
   const opp=_scoutOpponent||"", date=_scoutDate||"";
   const stat=h("span",{class:"gp-live-st"},"");
-  wrap.appendChild(h("div",{class:"gp2-sec gp-live-h"}, "The game · from the play by play", stat));
+  wrap.appendChild(h("div",{class:"gp2-sec gp-live-h"}, "The game · from the play by play",
+    /* the phone's button panel, opened from here (or from …/#pad on its home screen) */
+    isPlayerUser()? null : h("button",{type:"button", class:"gp-pad-b", title:"the phone's button panel: one tap a possession, attack or defense", onclick:()=>_padOpen(_scoutDate||"")}, "Pad"),
+    stat));
   wrap.__stat=stat;
   const tabs=h("div",{class:"gp-live-tabs"}), body=h("div",{class:"gp-live-b"});
   wrap.appendChild(tabs); wrap.appendChild(body);
@@ -18200,6 +18467,8 @@ function _gpLiveBlock(){
           h("span",{class:"sq-k"}, "width: share of the shots · colour: points a shot")), row("US", zu), row("THEM", zt)));
       }
     }
+    /* the pad's reading: what each concept tapped on the phone returned, from this game's play by play */
+    if(!isPlayerUser()){ try{ body.appendChild(_padBlock({ feed:feed, uc:uc, date:date, live:live, lastT:lastT })); }catch(e){_quiet(e)} }
     /* all the numbers live in the half-time zone of the panel when there is one; elsewhere one tap
        away here */
     if(wrap.__statsHost && wrap.__statsHost.isConnected){ wrap.__statsHost.innerHTML=""; wrap.__statsHost.appendChild(more); }
@@ -45140,6 +45409,71 @@ body.dark .gp-sq .sq-t.e2{background:#5a2e28;color:#ffd6cf}body.dark .gp-sq .sq-
 .gp-sq .sq-tot{align-self:center;display:flex;flex-direction:column;align-items:flex-end;line-height:1.1}
 .gp-sq .sq-tot b{font:800 17px Inter,system-ui,sans-serif;font-variant-numeric:tabular-nums}
 .gp-sq .sq-tot em{font:600 10.5px "IBM Plex Mono",monospace;font-style:normal;color:var(--ink-soft,#5b6472)}
+/* ================================================================== THE PAD (phone)
+   Dark and high contrast whatever the theme - it is read in a hall, at a glance, with a thumb - and nothing that
+   moves the page: a tap is a tap, never a zoom or a scroll */
+body.pad-on{overflow:hidden}
+.pad-ov{position:fixed;inset:0;z-index:9500;display:flex;flex-direction:column;gap:6px;background:#0d1116;color:#eef1f5;
+  padding:calc(6px + env(safe-area-inset-top,0px)) calc(8px + env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) calc(8px + env(safe-area-inset-left,0px));
+  font-family:Inter,system-ui,sans-serif;-webkit-user-select:none;user-select:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.pad-hd{display:flex;align-items:center;gap:8px;min-height:40px}
+.pad-ttl{display:flex;align-items:baseline;gap:6px;min-width:0}
+.pad-ttl b{font:700 15px "Oswald",sans-serif;letter-spacing:.14em}
+.pad-ttl span{font:600 12px Inter,system-ui,sans-serif;color:#aeb6c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pad-clk{margin-left:auto;font:700 15px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;padding:3px 8px;border-radius:6px;background:#1b222b}
+.pad-clk.off{font:600 11px Inter,system-ui,sans-serif;color:#aeb6c2}
+.pad-st{font:600 10.5px Inter,system-ui,sans-serif;padding:3px 7px;border-radius:999px;white-space:nowrap}
+.pad-st.ok{background:#173d2f;color:#8fe0bb}.pad-st.wait{background:#4a3b12;color:#ffd98a}.pad-st.err{background:#4a1f1a;color:#ffb0a6}
+.pad-undo,.pad-x{white-space:nowrap;font:700 13px Inter,system-ui,sans-serif;color:#eef1f5;background:#232b35;border:1px solid #34404d;border-radius:8px;min-height:38px;padding:0 10px}
+.pad-x{min-width:38px;padding:0}
+.pad-cols{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:8px;overflow:auto}
+.pad-col{display:flex;flex-direction:column;gap:6px;min-width:0}
+.pad-ch{font:700 13px "Oswald",sans-serif;letter-spacing:.16em;text-transform:uppercase;text-align:center;padding:5px 0;border-radius:7px}
+.pad-col.o .pad-ch{background:#1f8a4c;color:#fff}.pad-col.d .pad-ch{background:#c0392b;color:#fff}
+.pad-pnr{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:5px;border-radius:10px;background:#151b22;border:1px solid #26303b}
+.pad-gh{grid-column:1/-1;font:700 11px "Oswald",sans-serif;letter-spacing:.16em;color:#aeb6c2;padding:0 2px}
+.pad-b{position:relative;display:flex;align-items:center;justify-content:center;text-align:center;min-height:54px;padding:4px 6px;border-radius:10px;
+  background:#1c232c;border:1px solid #303b47;color:#f4f6f9;font:700 15px/1.1 Inter,system-ui,sans-serif;cursor:pointer;touch-action:manipulation}
+.pad-b.sub{min-height:46px;font-size:13.5px}
+.pad-b.tr{background:#1d2633;border-color:#3d5878}
+.pad-b:active{transform:scale(.97)}
+.pad-col.o .pad-b.hit{animation:padHitO .45s ease-out}.pad-col.d .pad-b.hit{animation:padHitD .45s ease-out}
+@keyframes padHitO{0%{background:#2ecc71;color:#06210f}100%{background:#1c232c}}
+@keyframes padHitD{0%{background:#ff6b5b;color:#2a0905}100%{background:#1c232c}}
+.pad-n{position:absolute;top:4px;right:6px;font:700 10.5px "IBM Plex Mono",monospace;color:#8f9aa8;font-style:normal}
+.pad-ft{min-height:28px;display:flex;align-items:center;justify-content:center}
+.pad-last{font:600 12.5px Inter,system-ui,sans-serif;color:#cfd6df;padding:4px 10px;border-radius:999px;background:#1b222b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.pad-last.un{color:#ffd98a}
+@media (min-width:700px){ .pad-b{min-height:64px;font-size:17px} .pad-b.sub{min-height:54px;font-size:15px} }
+
+/* ---- the reading in the game plan (iPad) */
+.pad-rd{margin:10px 0 4px;padding:0 8px}
+.pad-rd-h{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.pad-rd-h .pad-open{margin-left:auto;font:700 11px "Oswald",sans-serif;letter-spacing:.08em;text-transform:uppercase;padding:5px 10px;border-radius:999px;
+  border:1px solid var(--line-strong,#d7dbe0);background:var(--panel,#fff);color:var(--ink,#141821);cursor:pointer}
+.pad-rd-e,.pad-rd-n{font:500 12px Inter,system-ui,sans-serif;color:var(--ink-soft,#5b6472);margin:6px 0}
+.pad-rd-g{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;margin-top:6px}
+@media (max-width:640px){ .pad-rd-g{grid-template-columns:minmax(0,1fr)} }
+.pad-rd-ch{display:flex;align-items:baseline;gap:8px;padding:0 0 4px;border-bottom:2px solid var(--ink,#141821);margin-bottom:4px}
+.pad-rd-c.o .pad-rd-ch{border-color:#1f8a4c}.pad-rd-c.d .pad-rd-ch{border-color:#c0392b}
+.pad-rd-ch b{font:700 12px "Oswald",sans-serif;letter-spacing:.12em;text-transform:uppercase}
+.pad-rd-ch span{font:600 11px "IBM Plex Mono",monospace;color:var(--ink-soft,#5b6472)}
+.pad-rd-r{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) 52px;gap:8px;align-items:center;padding:3px 0}
+.pad-rd-k{font:600 12.5px Inter,system-ui,sans-serif;min-width:0;display:flex;flex-direction:column}
+.pad-rd-k .pad-tb{font:600 10.5px "IBM Plex Mono",monospace;font-style:normal;color:var(--ink-soft,#5b6472)}
+.pad-rd-bar{position:relative;height:16px;border-radius:4px;background:var(--line,#eceef1);overflow:hidden}
+.pad-rd-bar i{position:absolute;left:0;top:0;bottom:0;background:#9fb3c8}
+.pad-rd-c.o .pad-rd-bar i{background:#9fd3b6}.pad-rd-c.d .pad-rd-bar i{background:#f0b4ae}
+.pad-rd-bar b{position:relative;padding-left:6px;font:700 11px/16px "IBM Plex Mono",monospace}
+.pad-rd-v{text-align:center;font:800 13px Inter,system-ui,sans-serif;font-variant-numeric:tabular-nums;border-radius:6px;padding:3px 0;background:#eef0f3;color:var(--ink,#141821)}
+.pad-rd-v.few{color:var(--ink-soft,#5b6472)}
+.pad-rd-v.e0{background:#c53727;color:#fff}.pad-rd-v.e1{background:#ea8b77;color:#3d1009}.pad-rd-v.e2{background:#f7d3cb;color:#7a2216}
+.pad-rd-v.e3{background:#d6eee2;color:#0f4a34}.pad-rd-v.e4{background:#8fd0b0;color:#0b3b28}.pad-rd-v.e5{background:#17805a;color:#fff}
+body.dark .pad-rd-v{background:#2c333d;color:#e6e9ee}body.dark .pad-rd-v.e2{background:#5a2e28;color:#ffd6cf}body.dark .pad-rd-v.e3{background:#1f4a3a;color:#c9f0dd}
+body.dark .pad-rd-h .pad-open{background:#242a33;color:#eef1f5}
+/* the button in the game plan's head, to open the pad on the phone */
+.gp-live-h .gp-pad-b{margin-left:10px;font:700 11px "Oswald",sans-serif;letter-spacing:.08em;text-transform:uppercase;padding:4px 10px;border-radius:999px;
+  border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer;vertical-align:middle}
 .gp-sq .sq-s.in{background:#2f9e86}.gp-sq .sq-s.mid{background:#9aa1ab}.gp-sq .sq-s.mid.warn{background:#d8524e}.gp-sq .sq-s.th{background:#3b6fd8}
 /* half time and review: folded under one heading */
 .gp5-review{margin:10px 0;border:1px solid var(--line-strong,#cfd4dc);border-radius:12px;background:var(--panel,#fff)}
