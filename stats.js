@@ -3997,6 +3997,10 @@
       "it and is left out of the line rather than counted as a nought.");
     var bySet = {}, order = [];
     var SET_FAMS = { "Half court set": 1, "OOB (SLOB/BLOB)": 1, "ATO": 1 };
+    /* WHAT IS RANKED (Oriol, 25/11/2026: "todo early offense"): the sets, and the whole of the early
+       offense with them - 7 was out while 77, 54 and 5 side were in, only because of the list it is
+       tagged in. The transition (fastbreak, rim runner, trailer) and what came out of no set are not */
+    var RANK_FAMS = { "Half court set": 1, "OOB (SLOB/BLOB)": 1, "ATO": 1, "Secondary break": 1 };
     games.forEach(function (g, gi) {
       (g.m && g.m.poss ? g.m.poss : []).forEach(function (q) {
         var fam = actionFamily(q.first);
@@ -4108,7 +4112,7 @@
        the name, green for the best and red for the worst, and nothing else on the row. Ranked on points per
        possession over the season, among the sets called often enough to be ranked at
        all - the same cut as the colour: under it a season figure is an anecdote. */
-    var rankable = rows.filter(function (r) { return r.n >= MIN && SET_FAMS[r.fam]; })
+    var rankable = rows.filter(function (r) { return r.n >= MIN && RANK_FAMS[r.fam]; })
       .sort(function (a, b) { return (b.pts / b.n) - (a.pts / a.n) || (b.n - a.n); });
     var nMark = Math.min(8, Math.floor(rankable.length / 2));
     var bestAt = {}, worstAt = {};
@@ -4279,7 +4283,7 @@
     var away = function (ev) { if (!document.body.contains(tbl)) { document.removeEventListener("click", away, true); return; }
       if (!tbl.contains(ev.target)) xOff(); };
     document.addEventListener("click", away, true);
-    return rows.filter(function (r) { return r.n >= MIN && SET_FAMS[r.fam]; });
+    return rows.filter(function (r) { return r.n >= MIN && RANK_FAMS[r.fam]; });
   }
 
 
