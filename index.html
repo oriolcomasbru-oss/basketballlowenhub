@@ -2628,6 +2628,7 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
 .pcn-fam.ed .pcn-fh > span{margin-left:auto}
 .pcn-fh .pcn-grip{color:rgba(255,255,255,.75);font-size:13px}
 .pcn-fam.c-gold .pcn-fh .pcn-grip{color:rgba(0,0,0,.45)}
+.pcn-fam.c-gold .pcn-fh .pb-x{background:rgba(0,0,0,.12);color:#14130b}
 .pcn-row{display:grid;grid-template-columns:minmax(110px,190px) minmax(0,1fr);gap:4px 12px;align-items:baseline;padding:6px 13px;border-top:1px solid var(--line)}
 .pcn-fh + .pcn-row{border-top:0}
 .pcn-c{font-weight:700;font-size:13px;line-height:1.3;color:var(--ink)}
@@ -22617,6 +22618,10 @@ function _pbConFams(data, mode){
       fh.appendChild(grip("Drag the family to reorder", ()=>({type:"pcnfam", n:n}))); fh.appendChild(ti); fh.appendChild(cs);
     } else fh.appendChild(h("b",{}, n));
     fh.appendChild(h("span",{}, L.length+" concept"+(L.length===1? "" : "s")));
+    /* a family taken off whole, with its concepts, as a card of the other tabs (Oriol, 26/11/2026: "debo poder
+       eliminar secciones"); Ctrl+Z brings it back */
+    if(ed && L.length) fh.appendChild(h("button",{class:"pb-x", title:"Delete the family and its "+L.length+" concept"+(L.length===1? "" : "s"),
+      onclick:()=>{ commit(()=>{ L.forEach(s=>{ const i=data.indexOf(s); if(i>=0) data.splice(i,1); }); }); redraw(); }},"✕"));
     const box=h("div",{class:"pcn-fam c-"+col+(ed? " ed" : "")}, fh);
     if(ed) dropOn(box, d=>d.type==="pcnfam" && d.n!==n, d=>moveFam(d.n, n));
     L.forEach(s=>{
