@@ -3302,13 +3302,13 @@ function persist(){
    changed what since: a day changed here wins over the server's, a day changed only there
    comes in, and a day changed in both keeps this one - unless this one is only the
    calendar's seed and the server's has been worked on. A read that fails writes nothing. */
-const PLAN_DOC_KEY="staff:planning", PLAN_DOC_FIELDS=["plays","playbookOff","playbookDef","playbookAto","playbookVideo"];
+const PLAN_DOC_KEY="staff:planning", PLAN_DOC_FIELDS=["plays","playbookOff","playbookDef","playbookAto","playbookVideo","playbookCon"];
 const _pJ=x=>JSON.stringify(x==null? null : x);
 let _planBase, _planBaseJ=null, _planSyncBusy=false, _planSyncAgain=false, _planSyncT=0, _planSyncAt=0;
 const _planSrv={ at:0, err:"", busy:false };
 function _planDocLocal(){ const P=state.plan||{};
   return { sessions:P.sessions||{}, plays:P.plays||null, playbookOff:state.playbookOff||null, playbookDef:state.playbookDef||null,
-           playbookAto:state.playbookAto||null, playbookVideo:state.playbookVideo||null }; }
+           playbookAto:state.playbookAto||null, playbookVideo:state.playbookVideo||null, playbookCon:state.playbookCon||null }; }
 function _planDocPick(d){ if(!d) return null; const o={ sessions:d.sessions||{} }; PLAN_DOC_FIELDS.forEach(k=>{ o[k]=d[k]==null? null : d[k]; }); return o; }
 function _planTouched(arr){ return (arr||[]).some(x=>x && (!x.fromSheet || (x.blocks||[]).length || x.goal || x.notes || x.start)); }
 /* A PLAYBOOK IS MERGED SET BY SET, AND THE FACTORY LIST NEVER BEATS ANYTHING (Oriol, 31/10/2026:
@@ -3317,7 +3317,7 @@ function _planTouched(arr){ return (arr||[]).some(x=>x && (!x.fromSheet || (x.bl
    server's over its own, and the first copy on the server was the factory list. Now a list that is
    still the factory's gives way to the server's, and two lists that really differ are put together:
    what only one side has stays, unless the other had it and took it off */
-const PB_LISTS={ playbookOff:"off", playbookDef:"def", playbookAto:"ato" };
+const PB_LISTS={ playbookOff:"off", playbookDef:"def", playbookAto:"ato", playbookCon:"con" };
 const _pbN=s=>String(s||"").trim().toLowerCase();
 function _pbShape(L){ return _pJ((L||[]).map(s=>[_pbN(s.title), (s.entries||[]).map(e=>[_pbN(e.label), _pbN(e.detail)])])); }
 function _pbIsFactory(kind, L){
@@ -3444,7 +3444,7 @@ async function _planSync(){
       const c=JSON.parse(mJ);
       state.plan.sessions=c.sessions;
       if(c.plays!=null) state.plan.plays=c.plays;
-      ["playbookOff","playbookDef","playbookAto","playbookVideo"].forEach(k=>{ if(c[k]!=null) state[k]=c[k]; });
+      ["playbookOff","playbookDef","playbookAto","playbookVideo","playbookCon"].forEach(k=>{ if(c[k]!=null) state[k]=c[k]; });
       try{ await Store.set("kv","appState", state); }catch(e){_quiet(e)}
       try{ if(state.ui.view==="planification") renderPlan(); if(state.ui.view==="playbook") renderPlaybook(); }catch(e){_quiet(e)}
     }
@@ -3474,7 +3474,7 @@ try{ document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) _p
    What one copy of the Playbook has that another has not: a section by its name, a call by its name
    (or its detail when it has no name). The offense and the old ATO's sheet count as one list. */
 function _pbItemsOf(doc){ const M=new Map();
-  ["playbookOff","playbookAto","playbookDef"].forEach(k=>{ const side=k==="playbookDef"? "def" : "off", lab=side==="def"? "Defense" : "Offense";
+  ["playbookOff","playbookAto","playbookDef","playbookCon"].forEach(k=>{ const side=k==="playbookDef"? "def" : k==="playbookCon"? "con" : "off", lab=side==="def"? "Defense" : side==="con"? "Offense by concepts" : "Offense";
     ((doc && doc[k])||[]).forEach(s=>{ const t=_pbN(s.title), es=(s.entries||[]).filter(_pbSaid);
       if(!t && !es.length) return;
       M.set(side+"|"+t, { sec:true, side:side, t:t, lab:lab+" › "+(s.title||"(no name)") });
@@ -3495,7 +3495,7 @@ async function _pbCopySave(doc, why, lost){
   if(!idx || !Array.isArray(idx.list)) idx={ v:1, next:0, list:[] };
   const slot=(+idx.next||0)%PB_COPY_N, at=new Date().toISOString();
   const copy={ v:1, at:at, by:currentUser||"", why:why, lost:(lost||[]).slice(0,60),
-    playbookOff:doc.playbookOff||null, playbookDef:doc.playbookDef||null, playbookAto:doc.playbookAto||null, playbookVideo:doc.playbookVideo||null, plays:doc.plays||null };
+    playbookOff:doc.playbookOff||null, playbookDef:doc.playbookDef||null, playbookAto:doc.playbookAto||null, playbookVideo:doc.playbookVideo||null, playbookCon:doc.playbookCon||null, plays:doc.plays||null };
   const w=JSON.parse(await _sbRaw("save_staff_doc",{ p_token:SB_TOKEN, p_key:"staff:playbook-copy:"+slot, p_data:copy }));
   if(!w || !w.ok) return false;
   idx.list=idx.list.filter(x=>x && x.slot!==slot);
@@ -3513,7 +3513,7 @@ function _pbBringBack(doc){ let n=0;
     o.entries=o.entries||[];
     es.forEach(e=>{ if(o.entries.some(x=>(e.id && x.id===e.id) || (_pbN(x.label)===_pbN(e.label) && (_pbN(e.label) || _pbN(x.detail)===_pbN(e.detail))))) return;
       o.entries.push(JSON.parse(JSON.stringify(e))); n++; }); }); };
-  commit(()=>{ into(pbData("off"), doc.playbookOff); into(pbData("off"), doc.playbookAto); into(pbData("def"), doc.playbookDef);
+  commit(()=>{ into(pbData("off"), doc.playbookOff); into(pbData("off"), doc.playbookAto); into(pbData("def"), doc.playbookDef); into(pbData("con"), doc.playbookCon);
     if(doc.playbookVideo && doc.playbookVideo.url && !(state.playbookVideo && state.playbookVideo.url)){ state.playbookVideo=JSON.parse(JSON.stringify(doc.playbookVideo)); n++; } });
   persist();
   return n; }
@@ -22359,6 +22359,43 @@ function _lgFourTrend(TB){
 /* ===== Offense / Defense playbooks — fully editable, drag & drop ===== */
 function defaultPlaybook(kind){
   const S=(t,c,e)=>({id:uid(),title:t,color:c,entries:e.map(x=>({id:uid(),label:x[0],detail:x[1]||""}))});
+  /* OFFENSE BY CONCEPTS (Oriol, 26/11/2026: "añade otra visión de playbook offense, se llama Offense by concepts; sigue el
+     mismo esquema"): the same sets, read by what they are for - a card a concept, its sets the calls. Green the actions
+     off the ball, purple the Spain, navy the pick and rolls, red what attacks a coverage. The concepts with nothing under
+     them yet are there to be filled in */
+  if(kind==="con") return [
+    S("Guard to guard","green",[["Elbow 2"],["1"],["15"],["14"]]),
+    S("Hip","green",[["2 hip"],["3 hip"],["Chest series","4 or 5"]]),
+    S("Felipe flare / pop","green",[["54"],["52"],["3 C"],["15"],["7"]]),
+    S("Roll over rim","green",[["2 Special"],["3 hip"],["2 hip"]]),
+    S("Offscreens","green",[["Veer","Fist C · Fist Side · 3 Side · Elbow side · Thumbs side"],["Twirl 4","2 C"],["Floppy","2 Side"],["1 exit","5 Side · 2"],["DHO","12 · Elbow 5"]]),
+    S("Double drag","green",[["77"],["2 C"]]),
+    S("Spain flare","purple",[["2 Flash"],["Thumbs flash"]]),
+    S("Spain","purple",[["2 Down"],["Thumbs down"],["3 Down"]]),
+    S("Safety set PnR","navy",[["Elbow Vueltas"],["Elbow 5"]]),
+    S("Ball inside","gold",[["2 Down"],["Fist 4"]]),
+    S("PnR for 1","navy",[["Elbow 4"],["5 Zoom"],["2"],["Elbow 2"]]),
+    S("PnR for 2","navy",[["2"],["Elbow 2"],["3"],["5 Dribble"],["5 Side"]]),
+    S("PnR for 3","navy",[["Fist"]]),
+    S("PnR for 4","navy",[["Fist 4"],["54","also as the last PnR"],["7","2nd side"],["3","PnR side"],["Chest 24"],["Chest 54"]]),
+    S("Side PnR","navy",[["3"],["7","2nd side"]]),
+    S("Middle PnR · elbow out (2E)","navy",[["3"],["5 Zoom"],["5 Side","DHO + PnR"],["Elbow Vueltas"],["7","3rd side"],["77"],["72"]]),
+    S("Middle PnR · elbow in (2C / SS)","navy",[["Elbow 2"],["Elbow 4"],["Elbow 5"],["5 Side"],["1"],["15"],["14","DHO + PnR"],["5 Dribble"]]),
+    S("Frontal PnR","navy",[["Chest series"],["Fist"],["Fist 4"]]),
+    S("Flat + stunt","red",[["Elbow 2","corner cut"]]),
+    S("Red / Green 5","red",[]),
+    S("Black 4","red",[["54"],["Chest 24"],["Chest 54"],["Fist 4"]]),
+    S("Black 5","red",[]),
+    S("Black finals","red",[["Chest series","inside / 1x1 / oreja"]]),
+    S("Toplock","red",[]),
+    S("Offscreens flat","red",[]),
+    S("Offscreens high","red",[]),
+    S("Long bump","red",[]),
+    S("Short bump","red",[]),
+    S("Ice / weak · avoid","red",[]),
+    S("Ice / weak · attack pop / hip","red",[]),
+    S("5 pop + 4 roll","red",[])
+  ];
   if(kind==="def") return [
     S("PnR vs 5","dark",[["Black","switch"],["Red","hedge"],["Bite","trap + high last"],["Under","Early or high pnr. Under or over + flat"],["Green","Hedge&plug"]]),
     S("PnR vs 4","dark",[["Red","hedge"],["Black","switch"]]),
@@ -22394,6 +22431,7 @@ function pbData(kind){
      ATO's and the whole factory list back in offense and defense: only a list that was never there
      is started now */
   if(kind==="def"){ if(!Array.isArray(state.playbookDef)) state.playbookDef=defaultPlaybook("def"); return state.playbookDef; }
+  if(kind==="con"){ if(!Array.isArray(state.playbookCon)) state.playbookCon=defaultPlaybook("con"); return state.playbookCon; }
   if(!Array.isArray(state.playbookOff)) state.playbookOff=defaultPlaybook("off");
   /* NO ATO'S SHEET ANY MORE (Oriol, 16/11/2026: "quita lo de ATO's"). It had been a sheet of its own
      since the first ATO section moved out of the offense; whatever is written in it goes back to the
@@ -22451,7 +22489,7 @@ function renderPlaybook(){
       _pbPlayerLoad(); return; }
     _pbPlayerLoad();
   }
-  const kind = state.ui.pbTab==="def" ? "def" : "off";
+  const kind = state.ui.pbTab==="def" ? "def" : (state.ui.pbTab==="con" && !isPlayerUser()) ? "con" : "off";
   pbData("off");   /* an ATO's sheet left from before goes back into the offense whichever tab opens */
   const data=pbData(kind);
   const canEd = !!state.ui.pbEdit && !isPlayerUser();
@@ -22465,6 +22503,7 @@ function renderPlaybook(){
   const head=h("div",{class:"pb-head"},
     h("div",{class:"pb-toggle"},
       h("button",{class:"pb-tg"+(kind==="off"?" active":""),onclick:()=>{state.ui.pbTab="off";persist();renderPlaybook();}},"Offense"),
+      isPlayerUser()? null : h("button",{class:"pb-tg"+(kind==="con"?" active":""),onclick:()=>{state.ui.pbTab="con";persist();renderPlaybook();}},"Offense by concepts"),
       h("button",{class:"pb-tg"+(kind==="def"?" active":""),onclick:()=>{state.ui.pbTab="def";persist();renderPlaybook();}},"Defense")),
     isPlayerUser()? null : h("button",{class:"btn pb-editbtn"+(canEd?" primary":""),onclick:()=>{state.ui.pbEdit=!state.ui.pbEdit;persist();renderPlaybook();}}, canEd?"✓ Done":"✎ Edit"));
   /* THE COPIES KEPT BEFORE ANYTHING WAS TAKEN OFF (16/11/2026): the staff who edit can bring back what
