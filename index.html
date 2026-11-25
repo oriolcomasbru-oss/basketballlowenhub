@@ -3398,19 +3398,31 @@ function _pbIsFactory(kind, L){
 /* a line of the factory's says nothing about what a browser added - the first list too, from before
    the sheet of 22/10 was written in */
 function _pbSaid(e){ return !!(_pbN(e.label) || _pbN(e.detail) || e.img); }
-function _pbFactoryLine(kind, lab){ const n=_pbN(lab); if(!n) return true; if(kind==="ato") return false;
+/* WHAT WAS WRITTEN IN OFFENSE BY CONCEPTS WENT ON THE WAY TO THE SERVER (Oriol, 26/11/2026: "estoy trabajando en la
+   página y de repente escribo y me desaparecen partes"). With no agreed copy to compare (two tabs, a restored backup)
+   a new section whose calls were all names of the factory list was taken for the factory's and left out, and so was a
+   new call with such a name. In the concepts every set's name is in the factory list, so a new family, a concept or a
+   set moved or typed there went. There a call is the factory's only under the same concept of the factory list */
+let _pbConSeedM=null;
+function _pbConSeed(){ if(!_pbConSeedM){ _pbConSeedM={}; defaultPlaybook("con").forEach(s=>{ _pbConSeedM[_pbN(s.title)]=s.entries.map(e=>_pbN(e.label)); }); } return _pbConSeedM; }
+function _pbFactoryLine(kind, lab, secTitle){ const n=_pbN(lab); if(!n) return true; if(kind==="ato") return false;
+  if(kind==="con"){ const f=_pbConSeed()[_pbN(secTitle)]; return !!(f && f.indexOf(n)>=0); }
   return n==="early / high pnr" || defaultPlaybook(kind).some(s=>s.entries.some(e=>_pbN(e.label)===n)); }
 function _pbMergeList(kind, B, L, S, hasBase){
-  const findS=(A,x)=>(A||[]).find(y=>x.id && y.id===x.id) || (A||[]).find(y=>_pbN(y.title)===_pbN(x.title));
+  /* a section is found by its id; by its name only when it has one, and not when the one of that name is a section
+     of its own on the other side (two concepts with no name yet, or two of the same name, were taken for one and
+     one of them went) */
+  const idsL=new Set((L||[]).map(s=>s.id).filter(Boolean)), idsS=new Set((S||[]).map(s=>s.id).filter(Boolean));
+  const findS=(A,x,ex)=>(A||[]).find(y=>x.id && y.id===x.id) || (_pbN(x.title)? (A||[]).find(y=>_pbN(y.title)===_pbN(x.title) && !(y.id && ex && ex.has(y.id))) : null);
   const findE=(A,x)=>(A||[]).find(y=>x.id && y.id===x.id) || (_pbN(x.label)? (A||[]).find(y=>_pbN(y.label)===_pbN(x.label)) : null);
   const same=(a,b)=>_pbN(a.label)===_pbN(b.label) && _pbN(a.detail)===_pbN(b.detail);
   const out=JSON.parse(JSON.stringify(S||[]));
-  (L||[]).forEach(sL=>{ const sB=findS(B,sL), sO=findS(out,sL), eL=sL.entries||[];
+  (L||[]).forEach(sL=>{ const sB=findS(B,sL,idsL), sO=findS(out,sL,idsL), eL=sL.entries||[];
     if(!sO){
       /* taken off on the other side and not touched here: it goes. New here: it stays, if it is
          more than the factory's lines */
       if(sB && _pJ(sL)===_pJ(sB)) return;
-      if(!sB && !hasBase && eL.every(e=>_pbFactoryLine(kind, e.label))) return;
+      if(!sB && !hasBase && (kind!=="con" || _pbConSeed()[_pbN(sL.title)]) && eL.every(e=>_pbFactoryLine(kind, e.label, sL.title))) return;
       out.push(JSON.parse(JSON.stringify(sL))); return; }
     if(sB && _pbN(sL.title)!==_pbN(sB.title)) sO.title=sL.title;
     if(sB && sL.color!==sB.color) sO.color=sL.color;
@@ -3418,14 +3430,14 @@ function _pbMergeList(kind, B, L, S, hasBase){
     if(sB && (sL.tone||0)!==(sB.tone||0)){ if(sL.tone) sO.tone=sL.tone; else delete sO.tone; }
     sO.entries=sO.entries||[];
     eL.forEach(e=>{ const eB=sB? findE(sB.entries,e) : null, eO=findE(sO.entries,e);
-      if(!eO){ if(!_pbN(e.label) && !_pbN(e.detail)) return; if(eB && same(e,eB)) return; if(!eB && !hasBase && _pbFactoryLine(kind, e.label)) return; sO.entries.push(JSON.parse(JSON.stringify(e))); return; }
+      if(!eO){ if(!_pbN(e.label) && !_pbN(e.detail)) return; if(eB && same(e,eB)) return; if(!eB && !hasBase && _pbFactoryLine(kind, e.label, sL.title)) return; sO.entries.push(JSON.parse(JSON.stringify(e))); return; }
       /* changed here since the two last agreed: this one; with no copy to compare, a detail fills an empty one */
       if(eB? !same(e,eB) : (!hasBase && !_pbN(eO.detail) && _pbN(e.detail))){ eO.label=e.label; eO.detail=e.detail; } });
     /* taken off here and untouched on the other side: it goes */
     if(sB) sO.entries=sO.entries.filter(e=>{ if(findE(eL,e)) return true; const eB=findE(sB.entries,e); return !(eB && same(e,eB)); });
   });
   /* a section taken off here that the other side has not touched */
-  return out.filter(s=>{ if(findS(L,s)) return true; const sB=findS(B,s); return !(sB && _pJ(s)===_pJ(sB)); });
+  return out.filter(s=>{ if(findS(L,s,idsS)) return true; const sB=findS(B,s,idsS); return !(sB && _pJ(s)===_pJ(sB)); });
 }
 function _planMerge(base, loc, srv){
   if(!srv) return _planDocPick(loc);
@@ -3469,7 +3481,9 @@ function _planTyping(){ const a=document.activeElement; if(!a || a===document.bo
    - a copy before anything goes: a merge that takes a section or a call off the server's copy or off
      this device's keeps that copy first (staff:playbook-copy:0-9), and the Playbook's ⟲ Copies brings
      back what is missing. */
-const PLAN_CV=2;
+/* 3 since 26/11/2026: the pages before it lost what was written in Offense by concepts on the way to the server; a
+   tab still open with one of them stops writing when this one has written once, and asks to be reloaded */
+const PLAN_CV=3;
 function _planHash(s){ s=String(s||""); let x=0; for(let i=0;i<s.length;i++) x=(Math.imul(x,31)+s.charCodeAt(i))|0; return s.length+":"+(x>>>0).toString(36); }
 async function _planSync(){
   if(!SB_TOKEN || isPlayerUser() || !state || !state.plan) return;
@@ -3512,7 +3526,9 @@ async function _planSync(){
     }
     /* somebody who edited while this was on its way keeps the edit: nothing is put on the screen over
        it, and the sync runs again at once with both in hand */
-    const moved=_pJ(_planDocPick(_planDocLocal()))!==_pJ(loc), brought=mJ!==_pJ(loc);
+    /* nor while somebody is writing in Planning or the Playbook: a field that keeps its text only when it is left
+       (a family's name) lost what was being typed when the screen was drawn again under it */
+    const moved=_pJ(_planDocPick(_planDocLocal()))!==_pJ(loc) || _planTyping(), brought=mJ!==_pJ(loc);
     if(brought && !moved){
       const c=JSON.parse(mJ);
       state.plan.sessions=c.sessions;
@@ -22636,7 +22652,8 @@ function _pbConFams(data, mode){
     /* a family taken off whole, with its concepts, as a card of the other tabs (Oriol, 26/11/2026: "debo poder
        eliminar secciones"); Ctrl+Z brings it back */
     if(ed && L.length) fh.appendChild(h("button",{class:"pb-x", title:"Delete the family and its "+L.length+" concept"+(L.length===1? "" : "s"),
-      onclick:()=>{ commit(()=>{ L.forEach(s=>{ const i=data.indexOf(s); if(i>=0) data.splice(i,1); }); }); redraw(); }},"✕"));
+      onclick:()=>confirmDialog("Delete the family “"+n+"”?", L.length+" concept"+(L.length===1? "" : "s")+" and their sets go. If it was a mistake, ⟲ Copies brings them back once the server has had them.", "Delete",
+        ()=>{ commit(()=>{ L.forEach(s=>{ const i=data.indexOf(s); if(i>=0) data.splice(i,1); }); }); redraw(); }, true) },"✕"));
     const box=h("div",{class:"pcn-fam c-"+col+(ed? " ed" : "")}, fh);
     if(ed) dropOn(box, d=>d.type==="pcnfam" && d.n!==n, d=>moveFam(d.n, n));
     L.forEach(s=>{
