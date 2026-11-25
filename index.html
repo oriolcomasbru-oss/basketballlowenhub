@@ -9546,6 +9546,8 @@ function _uiCard(x){
   return h("div",{class:"ui-card "+tone+wt, title:txt},
     (P.label || x.src)? h("div",{class:"ui-card-k"}, uiSrc(x.src), P.label||"") : null, bigEl,
     P.note? h("div",{class:"ui-card-t"}, P.note) : null,
+    /* a second line from another source, with its own chip (who finishes: the league's number, the tagging's how) */
+    (x.sub2 && x.sub2.text)? h("div",{class:"ui-card-t2"}, uiSrc(x.sub2.src), x.sub2.text) : null,
     h("div",{class:"ui-card-f"}, w? h("span",{class:"ui-card-bar"}, h("i",{style:"width:"+Math.round(100*w)+"%"})) : h("span",{}), nEl));
 }
 /* bars for a series: games, quarters. items: [{ label, value, tone, text }] */
@@ -30814,17 +30816,17 @@ const OWIP=[
   ["When he fades", "player development: when each man drops, to rotate ours and attack theirs", ()=>_dashOpen("playerdev",{})],
   ["Pace", "trends: how fast we play, game by game and inside the games", ()=>_dashOpen("trends",{})]];
 var DASHES={
-  Ramon:{ name:"Ramón", role:"Head coach", cards:["oppr","post","league","trends2","week","month"] },
+  Ramon:{ name:"Ramón", role:"Head coach", cards:["oppr","post","trends2","week","month"] },
   Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["owork","omiss","scoutv","trends2","oppr","post","week","month"] },
-  Keith:{ name:"Keith", role:"Coaching staff", cards:["pdevc","oppr","post","players","league","trends2","week","monthP"] },
+  Keith:{ name:"Keith", role:"Coaching staff", cards:["pdevc","oppr","post","players","trends2","week","monthP"] },
   Liviu:{ name:"Liviu", role:"Coaching staff", cards:["quick","month","pdevc"] },
   /* Joan Marc does the games and sees what Marc has done and owes; Marc the trainings */
   "Joan Marc":{ name:"Joan Marc", role:"Video · games", cards:["vgames","vrivals","vcal","vtrain"] },
   "Marc Ribas":{ name:"Marc", role:"Video · trainings", cards:["vtrain","month"] },
   Pedro:{ name:"Pedro", role:"Physical coach", cards:["week","avail","minutes","month"] },
   Jonas:{ name:"Jonas", role:"Staff", cards:["week","month3"] },
-  Alex:{ name:"Alex", role:"Staff", cards:["monthP","week","oppr","post","trends2","pdevc","league"] },
-  Nils:{ name:"Nils", role:"Staff", cards:["monthP","week","oppr","post","trends2","pdevc","league"] },
+  Alex:{ name:"Alex", role:"Staff", cards:["monthP","week","oppr","post","trends2","pdevc"] },
+  Nils:{ name:"Nils", role:"Staff", cards:["monthP","week","oppr","post","trends2","pdevc"] },
   Fabienne:{ name:"Fabienne", role:"Media · articles", cards:["month","fquick","us","rivals"] }
 };
 var _dashLanded=false;
@@ -30862,6 +30864,15 @@ function _dashWritten(rep, post){
   secs.forEach(s=>{ if(!s || s.kind==="stats" || s.kind==="plan") return;
     (s.items||[]).forEach(it=>{ if(it && it.kind!=="table") n+=_dashTxt(it.v).trim().length+_dashTxt(it.them).trim().length+_dashTxt(it.us).trim().length; }); });
   return n>=30;
+}
+/* A REPORT NOT MARKED DONE SHOWS NOTHING ON THE DASHBOARD (Oriol, 25/11/2026: "cuando el informe de pre game
+   o post game no está puesto como acabado, no sale nada en el dashboard en esa parte, solamente un pendiente;
+   una vez lo pongo como hecho sale todo"): the card keeps its head and its state, and in place of its parts
+   this one line */
+function _dashPendingRep(post, s){
+  const what=post? "post game" : "pre game";
+  return h("div",{class:"dash-pendrep"}, h("b",{}, (post? "Post game" : "Pre game")+" · "+((s && s[0]==="prep")? "in preparation" : "pending")),
+    h("span",{}, "It shows here once the "+what+" report is marked done."));
 }
 function _dashStatus(rep, post){
   if(rep && repDone(rep, post? "post" : "pre")) return post? ["ready","Completed"] : ["ready","Ready"];
@@ -32685,12 +32696,13 @@ function renderDashboard(){
         h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent), h("span",{}, _dashFmt(g.date)+" · "+(g.competition||"")+(r && r.ot? " · OT" : ""))),
         r? h("span",{class:"dash-score "+(r.won? "good" : "bad")}, r.us+"–"+r.them) : h("span",{class:"dash-score"}, g.result||"")));
       c.__b.appendChild(h("div",{}, st));
+      /* the parts only once the post game report is marked done */
+      const gate=h("div",{}, loading("Checking the post game report…")); c.__b.appendChild(gate);
+      const fill=()=>{
       /* what the staff marked ★ Key in the post game, first under the score */
       const pk=h("div",{class:"dash-sub"}, h("h4",{}, "Post game notes · key ideas")), pkB=h("div",{}); pk.appendChild(pkB);
       c.__b.appendChild(h("div",{class:"dash-blk"}, pk));
       _dashPostNotesInto(pkB, g);
-      _dashRep(g).then(rep=>{ const s=_dashStatus(rep, true); st.innerHTML=""; st.appendChild(pill(s));
-        if(s[0]!=="ready"){ alerts.push({ tone:"bad", text:"Post game "+g.opponent+" not finished", go:()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:g.id } }) }); paintAtt(); } });
       /* the Game performance overview of the post game, its figures, its quarters and the
          readings that weigh most */
       const body=h("div",{}, loading("Reading the game overview…")); c.__b.appendChild(body);
@@ -32710,6 +32722,12 @@ function renderDashboard(){
       /* under the league's figures, our own tagging of the game: offense and defense apart */
       const split=h("div",{}); c.__b.appendChild(split);
       _dashPostSplit(split, g);
+      };
+      _dashRep(g).then(rep=>{ const s=_dashStatus(rep, true); st.innerHTML=""; st.appendChild(pill(s));
+        if(s[0]!=="ready"){ alerts.push({ tone:"bad", text:"Post game "+g.opponent+" not finished", go:()=>_dashOpen("teamscout",{ ts:{ mode:"game", gameId:g.id } }) }); paintAtt(); }
+        gate.remove();
+        if(repDone(rep, "post")) fill(); else c.__b.appendChild(_dashPendingRep(true, s));
+      }).catch(()=>{ gate.remove(); c.__b.appendChild(_dashPendingRep(true)); });
     },
     /* ---------------------------------------------------- where we stand */
     league:()=>{
@@ -32909,9 +32927,10 @@ function renderDashboard(){
       const st=h("span",{}, pill(["wait","…"]));
       c.__b.appendChild(h("div",{class:"dash-hero"}, crest(g), h("div",{class:"dash-who2"}, h("b",{}, (g.venue==="Away"? "@ " : "vs ")+g.opponent),
         h("span",{}, _dashFmt(g.date)+(g.time? " · "+g.time : "")+" · "+(g.competition||"")+" · "+(dd===0? "today" : dd===1? "tomorrow" : "in "+dd+" days"))), st));
-      /* the state of the pre game report, and a warning when it is not ready three days out */
-      _dashRep(g).then(rep=>{ const s=_dashStatus(rep, false); st.innerHTML=""; st.appendChild(pill(s));
-        if(s[0]!=="ready" && dd<=3){ alerts.push({ tone:s[0]==="pend"? "bad" : "warn", text:"Pre game "+g.opponent+": "+s[1].toLowerCase(), go:()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } }) }); paintAtt(); } });
+      /* the state of the pre game report, and a warning when it is not ready three days out; the parts
+         only once it is marked done */
+      const gate=h("div",{}, loading("Checking the pre game report…")); c.__b.appendChild(gate);
+      const fill=()=>{
       /* THE RIVAL IN ONE OR TWO MINUTES, in the order the staff reads it: who they are in four
          numbers, their roster, the ball screen, what we wrote about them, their six weapons,
          how they come in, and their key players */
@@ -32940,6 +32959,12 @@ function renderDashboard(){
       _dashTopSetsInto(cS.__b, g);
       _dashFormInto(cF.__b, g.opponent);
       _dashKeyPlayersInto(cP.__b, g.opponent);
+      };
+      _dashRep(g).then(rep=>{ const s=_dashStatus(rep, false); st.innerHTML=""; st.appendChild(pill(s));
+        if(s[0]!=="ready" && dd<=3){ alerts.push({ tone:s[0]==="pend"? "bad" : "warn", text:"Pre game "+g.opponent+": "+s[1].toLowerCase(), go:()=>_dashOpen("oppscout",{ os:{ mode:"game", gameId:g.id } }) }); paintAtt(); }
+        gate.remove();
+        if(repDone(rep, "pre")) fill(); else c.__b.appendChild(_dashPendingRep(false, s));
+      }).catch(()=>{ gate.remove(); c.__b.appendChild(_dashPendingRep(false)); });
     },
     /* ---------------------------------------------------- Oriol: the season in lines, sets best and worst */
     trends2:()=>{
@@ -40290,6 +40315,7 @@ body.prt .pre-copy{display:none!important}
 body.dark .ui-src.tag{background:rgba(214,170,80,.18);color:#e8c77e;border-color:rgba(214,170,80,.45)}
 body.dark .ui-src.lg{background:rgba(110,160,230,.18);color:#9cc0f2;border-color:rgba(110,160,230,.45)}
 .ui-figrow{margin:0 0 10px}
+.ui-card-t2{font-size:11px;line-height:1.3;color:var(--ink-soft,#5b6472);margin-top:2px}
 .ui-figrow-h{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;margin:0 0 6px}
 .ui-figrow-h b{font:700 11px 'Oswald',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--ink,#141821)}
 .ui-figrow-h span:not(.ui-src){font-size:11px;color:var(--ink-faint,#8a93a2)}
@@ -43649,6 +43675,11 @@ body.viewing-as .user-chip{box-shadow:0 0 0 3px #c6a15b}
 .ow-btns{display:flex;gap:5px}.ow-btns .dash-gp{padding:4px 8px;font-size:11px}
 /* what is missing on the dashboard: a line of chips a kind */
 .mc{display:grid;gap:6px}
+/* a report not marked done: one line in place of the card's parts */
+.dash-pendrep{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-top:10px;padding:12px 14px;border:1px dashed var(--line-strong,#cfd4dc);border-radius:10px;background:rgba(127,127,127,.04)}
+.dash-pendrep b{font:700 12px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#c0403c}
+.dash-pendrep span{font-size:12px;color:var(--ink-soft,#5b6472)}
+body.dark .dash-pendrep b{color:#ff8f85}
 .mc-line{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
 .mc-k{font:700 10.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472);min-width:96px}
 .mc-chip{display:inline-flex;align-items:center;gap:3px;border:1px solid var(--line,#e4e7ec);background:var(--panel,#fff);border-radius:6px;padding:2px 5px;cursor:pointer;font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink,#141821)}

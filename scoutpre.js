@@ -1882,15 +1882,16 @@
       return D.players.rows.some(function (p) { return p.roles[r] > 0; });
     });
     var h6 = [{ t: "Player", rows: 2 },
-      { t: "Volume and efficiency", span: 8, cls: "grpo" },
+      { t: "Volume and efficiency", span: 6, cls: "grpo" },
       { t: "Where the possession ends", span: used.length, cls: "grpd" }];
     var TPL = tableShell(h6);
     var r6 = el("tr");
     /* TWO "USE", NOW NAMED APART (Oriol, 24/11/2026): the card's Use is the league's - the share of
        his team's plays he finishes over the season. This one is the tagging's - the share of the
        tagged possessions he is tagged in - and is called that */
-    ["Poss", "% tagged", "Pts/shot", "xPts/shot", "Luck", "eFG%", "3PAr", "TOV%"].forEach(function (x, i) {
-      var th = el("th", "n" + (i === 7 ? " sep" : ""), x);
+    /* xPts/shot and Luck are out (Oriol, 25/11/2026: "xPPP y Luck: fuera") */
+    ["Poss", "% tagged", "Pts/shot", "eFG%", "3PAr", "TOV%"].forEach(function (x, i) {
+      var th = el("th", "n" + (i === 5 ? " sep" : ""), x);
       if (i === 1) th.title = "Share of the tagged possessions he is tagged in (our tagging). Not the Use on his card, which is the league's: the share of his team's plays he finishes over the season.";
       r6.appendChild(th);
     });
@@ -1904,10 +1905,6 @@
       tr.appendChild(plain(p.n));
       tr.appendChild(plain(p.use + "%"));
       tr.appendChild(pppCell(p.ppp, M.refOff, "O", p.conf, p.n));
-      tr.appendChild(plain(f2(p.xppp), "ref"));
-      var tdl = el("td", "sxp-c");
-      tdl.appendChild(el("span", "sxp-v sxp-ev " + (p.luck > 0 ? "pos" : p.luck < 0 ? "neg" : ""), sgn(p.luck)));
-      tr.appendChild(tdl);
       tr.appendChild(plain(p.efg + "%"));
       tr.appendChild(plain(p.p3r + "%"));
       tr.appendChild(plain(p.tov + "%", "sep"));
@@ -1915,7 +1912,7 @@
       TPL.body.appendChild(tr);
     });
     b6.appendChild(TPL.wrap);
-    tnote(b6, "Pts/shot and xPts/shot are per possession he finished with a shot or free throws: the tagging does not put every turnover on a player, so possessions he lost are mostly missing and these read higher than a real PPP (the roster table carries his PPP from the league, turnovers in). Luck is Pts/shot minus xPts/shot, coloured like everything else — green favours us. Role counts " +
+    tnote(b6, "Pts/shot is per possession he finished with a shot or free throws: the tagging does not put every turnover on a player, so possessions he lost are mostly missing and it reads higher than a real PPP (the overview's Who finishes carries his PPP from the league, turnovers in). Role counts " +
       "come from the " + M.tag.player + "% of offensive clips that carry a player tag, so they are a " +
       "share, not a full box score.");
 
@@ -2081,16 +2078,38 @@
     var six = K.pick(cand, 6), mxN = 0;
     six.forEach(function (x) { mxN = Math.max(mxN, x.n || 0); });
     six.forEach(function (x) { x.nw = mxN ? (x.n || 0) / mxN : null; });
+    /* WHO FINISHES THEIR POSSESSIONS (Oriol, 25/11/2026, "Who finishes, OK"): the number is the league's -
+       his points over the plays he finished in the season (shots, trips to the line, turnovers), against
+       the team's own over the same plays, and his share of them (the card's Use) - and how he does it is
+       the tagging's, under it. It used to set his points a shot, turnovers out, against the team's points
+       a possession, turnovers in, which made nearly every man red. */
     var gWho = [];
     try {
-      var avgP = S.selfPpp;
-      ((D.players && D.players.rows) || []).slice(0, 8).forEach(function (p) {
-        if (p.n < 8) return;
-        var top = Object.keys(p.roles || {}).sort(function (a, b) { return p.roles[b] - p.roles[a]; })[0];
-        var d = (avgP != null) ? p.ppp - avgP : 0;
-        gWho.push({ k: p.label, v: f2n(p.ppp), src: "tag", text: p.use + "% of the tagged possessions" + (top && p.roles[top] ? " · mostly " + top.toLowerCase() : ""),
-          tone: d >= 0.08 ? "bad" : d <= -0.08 ? "good" : "neutral", size: Math.min(1, p.use / 22), n: p.n, solidN: 20, unit: "poss" });
-      });
+      var Lw = window.leagueState && window.leagueState();
+      var tw = Lw && window._lgTeamIdByName && window._lgTeamIdByName(Lw, M.team || "");
+      var dw = tw && Lw.players && Lw.players[tw];
+      var Uw = (dw && typeof window._preUsage === "function") ? window._preUsage(Lw, tw) : null;
+      if (!Uw && tw && !D.__shell && typeof window.syncPlayers === "function") { try { window.syncPlayers(tw, false); } catch(e){_quiet(e)} }
+      if (Uw && dw) {
+        var plays = function (t) { return (t.p2a || 0) + (t.p3a || 0) + 0.44 * (t.fta || 0) + (t.tov || 0); };
+        var Tw = (dw.team_tot && dw.team_tot.all) || null;
+        var ptov = (dw.players || []).reduce(function (a, p) { return a + (((p.all || {}).tov) || 0); }, 0);
+        var teamPl = Tw ? (Tw.fga != null ? Tw.fga : (Tw.p2a || 0) + (Tw.p3a || 0)) + 0.44 * (Tw.fta || 0) + Math.max(Tw.tov || 0, ptov) : 0;
+        var teamP = teamPl ? (Tw.pts || 0) / teamPl : null;
+        var byId = {}; (dw.players || []).forEach(function (p) { byId[String(p.id || "")] = p; });
+        var tagged = (D.players && D.players.rows) || [];
+        var tagOf = function (num) { return tagged.filter(function (r) { return (/#\s*(\d+)/.exec(r.label) || [])[1] === String(parseInt(num, 10)); })[0] || null; };
+        var last = function (nm) { try { return (typeof window._lgLastName === "function" ? window._lgLastName(nm) : "") || nm; } catch (e) { return nm; } };
+        Uw.rows.filter(function (r) { return r.ok; }).sort(function (a, b) { return b.share - a.share; }).slice(0, 6).forEach(function (r) {
+          var p = byId[r.id], t = p && p.all; if (!t) return;
+          var pl = plays(t), ppp = pl ? (t.pts || 0) / pl : null, d = (ppp != null && teamP != null) ? ppp - teamP : 0;
+          var tg = tagOf(r.num), top = tg ? Object.keys(tg.roles || {}).sort(function (a, b) { return tg.roles[b] - tg.roles[a]; })[0] : null;
+          gWho.push({ k: last(r.name || "") + " #" + r.num, v: f2n(ppp), src: "lg",
+            text: Math.round(r.share) + "% of their plays · the team " + f2n(teamP),
+            sub2: (tg && top && tg.roles[top]) ? { src: "tag", text: "mostly " + top.toLowerCase() + " · " + tg.n + " tagged poss" } : null,
+            tone: d >= 0.08 ? "bad" : d <= -0.08 ? "good" : "neutral", size: Math.min(1, r.share / 25), n: Math.round(pl), unit: "plays" });
+        });
+      }
     } catch(e){_quiet(e)}
     return K.summary({ title: "The opponent",
       sub: "red is what hurts us · green is what we can go at · each number is measured against its own source",
@@ -2270,11 +2289,11 @@
     tabOf(s1, "games");
     var b1 = el("div", "sxp-blk sxp-card"); b1.setAttribute("data-hl", "0"); s1.appendChild(b1);
     var T1 = tableShell([{ t: "", rows: 2 },
-      { t: "Their offense", span: 6, cls: "grpo" }, { t: "Their defense", span: 6, cls: "grpd" },
+      { t: "Their offense", span: 5, cls: "grpo" }, { t: "Their defense", span: 5, cls: "grpd" },
       { t: "Net", rows: 2, cls: "n cream" }]);
     var r2r = el("tr");
-    ["Poss", "PPP", "xPPP", "eFG%", "3PAr", "TOV%"].forEach(function (h) { r2r.appendChild(el("th", "n", h)); });
-    ["Poss", "PPP", "xPPP", "eFG%", "3PAr", "TOV%"].forEach(function (h, i) {
+    ["Poss", "PPP", "eFG%", "3PAr", "TOV%"].forEach(function (h) { r2r.appendChild(el("th", "n", h)); });
+    ["Poss", "PPP", "eFG%", "3PAr", "TOV%"].forEach(function (h, i) {
       r2r.appendChild(el("th", "n" + (i === 0 ? " sep" : ""), h));
     });
     T1.head.appendChild(r2r);
@@ -2285,11 +2304,9 @@
       tr.appendChild(lbl(r.total ? r.label : r.label + dOf(r.label)));
       tr.appendChild(plain(Math.round(r.oPoss)));
       tr.appendChild(pppCell(r.oPpp, M.refOff, "O", 3, r.oPoss));
-      tr.appendChild(plain(f2(r.oXppp), "ref"));
       tr.appendChild(plain(r.oEfg + "%")); tr.appendChild(plain(r.o3r + "%")); tr.appendChild(plain(r.oTov + "%"));
       tr.appendChild(plain(Math.round(r.dPoss), "sep"));
       tr.appendChild(pppCell(r.dPpp, M.refDef, "D", 3, r.dPoss));
-      tr.appendChild(plain(f2(r.dXppp), "ref"));
       tr.appendChild(plain(r.dEfg + "%")); tr.appendChild(plain(r.d3r + "%")); tr.appendChild(plain(r.dTov + "%"));
       var td = el("td", "sxp-c cream");
       td.appendChild(el("span", "sxp-v sxp-ev " + (r.net > 0 ? "pos" : r.net < 0 ? "neg" : ""), sgn(r.net)));
@@ -2297,8 +2314,7 @@
       T1.body.appendChild(tr);
     });
     b1.appendChild(T1.wrap);
-    tnote(b1, "xPPP next to each PPP is the shot-quality value of the same possessions. Net is their " +
-      "offense minus their defense: positive means the game went their way.");
+    tnote(b1, "Net is their offense minus their defense: positive means the game went their way.");
 
     /* ------------------------------------------ 02 half / open court */
     var s2s = section(rowA, "01", "Half court and open court",
@@ -2874,7 +2890,7 @@
     try {
       var dashT = teamDash({ __shell: 1, meta: { team: who, ngames: 0, games: [] }, say: {} });
       if (dashT) {
-        pend(dashT, "What stands out and who finishes their possessions come with the tagging.");
+        pend(dashT, "What stands out comes with the tagging.");
         root.appendChild(tabOf(dashT, "over"));
       }
     } catch(e){_quiet(e)}
