@@ -2622,6 +2622,10 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
 .pcn-fh{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:8px 13px;color:#fff}
 .pcn-fh span{font-size:11px;font-weight:600;opacity:.82;font-variant-numeric:tabular-nums}
 .pcn-fam.c-gold .pcn-fh{color:#14130b}
+.pcn-fh .pcn-fti{font-size:13px;letter-spacing:.10em;min-width:0}
+.pcn-fam.c-gold .pcn-fh .pb-col{background:rgba(0,0,0,.15);color:#14130b}
+.pcn-fam.ed .pcn-fh{align-items:center}
+.pcn-fam.ed .pcn-fh > span{margin-left:auto}
 .pcn-row{display:grid;grid-template-columns:minmax(110px,190px) minmax(0,1fr);gap:4px 12px;align-items:baseline;padding:6px 13px;border-top:1px solid var(--line)}
 .pcn-fh + .pcn-row{border-top:0}
 .pcn-c{font-weight:700;font-size:13px;line-height:1.3;color:var(--ink)}
@@ -3393,6 +3397,7 @@ function _pbMergeList(kind, B, L, S, hasBase){
       out.push(JSON.parse(JSON.stringify(sL))); return; }
     if(sB && _pbN(sL.title)!==_pbN(sB.title)) sO.title=sL.title;
     if(sB && sL.color!==sB.color) sO.color=sL.color;
+    if(sB && (sL.fam||"")!==(sB.fam||"")){ if(sL.fam) sO.fam=sL.fam; else delete sO.fam; }
     sO.entries=sO.entries||[];
     eL.forEach(e=>{ const eB=sB? findE(sB.entries,e) : null, eO=findE(sO.entries,e);
       if(!eO){ if(!_pbN(e.label) && !_pbN(e.detail)) return; if(eB && same(e,eB)) return; if(!eB && !hasBase && _pbFactoryLine(kind, e.label)) return; sO.entries.push(JSON.parse(JSON.stringify(e))); return; }
@@ -22533,26 +22538,39 @@ async function _pbPlayerLoad(){
   try{ if(state.ui.view==="playbook") renderPlaybook(); }catch(e){_quiet(e)}
 }
 /* OFFENSE BY CONCEPTS AS A LIST BY FAMILIES (Oriol, 26/11/2026: of five ways to show the many concepts, "lista por
-   familias ok"; then "al imprimir debes mantener el formato. Al editar debes mantener el formato"). One block a family -
-   the colour a concept carries is its family - and one line a concept, its sets beside it as chips, the detail small
-   inside the chip; a concept with nothing under it yet says so. It is edited in this same list: the name in its place,
-   a set typed in its own chip (Enter goes to its detail), ＋ set and ＋ concept where they go, the family chosen beside
-   the concept, and a concept or a set dragged by its ⠿ - to another family or another concept too. On paper the same
-   list in the same two columns, on the light card */
+   familias ok"; then "al imprimir debes mantener el formato. Al editar debes mantener el formato"; then "añade la
+   opción + section que no sale"). One block a family and one line a concept, its sets beside it as chips, the detail
+   small inside the chip; a concept with nothing under it yet says so. A concept's family is the name it carries
+   (fam), or else the one of its colour - the five of the summary; ＋ section starts a family of its own, named and
+   coloured in its head. It is edited in this same list: the name in its place, a set typed in its own chip (Enter
+   goes to its detail), ＋ set and ＋ concept where they go, the family chosen beside the concept, and a concept or a
+   set dragged by its ⠿ - to another family or another concept too. On paper the same list in the same two columns,
+   on the light card */
 const PBC_FAM=[["green","Off the ball"],["purple","Spain"],["gold","Ball inside"],["navy","Pick and roll"],["red","Vs coverages"]];
+const PCN_COLORS=["blue","navy","green","red","purple","gold","dark"];
 let _pcnFocus=null;
-function _pcnFamOf(s){ return PBC_FAM.some(f=>f[0]===s.color)? s.color : "other"; }
+function _pcnColName(c){ const p=PBC_FAM.find(f=>f[0]===c); return p? p[1] : "Other"; }
+function _pcnFamOf(s){ const f=String(s.fam||"").trim(); return f || _pcnColName(s.color); }
+/* a concept joins a family: its colour, and its name only when the colour does not already say it */
+function _pcnJoin(s, name, color){ s.color=color; if(_pcnColName(color)===name) delete s.fam; else s.fam=name; }
+function _pcnAddFam(data){
+  const names=new Set(data.map(_pcnFamOf)); let nm="New section", k=2; while(names.has(nm)) nm="New section "+(k++);
+  const used=new Set(data.map(s=>s.color)), color=PCN_COLORS.find(c=>!used.has(c)) || "blue";
+  commit(()=>{ data.push({id:uid(), title:"", color:color, fam:nm, entries:[]}); });
+  _pcnFocus='input.pcn-fti[data-fam="'+nm+'"]'; renderPlaybook();
+}
 function _pbConFams(data, mode){
   const paper=mode==="paper", ed=mode==="edit";
-  const by={}, order=PBC_FAM.map(f=>f[0]).concat(["other"]);
-  if(ed) PBC_FAM.forEach(f=>{ by[f[0]]=[]; });
-  (data||[]).forEach(s=>{ const c=_pcnFamOf(s); (by[c]=by[c]||[]).push(s); });
+  const groups={}; (data||[]).forEach(s=>{ const n=_pcnFamOf(s); (groups[n]=groups[n]||[]).push(s); });
+  const std=PBC_FAM.map(f=>f[1]);
+  const order=std.filter(n=>groups[n] || ed).concat(Object.keys(groups).filter(n=>std.indexOf(n)<0));
+  const famColor=n=>{ const g=groups[n], c=g && g[0] && g[0].color; return PCN_COLORS.indexOf(c)>=0? c : ((PBC_FAM.find(f=>f[1]===n)||[])[0] || "dark"); };
   const redraw=()=>renderPlaybook();
-  /* a concept goes before another one (and takes its family), or to the end of a family */
-  const moveSec=(s, before, color)=>{ commit(()=>{ const i=data.indexOf(s); if(i<0) return; data.splice(i,1);
-      if(color) s.color=color;
+  /* a concept goes before another one (and joins its family), or to the end of a family */
+  const moveSec=(s, before, fam)=>{ const color=famColor(fam); commit(()=>{ const i=data.indexOf(s); if(i<0) return; data.splice(i,1);
+      _pcnJoin(s, fam, color);
       let at=before? data.indexOf(before) : -1;
-      if(at<0){ let last=-1; data.forEach((x,k)=>{ if(_pcnFamOf(x)===_pcnFamOf(s)) last=k; }); at=last<0? data.length : last+1; }
+      if(at<0){ let last=-1; data.forEach((x,k)=>{ if(_pcnFamOf(x)===fam) last=k; }); at=last<0? data.length : last+1; }
       data.splice(at,0,s); }); redraw(); };
   /* a set goes before another set, of this concept or of another one, or to the end of a concept */
   const moveSet=(fromS, en, toS, before)=>{ commit(()=>{ const i=fromS.entries.indexOf(en); if(i<0) return; fromS.entries.splice(i,1);
@@ -22568,10 +22586,21 @@ function _pbConFams(data, mode){
     n.addEventListener("input",()=>{ set(n.textContent); persist(); });
     n.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); const nx=n.nextElementSibling; if(nx && nx.isContentEditable) nx.focus(); else n.blur(); } });
     return n; };
-  return order.filter(c=>by[c] && (by[c].length || ed)).map(c=>{
-    const L=by[c], name=(PBC_FAM.find(f=>f[0]===c)||[0,"Other"])[1], col=c==="other"? "dark" : c;
-    const box=h("div",{class:"pcn-fam c-"+col+(ed? " ed" : "")},
-      h("div",{class:"pcn-fh"}, h("b",{}, name), h("span",{}, L.length+" concept"+(L.length===1? "" : "s"))));
+  return order.map(n=>{
+    const L=groups[n]||[], col=famColor(n);
+    const fh=h("div",{class:"pcn-fh"});
+    if(ed && L.length){
+      /* the family's head: its name and its colour, for every concept in it */
+      const ti=h("input",{class:"pb-cardtitle-in pcn-fti", placeholder:"Family", "data-fam":n}); ti.value=n;
+      ti.addEventListener("keydown",e=>{ if(e.key==="Enter") ti.blur(); });
+      ti.addEventListener("change",()=>{ const v=ti.value.trim(); if(!v || v===n){ ti.value=n; return; }
+        const c2=groups[v]? famColor(v) : col; commit(()=>{ L.forEach(s=>{ _pcnJoin(s, v, c2); }); }); redraw(); });
+      const cs=h("select",{class:"pb-col", title:"Colour"}); PCN_COLORS.forEach(c=>{ const o=h("option",{value:c}, c); if(c===col) o.selected=true; cs.appendChild(o); });
+      cs.addEventListener("change",()=>{ commit(()=>{ L.forEach(s=>{ s.color=cs.value; s.fam=n; if(_pcnColName(cs.value)===n) delete s.fam; }); }); redraw(); });
+      fh.appendChild(ti); fh.appendChild(cs);
+    } else fh.appendChild(h("b",{}, n));
+    fh.appendChild(h("span",{}, L.length+" concept"+(L.length===1? "" : "s")));
+    const box=h("div",{class:"pcn-fam c-"+col+(ed? " ed" : "")}, fh);
     L.forEach(s=>{
       s.entries=s.entries||[];
       const ent=ed? s.entries : s.entries.filter(_pbSaid), sets=h("div",{class:"pcn-sets"});
@@ -22606,20 +22635,19 @@ function _pbConFams(data, mode){
       const row=h("div",{class:"pcn-row"+(ent.length || ed? "" : " e")}, nameCell, sets);
       if(ed){
         const fam=h("select",{class:"pcn-famsel", title:"Family"});
-        PBC_FAM.forEach(f=>{ const o=h("option",{value:f[0]}, f[1]); if(s.color===f[0]) o.selected=true; fam.appendChild(o); });
-        if(c==="other"){ const o=h("option",{value:s.color||"blue"}, "Other"); o.selected=true; fam.appendChild(o); }
+        order.forEach(m=>{ const o=h("option",{value:m}, m); if(m===n) o.selected=true; fam.appendChild(o); });
         fam.addEventListener("change",()=>moveSec(s, null, fam.value));
         row.appendChild(h("div",{class:"pcn-tools"}, fam,
           h("button",{class:"pcn-x", title:"Delete the concept", onclick:()=>{ commit(()=>{ const i=data.indexOf(s); if(i>=0) data.splice(i,1); }); redraw(); }},"✕")));
-        dropOn(row, d=>d.type==="pcncon" && d.s!==s, d=>moveSec(d.s, s, s.color));
+        dropOn(row, d=>d.type==="pcncon" && d.s!==s, d=>moveSec(d.s, s, n));
       }
       box.appendChild(row);
     });
-    if(ed && c!=="other"){
-      box.appendChild(h("button",{class:"pcn-addc", onclick:()=>{ const id=uid(), ns={id:id, title:"", color:c, entries:[]};
-        commit(()=>{ let last=-1; data.forEach((x,k)=>{ if(_pcnFamOf(x)===c) last=k; }); data.splice(last<0? data.length : last+1, 0, ns); });
+    if(ed){
+      box.appendChild(h("button",{class:"pcn-addc", onclick:()=>{ const id=uid(), ns={id:id, title:"", color:col, entries:[]}; _pcnJoin(ns, n, col);
+        commit(()=>{ let last=-1; data.forEach((x,k)=>{ if(_pcnFamOf(x)===n) last=k; }); data.splice(last<0? data.length : last+1, 0, ns); });
         _pcnFocus='[data-sid="'+id+'"]'; redraw(); }},"＋ concept"));
-      dropOn(box, d=>d.type==="pcncon", d=>moveSec(d.s, null, c));
+      dropOn(box, d=>d.type==="pcncon", d=>moveSec(d.s, null, n));
     }
     return box;
   });
@@ -22655,6 +22683,7 @@ function renderPlaybook(){
   /* THE COPIES KEPT BEFORE ANYTHING WAS TAKEN OFF (16/11/2026): the staff who edit can bring back what
      is missing from any of them */
   if(!isPlayerUser() && (canEdit("playbook") || isAdmin())) head.appendChild(h("button",{class:"btn pb-copiesbtn", title:"Copies kept before a section or a call was taken off · bring back what is missing", onclick:_pbCopiesOpen},"⟲ Copies"));
+  if(canEd && kind==="con") head.appendChild(h("button",{class:"btn pb-addsec", title:"A new family, named and coloured in its head", onclick:()=>_pcnAddFam(data)},"＋ section"));
   if(canEd && kind!=="con") head.appendChild(h("button",{class:"btn pb-addsec",onclick:()=>{ commit(()=>{ data.push({id:uid(),title:"New section",color:kind==="def"?"dark":"blue",entries:[{id:uid(),label:"",detail:""}]}); }); renderPlaybook(); }},"＋ section"));
   wrap.appendChild(head);
   if(kind==="con"){
@@ -22662,7 +22691,7 @@ function renderPlaybook(){
     if(!data.length && !canEd) list.appendChild(h("div",{class:"pb-empty"}, "Nothing here yet."+(isPlayerUser()? "" : " Add one with ✎ Edit.")));
     _pbConFams(data, canEd? "edit" : "read").forEach(b=>list.appendChild(b));
     wrap.appendChild(list); wrap.appendChild(pbVideoPanel(canEd)); root.appendChild(wrap);
-    if(_pcnFocus){ const sel=_pcnFocus; _pcnFocus=null; setTimeout(()=>{ const el=root.querySelector(sel); if(el) el.focus(); }, 0); }
+    if(_pcnFocus){ const sel=_pcnFocus; _pcnFocus=null; setTimeout(()=>{ const el=root.querySelector(sel); if(el){ el.focus(); if(el.classList.contains("pcn-fti")) el.select(); } }, 0); }
     return;
   }
   const grid=h("div",{class:"pb-grid"});
