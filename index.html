@@ -22570,10 +22570,13 @@ function _pbConFams(data, mode){
      five first, then the others; the first family moved puts the whole list in that order before moving it */
   const std=PBC_FAM.map(f=>f[1]), seen=[], seq=(data||[]).map(_pcnFamOf);
   let together=true; seq.forEach((m,i)=>{ if(i && m!==seq[i-1] && seen.indexOf(m)>=0) together=false; if(seen.indexOf(m)<0) seen.push(m); });
-  const order=together? seen.concat(ed? std.filter(m=>!groups[m]) : [])
-    : std.filter(m=>groups[m] || ed).concat(seen.filter(m=>std.indexOf(m)<0));
+  /* a family with no concept is not shown, editing either (Oriol, 26/11/2026: "¿por qué sale Off the ball si está
+     vacío en edición?"): a new one starts with ＋ section */
+  const order=together? seen : std.filter(m=>groups[m]).concat(seen.filter(m=>std.indexOf(m)<0));
+  /* the list put in the order shown, so a family renamed or recoloured keeps its place */
+  const flatten=()=>{ const flat=[]; order.forEach(m=>(groups[m]||[]).forEach(x=>flat.push(x))); data.splice(0, data.length, ...flat); };
   const moveFam=(from, to)=>{ commit(()=>{
-      const flat=[]; order.forEach(m=>(groups[m]||[]).forEach(x=>flat.push(x))); data.splice(0, data.length, ...flat);
+      flatten();
       const mv=data.filter(x=>_pcnFamOf(x)===from); if(!mv.length) return;
       mv.forEach(x=>data.splice(data.indexOf(x),1));
       let at=data.findIndex(x=>_pcnFamOf(x)===to); if(at<0) at=data.length;
@@ -22608,9 +22611,9 @@ function _pbConFams(data, mode){
       const ti=h("input",{class:"pb-cardtitle-in pcn-fti", placeholder:"Family", "data-fam":n}); ti.value=n;
       ti.addEventListener("keydown",e=>{ if(e.key==="Enter") ti.blur(); });
       ti.addEventListener("change",()=>{ const v=ti.value.trim(); if(!v || v===n){ ti.value=n; return; }
-        const c2=groups[v]? famColor(v) : col; commit(()=>{ L.forEach(s=>{ _pcnJoin(s, v, c2); }); }); redraw(); });
+        const c2=groups[v]? famColor(v) : col; commit(()=>{ flatten(); L.forEach(s=>{ _pcnJoin(s, v, c2); }); }); redraw(); });
       const cs=h("select",{class:"pb-col", title:"Colour"}); PCN_COLORS.forEach(c=>{ const o=h("option",{value:c}, c); if(c===col) o.selected=true; cs.appendChild(o); });
-      cs.addEventListener("change",()=>{ commit(()=>{ L.forEach(s=>{ s.color=cs.value; s.fam=n; if(_pcnColName(cs.value)===n) delete s.fam; }); }); redraw(); });
+      cs.addEventListener("change",()=>{ commit(()=>{ flatten(); L.forEach(s=>{ s.color=cs.value; s.fam=n; if(_pcnColName(cs.value)===n) delete s.fam; }); }); redraw(); });
       fh.appendChild(grip("Drag the family to reorder", ()=>({type:"pcnfam", n:n}))); fh.appendChild(ti); fh.appendChild(cs);
     } else fh.appendChild(h("b",{}, n));
     fh.appendChild(h("span",{}, L.length+" concept"+(L.length===1? "" : "s")));
