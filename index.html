@@ -2585,13 +2585,13 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
 .pb-edrag{cursor:grab;color:#c7ccd3;font-size:11px;letter-spacing:-1px;flex:0 0 auto}
 .pb-card.pb-drop{outline:2px dashed var(--gold,#c9a227);outline-offset:2px}
 .pb-entry.pb-drop{background:rgba(201,162,39,.08);border-radius:6px}
-.pb-card.c-blue .pb-cardhead,.pbp-card.c-blue .pbp-t{background:linear-gradient(90deg,#226fbf,#2a7fc4)}
-.pb-card.c-navy .pb-cardhead,.pbp-card.c-navy .pbp-t{background:linear-gradient(90deg,#1e5fae,#2f7fd1)}
-.pb-card.c-green .pb-cardhead,.pbp-card.c-green .pbp-t{background:linear-gradient(90deg,#17804a,#1d8c52)}
-.pb-card.c-red .pb-cardhead,.pbp-card.c-red .pbp-t{background:linear-gradient(90deg,#c03a24,#cc4a2c)}
-.pb-card.c-purple .pb-cardhead,.pbp-card.c-purple .pbp-t{background:linear-gradient(90deg,#6b3fa0,#8455bf)}
-.pb-card.c-gold .pb-cardhead,.pbp-card.c-gold .pbp-t{background:linear-gradient(90deg,#c9a227,#e0b64a);color:#14130b}
-.pb-card.c-dark .pb-cardhead,.pbp-card.c-dark .pbp-t{background:linear-gradient(90deg,#262b31,#3a4149)}
+.pb-card.c-blue .pb-cardhead,.pbp-card.c-blue .pbp-t,.pcn-fam.c-blue .pcn-fh{background:linear-gradient(90deg,#226fbf,#2a7fc4)}
+.pb-card.c-navy .pb-cardhead,.pbp-card.c-navy .pbp-t,.pcn-fam.c-navy .pcn-fh{background:linear-gradient(90deg,#1e5fae,#2f7fd1)}
+.pb-card.c-green .pb-cardhead,.pbp-card.c-green .pbp-t,.pcn-fam.c-green .pcn-fh{background:linear-gradient(90deg,#17804a,#1d8c52)}
+.pb-card.c-red .pb-cardhead,.pbp-card.c-red .pbp-t,.pcn-fam.c-red .pcn-fh{background:linear-gradient(90deg,#c03a24,#cc4a2c)}
+.pb-card.c-purple .pb-cardhead,.pbp-card.c-purple .pbp-t,.pcn-fam.c-purple .pcn-fh{background:linear-gradient(90deg,#6b3fa0,#8455bf)}
+.pb-card.c-gold .pb-cardhead,.pbp-card.c-gold .pbp-t,.pcn-fam.c-gold .pcn-fh{background:linear-gradient(90deg,#c9a227,#e0b64a);color:#14130b}
+.pb-card.c-dark .pb-cardhead,.pbp-card.c-dark .pbp-t,.pcn-fam.c-dark .pcn-fh{background:linear-gradient(90deg,#262b31,#3a4149)}
 .pb-cardtitle{font-family:'Oswald',sans-serif;font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.02em;flex:1}
 .pb-cardtitle-in{flex:1;min-width:0;border:0;background:transparent;color:inherit;font-family:'Oswald',sans-serif;font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.02em;outline:none}
 .pb-cardtitle-in::placeholder{color:rgba(255,255,255,.55)}
@@ -2616,6 +2616,33 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
 .pb-add{margin-top:7px;border:1px dashed var(--line);background:transparent;color:var(--ink-faint);border-radius:7px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer}
 .pb-add:hover{border-color:var(--accent);color:var(--accent)}
 @media(max-width:560px){.pb-grid{columns:1}}
+/* Offense by concepts · the list by families (26/11/2026) */
+.pbcon{columns:540px;column-gap:14px}
+.pcn-fam{break-inside:avoid;margin:0 0 14px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel);box-shadow:0 1px 2px rgba(16,24,40,.05),0 8px 20px rgba(16,24,40,.05)}
+.pcn-fh{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:8px 13px;color:#fff}
+.pcn-fh span{font-size:11px;font-weight:600;opacity:.82;font-variant-numeric:tabular-nums}
+.pcn-fam.c-gold .pcn-fh{color:#14130b}
+.pcn-row{display:grid;grid-template-columns:minmax(110px,190px) minmax(0,1fr);gap:4px 12px;align-items:baseline;padding:6px 13px;border-top:1px solid var(--line)}
+.pcn-fh + .pcn-row{border-top:0}
+.pcn-c{font-weight:700;font-size:13px;line-height:1.3;color:var(--ink)}
+.pcn-sets{display:flex;flex-wrap:wrap;gap:5px;min-width:0}
+.pcn-s{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,var(--ink) 4%,var(--panel));font-size:12.5px;line-height:1.45;color:var(--ink)}
+.pcn-s b{font-weight:800;white-space:nowrap}
+.pcn-s i{font-style:normal;font-size:11px;color:var(--ink-soft)}
+.pcn-s img{height:18px;width:26px;object-fit:cover;border-radius:3px;margin-right:-4px}
+.pcn-s.img{cursor:zoom-in}
+.pcn-row.e .pcn-c{color:var(--ink-faint);font-weight:600}
+.pcn-s.e{border-style:dashed;background:transparent;color:var(--ink-faint);font-size:11.5px}
+@media(max-width:560px){.pbcon{columns:1}.pcn-row{grid-template-columns:1fr}}
+/* on paper: the light card, the size of the other tabs' cards */
+.pbp .pcn-fam{margin:0;border-color:#dfe3e8;border-radius:8px;background:#fff;box-shadow:none}
+.pbp .pcn-fh{padding:5px 10px}
+.pbp .pcn-row{padding:4px 10px;border-top-color:#eceef2;grid-template-columns:minmax(80px,120px) minmax(0,1fr)}
+.pbp .pcn-c{color:#141821;font-size:12px}
+.pbp .pcn-s{background:#f3f4f6;border-color:#dfe3e8;color:#141821;font-size:11.5px;padding:1px 8px}
+.pbp .pcn-s i{color:#4d5663}
+.pbp .pcn-row.e .pcn-c,.pbp .pcn-s.e{color:#8a919c;background:transparent}
+
 
 
 /* Playbook Offense/Defense toggle */
@@ -2769,7 +2796,7 @@ body .lg-l2, body .sxp-h2, body .sxp-allh b, body .td-grp{
   font-family:var(--tf-head)!important;font-weight:700!important;font-size:14px!important;letter-spacing:.14em!important;text-transform:uppercase!important}
 /* 3 · a panel's title */
 body .lg-h, body .scout-h, body .td-t b, body .sx-h, body .sx-post .sx-h, body .trg-box > summary b, body .gp5-review > summary b,
-body .section-title, body .rs-card-title, body .pb-cardtitle, body .dash-ch h3{
+body .section-title, body .rs-card-title, body .pb-cardtitle, body .pcn-fh b, body .dash-ch h3{
   font-family:var(--tf-head)!important;font-weight:700!important;font-size:13px!important;letter-spacing:.10em!important;text-transform:uppercase!important}
 /* 4 · the small label that names a part of a panel */
 body .td-kpi i, body .ui-card-k, body .tr-rank-h, body .gp-sig-i i, body .us-l, body .us-h, body .sxp-sub, body .trg-src-h,
@@ -22368,7 +22395,11 @@ function defaultPlaybook(kind){
     S("Hip","green",[["2 hip"],["3 hip"],["Chest series","4 or 5"]]),
     S("Felipe flare / pop","green",[["54"],["52"],["3 C"],["15"],["7"]]),
     S("Roll over rim","green",[["2 Special"],["3 hip"],["2 hip"]]),
-    S("Offscreens","green",[["Veer","Fist C · Fist Side · 3 Side · Elbow side · Thumbs side"],["Twirl 4","2 C"],["Floppy","2 Side"],["1 exit","5 Side · 2"],["DHO","12 · Elbow 5"]]),
+    S("Offscreens · Veer","green",[["Fist C"],["Fist Side"],["3 Side"],["Elbow side"],["Thumbs side"]]),
+    S("Offscreens · Twirl 4","green",[["2 C"]]),
+    S("Offscreens · Floppy","green",[["2 Side"]]),
+    S("Offscreens · 1 exit","green",[["5 Side"],["2"]]),
+    S("Offscreens · DHO","green",[["12"],["Elbow 5"]]),
     S("Double drag","green",[["77"],["2 C"]]),
     S("Spain flare","purple",[["2 Flash"],["Thumbs flash"]]),
     S("Spain","purple",[["2 Down"],["Thumbs down"],["3 Down"]]),
@@ -22478,6 +22509,32 @@ async function _pbPlayerLoad(){
   finally{ _pbPl.busy=false; }
   try{ if(state.ui.view==="playbook") renderPlaybook(); }catch(e){_quiet(e)}
 }
+/* OFFENSE BY CONCEPTS AS A LIST BY FAMILIES (Oriol, 26/11/2026: of five ways to show the many concepts, "lista por
+   familias ok"). One block a family - the colour a concept carries is its family - and one line a concept, its sets
+   beside it as chips, the detail small inside the chip; a concept with nothing under it yet says so. Editing keeps the
+   cards of the other tabs (✎ Edit), and the colour chosen there moves a concept to its family. On paper the same
+   blocks, packed onto the sheet like the cards of the other tabs */
+const PBC_FAM=[["green","Off the ball"],["purple","Spain"],["gold","Ball inside"],["navy","Pick and roll"],["red","Vs coverages"]];
+function _pbConFams(data, paper){
+  const by={}, order=PBC_FAM.map(f=>f[0]).concat(["other"]);
+  (data||[]).forEach(s=>{ const c=PBC_FAM.some(f=>f[0]===s.color)? s.color : "other"; (by[c]=by[c]||[]).push(s); });
+  return order.filter(c=>by[c]).map(c=>{
+    const L=by[c], name=(PBC_FAM.find(f=>f[0]===c)||[0,"Other"])[1];
+    const box=h("div",{class:"pcn-fam c-"+(c==="other"? "dark" : c)},
+      h("div",{class:"pcn-fh"}, h("b",{}, name), h("span",{}, L.length+" concept"+(L.length>1? "s" : ""))));
+    L.forEach(s=>{
+      const ent=(s.entries||[]).filter(_pbSaid), sets=h("div",{class:"pcn-sets"});
+      if(!ent.length) sets.appendChild(h("span",{class:"pcn-s e"}, "to fill in"));
+      ent.forEach(e=>{
+        const chip=h("span",{class:"pcn-s"}, e.label? h("b",{}, e.label) : null, e.detail? h("i",{}, e.detail) : null);
+        if(e.img){ chip.appendChild(h("img",{src:e.img, alt:""}));
+          if(!paper){ chip.classList.add("img"); chip.title="Open the image"; chip.addEventListener("click", ()=>openImgPopup(e.img)); } }
+        sets.appendChild(chip); });
+      box.appendChild(h("div",{class:"pcn-row"+(ent.length? "" : " e")}, h("div",{class:"pcn-c"}, s.title||""), sets));
+    });
+    return box;
+  });
+}
 function renderPlaybook(){
   syncPrintBtn();
   const root=$("#viewPlaybook"); if(!root) return;
@@ -22511,6 +22568,12 @@ function renderPlaybook(){
   if(!isPlayerUser() && (canEdit("playbook") || isAdmin())) head.appendChild(h("button",{class:"btn pb-copiesbtn", title:"Copies kept before a section or a call was taken off · bring back what is missing", onclick:_pbCopiesOpen},"⟲ Copies"));
   if(canEd) head.appendChild(h("button",{class:"btn pb-addsec",onclick:()=>{ commit(()=>{ data.push({id:uid(),title:"New section",color:kind==="def"?"dark":"blue",entries:[{id:uid(),label:"",detail:""}]}); }); renderPlaybook(); }},"＋ section"));
   wrap.appendChild(head);
+  if(kind==="con" && !canEd){
+    const list=h("div",{class:"pbcon"});
+    if(!data.length) list.appendChild(h("div",{class:"pb-empty"}, "Nothing here yet."+(isPlayerUser()? "" : " Add one with ✎ Edit.")));
+    _pbConFams(data, false).forEach(b=>list.appendChild(b));
+    wrap.appendChild(list); wrap.appendChild(pbVideoPanel(canEd)); root.appendChild(wrap); return;
+  }
   const grid=h("div",{class:"pb-grid"});
   const COLORS=["blue","navy","green","red","purple","gold","dark"];
   if(!data.length) grid.appendChild(h("div",{class:"pb-empty"}, "Nothing here yet."+(canEd? " Add one with ＋ section." : "")));
@@ -24480,10 +24543,10 @@ function _anHold(els, onSeen){
    heading is new and does arrive, which is how opening Defense in the playbook or the
    rotations in the league animate without anybody listing those buttons here. The
    memory is cleared when the screen or the report changes. */
-const AN_BLOCKS=".sx-sec, .td-card, .tr-sec, .lg-panel, .day-card, .pdb-card, .pb-card, .rs-block, .rs-banner, "+
+const AN_BLOCKS=".sx-sec, .td-card, .tr-sec, .lg-panel, .day-card, .pdb-card, .pb-card, .pcn-fam, .rs-block, .rs-banner, "+
   ".scout-panel, .pos-col, .squad-col, .us-col, .month-grid, .wk-grid, .ps-wrap, .gp2-q, .gp3-box, .gp3-keys, .presc, .sxp, .lg-diag, "+
   ".tier-surface, .pc-col, .pb-col, .lg-mdc, .cycle-row, .lg-emb, .lg-month, .lg-cal, .ldr, .avl, .tr-top";
-const AN_UNITS="tr, .gp2-tbl, .tl-host, .rt-svg, .rt-wrap, .sc-wrap, .lg-grph, .lg-pc, .cmp-row, .td-kpis, .card, .rs-card, .pc-card, .pb-entry, "+
+const AN_UNITS="tr, .gp2-tbl, .tl-host, .rt-svg, .rt-wrap, .sc-wrap, .lg-grph, .lg-pc, .cmp-row, .td-kpis, .card, .rs-card, .pc-card, .pb-entry, .pcn-row, "+
   ".pbx-row, .lg-md-row, .month-cell, .dc-sess-box, .dc-blk, .dc-loadbar, .ps-item, .ps-play, .presc-c, .sxp-c, .ss-item, "+
   ".tr-chip, .sx-gauge, .td-pr, .lg-key-i, .pc-stat, .pc-role, .need-chip, .pyr-m, .lg-cal-cell, .lg-g, .ldr-c, .ldr-r, .tr-rank-r, .avl-r, .trg-col, .trg-src-r, .trg-chip";
 let _anSeenKeys=new Set(), _anSeenAt={}, _anMo=null;
@@ -36868,8 +36931,9 @@ function _pbCut(hs, C, gap){
 }
 function _pbPrintSheets(){
   const area=$("#print-area"); if(!area) return;
-  const tabs=[["off","Offense"],["def","Defense"]].map(x=>({ t:x[1],
-    secs:pbData(x[0]).map(s=>({ title:s.title, color:s.color, entries:(s.entries||[]).filter(_pbSaid) })).filter(s=>s.entries.length) })).filter(x=>x.secs.length);
+  const tabs=[["off","Offense"],["con","Offense by concepts"],["def","Defense"]].filter(x=>x[0]!=="con" || !isPlayerUser()).map(x=>({ t:x[1], k:x[0],
+    secs: x[0]==="con"? (pbData("con").some(s=>(s.entries||[]).some(_pbSaid))? pbData("con") : [])
+      : pbData(x[0]).map(s=>({ title:s.title, color:s.color, entries:(s.entries||[]).filter(_pbSaid) })).filter(s=>s.entries.length) })).filter(x=>x.secs.length);
   if(!tabs.length){ toast("Nothing written in the playbook yet"); return; }
   const card=s=>{ const b=h("div",{class:"pbp-b"});
     s.entries.forEach(e=>{ const tx=h("div",{}, h("b",{}, e.label||"")); if(e.detail) tx.appendChild(h("span",{}, e.detail));
@@ -36879,7 +36943,7 @@ function _pbPrintSheets(){
   area.innerHTML="";
   document.body.classList.add("dop-measure");
   const sheets=tabs.map(tab=>{
-    const cards=tab.secs.map(card), cols=h("div",{class:"pbp-cols"}), col=h("div",{class:"pbp-col"});
+    const cards=tab.k==="con"? _pbConFams(tab.secs, true) : tab.secs.map(card), cols=h("div",{class:"pbp-cols"}), col=h("div",{class:"pbp-col"});
     const p=h("div",{class:"dop-fit pbp"}, h("div",{class:"dop-top"}, h("b",{}, "Playbook"), h("span",{}, tab.t)), cols);
     area.appendChild(h("div",{class:"dop-page"}, p));
     p.style.zoom="1"; p.style.setProperty("--pbp-gap", GAP+"px");
