@@ -2626,6 +2626,8 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
 .pcn-fam.c-gold .pcn-fh .pb-col{background:rgba(0,0,0,.15);color:#14130b}
 .pcn-fam.ed .pcn-fh{align-items:center}
 .pcn-fam.ed .pcn-fh > span{margin-left:auto}
+.pcn-fh .pcn-grip{color:rgba(255,255,255,.75);font-size:13px}
+.pcn-fam.c-gold .pcn-fh .pcn-grip{color:rgba(0,0,0,.45)}
 .pcn-row{display:grid;grid-template-columns:minmax(110px,190px) minmax(0,1fr);gap:4px 12px;align-items:baseline;padding:6px 13px;border-top:1px solid var(--line)}
 .pcn-fh + .pcn-row{border-top:0}
 .pcn-c{font-weight:700;font-size:13px;line-height:1.3;color:var(--ink)}
@@ -22562,8 +22564,20 @@ function _pcnAddFam(data){
 function _pbConFams(data, mode){
   const paper=mode==="paper", ed=mode==="edit";
   const groups={}; (data||[]).forEach(s=>{ const n=_pcnFamOf(s); (groups[n]=groups[n]||[]).push(s); });
-  const std=PBC_FAM.map(f=>f[1]);
-  const order=std.filter(n=>groups[n] || ed).concat(Object.keys(groups).filter(n=>std.indexOf(n)<0));
+  /* THE ORDER OF THE FAMILIES (Oriol, 26/11/2026: "debo poder mover las secciones también en los 3 apartados"). Once
+     every family sits together in the list, the list's order is theirs, and a family is dragged by the ⠿ of its head.
+     A list where a family is still split (the first one: Safety set PnR came before Ball inside) shows the summary's
+     five first, then the others; the first family moved puts the whole list in that order before moving it */
+  const std=PBC_FAM.map(f=>f[1]), seen=[], seq=(data||[]).map(_pcnFamOf);
+  let together=true; seq.forEach((m,i)=>{ if(i && m!==seq[i-1] && seen.indexOf(m)>=0) together=false; if(seen.indexOf(m)<0) seen.push(m); });
+  const order=together? seen.concat(ed? std.filter(m=>!groups[m]) : [])
+    : std.filter(m=>groups[m] || ed).concat(seen.filter(m=>std.indexOf(m)<0));
+  const moveFam=(from, to)=>{ commit(()=>{
+      const flat=[]; order.forEach(m=>(groups[m]||[]).forEach(x=>flat.push(x))); data.splice(0, data.length, ...flat);
+      const mv=data.filter(x=>_pcnFamOf(x)===from); if(!mv.length) return;
+      mv.forEach(x=>data.splice(data.indexOf(x),1));
+      let at=data.findIndex(x=>_pcnFamOf(x)===to); if(at<0) at=data.length;
+      data.splice(at, 0, ...mv); }); renderPlaybook(); };
   const famColor=n=>{ const g=groups[n], c=g && g[0] && g[0].color; return PCN_COLORS.indexOf(c)>=0? c : ((PBC_FAM.find(f=>f[1]===n)||[])[0] || "dark"); };
   const redraw=()=>renderPlaybook();
   /* a concept goes before another one (and joins its family), or to the end of a family */
@@ -22597,10 +22611,11 @@ function _pbConFams(data, mode){
         const c2=groups[v]? famColor(v) : col; commit(()=>{ L.forEach(s=>{ _pcnJoin(s, v, c2); }); }); redraw(); });
       const cs=h("select",{class:"pb-col", title:"Colour"}); PCN_COLORS.forEach(c=>{ const o=h("option",{value:c}, c); if(c===col) o.selected=true; cs.appendChild(o); });
       cs.addEventListener("change",()=>{ commit(()=>{ L.forEach(s=>{ s.color=cs.value; s.fam=n; if(_pcnColName(cs.value)===n) delete s.fam; }); }); redraw(); });
-      fh.appendChild(ti); fh.appendChild(cs);
+      fh.appendChild(grip("Drag the family to reorder", ()=>({type:"pcnfam", n:n}))); fh.appendChild(ti); fh.appendChild(cs);
     } else fh.appendChild(h("b",{}, n));
     fh.appendChild(h("span",{}, L.length+" concept"+(L.length===1? "" : "s")));
     const box=h("div",{class:"pcn-fam c-"+col+(ed? " ed" : "")}, fh);
+    if(ed) dropOn(box, d=>d.type==="pcnfam" && d.n!==n, d=>moveFam(d.n, n));
     L.forEach(s=>{
       s.entries=s.entries||[];
       const ent=ed? s.entries : s.entries.filter(_pbSaid), sets=h("div",{class:"pcn-sets"});
