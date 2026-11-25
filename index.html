@@ -16735,7 +16735,11 @@ let _gpRP=null;
 const _ksMemo={};
 function _gpLivePublish(o){
   try{ o.court={ u:_gpCourt(o.feed, o.uc, o.lastT), t:_gpCourt(o.feed, o.uc==="A"? "B" : "A", o.lastT) }; }catch(e){ o.court={ u:{}, t:{} }; }
-  try{ o.tm={ u:_gpTeamInfo(o.feed, o.uc, o.maxQ, o.lastT), t:_gpTeamInfo(o.feed, o.uc==="A"? "B" : "A", o.maxQ, o.lastT) }; }catch(e){ o.tm=null; }
+  /* the period the clock is in, even before its first play is written: its fouls start again from nought */
+  let mq=o.maxQ||0;
+  try{ const qEnd=q=>q<4? (q+1)*600 : 2400+(q-3)*300, t=o.lastT;
+    if(o.live && isFinite(t) && t>qEnd(mq)+2){ const qN=t<=2400? Math.min(3, Math.ceil(t/600)-1) : 4+Math.ceil((t-2400)/300)-1; if(qN>mq) mq=qN; } }catch(e){_quiet(e)}
+  try{ o.tm={ u:_gpTeamInfo(o.feed, o.uc, mq, o.lastT), t:_gpTeamInfo(o.feed, o.uc==="A"? "B" : "A", mq, o.lastT) }; }catch(e){ o.tm=null; }
   o.at=Date.now(); _gpLiveNow=o;
   try{ window.dispatchEvent(new CustomEvent("gp-live")); }catch(e){_quiet(e)}
 }
@@ -17814,6 +17818,16 @@ function _gpCourt(feed, uc, now){
   const A=(feed.actions||[]).map((a,i)=>{ const e=_lgGameElapsed(a.quarter, a.time); return { a:a, t:e.t, qi:e.qi, i:i }; })
     .filter(o=>o.t<=now).sort((p,q)=>(p.t-q.t)||(p.i-q.i));
   let maxQ=0; A.forEach(o=>{ if(o.qi>maxQ) maxQ=o.qi; });
+  /* THE PERIOD THE CLOCK IS IN, NOT ONLY THE LAST ONE WITH A PLAY (Oriol, 25/11/2026: "a veces se vuelve loco en
+     pista con tiempos fuera de lugar, quizás al cambiar de periodo"). Live, the league's clock runs ahead of its
+     play by play, and a new quarter is under way before its first play is written. Counted only up to the last
+     period with a play, the floor stopped at the end of the one before: nobody was on, and every rest ran from
+     there. The period of the clock is counted too - its five from the league's starters of that period when they
+     are in, otherwise the five that ended the one before. (A clock one second past a period's end, as the
+     finished game is read, is still that period.) */
+  { const qEnd=q=>q<4? (q+1)*600 : 2400+(q-3)*300;
+    if(isFinite(now) && now<1e8 && now>qEnd(maxQ)+2){
+      const qN=now<=2400? Math.min(3, Math.ceil(now/600)-1) : 4+Math.ceil((now-2400)/300)-1; if(qN>maxQ) maxQ=qN; } }
   const stints=[]; let on=new Set();
   for(let q=0;q<=maxQ;q++){
     const base=q<4? q*600 : 2400+(q-4)*300, len=q<4? 600 : 300, end=Math.min(base+len, now);
@@ -18164,11 +18178,26 @@ function _gpLiveBlock(){
         (sh||[]).forEach(s=>{ const k=s.three? "three" : (s.zone==="rim"||s.zone==="paint")? "in" : "mid"; z[k].a++; if(s.made) z[k].m++; }); return z; };
       const zu=zs(U.shots), zt=zs(T.shots), tot=z=>z.in.a+z.mid.a+z.three.a;
       if(tot(zu)+tot(zt)>=10){
-        const row=(lab, z)=>{ const n=tot(z)||1, pps=(k,v)=>z[k].a? (z[k].m*v/z[k].a).toFixed(2) : "—";
-          const seg=(k,cls,v,name)=>{ const w=Math.round(100*z[k].a/n); return w? h("span",{class:"sq-s "+cls+(k==="mid" && w>=25? " warn" : ""), style:"width:"+w+"%", title:name+": "+z[k].m+"/"+z[k].a+" · "+pps(k,v)+" a shot"}, w>=12? name+" "+w+"%" : "") : null; };
-          return h("div",{class:"sq-r"}, h("b",{}, lab), h("div",{class:"sq-bar"}, seg("in","in",2,"Rim/paint"), seg("mid","mid",2,"Mid"), seg("three","th",3,"3PT")),
-            h("em",{}, "pts/shot: in "+pps("in",2)+" · mid "+pps("mid",2)+" · 3 "+pps("three",3))); };
-        body.appendChild(h("div",{class:"gp-sq"}, h("div",{class:"gp-lv-l"}, "Shot quality"+(lastW? " · the game" : "")), row("US", zu), row("THEM", zt)));
+        /* SHOT QUALITY AT A GLANCE (Oriol, 25/11/2026: "¿se puede hacer más visual? quiero ver volumen y eficiencia de
+           una mirada"). Each side is a strip of its three areas - rim and paint, the mid range, the three - each tile as
+           wide as its share of the side's shots (the volume) and coloured by the points it returns a shot (the
+           efficiency), on the hub's points-a-possession scale: red under 0.80, green from 1.25. A tile is coloured from
+           five shots; under five it is a number, not a colour. Inside each: the area and its share, the points a shot,
+           made of taken. At the end of the strip, the side's points a shot and field goals. */
+        const ZN={ in:["Rim · paint",2], mid:["Mid",2], three:["3PT",3] };
+        const step=v=>v<0.5? 0 : v<0.8? 1 : v<1.0? 2 : v<1.25? 3 : v<1.6? 4 : 5;
+        const row=(lab, z)=>{ const n=tot(z);
+          const strip=h("div",{class:"sq-strip"});
+          ["in","mid","three"].forEach(k=>{ const e=z[k]; if(!e.a) return;
+            const sh=Math.round(100*e.a/Math.max(1,n)), pps=e.m*ZN[k][1]/e.a;
+            strip.appendChild(h("div",{class:"sq-t "+(e.a>=5? "e"+step(pps) : "few"), style:"flex:"+e.a+" 1 0",
+              title:ZN[k][0]+": "+e.m+"/"+e.a+" · "+sh+"% of the shots · "+pps.toFixed(2)+" points a shot"+(e.a<5? " · under 5 shots, no colour" : "")},
+              h("i",{}, ZN[k][0]+" · "+sh+"%"), h("b",{}, pps.toFixed(2)), h("em",{}, e.m+"/"+e.a))); });
+          const pts=2*(z.in.m+z.mid.m)+3*z.three.m, fgm=z.in.m+z.mid.m+z.three.m;
+          return h("div",{class:"sq-r2"}, h("b",{class:"sq-who"}, lab), strip,
+            h("div",{class:"sq-tot", title:"points a shot from the field, all areas"}, h("b",{}, n? (pts/n).toFixed(2) : "—"), h("em",{}, fgm+"/"+n+" FG"))); };
+        body.appendChild(h("div",{class:"gp-sq"}, h("div",{class:"gp-lv-l"}, "Shot quality"+(lastW? " · the game" : ""),
+          h("span",{class:"sq-k"}, "width: share of the shots · colour: points a shot")), row("US", zu), row("THEM", zt)));
       }
     }
     /* all the numbers live in the half-time zone of the panel when there is one; elsewhere one tap
@@ -18656,7 +18685,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
         { const hs=(Lv && Lv.feed)? _gpHlStrip(Lv, "t") : null; if(hs) slot.appendChild(hs); }
         const t=h("table",{class:"gp5-t gp5-opp"});
         t.appendChild(h("tr",{}, h("th",{},""), h("th",{},"#"), h("th",{class:"l"},"Player"), h("th",{class:"hist", title:"S = probable starter, with his starts in their last games"},"S"),
-          h("th",{class:"hist", title:"minutes a game in their last games"},"Avg"), h("th",{class:"rl", title:"minutes in this game"},"Real"), h("th",{class:"st"},"Stint"), h("th",{},"PF"), ..._gpBoxTh()));
+          h("th",{class:"hist", title:"minutes a game in their last games"},"Avg"), h("th",{class:"rl", title:"minutes in this game"},"Real"), h("th",{class:"st", title:"on the floor: how long in this stint · on the bench (grey): how long he has been sitting"},"On · off"), h("th",{},"PF"), ..._gpBoxTh()));
         const seenLive={};
         /* THEIR TIRED MEN, TO ATTACK. Whoever of theirs has been on the floor more than 4:30 in a
            row, named above the table and marked on his line - the man to go at. */
@@ -18682,7 +18711,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
               h("td",{class:"hist"}, p.st? h("b",{class:"s"}, "S"+(R&&p.e? " "+p.e.st+"/"+R.n : "")) : ""),
               h("td",{class:"hist av"}, p.min? Math.round(p.min)+"′" : "—"),
               h("td",{class:"rl"}, c && c.sec? _gpMmss(c.sec) : (Lv && Lv.feed? "0:00" : "—")),
-              h("td",{class:"st"+(on && c.stint>=480? " long" : "")+(tiredM? " blink" : ""), title:tiredM? "more than 4:30 on the floor in a row" : ""}, on? _gpMmss(c.stint) : ""),
+              h("td",{class:"st"+(on && c.stint>=480? " long" : "")+(tiredM? " blink" : ""), title:tiredM? "more than 4:30 on the floor in a row" : ""}, on? _gpMmss(c.stint) : (live && c && !c.on && c.sec>0 && c.rest!=null)? h("span",{class:"rest", title:"on the bench for "+_gpMmss(c.rest)}, _gpMmss(c.rest)) : ""),
               h("td",{class:"pf "+fl}, pf? String(pf) : (Lv && Lv.feed? "0" : "—")),
               ..._gpBoxTds(lp||null, !!(Lv && Lv.feed))));
           }); });
@@ -18691,7 +18720,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
           const fl=_gpFoulLv(p.pf||0, qi), on=!!(c && c.on && live);
           t.appendChild(h("tr",{class:(on? "on " : "")+(fl==="out"? "fout" : "")}, h("td",{class:"ps"},""), h("td",{class:"n"}, String(p.num||"")),
             h("td",{class:"l nm"}, _lgLastName(p.name||"")), h("td",{class:"hist"},""), h("td",{class:"hist"},"new"),
-            h("td",{class:"rl"}, c? _gpMmss(c.sec) : "0:00"), h("td",{class:"st"+(on && c.stint>=270? " blink" : "")}, on? _gpMmss(c.stint) : ""), h("td",{class:"pf "+fl}, String(p.pf||0)), ..._gpBoxTds(p, true))); });
+            h("td",{class:"rl"}, c? _gpMmss(c.sec) : "0:00"), h("td",{class:"st"+(on && c.stint>=270? " blink" : "")}, on? _gpMmss(c.stint) : (live && c && !c.on && c.sec>0 && c.rest!=null)? h("span",{class:"rest", title:"on the bench for "+_gpMmss(c.rest)}, _gpMmss(c.rest)) : ""), h("td",{class:"pf "+fl}, String(p.pf||0)), ..._gpBoxTds(p, true))); });
         _gpMarkFouls(t);
         slot.appendChild(t);
         slot.appendChild(h("div",{class:"gp5-note"}, "Grey: their last "+(R? R.n : "")+" games · colour: this game"+(live? ", live" : "")));
@@ -19027,7 +19056,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
       lmen.forEach(p=>{ const id=String(p.id); if(used[id]) return; if(!(court[id] && court[id].sec>0) && !(p.pf>0)) return;
         rows.push({ name:_lgLastName(p.name||"")||("#"+p.num), plan:0, id:id, num:p.num||"" }); });
       rows.forEach(r=>{ const c=court[r.id]||null, p=byId[r.id]||null;
-        r.sec=c? c.sec : 0; r.on=!!(c && c.on && live); r.stint=c && c.on? c.stint : 0; r.rest=c && !c.on? c.rest : null; r.pf=p? (p.pf||0) : 0; });
+        r.sec=c? c.sec : 0; r.on=!!(c && c.on && live); r.stint=c && c.on? c.stint : 0; r.rest=(live && c && !c.on && c.sec>0)? c.rest : null; r.pf=p? (p.pf||0) : 0; });
       const show=rows.filter(r=>noRot || r.plan>0 || r.sec>0 || r.pf>0);
       show.sort((a,b)=>(b.on?1:0)-(a.on?1:0) || (b.plan-a.plan) || (b.sec-a.sec) || ((a.num===""? 99 : +a.num)-(b.num===""? 99 : +b.num)));
       /* ONE DRAW WHEN THE TABLE CHANGES. The table is drawn again only when what it shows changed - it
@@ -19035,14 +19064,14 @@ function renderPlanSection(sec, canEd, save, allSecs){
          ten seconds. Until our squad has been read, a loading line rather than a table that will change. */
       if(!men.length && !(L && L.feed) && (wrap.__tries=(wrap.__tries||0)+1)<20){ if(!wrap.querySelector(".ld")){ wrap.innerHTML=""; wrap.appendChild(h("div",{class:"ld"},"Reading our squad…", h("span",{class:"ld-bar"}))); } setTimeout(()=>{ if(wrap.isConnected) paint(); }, 800); return; }
       const hlU=(L && L.feed)? _gpHighlights(L, "u") : [];
-      const psig=JSON.stringify([show.map(r=>{ const p=byId[r.id]; return [r.name,r.plan,Math.floor(r.sec),r.on,Math.floor(r.stint||0),r.pf, p? [p.pts,p.pir,p.ast,p.or] : 0]; }), L && L.tm? L.tm.u : null, !!(L && L.feed), live, hlU.map(x=>x.txt)]);
+      const psig=JSON.stringify([show.map(r=>{ const p=byId[r.id]; return [r.name,r.plan,Math.floor(r.sec),r.on,Math.floor(r.stint||0),Math.floor(r.rest||0),r.pf, p? [p.pts,p.pir,p.ast,p.or] : 0]; }), L && L.tm? L.tm.u : null, !!(L && L.feed), live, hlU.map(x=>x.txt)]);
       if(psig===wrap.__sig) return; wrap.__sig=psig;
       wrap.innerHTML="";
       /* what deserves a look among ours, right now */
       if(hlU.length) wrap.appendChild(h("div",{class:"gp5-hl"}, hlU.map(x=>h("span",{class:"gp5-hl-i "+x.tone}, h("i",{}, x.tag), x.txt))));
       const t=h("table",{class:"gp5-t"});
       t.appendChild(h("tr",{}, h("th",{},"#"), h("th",{class:"l"},"Player"), noRot? null : h("th",{class:"pl", title:"minutes the plan gives him for the game (the half on the boards, doubled)"},"Plan"),
-        h("th",{class:"rl", title:"minutes really played, from the league's play by play"},"Real"), h("th",{class:"st", title:"on the floor: time in this stint"},"Stint"), h("th",{},"PF"), ..._gpBoxTh()));
+        h("th",{class:"rl", title:"minutes really played, from the league's play by play"},"Real"), h("th",{class:"st", title:"on the floor: how long in this stint · on the bench (grey): how long he has been sitting"},"On · off"), h("th",{},"PF"), ..._gpBoxTh()));
       show.forEach(r=>{ const fl=_gpFoulLv(r.pf, qi);
         const over=r.plan && r.sec/60>r.plan+2;
         t.appendChild(h("tr",{class:(r.on? "on " : "")+(fl==="out"? "fout" : "")},
@@ -19050,7 +19079,7 @@ function renderPlanSection(sec, canEd, save, allSecs){
           h("td",{class:"l nm"}, _gpFace(r.id, r.num, r.name, true), r.name, fl==="out"? h("em",{class:"out"},"OUT") : null),
           noRot? null : h("td",{class:"pl"}, r.plan? r.plan+"′" : "—"),
           h("td",{class:"rl"+(over? " over" : ""), title:over? "past his planned minutes" : ""}, r.sec? _gpMmss(r.sec) : (L && L.feed? "0:00" : "—")),
-          h("td",{class:"st"+(r.on && r.stint>=480? " long" : "")+(r.on && r.stint>=270? " blink" : ""), title:(r.on && r.stint>=270)? "more than 4:30 on the floor in a row" : ""}, r.on? _gpMmss(r.stint) : ""),
+          h("td",{class:"st"+(r.on && r.stint>=480? " long" : "")+(r.on && r.stint>=270? " blink" : ""), title:(r.on && r.stint>=270)? "more than 4:30 on the floor in a row" : ""}, r.on? _gpMmss(r.stint) : r.rest!=null? h("span",{class:"rest", title:"on the bench for "+_gpMmss(r.rest)}, _gpMmss(r.rest)) : ""),
           h("td",{class:"pf "+fl}, r.pf? String(r.pf) : (L && L.feed? "0" : "—")),
           ..._gpBoxTds(byId[r.id]||null, !!(L && L.feed))));
       });
@@ -34669,9 +34698,16 @@ function renderLeague(){
   add(clP("Roster", _lgRoster), false);
   add(clP("Shot chart", _lgShots));
   root.appendChild(L2("Rotations, units and the clock"));
-  add(_lgRot(L), false);
-  add(clP("Combinations", _lgUnits));
-  add(clP("Late clock", _lgClock));
+  /* THE SAME FOUR PANELS AS THE PRE GAME, SIDE BY SIDE (Oriol, 25/11/2026: "esta tabla se ve enorme" and "late
+     clock y combinations en pantalla grande con espacios muy grandes en blanco; en pregame queda mejor"): the
+     rotation, who is available, the combinations and the late clock, in as many columns as the page fits -
+     the rotation's drawing no longer blown up to the whole width, and no panel stretched across it */
+  { const row=h("div",{class:"lg-emb emb-2x2 lg-rotrow"}), pan=x=>{ if(x) row.appendChild(h("div",{class:"lg-emb-p"}, x)); };
+    try{ pan(_lgRotCore(L)); }catch(e){_quiet(e)}
+    try{ const tid=_lgPanelClub(L); if(tid){ const b=h("div",{class:"lg-panel"}); b.appendChild(_lgAvailBlock(tid)); pan(b); } }catch(e){_quiet(e)}
+    try{ pan(clP("Combinations", _lgUnits)); }catch(e){_quiet(e)}
+    try{ pan(clP("Late clock", _lgClock)); }catch(e){_quiet(e)}
+    add(row, false); }
   root.appendChild(L2("Game pace"));
   add(lgP("Game pace", _lgPace), false);
   root.appendChild(L2("Rebounding"));
@@ -42060,6 +42096,21 @@ body.dark .lg-fold-i{background:rgba(255,255,255,.07)}
 body.dark .lg-embtag{background:rgba(255,255,255,.05);border-color:#262d3a}
 .lg-emb2{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
 .lg-emb2 .lg-emb-p+.lg-emb-p{margin-top:0}
+/* League: the rotation, who is available, the combinations and the late clock side by side, as in the pre
+   game - four columns on a wide screen, two on a laptop or an iPad across, one on a phone */
+.lg-emb.lg-rotrow{display:grid;gap:14px 16px;align-items:start;grid-template-columns:minmax(0,1fr)}
+.lg-emb.lg-rotrow > .lg-emb-p{min-width:0;margin:0}
+@media (min-width:1100px){.lg-emb.lg-rotrow{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}}
+@media (min-width:1800px){.lg-emb.lg-rotrow{grid-template-columns:minmax(720px,1.45fr) minmax(0,.95fr) minmax(0,1fr) minmax(0,.8fr)}}
+/* in those narrow columns a combination is read whole: smaller faces, a tighter label and unit, and the
+   names on a second line rather than cut after the first letters */
+.lg-rotrow .us-i{grid-template-columns:72px minmax(0,1fr) 42px minmax(0,58px);gap:6px}
+.lg-rotrow .us-l{font-size:9.5px;letter-spacing:.04em;line-height:1.2}
+.lg-rotrow .lg-bdg.face.sum{width:26px;height:26px;margin-right:4px}
+.lg-rotrow .us-f .lg-bdg.face.sum+.lg-bdg.face.sum{margin-left:-9px}
+.lg-rotrow .us-w{white-space:normal}
+.lg-rotrow .us-wt{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.2;font-size:11.5px}
+.lg-rotrow .us-p{font-size:9.5px;white-space:normal;line-height:1.15;text-overflow:clip}
 @media(max-width:1100px){ .lg-emb2{grid-template-columns:1fr} }
 .lg-bar{display:flex;align-items:center;gap:14px;margin-top:12px;padding:10px 14px;border-radius:11px;
   background:var(--panel-2,#f6f7f9);border:1px solid var(--line,#eceef1)}
@@ -45072,6 +45123,23 @@ body.dark .gp5-toast.info{background:#e9ecf1;color:#141821}
 .gp-sq .sq-r>em{grid-column:2;font:500 11px Inter,system-ui,sans-serif;font-style:normal;color:var(--ink-soft,#5b6472)}
 .gp-sq .sq-bar{display:flex;height:22px;border-radius:6px;overflow:hidden;background:#eef0f3}
 .gp-sq .sq-s{display:flex;align-items:center;justify-content:center;font:700 11px Inter,system-ui,sans-serif;color:#fff;white-space:nowrap;overflow:hidden}
+/* SHOT QUALITY AT A GLANCE: a tile an area, as wide as its share of the shots, coloured by its points a shot */
+.gp-sq .gp-lv-l .sq-k{margin-left:8px;font:500 10.5px Inter,system-ui,sans-serif;letter-spacing:0;text-transform:none;color:var(--ink-faint,#8a93a2)}
+.gp-sq .sq-r2{display:grid;grid-template-columns:40px minmax(0,1fr) 64px;gap:8px;align-items:stretch;margin:5px 0;padding:0 10px 0 8px}
+.gp-sq .sq-who{align-self:center;font:800 11px "Oswald",sans-serif;letter-spacing:.08em}
+.gp-sq .sq-strip{display:flex;gap:3px;min-width:0}
+.gp-sq .sq-t{min-width:70px;border-radius:7px;padding:5px 8px 4px;display:flex;flex-direction:column;gap:1px;overflow:hidden;background:#eef0f3;color:var(--ink,#141821)}
+.gp-sq .sq-t i{font:600 10px Inter,system-ui,sans-serif;font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.85}
+.gp-sq .sq-t b{font:800 19px/1.05 Inter,system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.gp-sq .sq-t em{font:600 10.5px "IBM Plex Mono",monospace;font-style:normal;opacity:.8}
+.gp-sq .sq-t.few{color:var(--ink-soft,#5b6472)}
+.gp-sq .sq-t.e0{background:#c53727;color:#fff}.gp-sq .sq-t.e1{background:#ea8b77;color:#3d1009}.gp-sq .sq-t.e2{background:#f7d3cb;color:#7a2216}
+.gp-sq .sq-t.e3{background:#d6eee2;color:#0f4a34}.gp-sq .sq-t.e4{background:#8fd0b0;color:#0b3b28}.gp-sq .sq-t.e5{background:#17805a;color:#fff}
+body.dark .gp-sq .sq-t{background:#2c333d;color:#e6e9ee}body.dark .gp-sq .sq-t.few{color:#c0c7d2}
+body.dark .gp-sq .sq-t.e2{background:#5a2e28;color:#ffd6cf}body.dark .gp-sq .sq-t.e3{background:#1f4a3a;color:#c9f0dd}
+.gp-sq .sq-tot{align-self:center;display:flex;flex-direction:column;align-items:flex-end;line-height:1.1}
+.gp-sq .sq-tot b{font:800 17px Inter,system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.gp-sq .sq-tot em{font:600 10.5px "IBM Plex Mono",monospace;font-style:normal;color:var(--ink-soft,#5b6472)}
 .gp-sq .sq-s.in{background:#2f9e86}.gp-sq .sq-s.mid{background:#9aa1ab}.gp-sq .sq-s.mid.warn{background:#d8524e}.gp-sq .sq-s.th{background:#3b6fd8}
 /* half time and review: folded under one heading */
 .gp5-review{margin:10px 0;border:1px solid var(--line-strong,#cfd4dc);border-radius:12px;background:var(--panel,#fff)}
@@ -45183,6 +45251,8 @@ body.dark .gp9-five .pl.bad{background:rgba(216,82,78,.28);color:#f4b2ae}
 .gp5-t td.rl.over{color:#c0392b}
 .gp5-t td.st{color:#1f8a4c;font-weight:800}
 .gp5-t td.st.long{color:#a86a00}
+/* on the bench: how long he has been sitting, in grey beside the floor's green */
+.gp5-t td.st .rest{color:var(--ink-faint,#8a93a2);font-weight:600}
 .gp5-t tr.on td{background:rgba(31,138,76,.13)}
 .gp5-t tr.on td.nm{box-shadow:inset 3px 0 0 #1f8a4c}
 .gp5-t td.pf.hot{background:#c4413d;color:#fff;font-weight:800}
