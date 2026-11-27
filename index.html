@@ -3068,6 +3068,7 @@ body .sxp .ui-sum-h > b, body .pg-uni .ui-sum-h > b{font-size:18px!important}
           <button class="tb-tab" data-view="playbook">Playbook</button>
           <button class="tb-tab" data-view="playerdev">Player development</button>
           <button class="tb-tab" data-view="prob">PROB</button>
+          <button class="tb-tab" data-view="drills">Drills</button>
         </div>
       </div>
       <div class="tb-right">
@@ -3188,6 +3189,7 @@ body .sxp .ui-sum-h > b, body .pg-uni .ui-sum-h > b{font-size:18px!important}
       <div id="viewPlayerDB" class="view" style="display:none"></div>
       <div id="viewTrends" class="view" style="display:none"></div>
       <div id="viewProb" class="view" style="display:none"></div>
+      <div id="viewDrills" class="view" style="display:none"></div>
     </div>
   </div>
 </div>
@@ -4153,6 +4155,7 @@ function applyView(v){
   $("#viewPlayerDB").style.display  = v==="playerdb" ? "" : "none";
   { const tr=$("#viewTrends"); if(tr) tr.style.display = v==="trends" ? "" : "none"; }
   { const pr=$("#viewProb"); if(pr) pr.style.display = v==="prob" ? "" : "none"; }
+  { const dl=$("#viewDrills"); if(dl) dl.style.display = v==="drills" ? "" : "none"; }
   document.querySelectorAll(".tb-tab[data-view]").forEach(b=>b.classList.toggle("active", b.dataset.view===v));
   /* on a phone the button is the only thing naming the screen, so it carries the name */
   try{ const nl=$("#navBtnLabel");
@@ -4162,7 +4165,7 @@ function applyView(v){
   const rosterView = v==="rooster"; const canEdRoster = rosterView && canEdit("rooster");
   ["#undoBtn","#redoBtn","#addBtn","#importRosterBtn","#saveVerBtn","#collapseAllBtn","#charBtn"].forEach(id=>{ const el=$(id); if(el) el.style.display = canEdRoster ? "" : "none"; });
   const rs=$("#rosterSettings"); if(rs) rs.style.display = canEdRoster ? "" : "none";
-  const roMap={dashboard:"#viewDash",rooster:"#viewRooster",planification:"#viewPlan",calendar:"#viewCal",league:"#viewLeague",teamscout:"#viewTeamScout",oppscout:"#viewOppScout",gameplan:"#viewGamePlan",playbook:"#viewPlaybook",playerdev:"#viewPlayerDev",playerdb:"#viewPlayerDB",trends:"#viewTrends",prob:"#viewProb"};
+  const roMap={dashboard:"#viewDash",rooster:"#viewRooster",planification:"#viewPlan",calendar:"#viewCal",league:"#viewLeague",teamscout:"#viewTeamScout",oppscout:"#viewOppScout",gameplan:"#viewGamePlan",playbook:"#viewPlaybook",playerdev:"#viewPlayerDev",playerdb:"#viewPlayerDB",trends:"#viewTrends",prob:"#viewProb",drills:"#viewDrills"};
   const roEl=$(roMap[v]); if(roEl) roEl.classList.toggle("readonly", v!=="playbook" && !!currentUser && !canEdit(v));
   const f=$("#viewFwd"); if(f) f.disabled = viewIdx>=viewHist.length-1;
   tbFade();
@@ -4178,6 +4181,7 @@ function applyView(v){
   if(v==="playerdb") renderPlayerDB();
   if(v==="trends") renderTrends();
   if(v==="prob") renderProb();
+  if(v==="drills") renderDrills();
   /* THE SCREEN CHANGE WAS A CUT. One panel was hidden and the next shown in the same
      frame, with nothing in between, which reads as the page being replaced rather than
      as having moved. The new screen is faded up over a sixth of a second - after its
@@ -4210,11 +4214,11 @@ try{ window.addEventListener("resize", tbFade); }catch(e){_quiet(e)}
    anything on it is still reading (its loading bars); once nothing has been reading for
    half a second it is shown, all at once - twelve seconds at the most. The game plan is
    the exception: it opens at once and fills in, because during a game nobody waits. */
-const VIEW_EL={dashboard:"#viewDash",rooster:"#viewRooster",planification:"#viewPlan",calendar:"#viewCal",league:"#viewLeague",teamscout:"#viewTeamScout",oppscout:"#viewOppScout",playbook:"#viewPlaybook",playerdev:"#viewPlayerDev",playerdb:"#viewPlayerDB",trends:"#viewTrends",prob:"#viewProb"};
+const VIEW_EL={dashboard:"#viewDash",rooster:"#viewRooster",planification:"#viewPlan",calendar:"#viewCal",league:"#viewLeague",teamscout:"#viewTeamScout",oppscout:"#viewOppScout",playbook:"#viewPlaybook",playerdev:"#viewPlayerDev",playerdb:"#viewPlayerDB",trends:"#viewTrends",prob:"#viewProb",drills:"#viewDrills"};
 let _vgT=0;
 function _viewGate(v){
   if(v==="gameplan") return;
-  const root=document.querySelector(VIEW_EL[v]||""); if(!root) return;
+  if(!VIEW_EL[v]) return; const root=document.querySelector(VIEW_EL[v]); if(!root) return;
   if(_vgT){ clearInterval(_vgT); _vgT=0; }
   document.querySelectorAll(".view-wait").forEach(x=>{ x.classList.remove("view-wait"); x.querySelectorAll(":scope > .view-wait-ld").forEach(n=>n.remove()); });
   const busy=()=>Array.from(root.querySelectorAll(".ld, .pre-wait")).some(n=>!n.closest(".view-wait-ld") && (n.offsetParent || n.classList.contains("pre-wait")));
@@ -4901,6 +4905,16 @@ async function parsePracticePDF(file, iso, idx, btn){
   try{
     const buf=await file.arrayBuffer();
     const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    const SB=await _sheetBlocks(pdf), blocks=SB.blocks, start=SB.start;
+    if(!blocks.length){ alert("Couldn't read a practice schedule from this PDF."); if(btn){btn.textContent="📄 Import PDF";btn.disabled=false;} return; }
+    commit(()=>{ let arr=state.plan.sessions[iso]; if(!arr||!arr.length){ (state.plan.sessions[iso]=state.plan.sessions[iso]||[]).push({id:uid(),label:"Session",start:"",goal:"",summary:"",blocks:[],notes:""}); arr=state.plan.sessions[iso]; } const se=arr[Math.min(idx||0,arr.length-1)]; se.blocks=blocks; if(!se.start)se.start=start; });
+    persist(); renderPlan();
+  }catch(err){ alert("Couldn't read that PDF."); if(btn){btn.textContent="📄 Import PDF";btn.disabled=false;} }
+}
+/* THE BLOCKS OF A SESSION SHEET, read out of the PDF: { blocks:[{ id, title, min, coach, items:[{t,c}] }], start }.
+   The Planning import and the Drills library (which takes the shooting blocks of every sheet) read a sheet the same way. */
+async function _sheetBlocks(pdf){
+  {
     /* The sheet has four columns — schedule, coach, notes, and the playbook
        reference down the right. A fixed split at 55% of the page put the coach
        and half the notes inside the block title, and a page-wide column model
@@ -4951,10 +4965,8 @@ async function parsePracticePDF(file, iso, idx, btn){
     });
     for(let i=0;i<blocks.length;i++){ if(i<blocks.length-1){ const d=blocks[i+1]._s-blocks[i]._s; if(d>0&&d<180&&!blocks[i].min) blocks[i].min=d; } }
     const start=blocks.length?_phhmm(blocks[0]._s):""; blocks.forEach(b=>delete b._s);
-    if(!blocks.length){ alert("Couldn't read a practice schedule from this PDF."); if(btn){btn.textContent="📄 Import PDF";btn.disabled=false;} return; }
-    commit(()=>{ let arr=state.plan.sessions[iso]; if(!arr||!arr.length){ (state.plan.sessions[iso]=state.plan.sessions[iso]||[]).push({id:uid(),label:"Session",start:"",goal:"",summary:"",blocks:[],notes:""}); arr=state.plan.sessions[iso]; } const se=arr[Math.min(idx||0,arr.length-1)]; se.blocks=blocks; if(!se.start)se.start=start; });
-    persist(); renderPlan();
-  }catch(err){ alert("Couldn't read that PDF."); if(btn){btn.textContent="📄 Import PDF";btn.disabled=false;} }
+    return { blocks:blocks, start:start };
+  }
 }
 function sessionPdfSlot(iso, idx){
   const wrap=h("div",{class:"pdfslot"});
@@ -6211,7 +6223,7 @@ function sectHidden(k){ return SECT_HIDDEN.indexOf(k)>=0; }
    something the staff can wander into and take for finished work. */
 const WIP_SECTS=["playerdb"];
 const WIP_KEY="wip";
-const SECT_LABELS={dashboard:"Dashboard",planification:"Planning",calendar:"Calendar",league:"League",teamscout:"Post game/practice",oppscout:"Pre game",gameplan:"Game plan",playbook:"Playbook",playerdev:"Player development",playerdb:"Player database",rooster:"Rooster",prob:"PROB",trends:"Trends"};
+const SECT_LABELS={dashboard:"Dashboard",planification:"Planning",calendar:"Calendar",league:"League",teamscout:"Post game/practice",oppscout:"Pre game",gameplan:"Game plan",playbook:"Playbook",playerdev:"Player development",playerdb:"Player database",rooster:"Rooster",prob:"PROB",trends:"Trends",drills:"Drills"};
 function defaultPerms(){
   const all={},none={}; SECT_KEYS.forEach(k=>{all[k]=true;none[k]=false;});
   const mk=(vw,ed)=>({view:Object.assign({},vw),edit:Object.assign({},ed)});
@@ -6239,6 +6251,8 @@ function ensurePerms(){
    the admin writes in it. Fixed here so no permission row can open it wider. */
 const PDEV_WHO=["Oriol","Ramon","Keith","Liviu","Pedro","Nils","Joan Marc","Marc Ribas"];
 function canView(sect){
+  /* DRILLS is Oriol's own library (27/11/2026: "una nueva sección que solamente veo yo"): nobody else, whatever a permission row says */
+  if(sect==="drills") return !!currentUser && isAdmin();
   /* a dashboard is a person's, not a section with permissions: whoever has one sees it */
   if(sect==="dashboard") return !!currentUser && ((isPlayerUser() && !_isDLUser(currentUser)) || (!isPlayerUser() && _dashList(currentUser).length>0));
   /* player development: what the permissions say, and the list of the staff it was built for until someone says otherwise */
@@ -7113,6 +7127,13 @@ function renderProb(){
   const inner=h("div",{class:"prob-in"}); root.appendChild(inner);
   try{ renderProB(inner); }catch(e){ inner.appendChild(h("div",{class:"lg-warn err"},"The ProB screen failed: "+e.message)); }
   try{ _wipArea(inner, "prob"); const wl=inner.querySelector(".week-label"); if(wl) wl.appendChild(_wipTag()); }catch(e){_quiet(e)}
+}
+/* the section lives in drills.js; this is only the door */
+function renderDrills(){
+  const root=$("#viewDrills"); if(!root) return;
+  if(window.Drills){ window.Drills.render(root); return; }
+  root.innerHTML=""; root.appendChild(h("div",{class:"ld"},"Loading the drills…", h("span",{class:"ld-bar"})));
+  let n=0; const t=setInterval(()=>{ if(window.Drills || ++n>40){ clearInterval(t); if(window.Drills && state.ui.view==="drills") window.Drills.render(root); } }, 250);
 }
 function renderPlayerDev(){
   const root=$("#viewPlayerDev"); root.innerHTML="";
@@ -52685,5 +52706,6 @@ html body .prb .phx.phx.pre-phx .card.pcv-side .pcv-col .pcv-hsc .photo-sc{backg
 <script defer src="/stats.js"></script>
 <script defer src="/scoutpre.js"></script>
 <script defer src="/pdev.js"></script>
+<script defer src="/drills.js"></script>
 </body>
 </html>
