@@ -1908,42 +1908,51 @@
     /* THE PRE GAME'S TABLE, FOR US: a row's possessions, its share, its points, its PPP against
        our season's PPP of the same thing, and what the difference came to in points over those
        possessions - won or lost on offense, saved or given on defense */
+    /* ROWS TO LOOK AT, NOT A TABLE TO READ (Oriol, 27/11/2026: "mirándolo todo no sé dónde mirar ni me es fácil
+       de leer ninguna"; Pace is the model): a row is the name, a bar as long as its share with the
+       possessions beside it, the PPP in its colour against our season, the season small, the points it won
+       or lost, and the fouls. A row that won or lost three points or more carries a mark of its colour on
+       its left edge - that is where to look. Everything else about it is on the hover. */
     function refTable(nameHd, rows, def, opt) {
       opt = opt || {};
       var tot = 0, mx = 1;
       rows.forEach(function (r) { if (!r.band) { tot += r.list.length; mx = Math.max(mx, r.list.length); } });
       if (opt.total) tot = opt.total;
-      var out = rows.map(function (r) {
-        if (r.band) return { cls: "sx-famrow", cells: [{ v: r.band, cls: "sx-famc" }, "", "", "", "", "", "", ""] };
+      var box = el("div", "rr" + (def ? " def" : ""));
+      var hd = el("div", "rr-r rr-h");
+      [nameHd || "", (opt.share || "% all").replace(/^% /, "Poss · % "), def ? "PPP allowed" : "PPP", R ? "Season" : "Game", def ? "Pts saved" : "Pts won", def ? "Fouls" : "FD"]
+        .forEach(function (t) { hd.appendChild(el("span", null, t)); });
+      box.appendChild(hd);
+      var built = rows.map(function (r) {
+        if (r.band) return el("div", "rr-band", r.band);
         var s = shotLine(r.list), n = r.list.length, ref = r.ref;
-        /* THE FOULS, ALWAYS (Oriol, 27/11/2026: "en los análisis de sets siempre hay que poner si sacamos
-           faltas o no; también defensivamente"): the fouls drawn on our possessions, the fouls we gave on
-           theirs - every "Foul Drawn" the possessions carry */
+        /* THE FOULS, ALWAYS (Oriol, 27/11/2026): every "Foul Drawn" the possessions carry */
         var fd = 0; r.list.forEach(function (q) { fd += count(q.tags || [], "Foul Drawn"); });
         var use = ref == null ? (def ? defAvg : offAvg) : ref;
         var sw = (s.ppp == null || use == null) ? null : (def ? n * use - s.pts : s.pts - n * use);
         var swR = sw == null ? null : Math.round(sw);
-        return [r.indent ? { v: r.label, cls: "sx-indent" } : r.label,
-          { v: n, cls: "sx-vol " + volStep(100 * n / mx) }, pct(n, tot), s.pts,
-          { v: f2(s.ppp), cls: def ? effD(s.ppp, ref) : effO(s.ppp, ref) },
-          { v: ref == null ? "—" : f2(ref), cls: "sx-ref" },
-          { v: swR == null ? "—" : (swR > 0 ? "+" + swR : swR < 0 ? "−" + (-swR) : "0"), cls: "sx-swing" + (swR > 0 ? " up" : swR < 0 ? " dn" : "") },
-          { v: fd ? String(fd) : "0", cls: "sx-fd" + (fd ? "" : " none"), title: fd + (def ? " fouls we gave" : " fouls drawn") + " on " + n + " possessions" }];
+        var row = el("div", "rr-r" + (r.indent ? " ind" : "") + ((swR != null && Math.abs(swR) >= 3) ? (swR > 0 ? " hot up" : " hot dn") : ""));
+        row.title = r.label + " · " + n + " poss · " + s.pts + " pts · " + f2(s.ppp) + " PPP" + (ref != null ? " · season " + f2(ref) : "") +
+          " · FG " + s.fgm + "/" + s.fga + " · " + s.t3a + " 3PA · " + s.fta + " FTA · " + s.tov + " TO · " + fd + (def ? " fouls given" : " fouls drawn");
+        row.appendChild(el("span", "rr-n", r.label));
+        var b = el("span", "rr-b"), bi = el("i");
+        bi.style.width = Math.max(3, Math.round(70 * n / mx)) + "%";
+        b.appendChild(bi); b.appendChild(el("em", null, n + " · " + pct(n, tot)));
+        row.appendChild(b);
+        row.appendChild(el("b", "rr-p " + (def ? effD(s.ppp, ref) : effO(s.ppp, ref)), f2(s.ppp)));
+        row.appendChild(el("span", "rr-s", ref == null ? "—" : f2(ref)));
+        row.appendChild(el("span", "rr-w" + (swR > 0 ? " up" : swR < 0 ? " dn" : ""), swR == null ? "—" : (swR > 0 ? "+" + swR : swR < 0 ? "−" + (-swR) : "0")));
+        row.appendChild(el("span", "rr-f" + (fd ? "" : " none"), String(fd)));
+        return row;
       });
-      var hd = [nameHd, "Poss", opt.share || "% all", "Pts", def ? "PPP allowed" : "PPP",
-        R ? "Season" : "Game", def ? "Pts saved" : "Pts won", def ? "Fouls" : "FD"];
-      /* THE LONG TAIL FOLDED (Oriol, 27/11/2026: "reducir la necesidad de hacer scroll"): the first
-         opt.top rows in sight, the rest one click away, in the same columns */
-      if (opt.top && out.length > opt.top + 1) {
-        var w2 = el("div", "sx-reft");
-        w2.appendChild(table(hd, out.slice(0, opt.top), { sort: false }));
+      if (opt.top && built.length > opt.top + 1) {
+        built.slice(0, opt.top).forEach(function (x) { box.appendChild(x); });
         var fd2 = el("details", "sx-fold");
-        fd2.appendChild(el("summary", null, "+" + (out.length - opt.top) + " more" + (opt.foldWhy ? " · " + opt.foldWhy : "")));
-        fd2.appendChild(table(hd, out.slice(opt.top), { sort: false }));
-        w2.appendChild(fd2);
-        return w2;
-      }
-      return table(hd, out);
+        fd2.appendChild(el("summary", null, "+" + (built.length - opt.top) + " more" + (opt.foldWhy ? " · " + opt.foldWhy : "")));
+        var inner = el("div", "rr"); built.slice(opt.top).forEach(function (x) { inner.appendChild(x); });
+        fd2.appendChild(inner); box.appendChild(fd2);
+      } else built.forEach(function (x) { box.appendChild(x); });
+      return box;
     }
     /* a phase by phase reading of a concept in four numbers: how often, PPP with, PPP without */
     function touchByPhase(key, label) {
@@ -2054,22 +2063,29 @@
       var m = list.filter(function (q) { return q.phase === "Fastbreak" || (q[key] || 0) > 0; }).length;
       return list.length ? 100 * m / list.length : 0;
     };
-    /* the rate by quarter: a volume, in blue */
+    /* SMALL PICTURES (Oriol, 27/11/2026: "no tiene sentido tan grande"): the rate by quarter and what the concept
+       is worth as a few short bars, the number at the end of each */
+    var miniBox = function (title, sub, rows) {
+      var b = el("div", "sx-mini"), hh = el("div", "sx-mini-h"); hh.appendChild(el("b", null, title)); if (sub) hh.appendChild(el("span", null, sub)); b.appendChild(hh);
+      rows.forEach(function (r) {
+        var x = el("div", "sx-mini-r"); x.title = r.tip || "";
+        x.appendChild(el("span", "l", r.label));
+        var t = el("span", "t"), i = el("i", r.tone || ""); i.style.width = Math.max(2, Math.min(100, Math.round(r.w))) + "%"; t.appendChild(i);
+        if (r.ref != null) { var u = el("u"); u.style.left = Math.max(0, Math.min(100, Math.round(r.ref))) + "%"; t.appendChild(u); }
+        x.appendChild(t); x.appendChild(el("b", r.tone || "", r.text)); b.appendChild(x); });
+      return b; };
     var qStrip = function (key, title) {
-      if (!K || byQ.length < 2) return null;
-      return K.strip({ title: title, sub: "by quarter · share of possessions", items: byQ.map(function (it) {
-        var v = rateOf(it.list, key);
-        return { label: it.label, value: v, text: Math.round(v) + "%", tone: "vol" }; }) });
+      if (byQ.length < 2) return null;
+      return miniBox(title, "by quarter · the tick: the game", byQ.map(function (it) { var v = rateOf(it.list, key);
+        return { label: it.label, w: v, ref: rateOf(P, key), text: Math.round(v) + "%", tone: "vol", tip: it.list.length + " possessions" }; }));
     };
     var worth = function (key, title) {
-      if (!K) return null;
       var it = [0, 1, 2].map(function (k) {
         var g = P.filter(function (q) { return k < 2 ? (q[key] || 0) === k : (q[key] || 0) >= 2; });
-        var s = shotLine(g);
-        return g.length ? { label: (k === 2 ? "2+" : String(k)) + " · " + g.length + " poss", value: s.ppp || 0, text: f2(s.ppp),
-          tone: edgeTone(s.ppp, k ? (R ? R.w[key][0].ppp : offAvg) : (R ? R.w[key][1].ppp : offAvg), false, 0.10, 2) } : null;
+        var s = shotLine(g), t = edgeTone(s.ppp, k ? (R ? R.w[key][0].ppp : offAvg) : (R ? R.w[key][1].ppp : offAvg), false, 0.10, 2);
+        return g.length ? { label: (k === 2 ? "2+" : String(k)), w: 50 * (s.ppp || 0), text: f2(s.ppp) + " · " + g.length, tone: t === "neutral" ? "" : t, tip: g.length + " possessions · " + s.pts + " points" } : null;
       }).filter(Boolean);
-      return it.length >= 2 ? K.strip({ title: title, sub: "points per possession by how many · against our " + seasonWord, items: it }) : null;
+      return it.length >= 2 ? miniBox(title, "PPP by how many · against our " + seasonWord, it) : null;
     };
     var pairOf = function (key) {
       return [shotLine(P.filter(function (q) { return (q[key] || 0) > 0; })), shotLine(P.filter(function (q) { return (q[key] || 0) === 0; }))];
@@ -6038,6 +6054,35 @@
       ".sx-cathead .ui-figs{margin-bottom:10px}",
       /* the post game's colour rule (27/11/2026): blue volume, green / red efficiency for us against our season */
       ".sx-eff{font-weight:800;color:var(--ink,#12161d)}",
+      ".sx-mini{display:grid;gap:4px;align-content:start}",
+      ".sx-mini-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin-bottom:2px}.sx-mini-h b{font:700 10px 'Inter',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}.sx-mini-h span{font-size:10.5px;color:var(--ink-faint,#8a93a2)}",
+      ".sx-mini-r{display:grid;grid-template-columns:30px minmax(0,1fr) 64px;gap:8px;align-items:center;font-size:11.5px}",
+      ".sx-mini-r .l{font:600 10.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}",
+      ".sx-mini-r .t{position:relative;height:9px;border-radius:5px;background:rgba(20,24,33,.07)}",
+      ".sx-mini-r .t i{position:absolute;left:0;top:0;bottom:0;border-radius:5px;background:#9aa6b8}.sx-mini-r .t i.vol{background:#6f95cf}.sx-mini-r .t i.good{background:#2f9e6a}.sx-mini-r .t i.bad{background:#d8524e}",
+      ".sx-mini-r .t u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink,#141821);opacity:.55}",
+      ".sx-mini-r b{font:700 11.5px 'IBM Plex Mono',monospace;text-align:right}.sx-mini-r b.good{color:#17805a}.sx-mini-r b.bad{color:#c53727}.sx-mini-r b.vol{color:#2f6cc0}",
+      "body.dark .sx-mini-r .t{background:rgba(255,255,255,.08)}",
+      ".rr{display:grid;gap:1px;font-size:12.5px;min-width:0}",
+      ".rr-r{display:grid;grid-template-columns:minmax(96px,1.3fr) minmax(90px,1.3fr) 58px 42px 50px 30px;align-items:center;gap:8px;padding:4px 6px 4px 10px;border-radius:6px;position:relative}",
+      ".rr-r:not(.rr-h):hover{background:rgba(20,24,33,.045)}",
+      ".rr-h{font:600 9.5px 'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);padding-top:0;padding-bottom:3px;border-bottom:1px solid var(--line-soft,#eef0f3)}",
+      ".rr-h span:nth-child(n+3),.rr-s,.rr-w,.rr-f,.rr-p{text-align:right}",
+      ".rr-n{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".rr-r.ind .rr-n{padding-left:8px;font-weight:500}",
+      ".rr-b{display:flex;align-items:center;gap:6px;min-width:0}.rr-b i{display:block;height:7px;border-radius:4px;background:#8fa6cc;flex:none}",
+      ".rr-b em{font:600 10.5px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-faint,#8a93a2);white-space:nowrap}",
+      ".rr-p{font:800 13px 'Inter',sans-serif;padding:2px 6px;border-radius:5px;color:var(--ink)}",
+      ".rr-p.sx-eff.good{background:#d4ecdf;color:#11583d}.rr-p.sx-eff.bad{background:#f6dad4;color:#9a2a1d}",
+      "body.dark .rr-p.sx-eff.good{background:rgba(47,158,106,.24);color:#86e3b6}body.dark .rr-p.sx-eff.bad{background:rgba(216,82,78,.24);color:#ffa197}",
+      ".rr-s{color:var(--ink-faint,#8a93a2);font-size:11px}",
+      ".rr-w{font-weight:700;color:var(--ink-soft,#5b6472)}.rr-w.up{color:#17805a}.rr-w.dn{color:#c53727}",
+      "body.dark .rr-w.up{color:#5fcf9f}body.dark .rr-w.dn{color:#ff8f85}",
+      ".rr-f{font:700 10.5px 'IBM Plex Mono',monospace;color:#1f5f8b}.rr-f.none{color:var(--ink-faint,#8a93a2);font-weight:500}",
+      ".rr-r.hot::before{content:'';position:absolute;left:0;top:3px;bottom:3px;width:4px;border-radius:2px}",
+      ".rr-r.hot.up::before{background:#2f9e6a}.rr-r.hot.dn::before{background:#d8524e}",
+      ".rr-r.hot .rr-n{font-weight:800}",
+      ".rr-band{font:700 9.5px 'IBM Plex Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:#a8801a;padding:8px 0 2px 2px}",
       /* THE BLOCKS (Oriol, 27/11/2026): a block is one card with a rule of its colour on the left and its
          key figures on its title line, which stays at the top while the block is read; its panels are
          flat inside it, a small label and a hairline each */

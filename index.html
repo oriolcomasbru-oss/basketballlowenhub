@@ -25850,38 +25850,59 @@ function _postRebounds(sg){
     box.appendChild(h("div",{class:"rbv-two"},
       battle("Our offensive glass · OREB%", oPct, sO, lgO, false, ["We got back", "Our season"], "us"),
       battle("Their offensive glass · against our DREB% "+pc(dPct), tPct, sT, lgO, true, ["They got back", "We let teams have"], "them")));
-    box.appendChild(h("div",{class:"reb-figs"},
-      h("div",{class:"reb-fig"}, h("i",{},"DREB%"), h("b",{class:tn(dPct, sD, false)==="good"? "up" : tn(dPct, sD, false)==="bad"? "dn" : ""}, pc(dPct)), h("span",{}, "of their misses · our season "+pc(sD)+" · league "+pc(lgO!=null? 100-lgO : null))),
-      h("div",{class:"reb-fig"}, h("i",{},"OREB%"), h("b",{class:tn(oPct, sO, false)==="good"? "up" : tn(oPct, sO, false)==="bad"? "dn" : ""}, pc(oPct)), h("span",{}, "of our misses · our season "+pc(sO)+" · league "+pc(lgO))),
-      h("div",{class:"reb-fig"}, h("i",{},"Second-chance points"), h("b",{class:R.sc.u>R.sc.t? "up" : R.sc.u<R.sc.t? "dn" : ""}, R.sc.u+"–"+R.sc.t), h("span",{}, "ours after our offensive rebound · theirs after theirs"))));
-    const grid=h("div",{class:"reb-grid"});
-    /* the quarters, in shares */
-    { const t=h("table",{class:"lg-tbl reb-t reb-qt"}, h("tr",{}, h("th",{class:"l"},"Quarter"), h("th",{title:"the share of our misses we got back"},"OREB%"), h("th",{title:"the share of their misses we got back"},"DREB%")));
-      const bar=(v, tone, tip)=>h("td",{class:"reb-bc "+(tone||""), title:tip||""}, h("span",{class:"reb-cb"}, h("i",{style:"width:"+Math.max(0, Math.min(100, Math.round(v||0)))+"%"})), h("b",{}, pc(v)));
-      t.appendChild(h("tr",{class:"reb-ssn"}, h("td",{class:"l"},"Our season"), bar(sO, "", "our season"), bar(sD, "", "our season")));
+    /* THE REST AS PICTURES (Oriol, 27/11/2026: "rebounding demasiados números y poco visual"): the quarters as two
+       bars each against our season, the misses ours against theirs, who took them as stacked bars, and each of
+       ours as the difference he made - every number is on the hover */
+    hd.appendChild(h("span",{class:"rbv-sc "+(R.sc.u>R.sc.t? "good" : R.sc.u<R.sc.t? "bad" : ""), title:"ours after our offensive rebound · theirs after theirs"}, "Second-chance points ", h("b",{}, R.sc.u+"–"+R.sc.t)));
+    const W100=v=>Math.max(0, Math.min(100, Math.round(v||0)));
+    const tc=t=>t==="up"? "good" : t==="dn"? "bad" : "";
+    const hbar=(lab, v, ref, cls, tip)=>h("div",{class:"rbx-b", title:tip||""}, h("span",{class:"l"}, lab),
+      h("span",{class:"t"}, h("i",{class:cls||"", style:"width:"+W100(v)+"%"}), ref!=null? h("u",{style:"left:"+W100(ref)+"%"}) : null),
+      h("b",{class:cls||""}, pc(v)));
+    const grid=h("div",{class:"rbx-grid"});
+    /* the quarters */
+    { const c=h("div",{class:"rbx-c"}, h("h5",{},"By quarter", h("span",{}, "the tick: our season · OREB% "+pc(sO)+" · DREB% "+pc(sD))));
       R.q.forEach((q,i)=>{ if(!q) return; const o=_rebPct(q.u.or, q.u.or+q.t.dr), d=_rebPct(q.u.dr, q.u.dr+q.t.or);
-        t.appendChild(h("tr",{}, h("td",{class:"l"}, i<4? "Q"+(i+1) : "OT"+(i-3)),
-          bar(o, _rebTone(o, sO), q.u.or+" of "+(q.u.or+q.t.dr)), bar(d, _rebTone(d, sD), q.u.dr+" of "+(q.u.dr+q.t.or)))); });
-      grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"By quarter · against our season"), t)); }
-    /* which miss */
-    { const t=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},"After a missed"), h("th",{class:"grp", title:"our offensive rebounds on our misses"},"Our OREB%"), h("th",{class:"grp", title:"their offensive rebounds on their misses"},"Their OREB%")));
-      [[3,"three"],[2,"two"],[1,"free throw"]].forEach(x=>{ const a=R.miss.u[x[0]], b=R.miss.t[x[0]]; if(!a[1] && !b[1]) return;
-        const oa=_rebPct(a[0],a[1]), ob=_rebPct(b[0],b[1]);
-        t.appendChild(h("tr",{}, h("td",{class:"l"}, x[1]), h("td",{class:"grp "+_rebTone(oa, ob), title:a[0]+" of "+a[1]}, h("b",{}, pc(oa))), h("td",{class:"grp reb-mu", title:b[0]+" of "+b[1]}, pc(ob)))); });
-      grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"Which miss · ours against theirs"), t)); }
-    /* who took them, as shares of each side's rebounds */
-    { const grp={ u:{ G:zero2(), B:zero2(), T:zero2() }, t:{ G:zero2(), B:zero2(), T:zero2() } };
-      function zero2(){ return { or:0, dr:0 }; }
+        c.appendChild(h("div",{class:"rbx-q"}, h("em",{}, i<4? "Q"+(i+1) : "OT"+(i-3)),
+          hbar("OREB", o, sO, tc(_rebTone(o, sO)), q.u.or+" of our "+(q.u.or+q.t.dr)+" misses"),
+          hbar("DREB", d, sD, tc(_rebTone(d, sD)), q.u.dr+" of their "+(q.u.dr+q.t.or)+" misses"))); });
+      grid.appendChild(c); }
+    /* which miss: ours against theirs */
+    { const c=h("div",{class:"rbx-c"}, h("h5",{},"After which miss", h("span",{}, "the share of the misses taken back · ours against theirs")));
+      [[3,"Three"],[2,"Two"],[1,"Free throw"]].forEach(x=>{ const a=R.miss.u[x[0]], b=R.miss.t[x[0]]; if(!a[1] && !b[1]) return;
+        const oa=_rebPct(a[0],a[1]), ob=_rebPct(b[0],b[1]), t=_rebTone(oa, ob);
+        c.appendChild(h("div",{class:"rbx-q"}, h("em",{}, x[1]),
+          hbar("Ours", oa, null, tc(t), a[0]+" of our "+a[1]+" missed "+x[1].toLowerCase()+"s"),
+          hbar("Theirs", ob, null, "them", b[0]+" of their "+b[1]+" missed "+x[1].toLowerCase()+"s"))); });
+      grid.appendChild(c); }
+    /* who took them: interiors, exteriors and the team, as one bar a kind of rebound */
+    { const grp={ u:{ G:{ or:0, dr:0 }, B:{ or:0, dr:0 }, T:{ or:0, dr:0 } }, t:{ G:{ or:0, dr:0 }, B:{ or:0, dr:0 }, T:{ or:0, dr:0 } } };
       Object.keys(R.pl).forEach(id=>{ const p=R.pl[id], g=(p.s==="u"? grpU(id) : grpT(id))||"T"; grp[p.s][g].or+=p.or; grp[p.s][g].dr+=p.dr; });
-      /* a team rebound is in the side's total and in nobody's line: it goes in the last row */
-      ["u","t"].forEach(s=>{ const S=grp[s]; S.T.or+=Math.max(0, R[s].or-(S.G.or+S.B.or+S.T.or)); S.T.dr+=Math.max(0, R[s].dr-(S.G.dr+S.B.dr+S.T.dr)); });
-      const t=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},""), h("th",{class:"grp", title:"of our offensive rebounds"},"Our OREB"), h("th",{title:"of our defensive rebounds"},"Our DREB"), h("th",{class:"grp", title:"of their offensive rebounds"},"Their OREB"), h("th",{title:"of their defensive rebounds"},"Their DREB")));
-      const sh=(a, b, n, mu)=>h("td",{class:(n? "grp" : "")+(mu? " reb-mu" : ""), title:a+" of "+b}, mu? pc(_rebPct(a, b)) : h("b",{}, pc(_rebPct(a, b))));
-      [["B",REB_GRP.B],["G",REB_GRP.G],["T","Team rebounds (no player)"]].forEach(x=>{ const a=grp.u[x[0]], b=grp.t[x[0]]; if(!(a.or+a.dr+b.or+b.dr)) return;
-        t.appendChild(h("tr",{}, h("td",{class:"l"}, x[1]), sh(a.or, R.u.or, 1), sh(a.dr, R.u.dr), sh(b.or, R.t.or, 1, 1), sh(b.dr, R.t.dr, 0, 1))); });
-      grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"Who took them · share of each side's"), h("div",{class:"pb-scroll"}, t))); }
+      ["u","t"].forEach(s2=>{ const S=grp[s2]; S.T.or+=Math.max(0, R[s2].or-(S.G.or+S.B.or+S.T.or)); S.T.dr+=Math.max(0, R[s2].dr-(S.G.dr+S.B.dr+S.T.dr)); });
+      const stack=(lab, side, k)=>{ const S=grp[side], all=S.B[k]+S.G[k]+S.T[k];
+        const seg=(g, cls)=>{ const v=all? 100*S[g][k]/all : 0; return v? h("i",{class:cls, style:"width:"+v.toFixed(1)+"%", title:(g==="B"? "interiors" : g==="G"? "exteriors" : "team")+" "+S[g][k]+" of "+all}, v>=14? Math.round(v)+"%" : "") : null; };
+        return h("div",{class:"rbx-s"+(side==="t"? " them" : "")}, h("span",{class:"l"}, lab), h("span",{class:"t"}, seg("B","in"), seg("G","ex"), seg("T","tm")), h("b",{}, String(all))); };
+      grid.appendChild(h("div",{class:"rbx-c"}, h("h5",{},"Who took them", h("span",{}, h("i",{class:"k in"}), "interiors ", h("i",{class:"k ex"}), "exteriors ", h("i",{class:"k tm"}), "team")),
+        stack("Our OREB","u","or"), stack("Our DREB","u","dr"), stack("Their OREB","t","or"), stack("Their DREB","t","dr"))); }
     box.appendChild(grid);
-    box.appendChild(h("div",{class:"reb-card"}, h("h5",{},"Ours on the floor · the team's rebounding with each of them on and off"), _rebPlayersTable(R.pl, names, grpU, _rebTot(R), { pct:true })));
+    /* each of ours: the difference he made on the glass, on the floor against off it */
+    { const tot=_rebTot(R), ids=Object.keys(R.pl).filter(id=>R.pl[id].s==="u" && R.pl[id].sec>0);
+      const rows=ids.map(id=>{ const p=R.pl[id], nm=names[id]||{}, g=grpU(id, nm.num)||"G";
+        const dOn=_rebPct(p.dOn[0],p.dOn[1]), dOff=_rebPct(tot.dr-p.dOn[0], tot.dC-p.dOn[1]), oOn=_rebPct(p.oOn[0],p.oOn[1]), oOff=_rebPct(tot.or-p.oOn[0], tot.oC-p.oOn[1]);
+        return { nm:nm, g:g, min:p.sec/60, d:(dOn!=null && dOff!=null)? dOn-dOff : null, o:(oOn!=null && oOff!=null)? oOn-oOff : null, dOn:dOn, dOff:dOff, oOn:oOn, oOff:oOff, reb:p.or+p.dr }; })
+        .sort((a,b)=>(a.g===b.g? 0 : a.g==="B"? -1 : 1) || b.min-a.min);
+      const div=(v, tip)=>{ const w=v==null? 0 : Math.min(50, Math.abs(v)/30*50), cls=v==null? "" : v>=4? "good" : v<=-4? "bad" : "";
+        return h("span",{class:"rbx-d", title:tip}, h("u",{}), v==null? null : h("i",{class:cls, style:(v>=0? "left:50%" : "right:50%")+";width:"+w.toFixed(1)+"%"}),
+          h("b",{class:cls}, v==null? "—" : (v>0? "+" : v<0? "−" : "±")+Math.abs(Math.round(v)))); };
+      const c=h("div",{class:"rbx-c rbx-pl"}, h("h5",{},"Ours on the floor", h("span",{}, "the team's DREB% and OREB% with him on, against off · green 4 points better or more")));
+      c.appendChild(h("div",{class:"rbx-p rbx-ph"}, h("span",{}, ""), h("span",{}, "Min"), h("span",{}, "DREB% on − off"), h("span",{}, "OREB% on − off")));
+      let lastG=null;
+      rows.forEach(r=>{ if(r.g!==lastG){ c.appendChild(h("div",{class:"rbx-g"}, REB_GRP[r.g])); lastG=r.g; }
+        const pc0=v=>v==null? "—" : Math.round(v)+"%";
+        c.appendChild(h("div",{class:"rbx-p"+(r.min<20? " small" : "")}, h("span",{class:"n"}, h("u",{}, "#"+(r.nm.num||"")), " "+_lgLastName(r.nm.name||"")),
+          h("span",{class:"m"}, String(Math.round(r.min))),
+          div(r.d, "DREB% "+pc0(r.dOn)+" on · "+pc0(r.dOff)+" off"), div(r.o, "OREB% "+pc0(r.oOn)+" on · "+pc0(r.oOff)+" off"))); });
+      box.appendChild(c); }
     box.appendChild(h("div",{class:"gpo-note"},"From the league's play by play. OREB% = the share of our misses we got back; DREB% = the share of theirs. A team rebound counts for the team and for no player. Green or red: 5 points better or worse than our season. Positions: the league's roster, the staff's where it differs (Thiers a 5). A name with a dot played under 20 minutes. The trainings' rebounding is in Trends."));
   }).catch(e=>{ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"},"The rebounds could not be read: "+((e&&e.message)||e))); });
   return outer;
@@ -26317,11 +26338,13 @@ function _postOverviewDraw(sg, P, Tg, API, K, SR){
     empty:"Neither the play by play nor the tagging of this game is in yet." });
   if(model && !R) card.appendChild(h("div",{class:"gpo-note"},"What stands out comes once our season's tagging is read."));
   else if(model && R && !offI.length && !defI.length) card.appendChild(h("div",{class:"gpo-note"},"Nothing of five possessions or more was 0.10 or further from our season."));
-  /* ---- the quarters, once */
+  /* ---- the quarters, once, as one line (Oriol, 27/11/2026: "quarter by quarter no tiene sentido tan grande") */
   try{
-    const qm=Q.map((A,i)=>A? { label:QN[i], value:A.u.pts-A.t.pts, text:A.u.pts+"–"+A.t.pts, tone:A.u.pts>A.t.pts? "good" : A.u.pts<A.t.pts? "bad" : "neutral" } : null).filter(Boolean);
-    const st=qm.length? K.strip({ title:"Quarter by quarter", sub:"our score – theirs · the play by play", signed:true, items:qm }) : null;
-    if(st){ const hd=st.querySelector(".ui-vis-h"), c=K.src("lg"); if(hd && c) hd.insertBefore(c, hd.firstChild); st.classList.add("pg-qstrip"); card.appendChild(st); }
+    if(Q.some(Boolean)){ const ln=h("div",{class:"pg-qline"}); const c=K.src("lg"); if(c) ln.appendChild(c);
+      ln.appendChild(h("b",{},"Quarter by quarter"));
+      ln.appendChild(h("div",{class:"pgh-qs"}, Q.map((A,i)=>{ if(!A) return null; const d=A.u.pts-A.t.pts;
+        return h("span",{class:d>0? "good" : d<0? "bad" : ""}, h("i",{}, QN[i]), A.u.pts+"–"+A.t.pts, h("em",{}, (d>0? "+" : d<0? "−" : "±")+Math.abs(d))); })));
+      card.appendChild(ln); }
   }catch(e){_quiet(e)}
   out.appendChild(card);
   /* THE TAGGING AGAINST THE SCORE. Clips read on the wrong side or missing from the file change
@@ -46602,6 +46625,47 @@ body.dark .sv-t td.sv-x{color:#ff8f85}
 .pg-uni[data-tab="all"] .pg-pane + .pg-pane.on{margin-top:18px}
 @media print{.pg-uni .pg-pane{display:block!important}.pg-uni .pg-tabs{display:none!important}}
 body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{display:none!important}
+/* the overview's quarters in one line, its findings filling their half (27/11/2026) */
+.pg-qline{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line-soft,#eef0f3)}
+.pg-qline > b{font:700 11px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase}
+.gpo .ui-groups .ui-cards{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+/* rebounding as pictures (27/11/2026) */
+.rbv-sc{margin-left:auto;font:600 11px 'Inter',sans-serif;color:var(--ink-soft,#5b6472);padding:3px 9px;border-radius:999px;background:var(--panel-2,#f4f5f7)}
+.rbv-sc b{font:800 13px 'IBM Plex Mono',monospace;margin-left:4px}.rbv-sc.good b{color:#17805a}.rbv-sc.bad b{color:#c53727}
+.rbx-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:12px 16px}
+.rbx-c{padding:10px 12px;border-radius:10px;border:1px solid var(--line,#e4e7ec);display:grid;gap:6px;align-content:start}
+.rbx-c h5{margin:0 0 2px;font:700 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}
+.rbx-c h5 span{font:500 10.5px 'Inter',sans-serif;letter-spacing:0;text-transform:none;color:var(--ink-faint,#8a93a2);display:inline-flex;align-items:center;gap:4px}
+.rbx-q{display:grid;grid-template-columns:62px minmax(0,1fr);gap:2px 8px;align-items:center}
+.rbx-q > em{grid-row:span 2;font:700 12px 'IBM Plex Mono',monospace;font-style:normal;color:var(--ink-soft,#5b6472)}
+.rbx-b{display:grid;grid-template-columns:44px minmax(0,1fr) 40px;gap:6px;align-items:center;font-size:11px}
+.rbx-b .l{color:var(--ink-faint,#8a93a2);font:600 10px 'IBM Plex Mono',monospace}
+.rbx-b .t{position:relative;height:9px;border-radius:5px;background:rgba(20,24,33,.07)}
+.rbx-b .t i{position:absolute;left:0;top:0;bottom:0;border-radius:5px;background:#9aa6b8}
+.rbx-b .t i.good{background:#2f9e6a}.rbx-b .t i.bad{background:#d8524e}.rbx-b .t i.them{background:#c9cfd8}
+.rbx-b .t u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink,#141821)}
+.rbx-b b{font:700 12px 'IBM Plex Mono',monospace;text-align:right}.rbx-b b.good{color:#17805a}.rbx-b b.bad{color:#c53727}.rbx-b b.them{color:var(--ink-faint,#8a93a2);font-weight:500}
+.rbx-s{display:grid;grid-template-columns:78px minmax(0,1fr) 30px;gap:8px;align-items:center;font-size:11.5px}
+.rbx-s .l{font-weight:600}.rbx-s.them .l,.rbx-s.them b{color:var(--ink-faint,#8a93a2)}
+.rbx-s .t{display:flex;height:16px;border-radius:5px;overflow:hidden;background:rgba(20,24,33,.06)}
+.rbx-s .t i{display:flex;align-items:center;justify-content:center;font:700 9.5px 'IBM Plex Mono',monospace;color:#fff;font-style:normal}
+.rbx-s .t i.in,.rbx-c h5 i.k.in{background:#3d4a5c}.rbx-s .t i.ex,.rbx-c h5 i.k.ex{background:#c6a15b}.rbx-s .t i.tm,.rbx-c h5 i.k.tm{background:#b8c0cb}
+.rbx-s.them .t{opacity:.55}
+.rbx-s b{font:700 11px 'IBM Plex Mono',monospace;text-align:right}
+.rbx-c h5 i.k{display:inline-block;width:9px;height:9px;border-radius:2px}
+.rbx-pl{margin-top:12px}
+.rbx-p{display:grid;grid-template-columns:minmax(120px,190px) 40px minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:center;font-size:12px;padding:2px 0}
+.rbx-ph{font:600 9.5px 'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);border-bottom:1px solid var(--line-soft,#eef0f3);padding-bottom:3px}
+.rbx-p .n{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rbx-p .n u{text-decoration:none;color:var(--ink-faint,#8a93a2);font:600 10.5px 'IBM Plex Mono',monospace}
+.rbx-p .m{font:600 11px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);text-align:right}
+.rbx-p.small{opacity:.6}
+.rbx-g{font:700 9.5px 'IBM Plex Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:#a8801a;padding-top:6px}
+.rbx-d{position:relative;height:16px;display:block}
+.rbx-d u{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--line-strong,#cfd4dc)}
+.rbx-d i{position:absolute;top:4px;bottom:4px;background:#b8c0cb;border-radius:3px}.rbx-d i.good{background:#2f9e6a}.rbx-d i.bad{background:#d8524e}
+.rbx-d b{position:absolute;right:0;top:0;font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}.rbx-d b.good{color:#17805a}.rbx-d b.bad{color:#c53727}
+body.dark .rbx-b .t,body.dark .rbx-s .t{background:rgba(255,255,255,.08)}body.dark .rbx-b .t u{background:#e6e9ef}
+body.dark .rbx-b b.good,body.dark .rbx-d b.good{color:#5fcf9f}body.dark .rbx-b b.bad,body.dark .rbx-d b.bad{color:#ff8f85}
 /* the game, compact (27/11/2026) */
 .pgh{display:grid;gap:10px;margin:0 0 6px}
 .pgh-top{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:10px 12px;border-radius:12px;background:var(--panel,#fff);border:1px solid var(--line,#e4e7ec);box-shadow:inset 4px 0 0 #5b6472}

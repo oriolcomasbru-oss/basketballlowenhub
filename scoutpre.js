@@ -2914,7 +2914,7 @@
         if (bFirst > 0) {
           var bGrid = el("div", "sxp-pgrid"), bCur = null;
           bKids.slice(bFirst).forEach(function (k) {
-            if (k.classList && k.classList.contains("sxp-sub2")) { bCur = el("div", "sxp-pp"); bGrid.appendChild(bCur); if (/game by game|those clips/i.test(k.textContent)) bCur.classList.add("wide"); }
+            if (k.classList && k.classList.contains("sxp-sub2")) { bCur = el("div", "sxp-pp"); bGrid.appendChild(bCur); if (/game by game/i.test(k.textContent)) bCur.classList.add("wide"); }
             if (bCur) bCur.appendChild(k); });
           b5b.appendChild(bGrid);
         }
@@ -3468,12 +3468,25 @@
       "body:not(.prt) .sxp[data-tab]:not([data-tab='over']) .sxp-sec > .sxp-sechead{position:sticky;top:0;z-index:4;background:var(--panel,#fff);padding:11px 0 9px;margin:0 0 6px;border-bottom:1px solid var(--line,#e4e7ec)}",
       "body:not(.prt) .sxp[data-tab]:not([data-tab='over']) .sxp-sec > .sxp-card{border:0!important;border-top:1px solid var(--line-soft,#eef0f3)!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;padding:8px 0 0!important}",
       ".sxp-vis .sxp-tm{min-height:140px;max-height:210px}",
-      ".sxp-pgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 24px;align-items:start}",
-      ".sxp-pgrid > .sxp-pp{min-width:0}.sxp-pgrid > .sxp-pp.wide{grid-column:1/-1}",
-      "@media (max-width:1100px){.sxp-pgrid{grid-template-columns:minmax(0,1fr)}}",
-      "body:not(.prt) .sxp[data-tab=off] > .sxp-sec:has(> .sxp-card ~ .sxp-card),body:not(.prt) .sxp[data-tab=def] > .sxp-sec:has(> .sxp-card ~ .sxp-card),body:not(.prt) .sxp[data-tab=bs] > .sxp-sec:has(> .sxp-card ~ .sxp-card){grid-template-columns:repeat(2,minmax(0,1fr))!important}",
-      "body:not(.prt) .sxp[data-tab=off] > .sxp-sec > .sxp-card:not(.fit-span),body:not(.prt) .sxp[data-tab=def] > .sxp-sec > .sxp-card:not(.fit-span),body:not(.prt) .sxp[data-tab=bs] > .sxp-sec > .sxp-card:not(.fit-span){grid-column:auto!important}",
-      "body:not(.prt) .sxp[data-tab=off] > .sxp-sec > .sxp-card.fit-span,body:not(.prt) .sxp[data-tab=def] > .sxp-sec > .sxp-card.fit-span,body:not(.prt) .sxp[data-tab=bs] > .sxp-sec > .sxp-card.fit-span{grid-column:1/-1!important}",
+      ".sxp-pgrid{column-count:2;column-gap:28px}",
+      ".sxp-pgrid > .sxp-pp{break-inside:avoid;margin-bottom:10px;min-width:0}.sxp-pgrid > .sxp-pp.wide{column-span:all}",
+      "@media (max-width:1100px){.sxp-pgrid{column-count:1}}",
+      ".sxp-pgrid .sxp-t{width:auto;min-width:100%}",
+      /* TWO COLUMNS THAT FLOW (Oriol, 27/11/2026: "espacios en blanco sin sentido, tablas estiradas sin sentido"):
+         the tables of a section run down two columns, each under the one before, so a short table does not
+         leave a hole beside a long one; a single table keeps the section's own layout */
+      "body:not(.prt) .sxp[data-tab=off] > .sxp-sec[data-tabs~=off]:has(> :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=off]) ~ :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=off])){display:block!important;column-count:2;column-gap:28px}",
+      "body:not(.prt) .sxp[data-tab=off] > .sxp-sec[data-tabs~=off]:has(> :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=off]) ~ :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=off])) > *{break-inside:avoid;margin-bottom:14px}",
+      "body:not(.prt) .sxp[data-tab=off] > .sxp-sec[data-tabs~=off]:has(> :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=off]) ~ :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=off])) > .sxp-sechead,body:not(.prt) .sxp[data-tab=off] > .sxp-sec[data-tabs~=off]:has(> :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=off]) ~ :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=off])) > .sxp-card.fit-span{column-span:all}",
+      "@media (max-width:1100px){body:not(.prt) .sxp[data-tab=off] > .sxp-sec[data-tabs~=off]:has(> :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=off]) ~ :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=off])){column-count:1}}",
+      "body:not(.prt) .sxp[data-tab=def] > .sxp-sec[data-tabs~=def]:has(> :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=def]) ~ :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=def])){display:block!important;column-count:2;column-gap:28px}",
+      "body:not(.prt) .sxp[data-tab=def] > .sxp-sec[data-tabs~=def]:has(> :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=def]) ~ :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=def])) > *{break-inside:avoid;margin-bottom:14px}",
+      "body:not(.prt) .sxp[data-tab=def] > .sxp-sec[data-tabs~=def]:has(> :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=def]) ~ :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=def])) > .sxp-sechead,body:not(.prt) .sxp[data-tab=def] > .sxp-sec[data-tabs~=def]:has(> :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=def]) ~ :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=def])) > .sxp-card.fit-span{column-span:all}",
+      "@media (max-width:1100px){body:not(.prt) .sxp[data-tab=def] > .sxp-sec[data-tabs~=def]:has(> :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=def]) ~ :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=def])){column-count:1}}",
+      "body:not(.prt) .sxp[data-tab=bs] > .sxp-sec[data-tabs~=bs]:has(> :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=bs]) ~ :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=bs])){display:block!important;column-count:2;column-gap:28px}",
+      "body:not(.prt) .sxp[data-tab=bs] > .sxp-sec[data-tabs~=bs]:has(> :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=bs]) ~ :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=bs])) > *{break-inside:avoid;margin-bottom:14px}",
+      "body:not(.prt) .sxp[data-tab=bs] > .sxp-sec[data-tabs~=bs]:has(> :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=bs]) ~ :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=bs])) > .sxp-sechead,body:not(.prt) .sxp[data-tab=bs] > .sxp-sec[data-tabs~=bs]:has(> :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=bs]) ~ :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=bs])) > .sxp-card.fit-span{column-span:all}",
+      "@media (max-width:1100px){body:not(.prt) .sxp[data-tab=bs] > .sxp-sec[data-tabs~=bs]:has(> :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=bs]) ~ :is(.sxp-card:not([data-tabs]),.sxp-card[data-tabs~=bs])){column-count:1}}",
       ".sxp-tm{position:relative;width:100%;aspect-ratio:3/1;min-height:200px;max-height:340px}",
       ".sxp-tm-c{position:absolute;box-sizing:border-box;border:2px solid var(--panel,#fff);border-radius:7px;padding:6px 8px;overflow:hidden;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:2px;background:rgba(20,24,33,.07);color:var(--ink)}",
       ".sxp-tm-c.good{background:rgba(47,158,134,.24)}.sxp-tm-c.bad{background:rgba(216,82,78,.22)}",
