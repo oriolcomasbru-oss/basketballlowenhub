@@ -2945,6 +2945,94 @@ body .tr-fb, body .lg-seg-b, body .sxp-tab, body .sxp-sortb, body .pbx-sortb{
   font-family:var(--tf-head)!important;font-weight:600!important;font-size:11px!important;letter-spacing:.08em!important;text-transform:uppercase!important}
 /* 9 · buttons */
 body .btn, body .pre-copy-btn{font-family:var(--tf-body)!important;font-weight:600!important}
+/* 10 · TEAM STATS IN BOXES (Oriol, 27/11/2026: "las secciones no tienen peso visual... cuesta de leer pq no sabes
+   dónde mirar. haz cajas, con títulos con más peso"; the pre game's rebounding boxes are the model). In Team stats,
+   pre and post, every table and every picture sits in a box, and the box opens with a title that outweighs anything
+   inside it: the block 20px, the box 15px with a bar of the block's colour, a part of a box 12.5px, a table's head
+   10.5px. The boxes stand 16px apart, so nothing touches. */
+/* the block */
+body .sxp .sxp-h2, body .sx-post .sx-catt{font-size:20px!important;letter-spacing:.08em!important;line-height:1.1!important}
+/* the box */
+body:not(.prt) .sxp[data-tab]:not([data-tab='over']) .sxp-sec > .sxp-card,
+body .sx-post .sx-cat > .sx-sec,
+body .pg-uni .pg-qbox:not(:empty), body .pg-uni .pg-minbox{
+  border:1px solid var(--line,#e4e7ec)!important;border-radius:10px!important;background:var(--panel,#fff)!important;
+  box-shadow:0 1px 2px rgba(16,24,40,.06)!important;padding:12px 14px 14px!important;margin:0!important}
+body .pg-uni .pg-qbox:not(:empty){margin:0 0 16px!important}
+body .pg-uni .pg-qbox .pg-qwrap{margin:0!important}
+body .sx-post .sx-cat{gap:16px!important;padding-bottom:16px!important}
+body .sx-post .sx-cat > .sx-cath{margin-bottom:0!important}
+body:not(.prt) .sxp[data-tab] > .sxp-sec[data-tabs]{column-gap:16px!important}
+body:not(.prt) .sxp[data-tab] > .sxp-sec[data-tabs] > .sxp-card{margin-bottom:16px!important}
+body:not(.prt) .sxp[data-tab]:not([data-tab='over']) .sxp-sec{gap:16px!important}
+/* the box's title: the words */
+body .sxp .sxp-card > .sxp-sub:first-child, body .sxp .sxp-card > .sxp-sub:first-child > b,
+body .sx-post .sx-cat > .sx-sec > .sx-h,
+body .sx-post .sx-vis .ui-vis-h, body .sx-post .sx-vis .sx-mini-h > b,
+body .sxp .ui-visrow .ui-vis-h,
+body .pg-uni .gpo-sub, body .pg-uni .rbx-c > h5,
+body .pg-uni .rbv-h > b, body .sxp .rbv-h > b,
+body .pg-uni .reb-card > h5, body .sxp .reb-card > h5,
+body .sxp .lg-h, body .sxp .lg-h > span, body .sxp .sxp-pnr-h,
+body .pg-uni .ppv-h > b, body .sxp .ppv-h > b{
+  font-family:var(--tf-head)!important;font-weight:700!important;font-size:15px!important;letter-spacing:.07em!important;
+  text-transform:uppercase!important;color:var(--ink,#141821)!important;line-height:1.2!important}
+/* ...and the line it stands on: a bar of the block's colour before it, a hairline under it */
+body .sxp .sxp-card > .sxp-sub:first-child,
+body .sx-post .sx-cat > .sx-sec > .sx-h,
+body .sx-post .sx-vis .ui-vis-h, body .sx-post .sx-vis .sx-mini-h,
+body .sxp .ui-visrow .ui-vis-h,
+body .pg-uni .gpo-sub, body .pg-uni .rbx-c > h5,
+body .pg-uni .rbv-h, body .sxp .rbv-h,
+body .pg-uni .reb-card > h5, body .sxp .reb-card > h5{
+  display:flex!important;align-items:center!important;flex-wrap:wrap!important;gap:4px 8px!important;
+  padding:0 0 8px!important;margin:0 0 10px!important;border:0!important;border-bottom:1px solid var(--line,#e4e7ec)!important}
+body .sxp .sxp-card > .sxp-sub:first-child::before,
+body .sx-post .sx-cat > .sx-sec > .sx-h::before,
+body .sx-post .sx-vis .ui-vis-h::before, body .sx-post .sx-vis .sx-mini-h::before,
+body .sxp .ui-visrow .ui-vis-h::before,
+body .pg-uni .gpo-sub::before, body .pg-uni .rbx-c > h5::before,
+body .pg-uni .rbv-h::before, body .sxp .rbv-h::before,
+body .pg-uni .reb-card > h5::before, body .sxp .reb-card > h5::before{
+  content:''!important;display:block!important;flex:none!important;width:4px!important;height:16px!important;border-radius:2px!important;
+  background:var(--blk,#c6a15b)!important;margin:0!important;position:static!important}
+/* what a title says about itself stays small and grey beside it */
+body .sx-post .sx-vis .ui-vis-h span:not(.ui-src), body .sxp .ui-visrow .ui-vis-h span:not(.ui-src),
+body .pg-uni .rbx-c > h5 span, body .sx-post .sx-vis .sx-mini-h > span{
+  font-family:var(--tf-body)!important;font-size:11.5px!important;font-weight:400!important;letter-spacing:0!important;text-transform:none!important;color:var(--ink-faint,#8a93a2)!important}
+/* a part inside a box */
+body .sxp .sxp-sub2, body .sxp .sxp-sub2 > b, body .pg-uni .ppv-g > .hd, body .sxp .ppv-g > .hd,
+body .pg-uni .rbv-bh > b, body .sxp .rbv-bh > b, body .pg-uni .pgm-rc > h5,
+body .pg-uni .ui-figrow-h > b, body .sxp .ui-figrow-h > b, body .sxp .dash-covh{
+  font-family:var(--tf-head)!important;font-weight:700!important;font-size:12.5px!important;letter-spacing:.08em!important;text-transform:uppercase!important}
+body .sxp .sxp-sub2{margin-top:18px!important;padding-top:12px!important;border-top:1px dashed var(--line,#e4e7ec)!important}
+/* the ball screen's parts, each a box of its own inside the coverage box */
+body .sxp .sxp-pgrid{column-gap:16px!important}
+body .sxp .sxp-pgrid > .sxp-pp{border:1px solid var(--line,#e4e7ec);border-radius:8px;padding:10px 12px 12px;margin-bottom:16px!important;background:var(--panel,#fff)}
+body .sxp .sxp-pp > .sxp-sub2:first-child{margin:0 0 8px!important;padding:0 0 7px!important;border-top:0!important;border-bottom:1px solid var(--line,#e4e7ec)!important;font-size:13.5px!important;color:var(--ink,#141821)!important;display:flex!important;align-items:center!important;gap:8px!important}
+body .sxp .sxp-pp > .sxp-sub2:first-child::before{content:''!important;display:block!important;width:3px!important;height:13px!important;border-radius:2px!important;background:var(--blk,#c6a15b)!important;flex:none!important}
+/* the overview's pick and roll: their offense and their defense as two boxes; the two coverage tables side by side,
+   the way each big defends it as one row of three pictures under them */
+body .sxp .sxp-pnr-o, body .sxp .sxp-pnr-d{border:1px solid var(--line,#e4e7ec)!important;border-radius:10px!important;background:var(--panel,#fff)!important;
+  box-shadow:0 1px 2px rgba(16,24,40,.06)!important;padding:12px 14px 14px!important}
+body .sxp .sxp-pnr-cols{gap:16px!important;margin-top:12px!important}
+body .sxp .sxp-pnr-o > .dash-covh:first-child, body .sxp .sxp-pnr-d > .dash-covh:first-child{
+  font-family:var(--tf-head)!important;font-weight:700!important;font-size:15px!important;letter-spacing:.07em!important;text-transform:uppercase!important;
+  color:var(--ink,#141821)!important;display:flex!important;align-items:center!important;gap:8px!important;padding:0 0 8px!important;margin:0 0 10px!important;
+  border-bottom:1px solid var(--line,#e4e7ec)!important}
+body .sxp .sxp-pnr-o > .dash-covh:first-child::before, body .sxp .sxp-pnr-d > .dash-covh:first-child::before{
+  content:'';display:block;width:4px;height:16px;border-radius:2px;background:var(--blk,#c6a15b);flex:none}
+body .sxp .sxp-pnr-h{font-size:18px!important}
+@media (min-width:1100px){body .sxp .sxp-pnr-d .sxp-pnr-b{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+body .sxp .sxp-pnr-d .sxp-pnr-b > .sxp-pnr-z{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:8px 16px;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line,#e4e7ec)}
+body .sxp .sxp-pnr-z > .dash-covh{grid-column:1/-1}
+/* the post game's rebounding: the two battles and the pictures under them as boxes, like the pre game's */
+body .pg-uni .rbv-b, body .pg-uni .rbx-c{background:var(--panel,#fff)!important;border:1px solid var(--line,#e4e7ec)!important;border-radius:10px!important;
+  box-shadow:0 1px 2px rgba(16,24,40,.06)!important;padding:12px 14px 14px!important}
+body .pg-uni .rbv-two{gap:16px!important}body .pg-uni .rbx-grid{gap:16px!important}
+/* the overview's own titles */
+body .pg-uni .pg-main-h{font-size:15px!important}
+body .sxp .ui-sum-h > b, body .pg-uni .ui-sum-h > b{font-size:18px!important}
 </style>
 </head>
 <body>
@@ -26422,8 +26510,10 @@ function _postGameTab(sg){
   const K=window.UIKit, hd=h("div",{class:"gpo-sub pg-srch"});
   try{ const a=K.src("lg"), b=K.src("tag"); if(a) hd.appendChild(a); if(b){ b.title="Paint, TAG and BACK from our tagging"; hd.appendChild(b); } }catch(e){_quiet(e)}
   hd.appendChild(document.createTextNode("Minute by minute"));
-  box.appendChild(hd);
-  box.appendChild(_postMinutes(sg, { fold:true }));
+  /* the minutes are a box of their own, like the quarters above (27/11/2026) */
+  const mb=h("div",{class:"pg-minbox"}); mb.appendChild(hd);
+  mb.appendChild(_postMinutes(sg, { fold:true }));
+  box.appendChild(mb);
   return box;
 }
 /* the quarters of the play by play: one source on a line, each of ours against theirs in that quarter */
