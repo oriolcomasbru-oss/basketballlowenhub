@@ -2250,7 +2250,7 @@
       var p = section(col[0]);
       p.appendChild(refTable("Set", rowsIn, false));
       if (rowsOut.length) {
-        var fd = el("details", "sx-fold");
+        var fd = el("details", "sx-fold fit-span");
         fd.appendChild(el("summary", null, "+" + rowsOut.length + " set" + (rowsOut.length === 1 ? "" : "s") + " of 1–2 runs"));
         fd.appendChild(refTable("Set", rowsOut, false));
         p.appendChild(fd);
@@ -2352,9 +2352,13 @@
     sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%",
       "Situations", "Pts conceded", "PPP", "We finished on"], tdRows));
     try { sTD.querySelector("table").classList.add("sx-tdt"); } catch(e){_quiet(e)}
-    sTD.appendChild(leagueOrbLine());
+    { var lol = leagueOrbLine(); lol.classList.add("fit-span"); sTD.appendChild(lol); }
     gTD.appendChild(sTD);
-    box.appendChild(gTD);
+    /* ONE ROW (Oriol, 27/11/2026: "esto puede caber en una hilera todo"): TAG and BACK beside what we
+       concede, the two blocks of Our defense on one line when the screen has the width for it */
+    var rowD = el("div", "sx-catrow");
+    box.appendChild(rowD);
+    rowD.appendChild(gTD);
     {
       var tdP = function (o) { return o && o.n ? o.pts / o.n : null; };
       head(gTD, { figures: [
@@ -2385,7 +2389,7 @@
       s51x.appendChild(table(effHead("Situation"), dRows));
       gDF.appendChild(s51x);
     } else gDF.appendChild(el("div", "sx-empty", "No defensive possession tagged in this game."));
-    box.appendChild(gDF);
+    rowD.appendChild(gDF);
     if (DN) {
       var dfg = dAll.fga ? 100 * dAll.fgm / dAll.fga : null, dto = 100 * dAll.tov / DN;
       var scD = shotLine(DP.filter(function (q) { return (q.oreb || 0) > 0; }));
@@ -5553,6 +5557,8 @@
       ".sx{--s0:#C53727;--s1:#d4705f;--s2:#e7a596;--s3:#d6e5dc;--s4:#8fc0a9;--s5:#17805A;",
       "--b0:#eef1f6;--b1:#dbe2ee;--b2:#c2cfe2;--b3:#a3b6d2;--b4:#7f97bd;--b5:#5b77a6;",
       "font-size:13px;color:var(--ink)}",
+      /* the volume blues on a dark screen: the same ramp as a glaze over the panel, so the light numbers stay readable (27/11/2026) */
+      "body.dark .sx{--b0:rgba(111,149,207,.10);--b1:rgba(111,149,207,.20);--b2:rgba(111,149,207,.30);--b3:rgba(111,149,207,.42);--b4:rgba(111,149,207,.56);--b5:rgba(111,149,207,.74)}",
 
       /* white type only where the fill is dark enough to need it */
       ".sx-cell.s0,.sx-cell.s5{color:#fff}",
@@ -6092,6 +6098,13 @@
          flat inside it, a small label and a hairline each */
       ".sx-post .sx-cat{margin-top:16px;background:var(--panel,#fff);border:1px solid var(--line,#e4e7ec);border-radius:12px;padding:0 16px 14px 20px;box-shadow:inset 4px 0 0 var(--blk,#c6a15b);gap:10px 22px}",
       ".sx-post .sx-cat[data-g=\"def\"]{--blk:#8a2f2b}.sx-post .sx-cat[data-g=\"bs\"]{--blk:#5b6472}",
+      /* Our defense on one line (27/11/2026): TAG and BACK at the width of its table, what we concede the rest */
+      ".sx-catrow{display:grid;grid-template-columns:minmax(0,1fr);column-gap:16px;align-items:start}",
+      ".sx-catrow > *{min-width:0}",
+      "@media (min-width:1560px){.sx-post:not([data-cat=\"all\"]) .sx-catrow{grid-template-columns:var(--td-w,770px) minmax(0,1fr)}}",
+      ".sx-catrow > .sx-cat > .sx-cath{contain:inline-size}",
+      ".sx-table.sx-tdt th{white-space:normal;vertical-align:bottom;line-height:1.15}",
+      ".sx-table.sx-tdt td:first-child{white-space:normal;min-width:205px;max-width:235px;line-height:1.25}",
       ".sx-post .sx-cath{position:sticky;top:0;z-index:4;background:var(--panel,#fff);padding:11px 0 9px!important;margin:0!important;border-bottom:1px solid var(--line,#e4e7ec);flex-wrap:wrap;align-items:center!important;gap:6px 10px!important}",
       ".sx-post .sx-catt{font-size:15px!important}",
       ".sx-kpis{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 18px;margin-left:10px}",

@@ -10589,7 +10589,10 @@ function _fitKids(el){
     /* a band is the heading of the tables that follow it, not a panel beside them:
        packed as a sibling it ended up labelling the table to its left */
     && !n.classList.contains("sx-band")
-    && !n.classList.contains("sx-menu") && !n.classList.contains("sx-meta"));
+    && !n.classList.contains("sx-menu") && !n.classList.contains("sx-meta")
+    /* a table only Everything shows is not a panel while it is hidden: counted, it kept a third
+       column empty beside the two on screen (Oriol, 27/11/2026) */
+    && !(n.classList.contains("sx-allonly") && getComputedStyle(n).display==="none"));
 }
 /* Two numbers per panel, not one. The floor is the width below which the table has to be
    scrolled sideways - that is the width it must have. The ceiling is the width at which
@@ -50559,6 +50562,9 @@ body.prt-measure .prt-target :not(table):not(thead):not(tbody):not(tr):not(th):n
   body.prt-postgame .sx-cat,body.prt-pregame .sx-cat{break-before:page;page-break-before:always}
   body.prt-postgame .sx-cat:first-of-type,body.prt-pregame .sx-cat:first-of-type{
     break-before:auto;page-break-before:auto}
+  /* the two blocks that share a line on screen are two sheets on paper */
+  body.prt .sx-catrow{display:block!important}
+  body.prt-postgame .sx-catrow > .sx-cat:first-of-type{break-before:page;page-break-before:always}
   /* a table or a gauge cut in half by a page edge is unreadable: move it whole */
   body.prt .prt-target .sx-tablewrap,body.prt .prt-target .sx-table,
   body.prt .prt-target .sx-gauge,body.prt .prt-target .sx-mixwrap,
