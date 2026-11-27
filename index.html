@@ -1892,6 +1892,53 @@ body.edit-mode .rs-rich span[data-key],.rs-rich[contenteditable="true"] span[dat
 .rep-tb-sel{border:0;border-radius:6px;height:26px;font:inherit;font-size:12px;font-weight:700;padding:0 4px;cursor:pointer}
 .rep-tb-color{width:20px;height:20px;border-radius:50%;border:2px solid rgba(255,255,255,.6);cursor:pointer;padding:0}
 .rep-tb-sep{width:1px;height:20px;background:rgba(255,255,255,.2);margin:0 2px}
+/* the toolbar in two rows, and the media in the text (27/11/2026) */
+.rep-toolbar{flex-direction:column;align-items:stretch;gap:4px}
+.rep-toolbar.rt-mbar{flex-direction:row;align-items:center;flex-wrap:wrap;max-width:min(560px,calc(100vw - 12px))}
+.rep-tb-row{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.rep-tb-btn.tb-u{text-decoration:underline;text-underline-offset:2px}
+.rep-tb-btn.tb-hl{background:#ffe873;color:#141821}
+.rep-tb-btn.tb-hl:hover{background:#fff0a3}
+.rep-tb-btn.tb-lc{font-weight:600}
+.rep-tb-btn.tb-sz-s{font-size:10.5px}.rep-tb-btn.tb-sz-l{font-size:13.5px}.rep-tb-btn.tb-sz-xl{font-size:15px}
+.rep-tb-btn.tb-ico{display:inline-flex;align-items:center;justify-content:center;padding:0 5px}
+.rep-tb-btn.on{background:#c6a15b;color:#141821}
+.rep-tb-btn.rt-del{background:rgba(216,82,78,.35)}
+.rs-rich{display:flow-root}
+.rs-rich [data-fs="s"]{font-size:.85em!important}
+.rs-rich [data-fs="l"]{font-size:1.2em!important}
+.rs-rich [data-fs="xl"]{font-size:1.5em!important}
+.rs-rich div[data-al="center"]{text-align:center}
+.rs-rich div[data-al="right"]{text-align:right}
+.rs-rich div[data-al="justify"]{text-align:justify}
+.rs-rich a[href]{color:#2471a3;text-decoration:underline;text-underline-offset:2px}
+body.dark .rs-rich a[href]{color:#7db7e8}
+.rs-rich [data-media]{display:inline-block;vertical-align:top;max-width:100%;margin:3px 8px 3px 0;position:relative;box-sizing:border-box;break-inside:avoid}
+.rs-rich [data-media] img{display:block;width:100%;height:auto;border-radius:6px}
+.rs-rich [data-media][data-al="center"]{display:block;margin:6px auto}
+.rs-rich [data-media][data-al="left"]{float:left;margin:3px 14px 6px 0}
+.rs-rich [data-media][data-al="right"]{float:right;margin:3px 0 6px 14px}
+.rs-rich [data-media="yt"] [data-mf]{display:block;position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:6px;overflow:hidden}
+.rs-rich [data-media="yt"] [data-mf] img[data-pt]{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:0}
+.rs-rich [data-media="yt"] iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.rs-rich [data-media="yt"] [data-mc]{display:block;font-size:.8em!important;line-height:1.35!important;margin-top:3px}
+.rs-rich [data-media="yt"] [data-mc] a{color:var(--ink-soft,#5b6472)}
+.rs-rich [data-pu]{display:none}
+.rs-rich [data-media="yt"][data-mode="link"]{display:inline;margin:0;float:none}
+.rs-rich [data-media="yt"][data-mode="link"] a{font-weight:600}
+.rs-rich[contenteditable="true"] [data-media]{cursor:pointer}
+.rs-rich[contenteditable="true"] [data-media] iframe,.rs-rich[contenteditable="true"] [data-media] a{pointer-events:none}
+.rs-rich[contenteditable="true"] [data-media]:hover{outline:1px dashed #c6a15b;outline-offset:2px}
+.rs-rich[contenteditable="true"] [data-media][data-sel]{outline:2px solid #c6a15b;outline-offset:2px}
+.rs-rich[contenteditable="true"] [data-media][data-sel]:not([data-mode="link"])::after{content:"";position:absolute;right:-7px;bottom:-7px;width:14px;height:14px;background:#c6a15b;border:2px solid #fff;border-radius:3px;cursor:nwse-resize;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+@media print{
+  .rs-rich [data-media="yt"] iframe{display:none!important}
+  .rs-rich [data-media="yt"] [data-mc] a{display:none!important}
+  .rs-rich [data-pu]{display:inline!important;color:#5b6472}
+}
+body.prt .rs-rich [data-media="yt"] iframe{display:none!important}
+body.prt .rs-rich [data-media="yt"] [data-mc] a{display:none!important}
+body.prt .rs-rich [data-pu]{display:inline!important;color:#5b6472}
 /* a finger needs a bigger target than a cursor */
 @media (hover:none),(pointer:coarse){
   .rep-toolbar{flex-wrap:wrap;max-width:calc(100vw - 12px);gap:6px;padding:7px 9px}
@@ -7512,7 +7559,7 @@ const _vault=(()=>{
     if(!force && lastT[key] && now-lastT[key]<180000) return;
     const json=JSON.stringify({ data:rep.data||{} });
     /* nothing in it, nothing new, or too big to be a written report */
-    if(json.length<300 || json.length>3000000) return;
+    if(json.length<300 || json.length>24000000) return;
     let hsh=5381; for(let i=0;i<json.length;i++) hsh=((hsh<<5)+hsh+json.charCodeAt(i))|0;
     const print=json.length+":"+hsh;
     if(last[key]===print) return;
@@ -7650,12 +7697,14 @@ const _olderShut={};
 function _repWeight(rep){
   if(!rep) return 0;
   const d=rep.data||{};
+  /* a picture is not writing: taking one out must not look like a report losing most of itself */
+  const JS=v=>JSON.stringify(v).replace(/data:image\/[a-z+.-]+;base64,[A-Za-z0-9+\/=]+/gi,"img");
   let n=String(rep.html||"").replace(/<[^>]*>/g,"").trim().length;
   try{ Object.keys(d).forEach(k=>{ const v=d[k];
     if(v==null) return;
-    if(Array.isArray(v)){ if(v.length) n+=JSON.stringify(v).length; }
-    else if(typeof v==="object"){ if(Object.keys(v).length) n+=JSON.stringify(v).length; }
-    else if(String(v).trim()) n+=String(v).length; }); }catch(e){_quiet(e)}
+    if(Array.isArray(v)){ if(v.length) n+=JS(v).length; }
+    else if(typeof v==="object"){ if(Object.keys(v).length) n+=JS(v).length; }
+    else if(String(v).trim()) n+=JS(String(v)).length; }); }catch(e){_quiet(e)}
   return n;
 }
 function renderScout(body, g, key, kind, from, rep){
@@ -8096,21 +8145,44 @@ function _ensureRepTB(){
   const press=(b,fn)=>{ b.addEventListener("pointerdown",e=>{ e.preventDefault(); b.__pd=Date.now(); fn(); });
     b.addEventListener("mousedown",e=>{ e.preventDefault(); if(Date.now()-(b.__pd||0)<800) return; fn(); }); };
   const btn=(label,title,fn,cls)=>{ const b=h("button",{class:"rep-tb-btn"+(cls?(" "+cls):""),type:"button",title:title},label); press(b, fn); return b; };
-  bar.appendChild(btn("B","Bold",()=>_repExec("bold"),"tb-b"));
-  bar.appendChild(btn("I","Italic",()=>_repExec("italic"),"tb-i"));
-  bar.appendChild(btn("• List","Bulleted list",()=>{ if(_repTBTarget) _rtToggleList(_repTBTarget); }));
-  bar.appendChild(btn("Level →","One level in (Tab)",()=>{ if(_repTBTarget){ _repTBTarget.focus(); _rtIndent(_repTBTarget); } }));
-  bar.appendChild(btn("← Level","One level out (Shift+Tab)",()=>{ if(_repTBTarget){ _repTBTarget.focus(); _rtOutdent(_repTBTarget); } }));
-  /* the four size buttons are gone: the report has one body size now, so they
-     changed the markup and nothing on the page */
-  bar.appendChild(h("span",{class:"rep-tb-sep"}));
-  ["#111827","#c0392b","#c9a227","#1e824c","#2471a3"].forEach(c=>{ const sw=h("button",{class:"rep-tb-color",type:"button",title:"Text colour"}); sw.style.background=c; press(sw, ()=>_repExec("foreColor",c)); bar.appendChild(sw); });
-  bar.appendChild(h("span",{class:"rep-tb-sep"}));
-  bar.appendChild(btn("Aa","Report font — strips the typeface and size that came with the pasted text",()=>_repBaseFont(),"tb-font"));
-  bar.appendChild(btn("⨯","Clear formatting",()=>_repExec("removeFormat")));
+  /* TWO ROWS (Oriol, 27/11/2026: "dame la opción de mayúsculas o minúsculas, párrafo justificado, eliminar
+     formato, subrayado, subrayado con amarillo como un subrayador, ajustar tamaño de la letra", and the
+     pictures and videos): the letters on the first, the lines and what goes into them on the second */
+  const T=()=>_repTBTarget;
+  const row1=h("div",{class:"rep-tb-row"}), row2=h("div",{class:"rep-tb-row"});
+  bar.appendChild(row1); bar.appendChild(row2);
+  const ico=d=>{ const s=document.createElementNS("http://www.w3.org/2000/svg","svg"); s.setAttribute("viewBox","0 0 16 16"); s.setAttribute("width","15"); s.setAttribute("height","15");
+    d.forEach(l=>{ const r=document.createElementNS("http://www.w3.org/2000/svg","rect"); r.setAttribute("x",l[0]); r.setAttribute("y",l[1]); r.setAttribute("width",l[2]); r.setAttribute("height","1.8"); r.setAttribute("rx","0.9"); r.setAttribute("fill","currentColor"); s.appendChild(r); }); return s; };
+  const ib=(svg,title,fn)=>{ const b=h("button",{class:"rep-tb-btn tb-ico",type:"button",title:title}); b.appendChild(svg); press(b, fn); return b; };
+  row1.appendChild(btn("B","Bold",()=>_repExec("bold"),"tb-b"));
+  row1.appendChild(btn("I","Italic",()=>_repExec("italic"),"tb-i"));
+  row1.appendChild(btn("U","Underline",()=>_repExec("underline"),"tb-u"));
+  row1.appendChild(btn("ab","Highlighter - yellow under the selected text; again to take it off",()=>{ if(T()) _rtHighlight(T()); },"tb-hl"));
+  row1.appendChild(h("span",{class:"rep-tb-sep"}));
+  ["#111827","#c0392b","#c9a227","#1e824c","#2471a3"].forEach(c=>{ const sw=h("button",{class:"rep-tb-color",type:"button",title:"Text colour"}); sw.style.background=c; press(sw, ()=>_repExec("foreColor",c)); row1.appendChild(sw); });
+  row1.appendChild(h("span",{class:"rep-tb-sep"}));
+  [["A−","s","Smaller text"],["A","","The report's own size"],["A+","l","Larger text"],["A++","xl","Much larger text"]].forEach(x=>row1.appendChild(btn(x[0], x[2], ()=>{ if(T()) _rtSize(T(), x[1]); }, "tb-sz"+(x[1]? " tb-sz-"+x[1] : ""))));
+  row1.appendChild(h("span",{class:"rep-tb-sep"}));
+  row1.appendChild(btn("AB","CAPITALS - the selected text",()=>{ if(T()) _rtCase(T(), true); }));
+  row1.appendChild(btn("ab","small letters - the selected text",()=>{ if(T()) _rtCase(T(), false); },"tb-lc"));
+  row1.appendChild(h("span",{class:"rep-tb-sep"}));
+  row1.appendChild(btn("⨯","Clear formatting - bold, colour, size, highlight, underline and alignment off",()=>{ if(T()) _rtClear(T()); }));
+  row1.appendChild(btn("Aa","Report font — strips the typeface and size that came with the pasted text",()=>_repBaseFont(),"tb-font"));
+  row2.appendChild(btn("• List","Bulleted list",()=>{ if(T()) _rtToggleList(T()); }));
+  row2.appendChild(btn("Level →","One level in (Tab)",()=>{ if(T()){ T().focus(); _rtIndent(T()); } }));
+  row2.appendChild(btn("← Level","One level out (Shift+Tab)",()=>{ if(T()){ T().focus(); _rtOutdent(T()); } }));
+  row2.appendChild(h("span",{class:"rep-tb-sep"}));
+  row2.appendChild(ib(ico([[2,3,12],[2,7,8],[2,11,12]]),"Align left",()=>{ if(T()) _rtAlign(T(),"left"); }));
+  row2.appendChild(ib(ico([[2,3,12],[4,7,8],[2,11,12]]),"Centre",()=>{ if(T()) _rtAlign(T(),"center"); }));
+  row2.appendChild(ib(ico([[2,3,12],[6,7,8],[2,11,12]]),"Align right",()=>{ if(T()) _rtAlign(T(),"right"); }));
+  row2.appendChild(ib(ico([[2,3,12],[2,7,12],[2,11,12]]),"Justify",()=>{ if(T()) _rtAlign(T(),"justify"); }));
+  row2.appendChild(h("span",{class:"rep-tb-sep"}));
+  row2.appendChild(btn("🖼 Image","A picture from this computer or tablet (also: paste a screenshot, or drop the file on the text)",()=>{ const t=T(); if(!t) return; _rtKeepRange(t); _hideRepTB(); _rtAskImage(t); }));
+  row2.appendChild(btn("▶ Video","A YouTube video, as a player in the report (also: paste the YouTube link on its own)",()=>{ const t=T(); if(!t) return; _rtKeepRange(t); _hideRepTB(); _rtAskVideo(t, "embed"); }));
+  row2.appendChild(btn("🔗 Link","A link: on the selected text, or a YouTube video as a link that opens a new tab",()=>{ const t=T(); if(!t) return; _hideRepTB(); _rtAskLink(t); }));
   /* the key idea the dashboard shows: on the selection, or off where the caret is */
-  bar.appendChild(h("span",{class:"rep-tb-sep"}));
-  bar.appendChild(btn("★ Key","Key idea — bold in the report, underlined while editing, and its keywords go to the dashboard's Scouting notes. On a marked idea it takes the mark off",()=>{ try{ _keyToggle(); }catch(e){_quiet(e)} _hideRepTB(); },"tb-key"));
+  row2.appendChild(h("span",{class:"rep-tb-sep"}));
+  row2.appendChild(btn("★ Key","Key idea — bold in the report, underlined while editing, and its keywords go to the dashboard's Scouting notes. On a marked idea it takes the mark off",()=>{ try{ _keyToggle(); }catch(e){_quiet(e)} _hideRepTB(); },"tb-key"));
   document.body.appendChild(bar);
   if(!_repTBWired){ _repTBWired=true;
     /* the bar is a context menu now: it opens on right-click and closes on any
@@ -8273,14 +8345,21 @@ function _rtWordLists(root){
 }
 function _rtStrip(node){
   [...node.querySelectorAll("*")].forEach(el=>{
+    /* a picture or a video is its own: its data says what it is, and it is drawn from that */
+    if(!el.isConnected && !node.contains(el)) return;
+    if(el.closest && el.closest("[data-media]")) return;
     if(el.tagName==="FONT"){ const f=document.createDocumentFragment(); while(el.firstChild) f.appendChild(el.firstChild); el.replaceWith(f); return; }
     if(!_RT_KEEP[el.tagName]){ const f=document.createDocumentFragment(); while(el.firstChild) f.appendChild(el.firstChild); el.replaceWith(f); return; }
     const href=el.tagName==="A"?el.getAttribute("href"):null;
     /* the key idea is the one mark that is not a look: it decides what the dashboard shows */
     const key=el.tagName==="SPAN" && el.getAttribute("data-key")==="1";
+    /* the alignment of a block and the size of a passage are the staff's, not the paste's look */
+    const al=el.tagName==="DIV"? el.getAttribute("data-al") : null, fs=el.tagName==="SPAN"? el.getAttribute("data-fs") : null;
     [...el.attributes].forEach(a=>el.removeAttribute(a.name));
     if(href) el.setAttribute("href",href);
     if(key) el.setAttribute("data-key","1");
+    if(al && /^(center|right|justify)$/.test(al)) el.setAttribute("data-al", al);
+    if(fs && /^(s|l|xl)$/.test(fs)) el.setAttribute("data-fs", fs);
     if(el.tagName==="SPAN" && !el.attributes.length && el.parentNode){
       const f=document.createDocumentFragment(); while(el.firstChild) f.appendChild(el.firstChild); el.replaceWith(f); }
   });
@@ -8327,43 +8406,6 @@ function _rtTrimLines(root){
     const atStart=!p || /^(BR|LI|UL|OL)$/.test(p.nodeName);
     if(atStart) t.nodeValue=t.nodeValue.replace(/^[  ]+/,"");
     if(!t.nodeValue.length) t.remove(); });
-  return root;
-}
-function _rtFlatten(root){
-  try{ _rtUnwrapInLi(root); }catch(_){_quiet(_)}
-  for(let guard=0; guard<2000; guard++){
-    const all=root.querySelectorAll("*");
-    let el=null;
-    for(let i=all.length-1;i>=0;i--){ if(_RT_BLOCK[all[i].tagName]){ el=all[i]; break; } }
-    if(!el) break;
-    const f=document.createDocumentFragment();
-    /* A BLOCK STARTS A LINE AS WELL AS ENDING ONE. Text typed straight into the box and
-       then a line made with Enter is "first<div>second</div>": only the break after the
-       block was written, so the two lines closed up into "firstsecond" the next time the
-       box was read. Plain text before a block gets its break too. */
-    const pv=el.previousSibling;
-    if(pv && pv.nodeName!=="BR" && !(pv.nodeType===3 && !pv.nodeValue.trim())
-       && !(pv.nodeType===1 && (_RT_BLOCK[pv.tagName] || pv.tagName==="UL" || pv.tagName==="OL"))
-       && el.parentNode && el.parentNode.nodeName!=="LI") f.appendChild(document.createElement("br"));
-    while(el.firstChild) f.appendChild(el.firstChild);
-    if(el.nextSibling) f.appendChild(document.createElement("br"));
-    el.replaceWith(f);
-  }
-  /* A run of breaks from nested blocks is noise; ONE blank line is not. Collapsing
-     every run to a single break meant an empty line between two paragraphs - which in a
-     contenteditable is an empty block, so a break of its own plus the break that ends
-     the block - was wiped every time the box was read back, and the text closed up again
-     the moment it was saved. Runs are capped at two now: one line break, one blank line,
-     and nothing past that. */
-  [...root.querySelectorAll("br")].forEach(br=>{
-    let n=br.nextSibling, kept=0;
-    while(n && n.nodeName==="BR"){
-      const k=n.nextSibling;
-      if(kept<1){ kept++; } else { n.remove(); }
-      n=k;
-    }
-  });
-  while(root.lastChild && root.lastChild.nodeName==="BR") root.lastChild.remove();
   return root;
 }
 /* Chrome merges two list items by moving the plain text and throwing the
@@ -8441,8 +8483,22 @@ function _rtUnmark(val, m){
   val.querySelectorAll("[data-rtm]").forEach(x=>x.remove());
 }
 /* what is wrong with a list, put right; says whether anything was */
-function _rtFixLists(val){
+function _rtFixLists(val, deep){
   let ch=false;
+  /* deep (a paste, a report opened): an item with nothing of its own and a list under it is the double
+     bullet a paste leaves - its list goes under the item above, or up a level when there is none */
+  if(deep) [...val.querySelectorAll("li")].forEach(li=>{
+    if(!val.contains(li)) return;
+    const subs=[...li.childNodes].filter(_rtIsList);
+    if(!subs.length) return;
+    const own=[...li.childNodes].filter(n=>!_rtIsList(n));
+    const has=own.some(n=>(n.nodeType===3 && n.nodeValue.trim()) || (n.nodeType===1 && n.nodeName!=="BR" && (String(n.textContent||"").trim() || n.hasAttribute("data-media") || (n.querySelector && n.querySelector("[data-media]")))));
+    if(has) return;
+    const prev=li.previousElementSibling;
+    if(prev && prev.tagName==="LI") subs.forEach(sb=>{ const host=_rtSubList(prev, sb.tagName); while(sb.firstChild) host.appendChild(sb.firstChild); sb.remove(); });
+    else { const p=li.parentNode; subs.forEach(sb=>{ while(sb.firstChild) p.insertBefore(sb.firstChild, li); sb.remove(); }); }
+    li.remove(); ch=true;
+  });
   for(let g=0;g<300;g++){
     const bad=val.querySelector("ul > ul, ul > ol, ol > ul, ol > ol");
     if(!bad) break;
@@ -8636,6 +8692,563 @@ function _rtToggleList(val){
   val.dispatchEvent(new Event("input",{bubbles:true}));
   return true;
 }
+/* THE BOX AS LINES, WITHOUT LOSING OR ADDING ONE (Oriol, 27/11/2026: "las listas no acaban de funcionar
+   bien al pegar textos, o al borrar o poner texto, saltando hileras"). The editor writes a line as a
+   block (<div>line</div>, an empty one as <div><br></div>) and the report keeps lines separated by
+   breaks. The old conversion put a break after every block that had something after it, so the empty
+   line typed under a list came back as two empty lines once saved, and a block that held a list put a
+   blank line under it - a row that jumped every time the report was opened. Now the box is read as
+   what the reader sees - lines, lists and aligned blocks - and written back as exactly those:
+     - a break ends a line; a block is a line of its own (or several, if it holds breaks);
+     - a list and an aligned block (div[data-al]) stand on their own;
+     - between them, lines joined by breaks; a run that ends in an empty line gets the extra break a
+       browser needs to show it; never more than one empty line in a row, none at the end.
+   It runs on the box, inside every list item and inside every aligned block. It reads and writes the
+   same thing twice: what it gives back it leaves alone the next time. */
+const _RT_INLINE_SPLIT={ SPAN:1, B:1, STRONG:1, I:1, EM:1, U:1, S:1, A:1, FONT:1, SMALL:1, MARK:1, SUB:1, SUP:1, CODE:1 };
+function _rtHoist(root){
+  /* a block inside a bold, a colour or a link is taken out of it, the look going with its text */
+  for(let g=0; g<500; g++){
+    const bad=[...root.querySelectorAll("ul,ol,p,div,h1,h2,h3,h4,h5,h6,blockquote,pre,table,section,article")].find(x=>{
+      const p=x.parentNode; return p && p!==root && p.nodeType===1 && _RT_INLINE_SPLIT[p.tagName] && !(p.closest && p.closest("[data-media]")); });
+    if(!bad) break;
+    const p=bad.parentNode, rest=p.cloneNode(false);
+    while(bad.nextSibling) rest.appendChild(bad.nextSibling);
+    if(!_rtIsList(bad)){ const inner=p.cloneNode(false); while(bad.firstChild) inner.appendChild(bad.firstChild); bad.appendChild(inner); }
+    p.after(bad); if(rest.childNodes.length) bad.after(rest); if(!p.childNodes.length) p.remove();
+  }
+}
+function _rtLinesOf(container){
+  const items=[]; let cur=null;
+  const end=()=>{ cur=null; };
+  const isAl=n=>n.nodeType===1 && n.tagName==="DIV" && n.hasAttribute("data-al");
+  const walk=nodes=>nodes.forEach(n=>{
+    if(n.nodeType===1 && (_rtIsList(n) || isAl(n))){ end(); items.push({ block:n }); return; }
+    if(n.nodeType===1 && _RT_BLOCK[n.tagName] && !n.hasAttribute("data-media")){
+      end(); const before=items.length;
+      walk([...n.childNodes]);
+      /* an empty paragraph is a blank line - Word writes one that way; an empty div is nothing */
+      if(items.length===before && /^(P|H[1-6])$/.test(n.tagName)) items.push({ nodes:[] });
+      end(); return; }
+    if(n.nodeName==="BR"){ if(!cur){ cur={ nodes:[] }; items.push(cur); } end(); return; }
+    if(n.nodeType===3 && !cur && !n.nodeValue.replace(/[ \t\r\n]+/g,"")) return;
+    if(n.nodeType===8) return;
+    if(!cur){ cur={ nodes:[] }; items.push(cur); }
+    cur.nodes.push(n); });
+  walk([...container.childNodes]);
+  return items;
+}
+function _rtLinesWrite(container, items, trimEnd){
+  if(trimEnd) while(items.length && !items[items.length-1].block && !items[items.length-1].nodes.length) items.pop();
+  const frag=document.createDocumentFragment();
+  let run=[];
+  const flush=()=>{
+    if(!run.length) return;
+    const lines=[];
+    run.forEach(l=>{ if(!l.nodes.length && lines.length && !lines[lines.length-1].nodes.length) return; lines.push(l); });
+    lines.forEach((l,i)=>{ if(i) frag.appendChild(document.createElement("br")); l.nodes.forEach(n=>frag.appendChild(n)); });
+    if(!lines[lines.length-1].nodes.length) frag.appendChild(document.createElement("br"));
+    run=[]; };
+  items.forEach(it=>{ if(it.block){ flush(); frag.appendChild(it.block); } else run.push(it); });
+  flush();
+  while(container.firstChild) container.removeChild(container.firstChild);
+  container.appendChild(frag);
+}
+function _rtFlatten(root){
+  try{ _rtHoist(root); }catch(_){_quiet(_)}
+  _rtLinesWrite(root, _rtLinesOf(root), true);
+  [...root.querySelectorAll("li, div[data-al]")].forEach(c=>{ if(c.closest("[data-media]")) return; _rtLinesWrite(c, _rtLinesOf(c), true);
+    /* an empty item keeps a break, or the caret has no line to stand on */
+    if(!c.childNodes.length) c.appendChild(document.createElement("br")); });
+  return root;
+}
+/* =====================================================================================
+   IMAGES AND VIDEOS IN THE REPORT'S TEXT (Oriol, 27/11/2026: "cuando hago un informe o escribo en
+   pre o post game, debo poder añadir imágenes o vídeos ... los vídeos serán enlaces de YouTube").
+   A picture or a video is one piece of the line it sits in - two of them side by side are two
+   pieces of one line, Enter between them puts the second on the next. Each is a span the editor
+   cannot type into, and everything it is - its size, where it sits, a player or a link - is
+   written on it as data-*, so the report's own cleaning (_rtNorm) can throw every style away and
+   draw it again from those:
+     <span data-media="img" data-w="45" data-al="in"><img src="data:image/jpeg;base64,…"></span>
+     <span data-media="yt" data-yt="VIDEOID" data-t="90" data-mode="embed|link" data-w="48"
+           data-al="in|center|left|right" data-label="…">…</span>
+   data-w is a share of the box's width; data-al: in the line, centred on a line of its own, or
+   to the left or the right with the text around it. A video's player and its links are drawn
+   from its id every time, never read back from what was stored.
+   ===================================================================================== */
+const RT_YT_ID=/^[A-Za-z0-9_-]{11}$/;
+const RT_SIZES={ s:25, m:40, l:60, xl:100 };
+/* a YouTube address in any of its forms -> { id, t } (t: the second it starts at) */
+function _rtYtParse(s){
+  s=String(s||"").trim(); if(!s) return null;
+  let u=null; try{ u=new URL(/^https?:\/\//i.test(s)? s : "https://"+s); }catch(e){ return null; }
+  const host=u.hostname.replace(/^www\.|^m\.|^music\./,"").toLowerCase();
+  let id="";
+  if(host==="youtu.be") id=u.pathname.slice(1).split("/")[0];
+  else if(host==="youtube.com" || host==="youtube-nocookie.com"){
+    if(u.pathname==="/watch") id=u.searchParams.get("v")||"";
+    else { const m=/^\/(?:embed|shorts|live|v)\/([^\/?#]+)/.exec(u.pathname); if(m) id=m[1]; }
+  }
+  if(!RT_YT_ID.test(id)) return null;
+  const tt=u.searchParams.get("t")||u.searchParams.get("start")||"";
+  let t=0; const hm=/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$/.exec(tt);
+  if(hm) t=(+hm[1]||0)*3600+(+hm[2]||0)*60+(+hm[3]||0);
+  return { id:id, t:t||0 };
+}
+const _rtClock=t=>{ t=Math.max(0, +t||0); const m=Math.floor(t/60), s=t%60; return m+":"+String(s).padStart(2,"0"); };
+const _rtYtWatch=(id, t)=>"https://www.youtube.com/watch?v="+id+(t? "&t="+t+"s" : "");
+/* the media's insides, drawn from its data-* (and the picture's own source) */
+function _rtMediaFill(m){
+  const kind=m.getAttribute("data-media");
+  const al=String(m.getAttribute("data-al")||"in");
+  if(!/^(in|center|left|right)$/.test(al)) m.setAttribute("data-al","in");
+  let w=+m.getAttribute("data-w"); if(!(w>=8 && w<=100)){ w=kind==="yt"? 48 : 45; m.setAttribute("data-w", String(w)); }
+  m.setAttribute("contenteditable","false");
+  [...m.attributes].forEach(a=>{ if(!/^(data-media|data-w|data-al|data-mode|data-yt|data-t|data-label|contenteditable|data-sel)$/.test(a.name)) m.removeAttribute(a.name); });
+  if(kind==="img"){
+    const old=m.querySelector("img"), src=old? String(old.getAttribute("src")||"") : "";
+    m.innerHTML="";
+    if(!/^(data:image\/(jpeg|png|gif|webp);base64,[A-Za-z0-9+\/=]+|https:\/\/[^\s"'<>]+)$/i.test(src)){ m.remove(); return; }
+    const im=document.createElement("img"); im.setAttribute("src", src); im.setAttribute("alt",""); im.setAttribute("draggable","false");
+    m.appendChild(im);
+    m.style.width=w+"%";
+    return;
+  }
+  if(kind==="yt"){
+    const id=String(m.getAttribute("data-yt")||""), t=Math.max(0, parseInt(m.getAttribute("data-t"),10)||0);
+    if(!RT_YT_ID.test(id)){ m.remove(); return; }
+    const mode=m.getAttribute("data-mode")==="link"? "link" : "embed"; m.setAttribute("data-mode", mode);
+    const label=String(m.getAttribute("data-label")||"").trim();
+    m.innerHTML="";
+    const url=_rtYtWatch(id, t);
+    if(mode==="link"){
+      m.style.width="";
+      const a=document.createElement("a"); a.setAttribute("href", url); a.setAttribute("target","_blank"); a.setAttribute("rel","noopener");
+      a.setAttribute("data-ml","1");
+      a.textContent="▶ "+(label || ("YouTube video"+(t? " · "+_rtClock(t) : "")));
+      m.appendChild(a);
+      return;
+    }
+    m.style.width=w+"%";
+    const fr=document.createElement("span"); fr.setAttribute("data-mf","1");
+    /* the picture of the video under the player: what a printed report shows in its place */
+    const th=document.createElement("img"); th.setAttribute("data-pt","1"); th.setAttribute("alt",""); th.setAttribute("src","https://i.ytimg.com/vi/"+id+"/hqdefault.jpg");
+    fr.appendChild(th);
+    const ifr=document.createElement("iframe");
+    /* youtube.com and not the nocookie host, which put up the "not a bot" wall (20/11/2026) */
+    ifr.setAttribute("src","https://www.youtube.com/embed/"+id+"?rel=0"+(t? "&start="+t : ""));
+    ifr.setAttribute("title", label || "YouTube video");
+    ifr.setAttribute("loading","lazy");
+    ifr.setAttribute("allow","accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share");
+    ifr.setAttribute("allowfullscreen","");
+    ifr.setAttribute("referrerpolicy","strict-origin-when-cross-origin");
+    fr.appendChild(ifr); m.appendChild(fr);
+    /* every video can be opened in YouTube itself */
+    const cap=document.createElement("span"); cap.setAttribute("data-mc","1");
+    const a=document.createElement("a"); a.setAttribute("href", url); a.setAttribute("target","_blank"); a.setAttribute("rel","noopener");
+    a.textContent=(label? label+" · " : "")+"Open in YouTube ↗"+(t? " · "+_rtClock(t) : "");
+    cap.appendChild(a);
+    /* on paper there is no player: the address is printed instead */
+    const pu=document.createElement("span"); pu.setAttribute("data-pu","1"); pu.textContent="youtu.be/"+id+(t? "?t="+t : "");
+    cap.appendChild(pu);
+    m.appendChild(cap);
+    return;
+  }
+  m.remove();
+}
+/* every media and every link of a box, drawn as it should be: links open in a new tab */
+function _rtHydrate(root){
+  [...root.querySelectorAll("[data-media]")].forEach(m=>{ try{ _rtMediaFill(m); }catch(e){ _quiet(e); } });
+  root.querySelectorAll("a[href]").forEach(a=>{ const hr=String(a.getAttribute("href")||"");
+    if(/^\s*javascript:/i.test(hr)){ a.removeAttribute("href"); return; }
+    a.setAttribute("target","_blank"); a.setAttribute("rel","noopener"); });
+  return root;
+}
+function _rtMediaNew(kind, o){
+  const m=document.createElement("span"); m.setAttribute("data-media", kind);
+  m.setAttribute("data-al","in");
+  if(kind==="img"){ m.setAttribute("data-w", String(o.w||45)); const im=document.createElement("img"); im.setAttribute("src", o.src); m.appendChild(im); }
+  else { m.setAttribute("data-yt", o.id); if(o.t) m.setAttribute("data-t", String(o.t)); m.setAttribute("data-mode", o.mode||"embed"); m.setAttribute("data-w", String(o.w||48)); if(o.label) m.setAttribute("data-label", o.label); }
+  _rtMediaFill(m);
+  return m;
+}
+/* A PICTURE IS STORED SMALL: the long side at 1400 px at most and as a JPEG, so a screenshot of a
+   play is a hundred or two hundred KB in the report, not the megabytes the file was */
+function _rtImageData(file){
+  return new Promise((res, rej)=>{
+    const rd=new FileReader();
+    rd.onerror=()=>rej(new Error("the picture could not be read"));
+    rd.onload=()=>{ const src=String(rd.result||"");
+      if(/^data:image\/gif/i.test(src) && src.length<900000) return res(src);
+      const im=new Image();
+      im.onerror=()=>rej(new Error("that file is not a picture this browser can read"));
+      im.onload=()=>{ try{
+        const W=im.naturalWidth, H=im.naturalHeight, k=Math.min(1, 1400/Math.max(W, H));
+        const c=document.createElement("canvas"); c.width=Math.max(1, Math.round(W*k)); c.height=Math.max(1, Math.round(H*k));
+        const g=c.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,c.width,c.height); g.imageSmoothingQuality="high"; g.drawImage(im, 0, 0, c.width, c.height);
+        let out=c.toDataURL("image/jpeg", 0.82);
+        if(out.length>700000) out=c.toDataURL("image/jpeg", 0.68);
+        res(out.length<src.length || !/^data:image\/(jpeg|png|gif|webp)/i.test(src)? out : src);
+      }catch(e){ rej(e); } };
+      im.src=src; };
+    rd.readAsDataURL(file);
+  });
+}
+/* where the caret was, kept while a file dialog or a question is open */
+let _rtSaved=null;
+function _rtKeepRange(val){
+  const sel=window.getSelection();
+  _rtSaved=(sel && sel.rangeCount && val.contains(sel.getRangeAt(0).startContainer))? { val:val, r:sel.getRangeAt(0).cloneRange() } : { val:val, r:null };
+}
+/* a node put where the caret is (or at the end of the box), the caret after it */
+function _rtInsertNode(val, node, range){
+  let r=range || null;
+  if(!r){ const sel=window.getSelection(); if(sel && sel.rangeCount && val.contains(sel.getRangeAt(0).startContainer)) r=sel.getRangeAt(0); }
+  if(r && val.contains(r.startContainer)){
+    r.deleteContents();
+    /* never inside another media */
+    let host=r.startContainer.nodeType===1? r.startContainer : r.startContainer.parentNode;
+    const inM=host && host.closest && host.closest("[data-media]");
+    if(inM && val.contains(inM)){ inM.after(node); }
+    else r.insertNode(node);
+  } else val.appendChild(node);
+  const after=document.createRange(); after.setStartAfter(node); after.collapse(true);
+  const sel=window.getSelection(); try{ sel.removeAllRanges(); sel.addRange(after); }catch(e){_quiet(e)}
+  val.dispatchEvent(new Event("input",{bubbles:true}));
+}
+async function _rtInsertImages(val, files, range){
+  const list=[...(files||[])].filter(f=>/^image\//i.test(f.type||""));
+  if(!list.length){ toast("That is not a picture"); return; }
+  let r=range || null;
+  for(const f of list){
+    try{
+      const src=await _rtImageData(f);
+      const m=_rtMediaNew("img", { src:src, w:list.length>1? 32 : 45 });
+      _rtInsertNode(val, m, r); r=null;
+    }catch(e){ toast("The picture could not be added: "+((e&&e.message)||e)); }
+  }
+}
+function _rtAskVideo(val, mode){
+  const keep=_rtSaved && _rtSaved.val===val? _rtSaved.r : null;
+  const url=prompt(mode==="link"? "YouTube link (it is shown as a link that opens a new tab):" : "YouTube link (it is shown as a player in the report):", "");
+  if(url==null) return;
+  const o=_rtYtParse(url);
+  if(!o){ toast("That is not a YouTube link"); return; }
+  val.focus();
+  _rtInsertNode(val, _rtMediaNew("yt", { id:o.id, t:o.t, mode:mode==="link"? "link" : "embed" }), keep);
+}
+function _rtAskImage(val){
+  const keep=_rtSaved && _rtSaved.val===val? _rtSaved.r : null;
+  const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*"; inp.multiple=true;
+  inp.addEventListener("change",()=>{ if(inp.files && inp.files.length){ val.focus(); _rtInsertImages(val, inp.files, keep); } });
+  inp.click();
+}
+/* a link: on the selected text, or - with nothing selected - a YouTube video as a link, or the address */
+function _rtAskLink(val){
+  const sel=window.getSelection();
+  const has=!!(sel && sel.rangeCount && !sel.isCollapsed && val.contains(sel.getRangeAt(0).startContainer));
+  _rtKeepRange(val); const keep=_rtSaved.r;
+  const url=prompt(has? "Link for the selected text:" : "Link (a YouTube link becomes a video link that opens a new tab):", "https://");
+  if(url==null) return;
+  const u=url.trim(); if(!u || u==="https://") return;
+  const full=/^https?:\/\//i.test(u)? u : "https://"+u;
+  const yt=_rtYtParse(u);
+  val.focus();
+  if(keep){ try{ sel.removeAllRanges(); sel.addRange(keep); }catch(_){_quiet(_)} }
+  if(has){ try{ document.execCommand("createLink", false, full); }catch(_){_quiet(_)}
+    val.querySelectorAll("a[href]").forEach(a=>{ a.setAttribute("target","_blank"); a.setAttribute("rel","noopener"); });
+    val.dispatchEvent(new Event("input",{bubbles:true})); return; }
+  if(yt){ _rtInsertNode(val, _rtMediaNew("yt", { id:yt.id, t:yt.t, mode:"link" }), keep); return; }
+  const a=document.createElement("a"); a.setAttribute("href", full); a.setAttribute("target","_blank"); a.setAttribute("rel","noopener"); a.textContent=u;
+  _rtInsertNode(val, a, keep);
+}
+/* ---- a media chosen in edit mode: its outline, its bar, its corner to resize it ---- */
+let _rtMBar=null, _rtMSel=null;
+function _rtMediaBox(m){ let el=m; while(el && !(el.__rich)) el=el.parentNode; return el; }
+function _rtMediaDeselect(){
+  if(_rtMSel){ _rtMSel.removeAttribute("data-sel"); _rtMSel=null; }
+  if(_rtMBar) _rtMBar.style.display="none";
+}
+function _rtMediaChanged(m){
+  const box=_rtMediaBox(m);
+  try{ _rtMediaFill(m); }catch(e){_quiet(e)}
+  if(box) box.dispatchEvent(new Event("input",{bubbles:true}));
+  if(_rtMSel===m && m.isConnected){ m.setAttribute("data-sel","1"); _rtMediaBarAt(m); } else _rtMediaDeselect();
+}
+function _rtMediaBarAt(m){
+  const bar=_rtMediaBarMake(m);
+  bar.style.display="flex";
+  const r=m.getBoundingClientRect(), bw=bar.offsetWidth||360, bh=bar.offsetHeight||34;
+  let x=r.left, y=r.top-bh-8; if(y<56) y=r.bottom+8;
+  x=Math.max(6, Math.min(x, window.innerWidth-bw-6));
+  bar.style.left=(window.scrollX+x)+"px"; bar.style.top=(window.scrollY+y)+"px";
+}
+function _rtMediaBarMake(m){
+  if(!_rtMBar){
+    _rtMBar=h("div",{class:"rep-toolbar rt-mbar"});
+    document.body.appendChild(_rtMBar);
+    document.addEventListener("pointerdown",e=>{ if(!_rtMSel) return; if(_rtMBar.contains(e.target) || _rtMSel.contains(e.target)) return; _rtMediaDeselect(); }, true);
+    window.addEventListener("scroll",()=>{ if(_rtMSel && _rtMBar.style.display!=="none") _rtMediaBarAt(_rtMSel); }, true);
+  }
+  const bar=_rtMBar; bar.innerHTML="";
+  const kind=m.getAttribute("data-media"), mode=m.getAttribute("data-mode")||"embed", al=m.getAttribute("data-al")||"in", w=+m.getAttribute("data-w")||45;
+  const btn=(label, title, on, fn, cls)=>{ const b=h("button",{type:"button", class:"rep-tb-btn"+(on? " on" : "")+(cls? " "+cls : ""), title:title}, label);
+    b.addEventListener("pointerdown",e=>{ e.preventDefault(); e.stopPropagation(); fn(); }); return b; };
+  const sep=()=>h("span",{class:"rep-tb-sep"});
+  if(!(kind==="yt" && mode==="link")){
+    [["S","s","Small"],["M","m","Medium"],["L","l","Large"],["XL","xl","The whole width"]].forEach(x=>bar.appendChild(btn(x[0], x[2]+" · "+RT_SIZES[x[1]]+"% of the width · or drag the corner", Math.abs(w-RT_SIZES[x[1]])<2, ()=>{ m.setAttribute("data-w", String(RT_SIZES[x[1]])); _rtMediaChanged(m); })));
+    bar.appendChild(sep());
+  }
+  [["In line","in","In the line of text: two of them side by side, Enter between them puts the second underneath"],["Center","center","On a line of its own, centred"],["◧ Left","left","On the left, the text around it"],["Right ◨","right","On the right, the text around it"]]
+    .forEach(x=>bar.appendChild(btn(x[0], x[2], al===x[1], ()=>{ m.setAttribute("data-al", x[1]); _rtMediaChanged(m); })));
+  if(kind==="yt"){
+    bar.appendChild(sep());
+    bar.appendChild(btn("▶ Player", "A player in the report, to watch it here", mode==="embed", ()=>{ m.setAttribute("data-mode","embed"); _rtMediaChanged(m); }));
+    bar.appendChild(btn("🔗 Link", "A link that opens the video in a new tab", mode==="link", ()=>{ m.setAttribute("data-mode","link"); _rtMediaChanged(m); }));
+    bar.appendChild(btn("Name", "The name shown on the link and under the player", false, ()=>{ const v=prompt("Name of the video (empty: none)", m.getAttribute("data-label")||""); if(v==null) return;
+      if(v.trim()) m.setAttribute("data-label", v.trim().slice(0,120)); else m.removeAttribute("data-label"); _rtMediaChanged(m); }));
+  }
+  bar.appendChild(sep());
+  bar.appendChild(btn("✕", "Remove it", false, ()=>{ const box=_rtMediaBox(m); m.remove(); _rtMediaDeselect(); if(box) box.dispatchEvent(new Event("input",{bubbles:true})); }, "rt-del"));
+  return bar;
+}
+function _rtMediaWire(val){
+  /* chosen with a click or a finger; the caret goes just after it, so Backspace takes it away and
+     typing goes on after it */
+  val.addEventListener("pointerdown",e=>{
+    if(val.getAttribute("contenteditable")!=="true") return;
+    const m=e.target.closest && e.target.closest("[data-media]");
+    if(!m || !val.contains(m)) return;
+    e.preventDefault();
+    if(_rtMSel && _rtMSel!==m) _rtMediaDeselect();
+    _rtMSel=m; m.setAttribute("data-sel","1");
+    try{ val.focus({ preventScroll:true }); const r=document.createRange(); r.setStartAfter(m); r.collapse(true); const s=window.getSelection(); s.removeAllRanges(); s.addRange(r); }catch(_){_quiet(_)}
+    _rtMediaBarAt(m);
+    /* the corner resizes it: the share of the box's width follows the pointer */
+    const rc=m.getBoundingClientRect();
+    if(m.getAttribute("data-mode")!=="link" && e.clientX>rc.right-22 && e.clientY>rc.bottom-22){
+      const wb=Math.max(80, (m.parentElement && m.parentElement.closest("li")? m.parentElement.closest("li").clientWidth : val.clientWidth-24));
+      const x0=e.clientX, w0=rc.width; let moved=false;
+      try{ m.setPointerCapture(e.pointerId); }catch(_){_quiet(_)}
+      const mv=ev=>{ moved=true; const nw=Math.max(8, Math.min(100, Math.round(100*(w0+(ev.clientX-x0))/wb))); m.setAttribute("data-w", String(nw)); m.style.width=nw+"%"; };
+      const up=()=>{ m.removeEventListener("pointermove", mv); m.removeEventListener("pointerup", up); m.removeEventListener("pointercancel", up); if(moved) _rtMediaChanged(m); };
+      m.addEventListener("pointermove", mv); m.addEventListener("pointerup", up); m.addEventListener("pointercancel", up);
+    }
+  });
+  val.addEventListener("keydown",e=>{ if(e.key==="Escape" && _rtMSel) _rtMediaDeselect(); }, true);
+  val.addEventListener("input",()=>{ if(_rtMSel && !_rtMSel.isConnected) _rtMediaDeselect(); });
+  /* a picture dropped on the box */
+  val.addEventListener("dragover",e=>{ if(e.dataTransfer && [...(e.dataTransfer.items||[])].some(i=>i.kind==="file")) e.preventDefault(); });
+  val.addEventListener("drop",e=>{
+    const fs=e.dataTransfer && e.dataTransfer.files;
+    if(!fs || !fs.length) return;
+    e.preventDefault();
+    let r=null;
+    try{ if(document.caretRangeFromPoint) r=document.caretRangeFromPoint(e.clientX, e.clientY); else if(document.caretPositionFromPoint){ const p=document.caretPositionFromPoint(e.clientX, e.clientY); if(p){ r=document.createRange(); r.setStart(p.offsetNode, p.offset); r.collapse(true); } } }catch(_){_quiet(_)}
+    if(r && !val.contains(r.startContainer)) r=null;
+    val.focus();
+    _rtInsertImages(val, fs, r);
+  });
+}
+/* ---- the text's own looks: case, size, alignment, the highlighter ---- */
+/* every selected letter in capitals or in small letters - the text itself changes, not its look */
+function _rtCase(val, upper){
+  val.focus();
+  const m=_rtMark(val); if(!m) return;
+  try{
+    if(m.s.nextSibling!==m.e){
+      const r=document.createRange(); r.setStartAfter(m.s); r.setEndBefore(m.e);
+      const tw=document.createTreeWalker(r.commonAncestorContainer.nodeType===1? r.commonAncestorContainer : r.commonAncestorContainer.parentNode, NodeFilter.SHOW_TEXT);
+      const list=[]; while(tw.nextNode()){ const n=tw.currentNode; if(r.intersectsNode(n) && !(n.parentNode && n.parentNode.closest && n.parentNode.closest("[data-media]"))) list.push(n); }
+      list.forEach(n=>{ n.nodeValue=upper? n.nodeValue.toLocaleUpperCase("es") : n.nodeValue.toLocaleLowerCase("es"); });
+    }
+  }catch(_){_quiet(_)}
+  _rtUnmark(val, m);
+  val.dispatchEvent(new Event("input",{bubbles:true}));
+}
+/* the size of the selected text: s, l, xl - or back to the report's own size ("") */
+function _rtSize(val, sz){
+  val.focus();
+  try{ document.execCommand("styleWithCSS", false, false); document.execCommand("fontSize", false, "7"); }catch(_){_quiet(_)}
+  [...val.querySelectorAll('font[size="7"]')].forEach(f=>{
+    const sp=document.createElement("span");
+    if(sz) sp.setAttribute("data-fs", sz);
+    while(f.firstChild) sp.appendChild(f.firstChild);
+    f.replaceWith(sp);
+    /* what was sized inside it takes the new size */
+    sp.querySelectorAll("[data-fs]").forEach(x=>x.removeAttribute("data-fs"));
+    /* a font-size the browser wrote as a style instead */
+    [sp, ...sp.querySelectorAll("[style]")].forEach(x=>{ if(x.style && x.style.fontSize) x.style.fontSize=""; if(x.getAttribute && x.getAttribute("style")==="") x.removeAttribute("style"); });
+    if(!sp.attributes.length){ const fr=document.createDocumentFragment(); while(sp.firstChild) fr.appendChild(sp.firstChild); sp.replaceWith(fr); }
+  });
+  val.dispatchEvent(new Event("input",{bubbles:true}));
+}
+function _rtHighlight(val){
+  val.focus();
+  let cur=""; try{ cur=String(document.queryCommandValue("backColor")||""); }catch(_){_quiet(_)}
+  const on=/255,\s*23[0-9],\s*1[0-9]{2}|#ffe|255,\s*24[0-9],\s*(9|1[0-1])/i.test(cur);
+  try{ document.execCommand("styleWithCSS", false, true); document.execCommand("hiliteColor", false, on? "transparent" : "#ffe873"); }catch(_){_quiet(_)}
+  val.dispatchEvent(new Event("input",{bubbles:true}));
+}
+/* THE LINES SELECTED, ALIGNED: left (the report's own), centre, right or justified. A line lives in
+   a block only while it is aligned - div[data-al] - and the rest of the box stays lines */
+function _rtAlign(val, al){
+  val.focus();
+  const m=_rtMark(val); if(!m) return;
+  try{
+    _rtFlatten(val);
+    const top=n=>{ let el=n; while(el && el.parentNode!==val) el=el.parentNode; return el; };
+    /* what is aligned already, where the selection is, goes back to lines first */
+    const t0=top(m.s), t1=top(m.e);
+    let unwrapped=false;
+    [...val.children].forEach(c=>{ if(c.tagName==="DIV" && c.hasAttribute("data-al")){
+      const r=document.createRange(); r.setStartBefore(t0); r.setEndAfter(t1);
+      if(r.intersectsNode(c)){ c.removeAttribute("data-al"); unwrapped=true; } } });
+    if(unwrapped) _rtFlatten(val);
+    if(al && al!=="left"){
+      const segs=[]; let cur=[];
+      [...val.childNodes].forEach(n=>{
+        if(n.nodeName==="BR"){ cur.push(n); segs.push(cur); cur=[]; }
+        else if(_rtIsList(n) || (n.tagName==="DIV" && n.hasAttribute("data-al"))){ if(cur.length){ segs.push(cur); cur=[]; } segs.push([n]); }
+        else cur.push(n); });
+      if(cur.length) segs.push(cur);
+      const at=mk=>{ const t=top(mk); for(let i=0;i<segs.length;i++) if(segs[i].indexOf(t)>=0) return i; return -1; };
+      let i0=at(m.s), i1=at(m.e); if(i0<0) i0=i1; if(i1<0) i1=i0;
+      if(i0>=0){
+        const d=document.createElement("div"); d.setAttribute("data-al", al);
+        const nodes=[].concat(...segs.slice(i0, i1+1));
+        val.insertBefore(d, nodes[0]);
+        nodes.forEach(n=>d.appendChild(n));
+      }
+      _rtFlatten(val);
+    }
+  }catch(_){_quiet(_)}
+  _rtUnmark(val, m);
+  val.dispatchEvent(new Event("input",{bubbles:true}));
+}
+/* clear formatting takes the size, the highlight and the alignment off too */
+function _rtClear(val){
+  val.focus();
+  try{ document.execCommand("removeFormat"); }catch(_){_quiet(_)}
+  const sel=window.getSelection(), r=(sel && sel.rangeCount)? sel.getRangeAt(0) : null;
+  if(r){ val.querySelectorAll("[data-fs],u,span[style]").forEach(x=>{ if(!r.intersectsNode(x)) return;
+      if(x.tagName==="U" || (x.tagName==="SPAN" && !x.hasAttribute("data-key") && !x.hasAttribute("data-media"))){ const f=document.createDocumentFragment(); while(x.firstChild) f.appendChild(x.firstChild); x.replaceWith(f); }
+      else x.removeAttribute("data-fs"); }); }
+  val.dispatchEvent(new Event("input",{bubbles:true}));
+  try{ _rtAlign(val, "left"); }catch(_){_quiet(_)}
+}
+/* ---- pasting ---- */
+const RT_BULLET=/^\s*(?:[•·▪◦‣∙●○■□➢►▸✓✔\-\*–—]|\d{1,2}[.)])\s+/;
+/* plain text as the editor's lines; lines that start with a bullet or a number are a list, a deeper
+   indent a level in */
+function _rtPlainToHtml(txt){
+  const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const lines=String(txt||"").replace(/\r\n?/g,"\n").split("\n");
+  let out="", stack=[];
+  const close=to=>{ while(stack.length>to){ const s=stack.pop(); out+="</li></"+s.tag+">"; } };
+  let prevBlank=false;
+  lines.forEach(raw=>{
+    const ind=(/^[ \t ]*/.exec(raw)[0]||"").replace(/\t/g,"    ").length;
+    const line=raw.replace(/^[ \t ]+/,"").replace(/[ \t]+$/,"");
+    const bm=RT_BULLET.exec(line);
+    if(bm && line.length>bm[0].length){
+      const tag=/\d/.test(bm[0])? "ol" : "ul", body=esc(line.slice(bm[0].length));
+      let lvl=0; while(lvl<stack.length && ind>stack[lvl].ind) lvl++;
+      if(lvl<stack.length){ close(lvl+1); out+="</li><li>"+body; }
+      else { stack.push({ tag:tag, ind:ind }); out+="<"+tag+"><li>"+body; }
+      prevBlank=false;
+      return;
+    }
+    if(!line){ close(0); if(!prevBlank && out) out+="<br>"; prevBlank=true; return; }
+    close(0);
+    if(out && !/<br>$/.test(out) && !/<\/(ul|ol)>$/.test(out)) out+="<br>";
+    out+=esc(line); prevBlank=false;
+  });
+  close(0);
+  return out.replace(/(<br>)+$/,"");
+}
+/* lines of a pasted text that start with a bullet glyph become a list, and a list item that still
+   carries its bullet as a character loses it (the double bullet of a pasted PDF or web page) */
+function _rtGlyphLists(root){
+  const firstText=n=>{ const tw=document.createTreeWalker(n, NodeFilter.SHOW_TEXT); while(tw.nextNode()){ if(tw.currentNode.nodeValue.trim()) return tw.currentNode; } return null; };
+  root.querySelectorAll("li").forEach(li=>{ const t=firstText(li); if(t && RT_BULLET.test(t.nodeValue) && !/^\s*\d/.test(t.nodeValue)) t.nodeValue=t.nodeValue.replace(RT_BULLET,""); });
+  const kids=[...root.childNodes], segs=[]; let cur=[];
+  kids.forEach(n=>{ if(n.nodeName==="BR"){ segs.push({ nodes:cur, br:n }); cur=[]; } else if(_rtIsList(n) || (n.nodeType===1 && _RT_BLOCK[n.tagName])){ if(cur.length) segs.push({ nodes:cur }); cur=[]; segs.push({ block:n }); } else cur.push(n); });
+  if(cur.length) segs.push({ nodes:cur });
+  let list=null;
+  segs.forEach(sg=>{
+    if(sg.block || !sg.nodes.length){ list=null; return; }
+    const wrap=document.createElement("span"); sg.nodes.forEach(n=>wrap.appendChild(n.cloneNode(true)));
+    const t=firstText(wrap), tx=t? t.nodeValue : "";
+    const bm=RT_BULLET.exec(tx);
+    if(!bm){ list=null; return; }
+    const tag=/\d/.test(bm[0])? "OL" : "UL";
+    const ft=(()=>{ for(const n of sg.nodes){ const x=n.nodeType===3? (n.nodeValue.trim()? n : null) : firstText(n); if(x) return x; } return null; })();
+    if(!ft) { list=null; return; }
+    ft.nodeValue=ft.nodeValue.replace(RT_BULLET,"");
+    if(!list || list.tagName!==tag){ list=document.createElement(tag); root.insertBefore(list, sg.nodes[0]); }
+    const li=document.createElement("li"); sg.nodes.forEach(n=>li.appendChild(n)); list.appendChild(li);
+    if(sg.br) sg.br.remove();
+  });
+  return root;
+}
+/* a paste inside a list item: each line and each item of the paste becomes an item of this list at
+   its own level, the first one going on where the caret is and the rest of that line after the last */
+function _rtPasteInList(val, frag){
+  const m=_rtMark(val); if(!m) return false;
+  const li=(()=>{ let el=m.s; while(el && el!==val && el.tagName!=="LI") el=el.parentNode; return (el && el.tagName==="LI")? el : null; })();
+  if(!li){ _rtUnmark(val, m); return false; }
+  /* the entries of the paste, each with its level */
+  const entries=[];
+  const lineOf=nodes=>{ const d=document.createElement("div"); nodes.forEach(n=>d.appendChild(n.cloneNode(true))); return d.textContent.trim() || d.querySelector("[data-media]")? d.innerHTML : null; };
+  /* an item's own lines are one entry joined by breaks; its sublist is a level deeper */
+  const walkItem=(it, lvl)=>{ const own=[], subs=[]; [...it.childNodes].forEach(n=>{ if(_rtIsList(n)) subs.push(n); else own.push(n); });
+    const x=lineOf(own); if(x!=null) entries.push({ html:x, lvl:lvl });
+    subs.forEach(s=>[...s.children].forEach(c=>{ if(c.tagName==="LI") walkItem(c, lvl+1); })); };
+  (function top(){ let cur=[];
+    const flush=()=>{ const x=lineOf(cur); if(x!=null) entries.push({ html:x, lvl:0 }); cur=[]; };
+    [...frag.childNodes].forEach(n=>{
+      if(n.nodeName==="BR") flush();
+      else if(_rtIsList(n)){ flush(); [...n.children].forEach(c=>{ if(c.tagName==="LI") walkItem(c, 0); }); }
+      else cur.push(n); });
+    flush(); })();
+  if(!entries.length){ _rtUnmark(val, m); return true; }
+  /* the rest of the line after the caret, kept for the end */
+  const sub=[...li.children].filter(_rtIsList)[0]||null;
+  const rr=document.createRange(); rr.setStartAfter(m.e);
+  if(sub) rr.setEndBefore(sub); else rr.setEnd(li, li.childNodes.length);
+  const tail=rr.extractContents();
+  /* the first entry where the caret is */
+  const first=document.createRange(); first.setStartAfter(m.s); first.setEndBefore(m.e); first.deleteContents();
+  const tmp=document.createElement("div"); tmp.innerHTML=entries[0].html;
+  const fr=document.createDocumentFragment(); while(tmp.firstChild) fr.appendChild(tmp.firstChild);
+  m.e.parentNode.insertBefore(fr, m.e);
+  /* the others after it, each at its level */
+  const tag=li.parentNode.tagName;
+  const last=[li]; let lastLi=li;
+  entries.slice(1).forEach(en=>{
+    const nl=document.createElement("li"); nl.innerHTML=en.html;
+    const k=Math.max(0, Math.min(en.lvl, last.length));
+    if(k===0){ const ref=last[0]; ref.after(nl); last.length=1; last[0]=nl; }
+    else { const host=last[k-1]; _rtSubList(host, tag).appendChild(nl); last.length=k+1; last[k]=nl; }
+    lastLi=nl;
+  });
+  /* the caret and the rest of the line at the end of the last one */
+  if(lastLi!==li){
+    m.s.remove(); m.e.remove();
+    const s2=document.createElement("span"); s2.setAttribute("data-rtm","s"); const e2=document.createElement("span"); e2.setAttribute("data-rtm","e");
+    const ls=[...lastLi.children].filter(_rtIsList)[0]||null;
+    lastLi.insertBefore(s2, ls); lastLi.insertBefore(e2, ls); lastLi.insertBefore(tail, ls);
+    m.s=s2; m.e=e2;
+  } else m.e.after(tail);
+  _rtFixLists(val);
+  _rtUnmark(val, m);
+  /* the caret goes to the end of what was pasted */
+  try{ const sel=window.getSelection(); if(sel.rangeCount) sel.collapseToEnd(); }catch(_){_quiet(_)}
+  val.dispatchEvent(new Event("input",{bubbles:true}));
+  return true;
+}
 /* One body size, one line height, bold for emphasis. A report collects pasted
    sizes, faces, headings and line heights over a season and ends up looking
    like four different documents. They come off here, on the way into the box,
@@ -8658,15 +9271,19 @@ function _rtNorm(html){
     if(col) el.style.color=col;
     if(bg && bg!=="transparent" && bg!=="rgba(0, 0, 0, 0)") el.style.backgroundColor=bg;
   });
-  ["size","face","width","height","align","class","id","dir","lang"].forEach(a=>{
+  d.querySelectorAll("span[data-rtm]").forEach(x=>x.remove());
+  ["size","face","width","height","align","class","id","dir","lang","data-sel"].forEach(a=>{
     [...d.querySelectorAll("["+a+"]")].forEach(el=>el.removeAttribute(a));
   });
   _rtFlatten(d);
-  try{ _rtFixLists(d); }catch(_){_quiet(_)}
+  try{ _rtFixLists(d, true); }catch(_){_quiet(_)}
+  _rtFlatten(d);
   [...d.querySelectorAll("span")].forEach(sp=>{
     if(!sp.attributes.length){ const fr=document.createDocumentFragment();
       while(sp.firstChild) fr.appendChild(sp.firstChild); sp.replaceWith(fr); }
   });
+  /* the pictures and the videos drawn from what they say they are, every link opening a new tab */
+  try{ _rtHydrate(d); }catch(_){_quiet(_)}
   return d.innerHTML;
 }
 /* KEY IDEAS. In edit mode a passage of a note can be marked as one of the key ideas - the
@@ -8743,6 +9360,7 @@ function _keyWire(){
 function wireRichBox(val){
   try{ _keyWire(); }catch(_){_quiet(_)}
   val.__rich=true; try{ _rtTouchWire(); }catch(_){_quiet(_)}
+  try{ _rtMediaWire(val); }catch(_){_quiet(_)}
   /* whatever the browser did to a list while typing - Enter on an empty bullet, Backspace
      at the start of one - is put right as soon as it happens */
   let fixing=false;
@@ -8771,21 +9389,35 @@ function wireRichBox(val){
     /* Tab never walks out of the box mid-list, even when the move is refused */
     if(done || _rtListItem(val)) e.preventDefault();
   });
+  /* PASTING (Oriol, 27/11/2026: "a veces hay dobles listas al pegar un texto"): a picture goes in as a
+     picture, a YouTube address on its own as a video; text is read into lines and lists first - a line
+     that starts with a bullet or a number is an item, an item that still carries its bullet loses it -
+     and inside a list every pasted line becomes an item at its own level instead of a list in a list */
   val.addEventListener("paste",e=>{
     const dt=e.clipboardData; if(!dt) return;
     e.preventDefault();
-    const html=dt.getData("text/html");
-    if(html){ const tmp=document.createElement("div"); tmp.innerHTML=html;
+    const html=dt.getData("text/html"), txt=dt.getData("text/plain")||"";
+    const files=[...(dt.files||[])].filter(f=>/^image\//i.test(f.type||""));
+    if(files.length && !txt.trim()){ _rtInsertImages(val, files); return; }
+    const one=txt.trim();
+    if(one && !/\s/.test(one)){ const yt=_rtYtParse(one); if(yt){ _rtInsertNode(val, _rtMediaNew("yt", { id:yt.id, t:yt.t, mode:"embed" })); return; } }
+    const tmp=document.createElement("div");
+    if(html){ tmp.innerHTML=html;
       try{ _rtOffice(tmp); }catch(_){_quiet(_)}
-      _rtStrip(tmp); _rtFlatten(tmp); _rtTrimLines(tmp);
-      document.execCommand("insertHTML",false,tmp.innerHTML); }
-    else {
-      /* the same shape as an HTML paste: a newline is a <br>, never a new block,
-         so plain text and rich text land with identical spacing */
-      const txt=(dt.getData("text/plain")||"").replace(/^[ \t ]+/gm,"");   /* no line starts with spaces */
-      const esc=txt.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-      document.execCommand("insertHTML",false,esc.replace(/\r\n?|\n/g,"<br>"));
-    }
+      _rtStrip(tmp); _rtFlatten(tmp); _rtTrimLines(tmp); }
+    else tmp.innerHTML=_rtPlainToHtml(txt.replace(/^[ \t ]+$/gm,""));
+    try{ _rtGlyphLists(tmp); _rtFixLists(tmp, true); _rtFlatten(tmp); }catch(_){_quiet(_)}
+    try{ _rtHydrate(tmp); }catch(_){_quiet(_)}
+    if(!tmp.innerHTML.trim()) return;
+    const sel=window.getSelection();
+    if(sel && sel.rangeCount && !sel.isCollapsed) document.execCommand("delete");
+    if(_rtListItem(val) && tmp.querySelector("br,ul,ol,div[data-al]")){ try{ if(_rtPasteInList(val, tmp)) return; }catch(_){_quiet(_)} }
+    document.execCommand("insertHTML",false,tmp.innerHTML);
+    /* whatever the browser made of it, back to lines and lists that are right */
+    const m=_rtMark(val);
+    try{ _rtFlatten(val); _rtFixLists(val, true); }catch(_){_quiet(_)}
+    _rtUnmark(val, m);
+    try{ window.getSelection().collapseToEnd(); }catch(_){_quiet(_)}
     val.dispatchEvent(new Event("input",{bubbles:true}));
   });
 }
@@ -33014,6 +33646,14 @@ function _dashNeutral(c){
 }
 function _dashMarkedGroups(html){
   const d=document.createElement("div"); d.innerHTML=_rtNorm(html);
+  /* ON THE DASHBOARD A VIDEO IS A LINE OF TEXT THAT LINKS TO IT, AND A PICTURE IS LEFT IN THE REPORT (Oriol,
+     27/11/2026: "si hay algún link se conserva en formato texto con link únicamente para no ocupar espacio") */
+  d.querySelectorAll("[data-media]").forEach(m=>{
+    if(m.getAttribute("data-media")==="yt" && RT_YT_ID.test(String(m.getAttribute("data-yt")||""))){
+      const a=document.createElement("a"); a.setAttribute("href", _rtYtWatch(m.getAttribute("data-yt"), +m.getAttribute("data-t")||0));
+      a.setAttribute("target","_blank"); a.setAttribute("rel","noopener"); a.setAttribute("data-dl","1");
+      a.textContent="▶ "+(String(m.getAttribute("data-label")||"").trim() || "YouTube video"); m.replaceWith(a); }
+    else m.remove(); });
   /* A PASTE BRINGS ITS OWN COLOURS (Oriol, 4/11/2026: Bonn's entries came out grey, on white boxes,
      on the THEY side, beside lines in its own colour). Black, white and the greys go, so every line
      is in its side's colour; a red, a blue or a highlight the staff put on stays. */
@@ -33030,7 +33670,9 @@ function _dashMarkedGroups(html){
     if(!txt.some(n=>n.nodeValue.trim())) return { blank:true };
     const kept=txt.filter(n=>_keySpanOf(n, b));
     if(!kept.some(n=>n.nodeValue.trim())) return { off:true };
-    txt.forEach(n=>{ if(kept.indexOf(n)<0) n.nodeValue=" "; });
+    /* a video on a line with a key idea goes with it, as its link */
+    const lk=txt.filter(n=>n.parentNode && n.parentNode.closest && n.parentNode.closest("a[data-dl]"));
+    txt.forEach(n=>{ if(kept.indexOf(n)<0 && lk.indexOf(n)<0) n.nodeValue=" "; });
     b.querySelectorAll("span[data-key]").forEach(sp=>sp.replaceWith(...sp.childNodes));
     [...b.querySelectorAll("*")].reverse().forEach(e=>{ if(!e.textContent.trim()) e.replaceWith(" "); });
     b.normalize();
