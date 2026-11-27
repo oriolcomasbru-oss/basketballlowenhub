@@ -1702,13 +1702,23 @@
     var diff = side === "O" ? (ref - ppp) : (ppp - ref);
     return perfChip(f2(ppp), diff, 0.25 * (cf < 2 ? 2.2 : 1));
   }
+  /* VOLUME IS BLUE (Oriol, 27/11/2026, one rule in the pre game and the post game: "volumen en azul, verde y
+     rojo es la eficiencia"): a share or a count is shaded blue by how much of the column it is; green and
+     red are kept for what a possession is worth */
+  function volTd(txt, frac) {
+    var td = el("td", "sxp-c sxp-vol", txt);
+    var f = Math.max(0, Math.min(1, frac || 0));
+    td.style.setProperty("--vf", f.toFixed(3));
+    if (f >= 0.7) td.classList.add("dk");
+    return td;
+  }
   function shareCell(v, mx, suf) {
     if (v == null || v === "") return el("td", "sxp-c");
-    return perfChip(v + (suf == null ? "%" : suf), (v / (mx || 1)) - 0.5, 0.5);
+    return volTd(v + (suf == null ? "%" : suf), v / (mx || 1));
   }
   function heatCell(v, mx) {
     if (!v) return el("td", "sxp-c");
-    return perfChip(String(v), (v / (mx || 1)) - 0.5, 0.5);
+    return volTd(String(v), v / (mx || 1));
   }
 
   /* so a check can read a call sheet without a Drive folder behind it */
@@ -2607,7 +2617,21 @@
         var btd = el("td", "", (band === null ? "Other" : band) + " · " + rows.length +
           " set" + (rows.length === 1 ? "" : "s") + " · " + calls + " calls");
         btd.colSpan = 7; bt.appendChild(btd); TP.body.appendChild(bt);
-        rows.forEach(function (r) { TP.body.appendChild(pbRow(r)); });
+        /* THE SETS CALLED ONCE OR TWICE, ONE CLICK AWAY (Oriol, 27/11/2026: compact, nothing lost): the
+           rest of the band in sight, those under a line that opens them */
+        var rare = rows.filter(function (r) { return r.n < 3; }), keep = rows.filter(function (r) { return r.n >= 3; });
+        if (rare.length < 3) { keep = rows; rare = []; }
+        keep.forEach(function (r) { TP.body.appendChild(pbRow(r)); });
+        if (rare.length) {
+          var rr = rare.map(function (r) { var x = pbRow(r); x.classList.add("sxp-rare"); x.style.display = "none"; return x; });
+          var mt = el("tr", "sxp-more"), mtd = el("td", "", "+" + rare.length + " sets called once or twice ▾");
+          mtd.colSpan = 7; mt.appendChild(mtd);
+          mt.addEventListener("click", function () { var on = mt.classList.toggle("on");
+            rr.forEach(function (x) { x.style.display = on ? "" : "none"; });
+            mtd.textContent = (on ? "Hide the " : "+") + rare.length + " sets called once or twice " + (on ? "▴" : "▾"); });
+          TP.body.appendChild(mt);
+          rr.forEach(function (x) { TP.body.appendChild(x); });
+        }
       });
     }
     SORTS.forEach(function (s, i) {
@@ -2621,7 +2645,7 @@
       });
       bar.appendChild(btn);
     });
-    b4c.classList.add("sxp-pbmove");
+    b4c.classList.add("sxp-pbmove"); b4c.classList.add("fit-span");
     b4c.appendChild(bar);
     pbFill(SORTS[0][2]);
     b4c.appendChild(TP.wrap);
@@ -2703,6 +2727,7 @@
       S.bsPpp != null ? ("The ball screen is " + S.bsFreq + "% of everything they defend and it is where " +
         "they leak: " + f2(S.bsPpp) + " against a " + f2(S.bsRef) + " reference.") : "");
     var b5b = tabOf(sub(s5, "Ball screen coverage", "What each coverage costs them."), "bs");
+    b5b.classList.add("fit-span");
     edgeTable(b5b, D.coverage, "Coverage", "PPP allowed",
       [["efg", "eFG%"], ["p3r", "3PAr"], ["tov", "TOV%"],
        ["n4", "w/ 4", "p"], ["n5", "w/ 5", "p"]],
@@ -2771,6 +2796,8 @@
         });
         TX2.body.appendChild(bigRow(pair[2], tot, CB.totalRef, "sxp-tot"));
         CB.rows.forEach(function (r) {
+          /* a coverage neither big played is not a row (Oriol, 27/11/2026: more compact, nothing useful lost) */
+          if (!r.cells.some(function (c) { return c.n; })) return;
           TX2.body.appendChild(bigRow(r.label, r.cells, r.ref));
         });
         b5bb.appendChild(TX2.wrap);
@@ -2878,6 +2905,20 @@
         + "these " + M.ngames + " games. Every other ball-screen category names where the screen "
         + "was and not who was in it, and about nine in ten of those are the five, so the second "
         + "row carries the one in ten that is not.");
+      /* THE PARTS OF THE COVERAGE CARD SIDE BY SIDE (Oriol, 27/11/2026: "Ball screen más compacto, aprovechando
+         mejor el espacio"): who is in the screen, how each big covers it, who is in those clips - two to a line,
+         game by game across the whole width */
+      try {
+        var bKids = [].slice.call(b5b.children), bFirst = -1;
+        bKids.forEach(function (k, i) { if (bFirst < 0 && k.classList && k.classList.contains("sxp-sub2")) bFirst = i; });
+        if (bFirst > 0) {
+          var bGrid = el("div", "sxp-pgrid"), bCur = null;
+          bKids.slice(bFirst).forEach(function (k) {
+            if (k.classList && k.classList.contains("sxp-sub2")) { bCur = el("div", "sxp-pp"); bGrid.appendChild(bCur); if (/game by game|those clips/i.test(k.textContent)) bCur.classList.add("wide"); }
+            if (bCur) bCur.appendChild(k); });
+          b5b.appendChild(bGrid);
+        }
+      } catch(e){_quiet(e)}
     }
 
     if (D.covquarter.length) {
@@ -3414,6 +3455,25 @@
       ".sxp-pnr-d .dash-mixr .bar{height:15px}.sxp-pnr-d .dash-mixr .bar i{font-size:10px}",
       /* the areas */
       ".sxp-tmw{margin:0}",
+      /* volume in blue, as in the post game (27/11/2026) */
+      ".sxp-t td.sxp-vol{background:rgba(47,108,192,calc(.06 + .5 * var(--vf,0)));color:#173a6b;font-weight:700;text-align:right}",
+      ".sxp-t td.sxp-vol.dk{color:#fff}",
+      "body.dark .sxp-t td.sxp-vol{color:#cfe0f7}",
+      ".sxp-t tr.sxp-more td{cursor:pointer;font:600 11px 'Inter',sans-serif;color:var(--ink-soft,#5b6472);background:transparent;padding:5px 8px}",
+      ".sxp-t tr.sxp-more:hover td{color:var(--ink)}",
+      /* THE BLOCKS (Oriol, 27/11/2026: "me cuesta identificar dónde empieza y termina cada bloque"): a section is
+         one card with a rule on its left and its title kept at the top while it is read; its tables sit flat
+         inside it; the area charts are lower */
+      "body:not(.prt) .sxp[data-tab]:not([data-tab='over']) .sxp-sec{background:var(--panel,#fff);border:1px solid var(--line,#e4e7ec)!important;border-radius:12px;padding:0 16px 14px 20px!important;box-shadow:inset 4px 0 0 #5b6472}",
+      "body:not(.prt) .sxp[data-tab]:not([data-tab='over']) .sxp-sec > .sxp-sechead{position:sticky;top:0;z-index:4;background:var(--panel,#fff);padding:11px 0 9px;margin:0 0 6px;border-bottom:1px solid var(--line,#e4e7ec)}",
+      "body:not(.prt) .sxp[data-tab]:not([data-tab='over']) .sxp-sec > .sxp-card{border:0!important;border-top:1px solid var(--line-soft,#eef0f3)!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;padding:8px 0 0!important}",
+      ".sxp-vis .sxp-tm{min-height:140px;max-height:210px}",
+      ".sxp-pgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 24px;align-items:start}",
+      ".sxp-pgrid > .sxp-pp{min-width:0}.sxp-pgrid > .sxp-pp.wide{grid-column:1/-1}",
+      "@media (max-width:1100px){.sxp-pgrid{grid-template-columns:minmax(0,1fr)}}",
+      "body:not(.prt) .sxp[data-tab=off] > .sxp-sec:has(> .sxp-card ~ .sxp-card),body:not(.prt) .sxp[data-tab=def] > .sxp-sec:has(> .sxp-card ~ .sxp-card),body:not(.prt) .sxp[data-tab=bs] > .sxp-sec:has(> .sxp-card ~ .sxp-card){grid-template-columns:repeat(2,minmax(0,1fr))!important}",
+      "body:not(.prt) .sxp[data-tab=off] > .sxp-sec > .sxp-card:not(.fit-span),body:not(.prt) .sxp[data-tab=def] > .sxp-sec > .sxp-card:not(.fit-span),body:not(.prt) .sxp[data-tab=bs] > .sxp-sec > .sxp-card:not(.fit-span){grid-column:auto!important}",
+      "body:not(.prt) .sxp[data-tab=off] > .sxp-sec > .sxp-card.fit-span,body:not(.prt) .sxp[data-tab=def] > .sxp-sec > .sxp-card.fit-span,body:not(.prt) .sxp[data-tab=bs] > .sxp-sec > .sxp-card.fit-span{grid-column:1/-1!important}",
       ".sxp-tm{position:relative;width:100%;aspect-ratio:3/1;min-height:200px;max-height:340px}",
       ".sxp-tm-c{position:absolute;box-sizing:border-box;border:2px solid var(--panel,#fff);border-radius:7px;padding:6px 8px;overflow:hidden;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:2px;background:rgba(20,24,33,.07);color:var(--ink)}",
       ".sxp-tm-c.good{background:rgba(47,158,134,.24)}.sxp-tm-c.bad{background:rgba(216,82,78,.22)}",

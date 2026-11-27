@@ -2126,6 +2126,20 @@ body.prt .rs-rich [data-pu]{display:inline!important;color:#5b6472}
 .admin{width:100%!important;max-width:100%!important;max-height:90vh}
 .use-tw{overflow-x:auto;max-width:100%}
 .use-t td.use-last.on{color:#17805a;font-weight:700}
+.use-t2 td{vertical-align:top}
+.use-t2 td.use-when{white-space:nowrap}.use-t2 td.use-when b{display:block;font:700 13px 'Inter',sans-serif;color:var(--ink)}.use-t2 td.use-when span{display:block;font-size:11px;color:var(--ink-soft,#5b6472);margin-top:2px}
+.use-t2 td.use-when.on b{color:#17805a}
+.use-t2 td.use-saw{white-space:normal;min-width:260px}.use-t2 td.use-saw > div{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.use-t2 .use-chip.dim{opacity:.7}
+.use-t2 .use-prev{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:5px;padding-top:5px;border-top:1px dashed var(--line,#e4e7ec);font-size:11px;color:var(--ink-faint,#8a93a2)}
+.use-t2 .use-prev .use-chip{opacity:.75}
+.use-t2 td.use-where{white-space:normal}
+.dash-day.out{opacity:.62;background:repeating-linear-gradient(135deg,transparent 0 6px,rgba(20,24,33,.035) 6px 7px)}
+.dash-day.out > em{font-weight:700}
+.dash-fd{font:700 10px 'IBM Plex Mono',monospace;color:#1f5f8b;background:rgba(36,113,163,.1);border-radius:4px;padding:1px 5px;white-space:nowrap;margin-left:auto}
+.dash-fd.none{color:var(--ink-faint,#8a93a2);background:transparent;font-weight:500}
+.dash-set .dash-fd + em,.dash-mv .dash-fd + b{margin-left:6px}
+body.dark .dash-fd{color:#9cc0f2;background:rgba(110,160,230,.14)}
 /* ===== v5: A4-proportion report, compact game plan, dual views, summary layout, table editor ===== */
 /* A report is a dashboard, not a page of prose: a 1100px column down the middle of a
    1900px screen is eight hundred pixels of margin and three tables fewer per line. */
@@ -4740,7 +4754,8 @@ function cycleView(){
 
 /* ===== Unified positional traffic-light availability (roster + double-license apart) ===== */
 const SEM_GROUPS=[
- {lbl:"PG", main:["dejour","gian","devin"], dl:["lenni"]},
+ /* DaeDae left the team (Oriol, 27/11/2026: "DaeDae está fuera del equipo, ficharemos uno nuevo") */
+ {lbl:"PG", main:["gian","devin"], dl:["lenni"]},
  {lbl:"Guards", main:["ferdi","sheldon"], dl:["esli"]},
  {lbl:"Forwards", main:["chip","benny"], dl:["noah"]},
  {lbl:"Power F.", main:["tajh","felipe"], dl:["chris","lj"]},
@@ -5290,6 +5305,11 @@ function _gameCols(head){
   if(ix.ven==null)  ix.ven=3;
   return ix;
 }
+/* OUT OF THE POKAL (Oriol, 27/11/2026: "nos eliminaron de la copa, quita estos dos partidos: 12-13 de
+   diciembre"): the cup rounds the calendar still holds after the game we went out in are not games of
+   ours. A new season starts with nothing here. */
+const CUP_OUT=[{ after:"2026-10-18", until:"2027-07-31" }];
+const _cupGone=g=>/^(cup|pokal)$/i.test(String(g.competition||"").trim()) && CUP_OUT.some(o=>g.date>o.after && g.date<=o.until);
 async function sheetFixtures(){
   const rows=await gamesRows();
   if(!rows.length) return [];
@@ -5305,7 +5325,7 @@ async function sheetFixtures(){
       date:iso, opponent:opp, venue:ven, home:/^home$/i.test(ven),
       competition:String(r[ix.comp]||"").trim(), result:"", src:"sheet" });
   }
-  return out;
+  return out.filter(g=>!_cupGone(g));
 }
 const GAMEK=g=>String(g.date||"")+"|"+_lgNorm(g.opponent||"");
 /* The calendar IS the document. The fixtures in it replace every fixture the app holds
@@ -6906,29 +6926,51 @@ async function renderUsage(body, accounts, log){
       const top=Object.keys(views).sort((a,b)=>views[b]-views[a]).slice(0,3);
       const plays=Object.keys(vids).reduce((a,k)=>a+vids[k].n,0);
       return { user:r.user, scope:r.scope, last:r.last, seen:r.seen, days:days.length, sec, opens, top, views,
-               plays, vidn:Object.keys(vids).length, vids, err:r.err, ls:_useLastOf(r.doc) };
+               plays, vidn:Object.keys(vids).length, vids, err:r.err, ls:_useLastOf(r.doc), doc:r.doc };
     }).sort((a,b)=>b.sec-a.sec);
     /* the table scrolls inside its own box when the screen is narrow, never the dialog */
+    /* THE LAST VISIT, ONE STORY (Oriol, 27/11/2026: "last connection pone una cosa y last session otra. No
+       encaja ni se entiende"). "Last connection" was the last touch of the hub, however short; "last
+       session" was the last visit long enough to be timed (a minute or more). They are one column now:
+       when, how long, and what was seen. A look under a minute says so, opens with the screens of that
+       day, and the last visit that was timed is under it. Rows go by the last visit, the latest first. */
+    const visitOf=r=>{
+      const L=r.ls, seen=r.seen||0;
+      if(L && !L.day && (!seen || seen<=(L.end||L.at)+30*60e3)) return { at:L.at, L:L };
+      if(seen){ const dd=(r.doc && r.doc.days && r.doc.days[isoLocal(new Date(seen))])||null;
+        return { at:seen, short:true, opened:dd? Object.keys(dd.views||{}).filter(v=>v && v!=="?") : [], prev:L }; }
+      if(L) return { at:L.day? Date.parse(L.date+"T12:00:00") : L.at, L:L };
+      return null; };
+    sum.forEach(r=>{ r.v=visitOf(r); });
+    sum.sort((a,b)=>((b.v && b.v.at)||0)-((a.v && a.v.at)||0) || b.sec-a.sec);
     const mxSec=Math.max(1, ...sum.map(r=>r.sec));
-    const t=h("table",{class:"use-t"});
-    t.appendChild(h("tr",{class:"use-h"}, h("th",{class:"l"},"User"), h("th",{},"Days"),
-      h("th",{},"Opens"), h("th",{},"Time"), h("th",{},"Per day"),
-      h("th",{class:"l"},"Where the time went"), h("th",{},"Videos"), h("th",{class:"l"},"Last connection")));
+    const t=h("table",{class:"use-t use-t2"});
+    t.appendChild(h("tr",{class:"use-h"}, h("th",{class:"l"},"User"), h("th",{class:"l"},"Last visit"), h("th",{class:"l"},"What they saw in it"),
+      h("th",{class:"grp", title:"in the period chosen above"},"Days"), h("th",{},"Time"), h("th",{},"Per day"),
+      h("th",{class:"l"},"Where the time went · period"), h("th",{},"Videos")));
+    const chipsOf=L=>{ const x=_useLastLine(L); if(!x) return []; return [...x.querySelectorAll(".use-chip, .use-ls-none")]; };
     sum.forEach(r=>{
-      /* where the time went, as chips: the screen and its minutes */
-      const where=r.top.length? r.top.map(v=>h("span",{class:"use-chip"}, (SECT_LABELS[v]||v)+" ", h("b",{}, _useFmtMin(r.views[v])))) : "—";
-      const row=h("tr",{class:r.sec?"":"use-cold"},
+      const v=r.v, now=v && Date.now()-v.at<15*60e3;
+      let when="—", how="", saw=[], prev=null;
+      if(v){
+        when=_useAgo(v.at);
+        if(v.short){ how="a quick look · under a minute";
+          saw=v.opened.length? [h("span",{class:"use-ls-none"},"opened "), ...v.opened.map(k=>h("span",{class:"use-chip ls dim"}, SECT_LABELS[k]||k))] : [h("span",{class:"use-ls-none"},"no screen timed")];
+          if(v.prev){ const p=v.prev, ch=chipsOf(p);
+            prev=h("div",{class:"use-prev"}, h("span",{}, "Last timed visit · "+(p.day? _useAt(Date.parse(p.date+"T12:00:00")).replace(/\s\d\d:\d\d$/,"") : _useAt(p.at)+"–"+_useAt(p.end, true))+" · ", h("b",{}, _useFmtMin(p.sec))), ...ch); } }
+        else { const L=v.L; how=(L.day? "that day" : _useAt(L.at, true)+"–"+_useAt(L.end, true))+" · "+_useFmtMin(L.sec)+" in use"; saw=chipsOf(L); }
+      }
+      const where=r.top.length? r.top.map(x=>h("span",{class:"use-chip"}, (SECT_LABELS[x]||x)+" ", h("b",{}, _useFmtMin(r.views[x])))) : "—";
+      t.appendChild(h("tr",{class:r.sec?"":"use-cold"},
         h("td",{class:"l"}, h("b",{}, r.user), r.scope==="player"? h("span",{class:"use-tag"},"player") : null),
-        h("td",{}, r.days? String(r.days) : "\u2014"),
-        h("td",{}, r.opens? String(r.opens) : "\u2014"),
+        h("td",{class:"l use-when"+(now? " on" : ""), title:r.last? "last sign-in "+new Date(r.last).toLocaleString("en-GB") : ""}, h("b",{}, when), how? h("span",{}, how) : null),
+        h("td",{class:"l use-saw"}, h("div",{}, saw), prev),
+        h("td",{class:"grp"}, r.days? String(r.days) : "\u2014"),
         h("td",{class:"use-time"}, r.sec? [h("span",{class:"use-bar"}, h("i",{style:"width:"+Math.round(100*r.sec/mxSec)+"%"})), h("b",{}, _useFmtMin(r.sec))] : "—"),
         h("td",{}, r.days? _useFmtMin(r.sec/r.days) : "\u2014"),
-        h("td",{class:"l use-where"}, h("div",{}, where), _useLastLine(r.ls)),
-        h("td",{title:Object.keys(r.vids).map(k=>(r.vids[k].title||k)+" \u00d7"+r.vids[k].n
-          +(r.vids[k].where?(" ("+r.vids[k].where+")"):"")).join("\n")},
-          r.plays? (r.plays+(r.vidn>1? (" / "+r.vidn) : "")) : "\u2014"),
-        h("td",{class:"l use-last"+(r.seen && Date.now()-r.seen<15*60e3? " on" : ""), title:r.last? "last sign-in "+new Date(r.last).toLocaleString("en-GB") : ""}, _useAgo(r.seen)));
-      t.appendChild(row);
+        h("td",{class:"l use-where"}, where),
+        h("td",{title:Object.keys(r.vids).map(k=>(r.vids[k].title||k)+" \u00d7"+r.vids[k].n+(r.vids[k].where?(" ("+r.vids[k].where+")"):"")).join("\n")},
+          r.plays? (r.plays+(r.vidn>1? (" / "+r.vidn) : "")) : "\u2014")));
     });
     box.appendChild(h("div",{class:"use-tw"}, t));
     box.appendChild(h("div",{class:"use-foot"},
@@ -9437,7 +9479,9 @@ function renderReportCard(sec,it,ii,canEd,save,reRender,ctx){
   } else head.appendChild(h("span",{class:"rs-card-title"}, it.t||""));
   const val=h("div",{class:"rs-card-val rs-rich", contenteditable: canEd?"true":"false", "data-ph": canEd?"Write here…":""});
   val.innerHTML = _rtNorm(it.v);
-  if(it.h) val.style.minHeight=it.h+"px";
+  /* NO STORED HEIGHT (Oriol, 27/11/2026, a special report: "sale mucho espacio en blanco sin nada debajo"): a
+     height kept from a moment the box was taller held it open, empty, for good. The box is as tall as its text. */
+  if(it.h) delete it.h;
   if(canEd){
     val.addEventListener("input",()=>{ it.v=val.innerHTML; save(); });
     wireRichBox(val);
@@ -9448,14 +9492,6 @@ function renderReportCard(sec,it,ii,canEd,save,reRender,ctx){
        mode a resize of the window was therefore a save of every box on the page, over and
        over. A change that comes with a change of the window's width is not kept; one that
        comes on its own is, a moment after it stops. */
-    if(window.ResizeObserver){ let ww=window.innerWidth, ht=0;
-      const ro=new ResizeObserver(()=>{
-        if(window.innerWidth!==ww || _fitRszT || Date.now()-_fitRszAt<600){ ww=window.innerWidth; clearTimeout(ht); return; }
-        clearTimeout(ht); ht=setTimeout(()=>{
-          if(!val.isConnected || window.innerWidth!==ww) return;
-          const hpx=Math.round(val.getBoundingClientRect().height);
-          if(hpx>0 && Math.abs((it.h||0)-hpx)>4){ it.h=hpx; save(); } }, 350); });
-      ro.observe(val); }
   }
   card.appendChild(head); card.appendChild(val);
   return card;
@@ -21975,7 +22011,7 @@ function _rebPlayersTable(pl, names, grpOf, tot, opt){
     const dOff=tot? [tot.dr-p.dOn[0], tot.dC-p.dOn[1]] : null, oOff=tot? [tot.or-p.oOn[0], tot.oC-p.oOn[1]] : null;
     return { id:id, p:p, nm:nm, g:g, dOn:_rebPct(p.dOn[0],p.dOn[1]), dOff:dOff? _rebPct(dOff[0],dOff[1]) : null, oOn:_rebPct(p.oOn[0],p.oOn[1]), oOff:oOff? _rebPct(oOff[0],oOff[1]) : null }; });
   rows.sort((a,b)=>(a.g===b.g? 0 : a.g==="B"? -1 : 1) || b.p.sec-a.p.sec);
-  const t=h("table",{class:"lg-tbl reb-t"});
+  const t=h("table",{class:"lg-tbl reb-t"+(PC? " reb-pl" : "")});
   t.appendChild(h("tr",{}, h("th",{class:"l"},"Player"), h("th",{},"Min"), PC? null : h("th",{},"DREB"), PC? null : h("th",{},"OREB"), h("th",{title:"his own rebounds every 10 minutes on the floor"},"REB/10′"),
     h("th",{class:"grp", title:"the team's defensive rebounding while he was on the floor"},"DREB% on"), h("th",{},"off"), h("th",{},"±"),
     h("th",{class:"grp", title:"the team's offensive rebounding while he was on the floor"},"OREB% on"), h("th",{},"off"), h("th",{},"±")));
@@ -25820,16 +25856,19 @@ function _postRebounds(sg){
       h("div",{class:"reb-fig"}, h("i",{},"Second-chance points"), h("b",{class:R.sc.u>R.sc.t? "up" : R.sc.u<R.sc.t? "dn" : ""}, R.sc.u+"–"+R.sc.t), h("span",{}, "ours after our offensive rebound · theirs after theirs"))));
     const grid=h("div",{class:"reb-grid"});
     /* the quarters, in shares */
-    { const t=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},"Quarter"), h("th",{title:"the share of our misses we got back"},"OREB%"), h("th",{title:"the share of their misses we got back"},"DREB%")));
+    { const t=h("table",{class:"lg-tbl reb-t reb-qt"}, h("tr",{}, h("th",{class:"l"},"Quarter"), h("th",{title:"the share of our misses we got back"},"OREB%"), h("th",{title:"the share of their misses we got back"},"DREB%")));
+      const bar=(v, tone, tip)=>h("td",{class:"reb-bc "+(tone||""), title:tip||""}, h("span",{class:"reb-cb"}, h("i",{style:"width:"+Math.max(0, Math.min(100, Math.round(v||0)))+"%"})), h("b",{}, pc(v)));
+      t.appendChild(h("tr",{class:"reb-ssn"}, h("td",{class:"l"},"Our season"), bar(sO, "", "our season"), bar(sD, "", "our season")));
       R.q.forEach((q,i)=>{ if(!q) return; const o=_rebPct(q.u.or, q.u.or+q.t.dr), d=_rebPct(q.u.dr, q.u.dr+q.t.or);
         t.appendChild(h("tr",{}, h("td",{class:"l"}, i<4? "Q"+(i+1) : "OT"+(i-3)),
-          h("td",{class:_rebTone(o, sO), title:q.u.or+" of "+(q.u.or+q.t.dr)}, pc(o)), h("td",{class:_rebTone(d, sD), title:q.u.dr+" of "+(q.u.dr+q.t.or)}, pc(d)))); });
-      grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"By quarter"), t)); }
+          bar(o, _rebTone(o, sO), q.u.or+" of "+(q.u.or+q.t.dr)), bar(d, _rebTone(d, sD), q.u.dr+" of "+(q.u.dr+q.t.or)))); });
+      grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"By quarter · against our season"), t)); }
     /* which miss */
     { const t=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},"After a missed"), h("th",{class:"grp", title:"our offensive rebounds on our misses"},"Our OREB%"), h("th",{class:"grp", title:"their offensive rebounds on their misses"},"Their OREB%")));
       [[3,"three"],[2,"two"],[1,"free throw"]].forEach(x=>{ const a=R.miss.u[x[0]], b=R.miss.t[x[0]]; if(!a[1] && !b[1]) return;
-        t.appendChild(h("tr",{}, h("td",{class:"l"}, x[1]), h("td",{class:"grp", title:a[0]+" of "+a[1]}, pc(_rebPct(a[0],a[1]))), h("td",{class:"grp", title:b[0]+" of "+b[1]}, pc(_rebPct(b[0],b[1]))))); });
-      grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"Which miss"), t)); }
+        const oa=_rebPct(a[0],a[1]), ob=_rebPct(b[0],b[1]);
+        t.appendChild(h("tr",{}, h("td",{class:"l"}, x[1]), h("td",{class:"grp "+_rebTone(oa, ob), title:a[0]+" of "+a[1]}, h("b",{}, pc(oa))), h("td",{class:"grp reb-mu", title:b[0]+" of "+b[1]}, pc(ob)))); });
+      grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"Which miss · ours against theirs"), t)); }
     /* who took them, as shares of each side's rebounds */
     { const grp={ u:{ G:zero2(), B:zero2(), T:zero2() }, t:{ G:zero2(), B:zero2(), T:zero2() } };
       function zero2(){ return { or:0, dr:0 }; }
@@ -25837,9 +25876,9 @@ function _postRebounds(sg){
       /* a team rebound is in the side's total and in nobody's line: it goes in the last row */
       ["u","t"].forEach(s=>{ const S=grp[s]; S.T.or+=Math.max(0, R[s].or-(S.G.or+S.B.or+S.T.or)); S.T.dr+=Math.max(0, R[s].dr-(S.G.dr+S.B.dr+S.T.dr)); });
       const t=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},""), h("th",{class:"grp", title:"of our offensive rebounds"},"Our OREB"), h("th",{title:"of our defensive rebounds"},"Our DREB"), h("th",{class:"grp", title:"of their offensive rebounds"},"Their OREB"), h("th",{title:"of their defensive rebounds"},"Their DREB")));
-      const sh=(a, b, n)=>h("td",{class:n? "grp" : "", title:a+" of "+b}, pc(_rebPct(a, b)));
+      const sh=(a, b, n, mu)=>h("td",{class:(n? "grp" : "")+(mu? " reb-mu" : ""), title:a+" of "+b}, mu? pc(_rebPct(a, b)) : h("b",{}, pc(_rebPct(a, b))));
       [["B",REB_GRP.B],["G",REB_GRP.G],["T","Team rebounds (no player)"]].forEach(x=>{ const a=grp.u[x[0]], b=grp.t[x[0]]; if(!(a.or+a.dr+b.or+b.dr)) return;
-        t.appendChild(h("tr",{}, h("td",{class:"l"}, x[1]), sh(a.or, R.u.or, 1), sh(a.dr, R.u.dr), sh(b.or, R.t.or, 1), sh(b.dr, R.t.dr))); });
+        t.appendChild(h("tr",{}, h("td",{class:"l"}, x[1]), sh(a.or, R.u.or, 1), sh(a.dr, R.u.dr), sh(b.or, R.t.or, 1, 1), sh(b.dr, R.t.dr, 0, 1))); });
       grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"Who took them · share of each side's"), h("div",{class:"pb-scroll"}, t))); }
     box.appendChild(grid);
     box.appendChild(h("div",{class:"reb-card"}, h("h5",{},"Ours on the floor · the team's rebounding with each of them on and off"), _rebPlayersTable(R.pl, names, grpU, _rebTot(R), { pct:true })));
@@ -26251,11 +26290,11 @@ function _postOverviewDraw(sg, P, Tg, API, K, SR){
   if(model && R){
     const ref=(map,k)=>{ const o=R[map] && R[map][k]; return (o && o.n)? o.ppp : null; };
     const grp=(list, keyOf)=>{ const m={}, ks=[]; list.forEach(q=>{ const k=keyOf(q); if(!k) return; if(!m[k]){ m[k]=[]; ks.push(k); } m[k].push(q); });
-      return ks.map(k=>{ const l=m[k]; return { k:k, n:l.length, pts:l.reduce((a,q)=>a+(q.pts||0),0), ppp:ppp(l) }; }); };
+      return ks.map(k=>{ const l=m[k]; return { k:k, n:l.length, pts:l.reduce((a,q)=>a+(q.pts||0),0), ppp:ppp(l), fd:l.reduce((a,q)=>a+_fdQ(q),0) }; }); };
     const NAME={ "Offensive rebound":"After our OREB", "OOB (SLOB/BLOB)":"Out of bounds (SLOB/BLOB)" };
-    const oc=grp(poss, q=>q.phase||"").map(r=>({ label:NAME[r.k]||r.k, n:r.n, pts:r.pts, ppp:r.ppp, ref:ref("phase", r.k) }))
-      .concat(grp(poss.filter(q=>!API.setFamily || API.setFamily(q.first)!=="Transition"), q=>String(q.first||"").trim()).map(r=>({ label:"Set "+r.k, n:r.n, pts:r.pts, ppp:r.ppp, ref:ref("set", r.k) })));
-    const dc=grp(dposs.filter(q=>!/^balance$/i.test(String(q.label||"").trim())), q=>q.label||"").map(r=>({ label:r.k, n:r.n, pts:r.pts, ppp:r.ppp, ref:ref("dlab", r.k) }));
+    const oc=grp(poss, q=>q.phase||"").map(r=>({ label:NAME[r.k]||r.k, n:r.n, pts:r.pts, ppp:r.ppp, fd:r.fd, ref:ref("phase", r.k) }))
+      .concat(grp(poss.filter(q=>!API.setFamily || API.setFamily(q.first)!=="Transition"), q=>String(q.first||"").trim()).map(r=>({ label:"Set "+r.k, n:r.n, pts:r.pts, ppp:r.ppp, fd:r.fd, ref:ref("set", r.k) })));
+    const dc=grp(dposs.filter(q=>!/^balance$/i.test(String(q.label||"").trim())), q=>q.label||"").map(r=>({ label:r.k, n:r.n, pts:r.pts, ppp:r.ppp, fd:r.fd, ref:ref("dlab", r.k) }));
     const tr=model.trans||{};
     [["tag","TAG · after our long shot"],["back","BACK · after our miss at the rim or turnover"]].forEach(x=>{ const o=tr[x[0]];
       if(o && o.n) dc.push({ label:x[1], n:o.n, pts:o.pts, ppp:o.pts/o.n, ref:R[x[0]].n? R[x[0]].ppp : null }); });
@@ -26266,7 +26305,8 @@ function _postOverviewDraw(sg, P, Tg, API, K, SR){
       .filter(r=>Math.abs(r.swing)>=1).sort((a,b)=>Math.abs(b.swing)-Math.abs(a.swing)).slice(0,3);
     const mk=(r, low)=>{ const p=Math.abs(Math.round(r.swing));
       return { k:r.label, v:f2(r.ppp), src:"tag", tone:r.swing>0? "good" : "bad", n:r.n, unit:"poss",
-        text:"season "+f2(r.ref)+" · "+p+" point"+(p===1? "" : "s")+" "+(low? (r.swing>0? "saved" : "more") : (r.swing>0? "won" : "lost")) }; };
+        text:"season "+f2(r.ref)+" · "+p+" point"+(p===1? "" : "s")+" "+(low? (r.swing>0? "saved" : "more") : (r.swing>0? "won" : "lost"))
+          +(r.fd==null? "" : " · "+(r.fd? r.fd+(low? " foul"+(r.fd===1? "" : "s")+" given" : " FD") : (low? "no foul given" : "no FD"))) }; };
     offI=pick(oc, false).map(r=>mk(r, false)); defI=pick(dc, true).map(r=>mk(r, true));
     const mx=Math.max(1, ...offI.concat(defI).map(x=>x.n||0));
     offI.concat(defI).forEach(x=>{ x.nw=(x.n||0)/mx; });
@@ -26296,10 +26336,61 @@ function _postOverviewDraw(sg, P, Tg, API, K, SR){
 /* THE GAME (Oriol, 27/11/2026): the league's sheet of the game, the quarters with each number against
    theirs, and the minute by minute with its slumps and good spells - the margin, OER, DER, TAG and BACK
    in sight, the rest of its rows one click away */
+/* THE GAME, FOR A POST GAME AND NOT A MATCH SHEET (Oriol, 27/11/2026: "The game sigue demasiado el esquema de
+   la ficha de partido y del informe de League; quiero una versión mucho más resumida, compacta y centrada en
+   lo que nos interesa analizar"): the score and the four quarters with their margins, who was in front, the
+   biggest leads and the best runs, and the six or eight things the play by play says decided it - each ours
+   against theirs. The whole sheet (box scores, four factors, players, shot chart, play by play) is one
+   click away, in League's own window. */
+function _postGameHead(sg){
+  const box=h("div",{class:"pgh"}, h("div",{class:"ld"},"Reading the play by play of this game…", h("span",{class:"ld-bar"})));
+  if(!sg || !sg.date) return box;
+  _postPbp(sg).then(P=>{ box.innerHTML="";
+    if(!P){ box.appendChild(h("div",{class:"lg-empty"},"The league's play by play of this game is not in yet.")); return; }
+    const home=_lgOurs(P.G.home);
+    let maxQ=3; P.j.feed.actions.forEach(a=>{ const q=_lgGameElapsed(a.quarter,0).qi; if(q>maxQ) maxQ=q; });
+    const all={}; for(let q=0;q<=maxQ;q++) all[q]=1;
+    const M=_lgGameModel(P.G, P.j, all), U=home? M.H : M.A, T=home? M.A : M.H, F=M.flow||{};
+    const qs=[]; for(let q=0;q<=maxQ;q++){ const o={}; o[q]=1; const m=_lgGameModel(P.G, P.j, o); qs.push({ q:q, u:home? m.H : m.A, t:home? m.A : m.H }); }
+    const ql=q=>q<4? "Q"+(q+1) : "OT"+(q-3);
+    const win=U.pts>T.pts;
+    const tile=(lab, val, sub, tone)=>h("div",{class:"pgh-t "+(tone||"")}, h("i",{}, lab), h("b",{}, val), sub? h("span",{}, sub) : null);
+    const vs=(a, b, hi)=>(a==null || b==null || a===b)? "" : ((a>b)===!!hi? "good" : "bad");
+    const run=us=>{ const r=(F.runs||[]).filter(x=>x.home===(us? home : !home))[0]; return r? r.pts+"–0" : "—"; };
+    const sU=home? F.secH : F.secA, sT=home? F.secA : F.secH, tot=F.total||2400;
+    const mxU=home? F.maxH : F.maxA, mxT=home? F.maxA : F.maxH;
+    const hd=h("div",{class:"pgh-top"});
+    try{ const c=window.UIKit.src("lg"); if(c) hd.appendChild(c); }catch(e){_quiet(e)}
+    hd.appendChild(h("b",{class:"pgh-sc "+(win? "good" : "bad")}, U.pts+"–"+T.pts));
+    hd.appendChild(h("span",{class:"pgh-res"}, win? "win" : "loss"));
+    hd.appendChild(h("div",{class:"pgh-qs"}, qs.map(r=>{ const d=r.u.pts-r.t.pts;
+      return h("span",{class:d>0? "good" : d<0? "bad" : ""}, h("i",{}, ql(r.q)), r.u.pts+"–"+r.t.pts, h("em",{}, (d>0? "+" : d<0? "−" : "±")+Math.abs(d))); })));
+    const lk=h("button",{type:"button", class:"btn sm pgh-lk", title:"The whole sheet: box scores, four factors, players, shot chart, play by play"},"Full game sheet in League ↗");
+    lk.addEventListener("click",()=>{ try{ _lgGameOpen(P.G); }catch(e){ toast("The game could not be opened"); } });
+    hd.appendChild(lk);
+    box.appendChild(hd);
+    const sumP=(pl,k)=>(pl||[]).reduce((a,p)=>a+(+p[k]||0),0);
+    const best=(U.pl||[]).slice().sort((a,b)=>(b.pir||0)-(a.pir||0))[0], top=(T.pl||[]).slice().sort((a,b)=>(b.pts||0)-(a.pts||0))[0];
+    box.appendChild(h("div",{class:"pgh-g"},
+      tile("In front", Math.round(100*sU/tot)+"%", "behind "+Math.round(100*sT/tot)+"% · "+(F.changes||0)+" lead change"+(F.changes===1? "" : "s"), vs(sU, sT, true)),
+      tile("Biggest lead", "+"+(mxU||0), "theirs +"+(mxT||0), vs(mxU||0, mxT||0, true)),
+      tile("Best run", run(true), "theirs "+run(false), ""),
+      tile("eFG%", U.efg==null? "—" : Math.round(U.efg)+"%", "theirs "+(T.efg==null? "—" : Math.round(T.efg)+"%"), vs(Math.round(U.efg||0), Math.round(T.efg||0), true)),
+      tile("Points in the paint", String(U.paint||0), "theirs "+(T.paint||0), vs(U.paint||0, T.paint||0, true)),
+      tile("Points from three", String(3*(U.p3m||0)), "theirs "+3*(T.p3m||0)+" · "+(U.p3m||0)+"/"+(U.p3a||0), vs(U.p3m||0, T.p3m||0, true)),
+      tile("Second-chance points", String(U.sc||0), "theirs "+(T.sc||0), vs(U.sc||0, T.sc||0, true)),
+      tile("Points off turnovers", String(U.pto||0), "theirs "+(T.pto||0), vs(U.pto||0, T.pto||0, true)),
+      tile("Assists", String(U.ast!=null? U.ast : sumP(U.pl,"ast")), "theirs "+(T.ast!=null? T.ast : sumP(T.pl,"ast")), ""),
+      tile("Bench points", String(U.bench||0), "theirs "+(T.bench||0), vs(U.bench||0, T.bench||0, true)),
+      best? tile("Our best", _lgLastName(best.name)||("#"+best.num), best.pts+" pts · PIR "+best.pir, "") : null,
+      top? tile("Their top scorer", "#"+top.num+" "+(_lgLastName(top.name)||""), top.pts+" pts · "+top.fgm+"/"+top.fga+" FG", "") : null));
+  }).catch(e=>{ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"},"The game could not be read: "+((e&&e.message)||e))); });
+  return box;
+}
 function _postGameTab(sg){
   const box=h("div",{class:"pg-game"});
   if(!sg || !sg.date) return box;
-  box.appendChild(_lgGameInline(sg));
+  box.appendChild(_postGameHead(sg));
   const qb=h("div",{class:"pg-qbox"}); box.appendChild(qb);
   _postPbp(sg).then(P=>{ if(!P) return; const t=_postQuarterTable(P); if(t) qb.appendChild(t); }).catch(_quiet);
   const K=window.UIKit, hd=h("div",{class:"gpo-sub pg-srch"});
@@ -33802,6 +33893,11 @@ function _dashPostNotesInto(box, g){
 /* OUR GAME FROM OUR TAGGING, OFFENSE AND DEFENSE APART: OER, paint touches and the sets
    that worked and did not; DER, what TAG and BACK conceded and each defensive concept with
    what it gave up */
+/* THE FOULS IN EVERY SET LIST (Oriol, 27/11/2026: "en los análisis de sets siempre hay que poner si sacamos
+   faltas o no; también defensivamente"): how many fouls our runs of a set drew, and how many we gave
+   defending a concept - every "Foul Drawn" the possessions carry. None is said too. */
+const _fdQ=q=>((q && q.tags)||[]).filter(t=>t==="Foul Drawn").length;
+const _fdChip=(n, def)=>h("span",{class:"dash-fd"+(n? "" : " none"), title:def? (n||0)+" fouls we gave defending it" : (n||0)+" fouls drawn on its runs"}, (n||0)+(def? " F" : " FD"));
 function _dashPostSplit(box, g){
   box.appendChild(h("div",{class:"ld dash-ld"},"Reading our tagging of the game…", h("span",{class:"ld-bar"})));
   /* OER AND DER ARE THE LEAGUE'S, AS IN TRENDS (Oriol, 17/11/2026: "OER y DER tampoco sale el mismo"): this
@@ -33828,12 +33924,12 @@ function _dashPostSplit(box, g){
     const TAG=tb("tag"), BACK=tb("back");
     const f2=v=>v==null? "—" : Number(v).toFixed(2), fP=v=>(v==null||!isFinite(v))? "—" : Math.round(v)+"%";
     const fig=(k,v,n,tone)=>h("div",{class:"dash-fig "+(tone||"")}, h("i",{},k), h("b",{},v), h("span",{},n||""));
-    const S={}; m.poss.forEach(q=>{ if(q.phase!=="Half court") return; const k=String(q.first||"").trim(); if(!k) return; (S[k]=S[k]||{ n:0, p:0 }); S[k].n++; S[k].p+=q.pts||0; });
-    const ss=Object.keys(S).map(k=>({ k:k, n:S[k].n, v:S[k].p/S[k].n })).filter(x=>x.n>=2);
+    const S={}; m.poss.forEach(q=>{ if(q.phase!=="Half court") return; const k=String(q.first||"").trim(); if(!k) return; (S[k]=S[k]||{ n:0, p:0, fd:0 }); S[k].n++; S[k].p+=q.pts||0; S[k].fd+=_fdQ(q); });
+    const ss=Object.keys(S).map(k=>({ k:k, n:S[k].n, v:S[k].p/S[k].n, fd:S[k].fd })).filter(x=>x.n>=2);
     const good=ss.filter(x=>x.v>=1).sort((a,b)=>b.v-a.v||b.n-a.n).slice(0,8), bad=ss.filter(x=>x.v<0.8).sort((a,b)=>a.v-b.v||b.n-a.n).slice(0,8);
     /* a list in two columns, read down the first and then the second */
     const two=list=>h("div",{class:"dash-sets two", style:"grid-template-rows:repeat("+Math.max(1, Math.ceil(list.length/2))+",auto)"}, list);
-    const setRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" runs"), h("em",{class:x.n<MS_POSS? "" : x.v>=1.1? "lo" : x.v<0.8? "hi" : ""}, x.v.toFixed(2)));
+    const setRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" runs"), _fdChip(x.fd), h("em",{class:x.n<MS_POSS? "" : x.v>=1.1? "lo" : x.v<0.8? "hi" : ""}, x.v.toFixed(2)));
     const pt=API.measured(s,"pt"), br=API.measured(s,"br");
     const off=h("div",{class:"dash-sub"}, h("h4",{},"Offense"),
       h("div",{class:"dash-figs"}, fig("OER", LG? f1(LG.oer) : "—", LG? "per 100 · season "+f1(LG.oS) : "the league's box score is not in yet", LG? vsS(LG.oer, LG.oS, true) : ""),
@@ -33841,10 +33937,10 @@ function _dashPostSplit(box, g){
         fig("Ball reversals", fP(br), "of possessions", "")),
       h("div",{class:"dash-h5"},"Sets that worked · half court"), good.length? two(good.map(setRow)) : h("div",{class:"dash-miss"},"No half court set scored a point a possession on two runs or more."),
       h("div",{class:"dash-h5 bad"},"Sets that did not"), bad.length? two(bad.map(setRow)) : h("div",{class:"dash-miss"},"No set ran twice under 0.80."));
-    const C={}; dp.forEach(q=>{ const k=q.label||"—"; (C[k]=C[k]||{ n:0, p:0 }); C[k].n++; C[k].p+=q.pts||0; });
+    const C={}; dp.forEach(q=>{ const k=q.label||"—"; (C[k]=C[k]||{ n:0, p:0, fd:0 }); C[k].n++; C[k].p+=q.pts||0; C[k].fd+=_fdQ(q); });
     /* BALANCE counts in the DER above, it is only not a row of its own */
-    const cs=Object.keys(C).map(k=>({ k:k, n:C[k].n, v:C[k].p/C[k].n })).filter(x=>x.n>=2 && !/^balance$/i.test(String(x.k).trim())).sort((a,b)=>b.n-a.n).slice(0,10);
-    const conRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" poss"), h("em",{class:x.n<MS_POSS? "" : x.v<=0.85? "lo" : x.v>=1.15? "hi" : ""}, x.v.toFixed(2)));
+    const cs=Object.keys(C).map(k=>({ k:k, n:C[k].n, v:C[k].p/C[k].n, fd:C[k].fd })).filter(x=>x.n>=2 && !/^balance$/i.test(String(x.k).trim())).sort((a,b)=>b.n-a.n).slice(0,10);
+    const conRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" poss"), _fdChip(x.fd, true), h("em",{class:x.n<MS_POSS? "" : x.v<=0.85? "lo" : x.v>=1.15? "hi" : ""}, x.v.toFixed(2)));
     const tbTone=o=>!o? "" : o.ppp<=0.9? "good" : o.ppp>=1.2? "bad" : "";
     const def=h("div",{class:"dash-sub"}, h("h4",{},"Defense"),
       h("div",{class:"dash-figs"}, fig("DER", LG? f1(LG.der) : "—", LG? "per 100 · season "+f1(LG.dS) : "the league's box score is not in yet", LG? vsS(LG.der, LG.dS, false) : ""),
@@ -34751,9 +34847,9 @@ function renderDashboard(){
           t.appendChild(h("b",{}, r[4](r[3]))); });
         cB.appendChild(t); cB.appendChild(h("div",{class:"dash-src"}, list.length+" tagged games"));
         /* every half court set of the season on at least five runs, best and worst eight */
-        const S={}; all.forEach(x=>(x.m.poss||[]).forEach(q=>{ if(q.phase!=="Half court") return; const k=String(q.first||"").trim(); if(!k) return; (S[k]=S[k]||{ n:0, p:0 }); S[k].n++; S[k].p+=q.pts||0; }));
-        const ss=Object.keys(S).map(k=>({ k:k, n:S[k].n, v:S[k].p/S[k].n })).filter(x=>x.n>=5).sort((a,b)=>b.v-a.v);
-        const setRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" runs"), h("em",{class:x.v>=1.1? "lo" : x.v<=0.85? "hi" : ""}, x.v.toFixed(2)));
+        const S={}; all.forEach(x=>(x.m.poss||[]).forEach(q=>{ if(q.phase!=="Half court") return; const k=String(q.first||"").trim(); if(!k) return; (S[k]=S[k]||{ n:0, p:0, fd:0 }); S[k].n++; S[k].p+=q.pts||0; S[k].fd+=_fdQ(q); }));
+        const ss=Object.keys(S).map(k=>({ k:k, n:S[k].n, v:S[k].p/S[k].n, fd:S[k].fd })).filter(x=>x.n>=5).sort((a,b)=>b.v-a.v);
+        const setRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" runs"), _fdChip(x.fd), h("em",{class:x.v>=1.1? "lo" : x.v<=0.85? "hi" : ""}, x.v.toFixed(2)));
         const top=ss.slice(0,8), bot=ss.slice().reverse().filter(x=>top.indexOf(x)<0).slice(0,8);
         cC.appendChild(top.length? h("div",{class:"dash-sets"}, top.map(setRow)) : h("div",{class:"dash-miss"},"No set run five times yet."));
         cD.appendChild(bot.length? h("div",{class:"dash-sets"}, bot.map(setRow)) : h("div",{class:"dash-miss"},"Not enough sets yet."));
@@ -35187,16 +35283,16 @@ function renderDashboard(){
           if(!host){ cX.__b.appendChild(h("div",{class:"dash-miss"},"Two finished games are needed before there is a trend.")); return; }
           cX.__b.appendChild(ideas(_dashCards(host, 4, /what moves with|holding/i), "Nothing has moved enough to call it a trend.")); });
         /* every half court set: the season, and the last three games against the games before */
-        const runs=(L2)=>{ const S={}; L2.forEach(x=>(x.m.poss||[]).forEach(q=>{ if(q.phase!=="Half court") return; const k=String(q.first||"").trim(); if(!k) return; (S[k]=S[k]||{ n:0, p:0 }); S[k].n++; S[k].p+=q.pts||0; })); return S; };
-        const SA=runs(list), ss=Object.keys(SA).map(k=>({ k:k, n:SA[k].n, v:SA[k].p/SA[k].n })).filter(x=>x.n>=5).sort((a,b)=>b.v-a.v);
-        const setRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" runs"), h("em",{class:x.v>=1.1? "lo" : x.v<=0.85? "hi" : ""}, x.v.toFixed(2)));
+        const runs=(L2)=>{ const S={}; L2.forEach(x=>(x.m.poss||[]).forEach(q=>{ if(q.phase!=="Half court") return; const k=String(q.first||"").trim(); if(!k) return; (S[k]=S[k]||{ n:0, p:0, fd:0 }); S[k].n++; S[k].p+=q.pts||0; S[k].fd+=_fdQ(q); })); return S; };
+        const SA=runs(list), ss=Object.keys(SA).map(k=>({ k:k, n:SA[k].n, v:SA[k].p/SA[k].n, fd:SA[k].fd })).filter(x=>x.n>=5).sort((a,b)=>b.v-a.v);
+        const setRow=x=>h("div",{class:"dash-set"}, h("b",{}, x.k), h("span",{class:"nc"}, x.n+" runs"), _fdChip(x.fd), h("em",{class:x.v>=1.1? "lo" : x.v<=0.85? "hi" : ""}, x.v.toFixed(2)));
         const top=ss.slice(0,10), bot=ss.slice().reverse().filter(x=>top.indexOf(x)<0).slice(0,10);
         cB.__b.appendChild(top.length? h("div",{class:"dash-sets"}, top.map(setRow)) : h("div",{class:"dash-miss"},"No set run five times yet."));
         cW.__b.appendChild(bot.length? h("div",{class:"dash-sets"}, bot.map(setRow)) : h("div",{class:"dash-miss"},"Not enough sets yet."));
         if(list.length<MS_GAMES){ [cU,cD].forEach(x=>x.__b.appendChild(h("div",{class:"dash-miss"},"Five tagged games are needed to compare the last three with the games before."))); return; }
         const S3=runs(list.slice(-3)), SB=runs(list.slice(0,-3));
-        const mv=Object.keys(S3).filter(k=>S3[k].n>=MS_POSS && SB[k] && SB[k].n>=MS_POSS).map(k=>({ k:k, a:SB[k].p/SB[k].n, b:S3[k].p/S3[k].n, n:S3[k].n })).map(x=>Object.assign(x,{ d:x.b-x.a }));
-        const mvRow=(x,t)=>h("div",{class:"dash-mv "+t}, h("span",{}, x.k+" · "+x.n+" runs"), h("b",{}, x.a.toFixed(2)+" → "+x.b.toFixed(2)));
+        const mv=Object.keys(S3).filter(k=>S3[k].n>=MS_POSS && SB[k] && SB[k].n>=MS_POSS).map(k=>({ k:k, a:SB[k].p/SB[k].n, b:S3[k].p/S3[k].n, n:S3[k].n, fd:S3[k].fd })).map(x=>Object.assign(x,{ d:x.b-x.a }));
+        const mvRow=(x,t)=>h("div",{class:"dash-mv "+t}, h("span",{}, x.k+" · "+x.n+" runs"), _fdChip(x.fd), h("b",{}, x.a.toFixed(2)+" → "+x.b.toFixed(2)));
         /* ten each way: the sets that moved most, up and down */
         const up=mv.filter(x=>x.d>=0.10).sort((a,b)=>b.d-a.d).slice(0,10), dn=mv.filter(x=>x.d<=-0.10).sort((a,b)=>a.d-b.d).slice(0,10);
         cU.__b.appendChild(up.length? h("div",{}, up.map(x=>mvRow(x,"good"))) : h("div",{class:"dash-miss"},"No set has improved clearly (five runs or more in both, 0.10 or more)."));
@@ -35819,13 +35915,23 @@ function renderDashboard(){
           off? h("button",{type:"button", class:"dash-mb", onclick:()=>{ off=0; draw(); }},"This month") : null));
         const grid=h("div",{class:"dash-month"});
         ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].forEach(d=>grid.appendChild(h("span",{class:"hd"}, d)));
-        const lead=(new Date(y,m,1).getDay()+6)%7; for(let i=0;i<lead;i++) grid.appendChild(h("span",{class:"pad"}));
-        for(let d=1; d<=days; d++){
-          const iso=isoLocal(new Date(y,m,d));
+        /* THE MONTH RUNS FROM GAME TO GAME (Oriol, 27/11/2026: "añade el final del mes hasta que salga el
+           siguiente partido aunque sea otro mes; al cambiar de mes también se ve hasta el último partido
+           del mes anterior"): it opens on our last game of the month before and runs on to our next game
+           after it, the days of the other months paler and carrying their month */
+        const gd=(state.games||[]).filter(g=>g && g.date && isCycleGame(g) && !_gamePlaceholder(g.opponent)).map(g=>g.date).sort();
+        const lastIso=isoLocal(new Date(y,m,days));
+        const before=gd.filter(x=>x<first).pop(), after=gd.filter(x=>x>lastIso)[0];
+        const startIso=(before && Math.round((new Date(first)-new Date(before))/86400000)<=21)? before : first;
+        const endIso=(after && Math.round((new Date(after)-new Date(lastIso))/86400000)<=21)? after : lastIso;
+        const d0r=new Date(startIso+"T00:00:00"), nDays=Math.round((new Date(endIso+"T00:00:00")-d0r)/86400000)+1;
+        const lead=(d0r.getDay()+6)%7; for(let i=0;i<lead;i++) grid.appendChild(h("span",{class:"pad"}));
+        for(let k=0; k<nDays; k++){
+          const dt=new Date(d0r.getFullYear(), d0r.getMonth(), d0r.getDate()+k), iso=isoLocal(dt), d=dt.getDate(), out=dt.getMonth()!==m;
           const gms=(state.games||[]).filter(g=>g.date===iso && isCycleGame(g));
           const pj=(state.plan.pfj||{})[iso], sess=((state.plan.sessions||{})[iso]||[]);
           const trains=!gms.length && ((pj && !pj.off) || (Array.isArray(sess)? sess.length : !!sess));
-          const cellEl=h("div",{class:"dash-day"+(iso===T? " today" : "")+(gms.length? " g" : "")+(iso<T? " past" : "")}, h("em",{}, String(d)));
+          const cellEl=h("div",{class:"dash-day"+(iso===T? " today" : "")+(gms.length? " g" : "")+(iso<T? " past" : "")+(out? " out" : "")}, h("em",{}, out && (d===1 || k===0)? d+" "+dt.toLocaleDateString("en-GB",{ month:"short" }) : String(d)));
           if(prob) (state.games||[]).filter(g=>g.date===iso && g.competition==="ProB").forEach(g=>cellEl.appendChild(h("span",{class:"dash-dg pb", title:"ProB · "+(g.opponent||"")},
             h("i",{}, "ProB "+(g.venue==="Away"? "@" : "vs")+" "+_lgShort(g.opponent||"")), h("u",{}, g.result||tipOff(g)))));
           gms.forEach(g=>{ const r=res(g), tt=tipOff(g);
@@ -46496,6 +46602,33 @@ body.dark .sv-t td.sv-x{color:#ff8f85}
 .pg-uni[data-tab="all"] .pg-pane + .pg-pane.on{margin-top:18px}
 @media print{.pg-uni .pg-pane{display:block!important}.pg-uni .pg-tabs{display:none!important}}
 body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{display:none!important}
+/* the game, compact (27/11/2026) */
+.pgh{display:grid;gap:10px;margin:0 0 6px}
+.pgh-top{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:10px 12px;border-radius:12px;background:var(--panel,#fff);border:1px solid var(--line,#e4e7ec);box-shadow:inset 4px 0 0 #5b6472}
+.pgh-sc{font:800 26px 'Inter',sans-serif;letter-spacing:-.01em}.pgh-sc.good{color:#17805a}.pgh-sc.bad{color:#c53727}
+.pgh-res{font:700 11px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-faint,#8a93a2)}
+.pgh-qs{display:flex;flex-wrap:wrap;gap:6px}
+.pgh-qs span{display:inline-flex;align-items:baseline;gap:5px;padding:4px 9px;border-radius:8px;background:var(--panel-2,#f4f5f7);font:700 13px 'IBM Plex Mono',monospace}
+.pgh-qs span i{font-style:normal;font-size:10px;color:var(--ink-faint,#8a93a2)}.pgh-qs span em{font-style:normal;font-size:11px}
+.pgh-qs span.good em{color:#17805a}.pgh-qs span.bad em{color:#c53727}
+.pgh-lk{margin-left:auto}
+.pgh-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.pgh-t{display:flex;flex-direction:column;gap:1px;padding:7px 10px;border-radius:9px;background:var(--panel-2,#f4f5f7);border-left:3px solid transparent;min-width:0}
+.pgh-t > i{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}
+.pgh-t > b{font:800 17px/1.15 'Inter',sans-serif;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pgh-t > span{font-size:11px;color:var(--ink-soft,#5b6472)}
+.pgh-t.good{border-left-color:#2f9e86}.pgh-t.good > b{color:#17805a}.pgh-t.bad{border-left-color:#d8524e}.pgh-t.bad > b{color:#c0403c}
+body.dark .pgh-t.good > b{color:#5fcf9f}body.dark .pgh-t.bad > b{color:#ff8f85}
+/* rebounding: what to read first */
+.reb-qt td.reb-bc{min-width:110px}
+.reb-cb{display:inline-block;vertical-align:middle;width:56px;height:6px;border-radius:3px;background:rgba(20,24,33,.08);margin-right:7px;position:relative;overflow:hidden}
+.reb-cb i{position:absolute;left:0;top:0;bottom:0;background:#9aa6b8;border-radius:3px}
+.reb-qt td.up .reb-cb i{background:#2f9e86}.reb-qt td.dn .reb-cb i{background:#d8524e}
+.reb-qt tr.reb-ssn td{color:var(--ink-faint,#8a93a2);font-style:italic;border-bottom:2px solid var(--line,#e4e7ec)}
+.reb-t td.reb-mu{color:var(--ink-faint,#8a93a2)}
+.reb-pl td:nth-child(4),.reb-pl td:nth-child(5),.reb-pl td:nth-child(7),.reb-pl td:nth-child(8){color:var(--ink-faint,#8a93a2)}
+.reb-pl td.reb-d{font-weight:800}
+body.dark .reb-cb{background:rgba(255,255,255,.1)}
 /* the post game on the pre game's line (27/11/2026) */
 .pgmc:not(.open) .pgmc-x{display:none!important}
 .pgm-more{margin:8px 0 0;border:1px solid var(--line,#e4e7ec);background:var(--panel,#fff);color:var(--ink-soft,#5b6472);border-radius:7px;padding:5px 11px;font:600 11.5px 'Inter',sans-serif;cursor:pointer}

@@ -1914,8 +1914,12 @@
       rows.forEach(function (r) { if (!r.band) { tot += r.list.length; mx = Math.max(mx, r.list.length); } });
       if (opt.total) tot = opt.total;
       var out = rows.map(function (r) {
-        if (r.band) return { cls: "sx-famrow", cells: [{ v: r.band, cls: "sx-famc" }, "", "", "", "", "", ""] };
+        if (r.band) return { cls: "sx-famrow", cells: [{ v: r.band, cls: "sx-famc" }, "", "", "", "", "", "", ""] };
         var s = shotLine(r.list), n = r.list.length, ref = r.ref;
+        /* THE FOULS, ALWAYS (Oriol, 27/11/2026: "en los análisis de sets siempre hay que poner si sacamos
+           faltas o no; también defensivamente"): the fouls drawn on our possessions, the fouls we gave on
+           theirs - every "Foul Drawn" the possessions carry */
+        var fd = 0; r.list.forEach(function (q) { fd += count(q.tags || [], "Foul Drawn"); });
         var use = ref == null ? (def ? defAvg : offAvg) : ref;
         var sw = (s.ppp == null || use == null) ? null : (def ? n * use - s.pts : s.pts - n * use);
         var swR = sw == null ? null : Math.round(sw);
@@ -1923,10 +1927,35 @@
           { v: n, cls: "sx-vol " + volStep(100 * n / mx) }, pct(n, tot), s.pts,
           { v: f2(s.ppp), cls: def ? effD(s.ppp, ref) : effO(s.ppp, ref) },
           { v: ref == null ? "—" : f2(ref), cls: "sx-ref" },
-          { v: swR == null ? "—" : (swR > 0 ? "+" + swR : swR < 0 ? "−" + (-swR) : "0"), cls: "sx-swing" + (swR > 0 ? " up" : swR < 0 ? " dn" : "") }];
+          { v: swR == null ? "—" : (swR > 0 ? "+" + swR : swR < 0 ? "−" + (-swR) : "0"), cls: "sx-swing" + (swR > 0 ? " up" : swR < 0 ? " dn" : "") },
+          { v: fd ? String(fd) : "0", cls: "sx-fd" + (fd ? "" : " none"), title: fd + (def ? " fouls we gave" : " fouls drawn") + " on " + n + " possessions" }];
       });
-      return table([nameHd, "Poss", opt.share || "% all", "Pts", def ? "PPP allowed" : "PPP",
-        R ? "Season" : "Game", def ? "Pts saved" : "Pts won"], out);
+      var hd = [nameHd, "Poss", opt.share || "% all", "Pts", def ? "PPP allowed" : "PPP",
+        R ? "Season" : "Game", def ? "Pts saved" : "Pts won", def ? "Fouls" : "FD"];
+      /* THE LONG TAIL FOLDED (Oriol, 27/11/2026: "reducir la necesidad de hacer scroll"): the first
+         opt.top rows in sight, the rest one click away, in the same columns */
+      if (opt.top && out.length > opt.top + 1) {
+        var w2 = el("div", "sx-reft");
+        w2.appendChild(table(hd, out.slice(0, opt.top), { sort: false }));
+        var fd2 = el("details", "sx-fold");
+        fd2.appendChild(el("summary", null, "+" + (out.length - opt.top) + " more" + (opt.foldWhy ? " · " + opt.foldWhy : "")));
+        fd2.appendChild(table(hd, out.slice(opt.top), { sort: false }));
+        w2.appendChild(fd2);
+        return w2;
+      }
+      return table(hd, out);
+    }
+    /* a phase by phase reading of a concept in four numbers: how often, PPP with, PPP without */
+    function touchByPhase(key, label) {
+      var rows = byPhase.map(function (d) {
+        var on = d.list.filter(function (q) { return (q[key] || 0) > 0; }), off = d.list.filter(function (q) { return !((q[key] || 0) > 0); });
+        var a = shotLine(on), b = shotLine(off), rf = refIn("phase", d.label);
+        return [d.label, d.list.length,
+          { v: pct(on.length, d.list.length), cls: "sx-vol " + volStep(100 * on.length / Math.max(1, d.list.length)) },
+          { v: on.length ? f2(a.ppp) : "—", cls: on.length ? effO(a.ppp, R ? R.w[key][0].ppp : rf) : "sx-dash" },
+          { v: off.length ? f2(b.ppp) : "—", cls: off.length ? effO(b.ppp, R ? R.w[key][1].ppp : rf) : "sx-dash" }];
+      });
+      return table(["Phase", "Poss", label + " %", "PPP with", "PPP without"], rows, { sort: false });
     }
 
     /* the count table: 0 / 1 / 2+ of the concept across a dimension */
@@ -1993,16 +2022,31 @@
     /* a section only Everything shows: the long tables behind a tab */
     function more(sec) { sec.classList.add("sx-allonly"); return sec; }
     /* the head of a block: its figures and its pictures, as the pre game draws them */
+    /* THE HEAD OF A BLOCK (Oriol, 27/11/2026: "me cuesta diferenciar cuándo termino un bloque y empiezo
+       otro"): its key figures on its own title line - every figure drawn the same, a neutral one too -
+       and its pictures as the block's first panels */
     function head(g, o) {
-      if (!K || !K.summary) return;
-      try { o.cls = "sx-cathead fit-span"; var c = K.summary(o); g.insertBefore(c, g.children[1] || null); } catch(e){_quiet(e)}
+      try {
+        var hd = g.querySelector(".sx-cath"), k = el("div", "sx-kpis");
+        (o.figures || []).forEach(function (f) {
+          var x = el("span", "sx-kpi " + (f.tone || "neutral")); if (f.title) x.title = f.title;
+          x.appendChild(el("i", null, f.label)); x.appendChild(el("b", null, f.value == null ? "—" : String(f.value)));
+          if (f.note) x.appendChild(el("em", null, f.note));
+          k.appendChild(x); });
+        if (hd) hd.appendChild(k);
+        var at = 1;
+        (o.visuals || []).filter(Boolean).forEach(function (v) {
+          var p = el("div", "sx-sec sx-vis"); p.appendChild(v); g.insertBefore(p, g.children[at] || null); at++; });
+      } catch(e){_quiet(e)}
     }
     var tmap = function (rows, title, sub, hiGood) {
       if (!TM) return null;
       try {
-        return TM(rows, title, sub, null, { hiGood: hiGood, noMin: true, refWord: "our " + seasonWord,
+        var tmx = TM(rows, title, sub, null, { hiGood: hiGood, noMin: true, mini: true, refWord: "our " + seasonWord,
           key: "Area: share of possessions · inside: share · points per possession · colour against our " + seasonWord +
             ": green better for us, red worse, grey within 0.10" });
+        if (tmx) tmx.classList.add("mini", "sx-tm2");
+        return tmx;
       } catch (e) { _quiet(e); return null; }
     };
     var verdict = function (v) { return v >= 70 ? "Perfect" : v >= 65 ? "Ok" : v >= 60 ? "Regular" : "Below"; };
@@ -2057,8 +2101,11 @@
     gPT.appendChild(s1);
     if (byPhase.length) {
       var s3 = section("By phase");
-      s3.appendChild(countTable("Phase", byPhase, "pt", function (it) { return refIn("phase", it.label); }));
+      s3.appendChild(touchByPhase("pt", "Touch"));
       gPT.appendChild(s3);
+      var s3x = more(section("By phase · 0, 1, 2+ touches"));
+      s3x.appendChild(countTable("Phase", byPhase, "pt", function (it) { return refIn("phase", it.label); }));
+      gPT.appendChild(s3x);
     }
     if (pbp.rows.length && pbp.coverage >= 0.6) {
       var s6 = section("By player");
@@ -2135,12 +2182,16 @@
     var gBR = g2Group("off", "03", "Ball reversals");
     var brRest = restP.filter(function (q) { return (q.br || 0) > 0; }).length;
     var r1 = section("Rate");
-    r1.appendChild(gaugeSplit("Ball reversal", fbP.length, fbP.length, brRest, restP.length, N, "Ball reversal", false));
+    var gs1 = gaugeSplit("Ball reversal", fbP.length, fbP.length, brRest, restP.length, N, "Ball reversal", false);
+    gs1.classList.add("slim"); r1.appendChild(gs1);
     gBR.appendChild(r1);
     if (byPhase.length) {
       var r3 = section("By phase");
-      r3.appendChild(countTable("Phase", byPhase, "br", function (it) { return refIn("phase", it.label); }));
+      r3.appendChild(touchByPhase("br", "Reversal"));
       gBR.appendChild(r3);
+      var r3x = more(section("By phase · 0, 1, 2+ reversals"));
+      r3x.appendChild(countTable("Phase", byPhase, "br", function (it) { return refIn("phase", it.label); }));
+      gBR.appendChild(r3x);
     }
     var r2 = more(section("Played or not"));
     r2.appendChild(staplesTable("br", "1+ ball reversal", "No reversal"));
@@ -2165,18 +2216,31 @@
 
     /* =========================================================== 04 SETS */
     var gS = g2Group("off", "04", "Sets");
-    var setRowsR = [];
-    PG_FAMS.forEach(function (fam) {
-      if (!byFam[fam] || !byFam[fam].length) return;
-      var list = Object.keys(bySet).map(function (k) { return bySet[k]; })
+    /* TWO COLUMNS, THE RARE SETS FOLDED (Oriol, 27/11/2026: "Sets: revisar el espacio que ocupan las tablas"):
+       the open floor and the early offense in one panel, the half court sets and the inbounds in the
+       other; in each family the sets run three times or more are in sight and the rest one click away */
+    var famSets = function (fam) {
+      return Object.keys(bySet).map(function (k) { return bySet[k]; })
         .filter(function (s) { return s.fam === fam; })
-        .sort(function (a, b) { return b.list.length - a.list.length || a.cat.localeCompare(b.cat); });
-      setRowsR.push({ band: fam });
-      list.forEach(function (s) { setRowsR.push({ label: s.cat, list: s.list, ref: refIn("set", s.cat), indent: 1 }); });
+        .sort(function (a, b) { return b.list.length - a.list.length || a.cat.localeCompare(b.cat); }); };
+    [["Open floor · early offense", ["Transition", "Early offense"]], ["Half court · inbounds · ATO", PG_FAMS.filter(function (f) { return f !== "Transition" && f !== "Early offense"; })]].forEach(function (col) {
+      var rowsIn = [], rowsOut = [];
+      col[1].forEach(function (fam) {
+        var list = famSets(fam); if (!list.length) return;
+        rowsIn.push({ band: fam });
+        list.forEach(function (s) { (s.list.length >= 3 ? rowsIn : rowsOut).push({ label: s.cat, list: s.list, ref: refIn("set", s.cat), indent: 1 }); });
+      });
+      if (!rowsIn.length && !rowsOut.length) return;
+      var p = section(col[0]);
+      p.appendChild(refTable("Set", rowsIn, false));
+      if (rowsOut.length) {
+        var fd = el("details", "sx-fold");
+        fd.appendChild(el("summary", null, "+" + rowsOut.length + " set" + (rowsOut.length === 1 ? "" : "s") + " of 1–2 runs"));
+        fd.appendChild(refTable("Set", rowsOut, false));
+        p.appendChild(fd);
+      }
+      gS.appendChild(p);
     });
-    var eS = section("By set");
-    eS.appendChild(refTable("Set", setRowsR, false));
-    gS.appendChild(eS);
 
     var e1 = more(section("By family"));
     var famRows = [], famMax = 1;
@@ -2271,6 +2335,7 @@
     var sTD = section("The two situations");
     sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%",
       "Situations", "Pts conceded", "PPP", "We finished on"], tdRows));
+    try { sTD.querySelector("table").classList.add("sx-tdt"); } catch(e){_quiet(e)}
     sTD.appendChild(leagueOrbLine());
     gTD.appendChild(sTD);
     box.appendChild(gTD);
@@ -2295,12 +2360,8 @@
          count in the total and in the points allowed per possession */
       catOrder = catOrder.filter(function (k) { return !/^balance$/i.test(k); });
       var s51 = section("By situation");
-      s51.appendChild(refTable("Situation", catOrder.map(function (k) { return { label: k, list: byCat[k], ref: refIn("dlab", k) }; }), true, { total: DN }));
+      s51.appendChild(refTable("Situation", catOrder.map(function (k) { return { label: k, list: byCat[k], ref: refIn("dlab", k) }; }), true, { total: DN, top: 8, foldWhy: "the smaller situations" }));
       gDF.appendChild(s51);
-      var scL = DP.filter(function (q) { return (q.oreb || 0) > 0; });
-      var s5s = section("Their second chances");
-      s5s.appendChild(refTable("", [{ label: "After their offensive rebound", list: scL, ref: R && R.dsc.n ? R.dsc.ppp : null }], true, { total: DN, share: "% of theirs" }));
-      gDF.appendChild(s5s);
       var s51x = more(section("By situation · the shots"));
       var dMax = catOrder.length ? (byCat[catOrder[0]].length || 1) : 1;
       var dRows = catOrder.map(function (k) { return effCells(k, byCat[k], DN, dMax, { def: 1, ref: refIn("dlab", k) }); });
@@ -5977,6 +6038,32 @@
       ".sx-cathead .ui-figs{margin-bottom:10px}",
       /* the post game's colour rule (27/11/2026): blue volume, green / red efficiency for us against our season */
       ".sx-eff{font-weight:800;color:var(--ink,#12161d)}",
+      /* THE BLOCKS (Oriol, 27/11/2026): a block is one card with a rule of its colour on the left and its
+         key figures on its title line, which stays at the top while the block is read; its panels are
+         flat inside it, a small label and a hairline each */
+      ".sx-post .sx-cat{margin-top:16px;background:var(--panel,#fff);border:1px solid var(--line,#e4e7ec);border-radius:12px;padding:0 16px 14px 20px;box-shadow:inset 4px 0 0 var(--blk,#c6a15b);gap:10px 22px}",
+      ".sx-post .sx-cat[data-g=\"def\"]{--blk:#8a2f2b}.sx-post .sx-cat[data-g=\"bs\"]{--blk:#5b6472}",
+      ".sx-post .sx-cath{position:sticky;top:0;z-index:4;background:var(--panel,#fff);padding:11px 0 9px!important;margin:0!important;border-bottom:1px solid var(--line,#e4e7ec);flex-wrap:wrap;align-items:center!important;gap:6px 10px!important}",
+      ".sx-post .sx-catt{font-size:15px!important}",
+      ".sx-kpis{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 18px;margin-left:10px}",
+      ".sx-kpi{display:inline-flex;align-items:baseline;gap:5px;white-space:nowrap}",
+      ".sx-kpi i{font:600 10px 'IBM Plex Mono',monospace;font-style:normal;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}",
+      ".sx-kpi b{font:800 16px 'Inter',sans-serif;color:var(--ink)}.sx-kpi em{font-style:normal;font-size:11px;color:var(--ink-faint,#8a93a2)}",
+      ".sx-kpi.good b{color:#17805a}.sx-kpi.bad b{color:#c53727}.sx-kpi.vol b{color:#2f6cc0}",
+      "body.dark .sx-kpi.good b{color:#5fcf9f}body.dark .sx-kpi.bad b{color:#ff8f85}body.dark .sx-kpi.vol b{color:#7db7e8}",
+      ".sx-post .sx-cat > .sx-sec{background:transparent;border:0;border-top:1px solid var(--line-soft,#eef0f3);border-radius:0;box-shadow:none;padding:8px 0 0;margin:0}",
+      ".sx-post .sx-cat > .sx-sec > .sx-h{font-size:10px;letter-spacing:.14em;color:var(--ink-faint,#8a93a2);margin:0 0 6px}",
+      ".sx-post .sx-cat > .sx-vis{border-top:0;padding-top:4px}",
+      ".sx-post .sx-vis .ui-vis{margin:0}",
+      ".sx-post .sx-vis .sxp-tm{min-height:150px;max-height:220px}",
+      ".sx-post .sxp-tmw.mini.sx-tm2 .sxp-tm{height:190px}",
+      ".sx-post .sx-vis .sxp-tm-k{font-size:10px}",
+      ".sx-fold{margin-top:6px}.sx-fold > summary{cursor:pointer;font:600 11px 'Inter',sans-serif;color:var(--ink-soft,#5b6472);padding:3px 0}",
+      ".sx-fold[open] > summary{margin-bottom:4px}",
+      ".sx-gauge.slim{margin:4px 0 6px}.sx-gauge.slim .sx-gtop,.sx-gauge.slim .sx-gscale{display:none}",
+      ".sx-gauge.slim .sx-gtrack{height:16px}.sx-gauge.slim .sx-gseg{font-size:10px}",
+      ".sx-gauge.slim .sx-gsplit{display:flex;flex-wrap:wrap;gap:2px 14px;margin-top:6px}.sx-gauge.slim .sx-gpart{font-size:11px}",
+      ".sx-table.sx-tdt td:nth-child(2),.sx-table.sx-tdt td:nth-child(3),.sx-table.sx-tdt td:nth-child(4),.sx-table.sx-tdt td:nth-child(5),.sx-table.sx-tdt td:nth-child(9){color:var(--ink-faint,#8a93a2);font-weight:500;font-size:11.5px}",
       ".sx-table td.sx-eff.good{background:#d4ecdf;color:#11583d}",
       ".sx-table td.sx-eff.bad{background:#f6dad4;color:#9a2a1d}",
       "body.dark .sx-table td.sx-eff.good{background:rgba(47,158,106,.24);color:#86e3b6}",
@@ -5984,6 +6071,7 @@
       ".sx-table td.sx-ref{color:var(--ink-faint,#8a93a2);font-weight:600;background:transparent}",
       ".sx-table td.sx-swing{font-weight:700;background:transparent;color:var(--ink-soft,#5b6472)}",
       ".sx-table td.sx-swing.up{color:#17805a}.sx-table td.sx-swing.dn{color:#c53727}",
+      ".sx-table td.sx-fd{font-weight:700;background:transparent;color:var(--ink)}.sx-table td.sx-fd.none{color:var(--ink-faint,#8a93a2);font-weight:500}",
       "body.dark .sx-table td.sx-swing.up{color:#5fcf9f}body.dark .sx-table td.sx-swing.dn{color:#ff8f85}",
       ".sx-post:not([data-cat=\"all\"]) .sx-allonly{display:none}",
       "@media print{.sx-post .sx-allonly{display:grid!important}}",
@@ -6067,7 +6155,7 @@
        the file is parsed, without waiting for DOMContentLoaded */
     window.LowenPostStats = { mount: mountPostTeam, dropCache: dropCache,
                               gameModel: gameModel, shotLine: shotLine, measured: measured, summarise: summarise,
-                              seasonGames: seasonGames, seasonPractices: seasonPractices, addUp: addUp, seasonRef: seasonRef, setFamily: pgFamily,
+                              seasonGames: seasonGames, seasonPractices: seasonPractices, addUp: addUp, seasonRef: seasonRef, setFamily: pgFamily, fdOf: function (q) { return count((q && q.tags) || [], "Foul Drawn"); },
                               /* the trainings' rebounding, one a session, and several added up */
                               trainingRebounds: trainingRebounds, reboundsAdd: rebAdd, reboundCats: rebCats,
                               datesWithFiles: datesWithFiles,
