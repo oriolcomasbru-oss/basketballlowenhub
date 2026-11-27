@@ -452,7 +452,7 @@
   var BACK_SUB = [["to", " after our turnover", "Turnover"], ["miss", " after our miss (their rebound)", "M2"]];
   /* the BACK row's three parts, for a table of `cols` columns: situations, points and PPP
      in the places the main rows have them, the rest left empty */
-  function backSubRows(back, all, cols, list) {
+  function backSubRows(back, all, cols, list, refs) {
     var sub = back && back.sub; if (!sub) return [];
     return (list || BACK_SUB).map(function (s) {
       var o = sub[s[0]] || { n: 0, pts: 0 }, ppp = o.n ? o.pts / o.n : null;
@@ -461,7 +461,8 @@
       for (var i = 1; i < at; i++) cells.push("");
       cells.push({ v: o.n, cls: "sx-vol " + volStep(100 * o.n / Math.max(1, all)) });
       cells.push(o.pts);
-      cells.push({ v: f2(ppp), cls: "sx-cell " + pppStepD(ppp) + (o.n < SMALL ? " sx-small" : "") });
+      cells.push(refs ? { v: f2(ppp), cls: effCls(ppp, refs[s[0]], true) }
+        : { v: f2(ppp), cls: "sx-cell " + pppStepD(ppp) + (o.n < SMALL ? " sx-small" : "") });
       while (cells.length < cols - 1) cells.push("");
       cells.push(s[2]);
       return { cells: cells, cls: "sx-subrow" };
@@ -912,6 +913,18 @@
     return v < 0.5 ? "s5" : v < 0.8 ? "s4" : v < 1.0 ? "s3" : v < 1.25 ? "s2" : v < 1.6 ? "s1" : "s0";
   }
   function pppCls(v, def) { return def ? pppStepD(v) : pppStep(v); }
+  /* GREEN AND RED ARE EFFICIENCY, FOR US (Oriol, 27/11/2026: "volumen en azul, verde y rojo es la
+     eficiencia; que tenga sentido en ataque y defensa"). A number is read against our own average of
+     the same thing and is green when it is better for us by the band or more, red when it is worse:
+     scoring more on offense, conceding less on defense (def). The two are compared as they are shown
+     (dec decimals), so 1.03 against 0.93 is 0.10 and coloured. */
+  function edgeTone(v, ref, def, band, dec) {
+    if (v == null || ref == null || !isFinite(v) || !isFinite(ref)) return "neutral";
+    var f = Math.pow(10, dec == null ? 2 : dec), d = (Math.round(v * f) - Math.round(ref * f)) / f;
+    if (def) d = -d;
+    return d >= band - 1e-9 ? "good" : d <= -band + 1e-9 ? "bad" : "neutral";
+  }
+  function effCls(v, ref, def) { var t = edgeTone(v, ref, def, 0.10, 2); return "sx-eff" + (t === "neutral" ? "" : " " + t); }
   function volStep(p) {
     return p < 20 ? "b0" : p < 35 ? "b1" : p < 50 ? "b2" : p < 65 ? "b3" : p < 80 ? "b4" : "b5";
   }
@@ -1796,7 +1809,8 @@
         { v: n, cls: "sx-vol " + volStep(100 * n / (max || 1)) },
         pct(n, total),
         s.pts,
-        { v: f2(s.ppp), cls: "sx-cell " + pppCls(s.ppp, extra && extra.def) + (n < SMALL ? " sx-small" : "") },
+        (extra && ("ref" in extra)) ? { v: f2(s.ppp), cls: effCls(s.ppp, extra.ref, extra.def) }
+          : { v: f2(s.ppp), cls: "sx-cell " + pppCls(s.ppp, extra && extra.def) + (n < SMALL ? " sx-small" : "") },
         s.fgm + "/" + s.fga, s.t2a, s.t3a, s.fta,
         s.tov + (n ? " · " + Math.round(100 * s.tov / n) + "%" : ""),
         orebOf(list)
@@ -1809,7 +1823,16 @@
 
   /* ---- the block ------------------------------------------------------- */
 
-  function renderPostTeam(root, model, meta) {
+  /* THE POST GAME'S TEAM STATS, ON THE PRE GAME'S LINE (Oriol, 27/11/2026: "debemos seguir la línea de
+     pregame sobre todo"). Three tabs of the post game are drawn here - our offense, our defense and the
+     ball screen - and Everything adds the long tables under them. Every number of the tagging is read
+     against the same number over our tagged games of the season (SR, from seasonRef): blue is volume,
+     green and red are efficiency for us, from 0.10 PPP or 5 points of a percentage, with no minimum of
+     possessions ("la muestra de un partido es pequeña: sin mínimos, pero sentido común al destacar").
+     The paint touches and the reversals are measured exactly as before and as Trends measures them: a
+     fastbreak apart, counted whole (Oriol, 27/11/2026: "no cambies nada de paint touches y ball reversals
+     a lo que contraataque se refiere"). */
+  function renderPostTeam(root, model, meta, SR) {
     root.innerHTML = "";
     var P = model.poss || [], N = P.length;
     if (!N) { root.appendChild(el("div", "sx-empty", "No tagged possessions in this game.")); return; }
@@ -1854,37 +1877,76 @@
       return { label: qq, list: P.filter(function (q) { return q.q === qq; }) };
     });
     var pbp = gameTouchTable(P);
+    var DP = model.dposs || [], DN = DP.length, dAll = shotLine(DP);
+    var K = (typeof window !== "undefined") && window.UIKit;
+    var TM = (typeof window !== "undefined") && window.SXPTreemap;
 
-    try{ if(window.LowenColourKey) box.appendChild(window.LowenColourKey("us")); }catch(e){_quiet(e)}
-    box.appendChild(el("div", "sx-meta", meta + " · " + N + " possessions · " +
-      all.pts + "–" + model.oppPts + " from the tagging · " + f2(all.ppp) + " PPP"));
+    /* ---- our season: every number's reference. Without it (the folder not read yet) the
+       game's own average stands in, and the line under the meta says so */
+    var R = SR || null;
+    var offAvg = (R && R.off.n) ? R.off.ppp : anchor, defAvg = (R && R.def.n) ? R.def.ppp : dAll.ppp;
+    var refIn = function (map, k) { var o = R && R[map] && R[map][k]; return (o && o.n) ? o.ppp : null; };
+    var effO = function (v, ref) { return effCls(v, ref == null ? offAvg : ref, false); };
+    var effD = function (v, ref) { return effCls(v, ref == null ? defAvg : ref, true); };
+    var seasonWord = R ? "season" : "game";
+
+    box.appendChild(el("div", "sx-meta", meta + " · " + N + " possessions · " + all.pts + "–" + model.oppPts +
+      " from the tagging · " + f2(all.ppp) + " PPP"));
+    var key = el("div", "sx-key2");
+    try { var chip = K && K.src && K.src("tag"); if (chip) { chip.title = "From our tagging of this game"; key.appendChild(chip); } } catch(e){_quiet(e)}
+    key.appendChild(el("b", null, R ? "Against our season · " + R.n + " game" + (R.n === 1 ? "" : "s") + " tagged" : "Our season is not read yet · against this game's own average"));
+    [["vol", "volume"], ["good", "better for us"], ["bad", "worse for us"]].forEach(function (x) {
+      var s = el("span", "sx-k2"); s.appendChild(el("i", x[0])); s.appendChild(document.createTextNode(x[1])); key.appendChild(s); });
+    key.appendChild(el("span", "sx-k2 mu", "green / red from ±0.10 PPP or ±5 points of a % · no minimum of possessions"));
+    box.appendChild(key);
 
     var menu = el("div", "sx-menu");
     box.appendChild(menu);
 
     /* ------------------------------------------------ shared table shapes */
 
-    /* the old count table: 0 / 1 / 2+ of the concept across a dimension */
-    function countTable(dimName, items, key) {
+    /* THE PRE GAME'S TABLE, FOR US: a row's possessions, its share, its points, its PPP against
+       our season's PPP of the same thing, and what the difference came to in points over those
+       possessions - won or lost on offense, saved or given on defense */
+    function refTable(nameHd, rows, def, opt) {
+      opt = opt || {};
+      var tot = 0, mx = 1;
+      rows.forEach(function (r) { if (!r.band) { tot += r.list.length; mx = Math.max(mx, r.list.length); } });
+      if (opt.total) tot = opt.total;
+      var out = rows.map(function (r) {
+        if (r.band) return { cls: "sx-famrow", cells: [{ v: r.band, cls: "sx-famc" }, "", "", "", "", "", ""] };
+        var s = shotLine(r.list), n = r.list.length, ref = r.ref;
+        var use = ref == null ? (def ? defAvg : offAvg) : ref;
+        var sw = (s.ppp == null || use == null) ? null : (def ? n * use - s.pts : s.pts - n * use);
+        var swR = sw == null ? null : Math.round(sw);
+        return [r.indent ? { v: r.label, cls: "sx-indent" } : r.label,
+          { v: n, cls: "sx-vol " + volStep(100 * n / mx) }, pct(n, tot), s.pts,
+          { v: f2(s.ppp), cls: def ? effD(s.ppp, ref) : effO(s.ppp, ref) },
+          { v: ref == null ? "—" : f2(ref), cls: "sx-ref" },
+          { v: swR == null ? "—" : (swR > 0 ? "+" + swR : swR < 0 ? "−" + (-swR) : "0"), cls: "sx-swing" + (swR > 0 ? " up" : swR < 0 ? " dn" : "") }];
+      });
+      return table([nameHd, "Poss", opt.share || "% all", "Pts", def ? "PPP allowed" : "PPP",
+        R ? "Season" : "Game", def ? "Pts saved" : "Pts won"], out);
+    }
+
+    /* the count table: 0 / 1 / 2+ of the concept across a dimension */
+    function countTable(dimName, items, key, refFn) {
       var rows = items.map(function (it) {
-        var sub = it.list;
+        var sub = it.list, rf = refFn ? refFn(it) : null;
         var cells = [it.label, sub.length, { v: pct(sub.length, N), cls: "sx-vol " + volStep(100 * sub.length / N) }];
         [0, 1, 2].forEach(function (k) {
           var g = sub.filter(function (q) { return k < 2 ? (q[key] || 0) === k : (q[key] || 0) >= 2; });
           var s = shotLine(g);
           cells.push(g.length);
           cells.push({ v: pct(g.length, sub.length), cls: "sx-vol " + volStep(100 * g.length / sub.length) });
-          cells.push({ v: f2(s.ppp), cls: "sx-cell " + pppStep(s.ppp) });
+          cells.push({ v: f2(s.ppp), cls: effO(s.ppp, rf) });
         });
         var w = shotLine(sub.filter(function (q) { return (q[key] || 0) > 0; }));
-        cells.push({ v: f2(w.ppp), cls: "sx-cell " + pppStep(w.ppp) });
-        cells.push({ v: f2(shotLine(sub).ppp), cls: "sx-cell sx-tot" });
+        cells.push({ v: f2(w.ppp), cls: effO(w.ppp, R ? R.w[key][0].ppp : null) });
+        cells.push({ v: f2(shotLine(sub).ppp), cls: effO(shotLine(sub).ppp, rf) });
         return cells;
       });
-      /* THE WHOLE, UNDER ITS PARTS. Each row says how a phase or a quarter splits into
-         none, one, two or more; what was missing was the same split for everything
-         together - how many possessions of the game had none, one, two or more, and
-         what share of the total that is. */
+      /* THE WHOLE, UNDER ITS PARTS: how many possessions of the game had none, one, two or more */
       var allList = [];
       items.forEach(function (it) { allList = allList.concat(it.list); });
       if (items.length > 1 && allList.length) {
@@ -1893,23 +1955,24 @@
           var g = allList.filter(function (q) { return k < 2 ? (q[key] || 0) === k : (q[key] || 0) >= 2; });
           tc.push(g.length);
           tc.push({ v: pct(g.length, allList.length), cls: "sx-vol " + volStep(100 * g.length / allList.length) });
-          tc.push({ v: f2(shotLine(g).ppp), cls: "sx-cell " + pppStep(shotLine(g).ppp) });
+          tc.push({ v: f2(shotLine(g).ppp), cls: effO(shotLine(g).ppp) });
         });
-        tc.push({ v: f2(shotLine(allList.filter(function (q) { return (q[key] || 0) > 0; })).ppp), cls: "sx-cell" });
-        tc.push({ v: f2(shotLine(allList).ppp), cls: "sx-cell sx-tot" });
+        tc.push({ v: f2(shotLine(allList.filter(function (q) { return (q[key] || 0) > 0; })).ppp), cls: effO(shotLine(allList.filter(function (q) { return (q[key] || 0) > 0; })).ppp, R ? R.w[key][0].ppp : null) });
+        tc.push({ v: f2(shotLine(allList).ppp), cls: effO(shotLine(allList).ppp) });
         rows.push({ cls: "sx-totrow", cells: tc });
       }
       return table([dimName, "Poss", "% all", "0", "%", "PPP", "1", "%", "PPP", "2+", "%", "PPP", "PPP w/ 1+", dimName + " PPP"], rows);
     }
 
-    /* the staples pair: played against not played */
+    /* played against not played, each against the season's same split */
     function staplesTable(key, onLabel, offLabel) {
       var on = P.filter(function (q) { return (q[key] || 0) > 0; });
       var off = P.filter(function (q) { return (q[key] || 0) === 0; });
-      return table(["", "Poss", "Points", "PPP", "% of poss"], [on, off].map(function (list, i) {
-        var s = shotLine(list);
+      return table(["", "Poss", "Points", "PPP", R ? "Season" : "Game", "% of poss"], [on, off].map(function (list, i) {
+        var s = shotLine(list), rf = R ? R.w[key][i].ppp : null;
         return [i ? offLabel : onLabel, list.length, s.pts,
-          { v: f2(s.ppp), cls: "sx-cell " + pppStep(s.ppp) },
+          { v: f2(s.ppp), cls: effO(s.ppp, rf) },
+          { v: rf == null ? "—" : f2(rf), cls: "sx-ref" },
           { v: pct(list.length, N), cls: "sx-vol " + volStep(100 * list.length / N) }];
       }));
     }
@@ -1927,45 +1990,98 @@
       });
       return boxc;
     }
+    /* a section only Everything shows: the long tables behind a tab */
+    function more(sec) { sec.classList.add("sx-allonly"); return sec; }
+    /* the head of a block: its figures and its pictures, as the pre game draws them */
+    function head(g, o) {
+      if (!K || !K.summary) return;
+      try { o.cls = "sx-cathead fit-span"; var c = K.summary(o); g.insertBefore(c, g.children[1] || null); } catch(e){_quiet(e)}
+    }
+    var tmap = function (rows, title, sub, hiGood) {
+      if (!TM) return null;
+      try {
+        return TM(rows, title, sub, null, { hiGood: hiGood, noMin: true, refWord: "our " + seasonWord,
+          key: "Area: share of possessions · inside: share · points per possession · colour against our " + seasonWord +
+            ": green better for us, red worse, grey within 0.10" });
+      } catch (e) { _quiet(e); return null; }
+    };
+    var verdict = function (v) { return v >= 70 ? "Perfect" : v >= 65 ? "Ok" : v >= 60 ? "Regular" : "Below"; };
+    var rateOf = function (list, key) {
+      var m = list.filter(function (q) { return q.phase === "Fastbreak" || (q[key] || 0) > 0; }).length;
+      return list.length ? 100 * m / list.length : 0;
+    };
+    /* the rate by quarter: a volume, in blue */
+    var qStrip = function (key, title) {
+      if (!K || byQ.length < 2) return null;
+      return K.strip({ title: title, sub: "by quarter · share of possessions", items: byQ.map(function (it) {
+        var v = rateOf(it.list, key);
+        return { label: it.label, value: v, text: Math.round(v) + "%", tone: "vol" }; }) });
+    };
+    var worth = function (key, title) {
+      if (!K) return null;
+      var it = [0, 1, 2].map(function (k) {
+        var g = P.filter(function (q) { return k < 2 ? (q[key] || 0) === k : (q[key] || 0) >= 2; });
+        var s = shotLine(g);
+        return g.length ? { label: (k === 2 ? "2+" : String(k)) + " · " + g.length + " poss", value: s.ppp || 0, text: f2(s.ppp),
+          tone: edgeTone(s.ppp, k ? (R ? R.w[key][0].ppp : offAvg) : (R ? R.w[key][1].ppp : offAvg), false, 0.10, 2) } : null;
+      }).filter(Boolean);
+      return it.length >= 2 ? K.strip({ title: title, sub: "points per possession by how many · against our " + seasonWord, items: it }) : null;
+    };
+    var pairOf = function (key) {
+      return [shotLine(P.filter(function (q) { return (q[key] || 0) > 0; })), shotLine(P.filter(function (q) { return (q[key] || 0) === 0; }))];
+    };
 
-    /* ================================================== PAINT TOUCHES === */
-    var gPT = g2Group("pt", "01", "Paint touches");
+    /* ===================================================== 01 OUR OFFENSE */
+    var gO = g2Group("off", "01", "Our offense");
+    var oPh = section("By phase");
+    oPh.appendChild(refTable("Phase", byPhase.map(function (d) { return { label: d.label, list: d.list, ref: refIn("phase", d.label) }; }), false));
+    gO.appendChild(oPh);
+    box.appendChild(gO);
+    {
+      var fgp = all.fga ? 100 * all.fgm / all.fga : null, tovp = N ? 100 * all.tov / N : null;
+      head(gO, { figures: [
+        { label: "Points per possession", value: f2(all.ppp), note: seasonWord + " " + f2(offAvg) + " · " + all.pts + " points", tone: edgeTone(all.ppp, offAvg, false, 0.10, 2) },
+        { label: "Possessions", value: N, note: "tagged", tone: "vol" },
+        { label: "Field goals", value: all.fgm + "/" + all.fga, note: (fgp == null ? "—" : Math.round(fgp) + "%") + (R && R.fgp != null ? " · season " + Math.round(R.fgp) + "%" : ""), tone: R ? edgeTone(fgp, R.fgp, false, 5, 0) : "neutral" },
+        { label: "Turnovers", value: all.tov, note: (tovp == null ? "—" : Math.round(tovp)) + " per 100" + (R && R.tovp != null ? " · season " + Math.round(R.tovp) : ""), tone: R ? edgeTone(tovp, R.tovp, true, 3, 0) : "neutral" }],
+        visuals: [tmap(byPhase.map(function (d) { var s = shotLine(d.list); return { label: d.label, poss: d.list.length, ppp: s.ppp, ref: refIn("phase", d.label) }; }),
+          "Our possessions by phase", "area: share · colour: PPP against our " + seasonWord, true)] });
+    }
+
+    /* ================================================== 02 PAINT TOUCHES */
+    var gPT = g2Group("off", "02", "Paint touches");
     var ptRest = restP.filter(function (q) { return (q.pt || 0) > 0; }).length;
 
     var s1 = section("Rate vs the 70% target");
     s1.appendChild(gaugeSplit("Paint touch", fbP.length, fbP.length, ptRest, restP.length, N, "Paint touch"));
     gPT.appendChild(s1);
-
-    var s2 = section("Played or not");
-    s2.appendChild(staplesTable("pt", "Paint touch", "No paint touch"));
-    gPT.appendChild(s2);
-
     if (byPhase.length) {
       var s3 = section("By phase");
-      s3.appendChild(countTable("Phase", byPhase, "pt"));
+      s3.appendChild(countTable("Phase", byPhase, "pt", function (it) { return refIn("phase", it.label); }));
       gPT.appendChild(s3);
     }
-    if (byQ.length) {
-      var s4 = section("By quarter");
-      s4.appendChild(countTable("Quarter", byQ, "pt"));
-      gPT.appendChild(s4);
-    }
-
-    var s5 = section("What it changes: shot selection");
-    s5.appendChild(mixBox("pt", "Paint touches"));
-    gPT.appendChild(s5);
-
-    var s6 = section("By player");
     if (pbp.rows.length && pbp.coverage >= 0.6) {
+      var s6 = section("By player");
       var topTouch = pbp.rows[0].touch || 1;
       s6.appendChild(table(["Player", "Touches", "% of team", "Poss", "Points", "PPP"],
         pbp.rows.map(function (r) {
           return [r.name, r.touch,
             { v: pct(r.touch, pbp.attributed), cls: "sx-vol " + volStep(100 * r.touch / topTouch) },
-            r.poss, r.pts, { v: f2(r.ppp), cls: "sx-cell " + pppStep(r.ppp) + (r.poss < SMALL ? " sx-small" : "") }];
+            r.poss, r.pts, { v: f2(r.ppp), cls: effO(r.ppp) }];
         })));
       gPT.appendChild(s6);
     }
+    var s2 = more(section("Played or not"));
+    s2.appendChild(staplesTable("pt", "Paint touch", "No paint touch"));
+    gPT.appendChild(s2);
+    if (byQ.length) {
+      var s4 = more(section("By quarter"));
+      s4.appendChild(countTable("Quarter", byQ, "pt"));
+      gPT.appendChild(s4);
+    }
+    var s5 = more(section("What it changes: shot selection"));
+    s5.appendChild(mixBox("pt", "Paint touches"));
+    gPT.appendChild(s5);
 
     /* where the touches come from — the action map, by family and by action */
     var byAct = {};
@@ -1977,7 +2093,7 @@
     });
     var acts = Object.keys(byAct).map(function (k) { return byAct[k]; })
       .sort(function (x, y) { return y.n - x.n || x.cat.localeCompare(y.cat); });
-    var s7 = section("Where the touches come from");
+    var s7 = more(section("Where the touches come from"));
     var famT = [];
     PG_FAMS.forEach(function (fam) {
       var list = acts.filter(function (a) { return a.fam === fam; });
@@ -1987,18 +2103,8 @@
       var sh = shotLine(pool);
       famT.push([fam, n, { v: pct(n, N), cls: "sx-vol " + volStep(100 * n / N) }, ptN,
         { v: pct(ptN, n), cls: "sx-vol " + volStep(100 * ptN / n) }, sh.pts,
-        { v: f2(sh.ppp), cls: "sx-cell " + pppStep(sh.ppp) + (n < SMALL ? " sx-small" : "") }]);
+        { v: f2(sh.ppp), cls: effO(sh.ppp) }]);
     });
-    /* A band and the table under it are one thing. Left as two children of the section
-       they were laid out as two panels, which put a label beside somebody else's table;
-       made full-width labels instead, each table then took a line of its own and left
-       the rest of a 1900px row white. Grouped, the pair is a panel like any other and
-       two of them sit side by side. */
-    /* NOT byFam. That was a second "var byFam" in the same function, a div, and because
-       var is function-scoped it overwrote the map of possessions by family for everything
-       after this line - so "By family" and "By set" in the efficiency group below have
-       been drawing an empty table, with only their total row, for as long as this box has
-       existed. A div and a map of possessions do not share a name any more. */
     var famBox = el("div", "sx-bgrp");
     famBox.appendChild(el("div", "sx-band", "By family"));
     famBox.appendChild(table(["Family", "Poss", "% all", "Touch", "Touch %", "Points", "PPP"], famT));
@@ -2007,101 +2113,101 @@
       var sh = shotLine(a.list);
       return [a.cat, a.fam, a.n, { v: pct(a.n, N), cls: "sx-vol " + volStep(100 * a.n / N) }, a.ptN,
         { v: pct(a.ptN, a.n), cls: "sx-vol " + volStep(100 * a.ptN / a.n) }, sh.pts,
-        { v: f2(sh.ppp), cls: "sx-cell " + pppStep(sh.ppp) + (a.n < SMALL ? " sx-small" : "") }];
+        { v: f2(sh.ppp), cls: effO(sh.ppp, refIn("set", a.cat)) }];
     });
-    var byAct = el("div", "sx-bgrp");
-    byAct.appendChild(el("div", "sx-band", "By action"));
-    byAct.appendChild(table(["Action", "Family", "Poss", "% all", "Touch", "Touch %", "Points", "PPP"], actT));
-    s7.appendChild(byAct);
+    var actBox = el("div", "sx-bgrp");
+    actBox.appendChild(el("div", "sx-band", "By action"));
+    actBox.appendChild(table(["Action", "Family", "Poss", "% all", "Touch", "Touch %", "Points", "PPP"], actT));
+    s7.appendChild(actBox);
     gPT.appendChild(s7);
     box.appendChild(gPT);
+    {
+      var ptR = rateOf(P, "pt"), pp = pairOf("pt");
+      head(gPT, { figures: [
+        { label: "Paint touch rate", value: Math.round(ptR) + "%", note: "target 70% · " + verdict(Math.round(ptR)) + (R && isFinite(R.pt) ? " · season " + Math.round(R.pt) + "%" : ""), tone: "vol", scale: { lo: 0, hi: 100, v: ptR, ref: 70 },
+          title: "A fastbreak counts whole; in every other phase the possession counts when it touched the paint - the formula Trends uses" },
+        { label: "PPP with a paint touch", value: f2(pp[0].ppp), note: pp[0].n + " poss" + (R ? " · season " + f2(R.w.pt[0].ppp) : ""), tone: edgeTone(pp[0].ppp, R ? R.w.pt[0].ppp : offAvg, false, 0.10, 2) },
+        { label: "PPP without", value: f2(pp[1].ppp), note: pp[1].n + " poss" + (R ? " · season " + f2(R.w.pt[1].ppp) : ""), tone: edgeTone(pp[1].ppp, R ? R.w.pt[1].ppp : offAvg, false, 0.10, 2) }],
+        visuals: [qStrip("pt", "Paint touch rate"), worth("pt", "What a paint touch is worth")] });
+    }
 
-    /* ================================================= BALL REVERSALS === */
-    var gBR = g2Group("br", "02", "Ball reversals");
+    /* ================================================= 03 BALL REVERSALS */
+    var gBR = g2Group("off", "03", "Ball reversals");
     var brRest = restP.filter(function (q) { return (q.br || 0) > 0; }).length;
-
     var r1 = section("Rate");
     r1.appendChild(gaugeSplit("Ball reversal", fbP.length, fbP.length, brRest, restP.length, N, "Ball reversal", false));
     gBR.appendChild(r1);
-
-    var r2 = section("Played or not");
-    r2.appendChild(staplesTable("br", "1+ ball reversal", "No reversal"));
-    gBR.appendChild(r2);
-
     if (byPhase.length) {
       var r3 = section("By phase");
-      r3.appendChild(countTable("Phase", byPhase, "br"));
+      r3.appendChild(countTable("Phase", byPhase, "br", function (it) { return refIn("phase", it.label); }));
       gBR.appendChild(r3);
     }
+    var r2 = more(section("Played or not"));
+    r2.appendChild(staplesTable("br", "1+ ball reversal", "No reversal"));
+    gBR.appendChild(r2);
     if (byQ.length) {
-      var r4 = section("By quarter");
+      var r4 = more(section("By quarter"));
       r4.appendChild(countTable("Quarter", byQ, "br"));
       gBR.appendChild(r4);
     }
-
-    var r5 = section("What it changes: shot selection");
+    var r5 = more(section("What it changes: shot selection"));
     r5.appendChild(mixBox("br", "Ball reversals"));
     gBR.appendChild(r5);
     box.appendChild(gBR);
+    {
+      var brR = rateOf(P, "br"), bb = pairOf("br");
+      head(gBR, { figures: [
+        { label: "Ball reversal rate", value: Math.round(brR) + "%", note: "fastbreaks count whole" + (R && isFinite(R.br) ? " · season " + Math.round(R.br) + "%" : ""), tone: "vol", scale: { lo: 0, hi: 100, v: brR, ref: (R && isFinite(R.br)) ? R.br : undefined } },
+        { label: "PPP with a reversal", value: f2(bb[0].ppp), note: bb[0].n + " poss" + (R ? " · season " + f2(R.w.br[0].ppp) : ""), tone: edgeTone(bb[0].ppp, R ? R.w.br[0].ppp : offAvg, false, 0.10, 2) },
+        { label: "PPP without", value: f2(bb[1].ppp), note: bb[1].n + " poss" + (R ? " · season " + f2(R.w.br[1].ppp) : ""), tone: edgeTone(bb[1].ppp, R ? R.w.br[1].ppp : offAvg, false, 0.10, 2) }],
+        visuals: [qStrip("br", "Ball reversal rate"), worth("br", "What a reversal is worth")] });
+    }
 
-    /* ====================================================== EFFICIENCY == */
-    var gEF = g2Group("eff", "03", "Efficiency");
-
-    var e1 = section("By family");
-    var famRows = [], famMax = 1;
-    PG_FAMS.forEach(function (f) { if (byFam[f] && byFam[f].length > famMax) famMax = byFam[f].length; });
-    PG_FAMS.forEach(function (f) {
-      if (!byFam[f] || !byFam[f].length) return;
-      famRows.push(effCells(f, byFam[f], N, famMax));
-    });
-    famRows.push({ cls: "sx-totrow", cells: [
-      "Total", { v: N, cls: "sx-vol" }, "100%", all.pts,
-      { v: f2(all.ppp), cls: "sx-cell sx-tot" },
-      all.fgm + "/" + all.fga, all.t2a, all.t3a, all.fta,
-      all.tov + " · " + Math.round(100 * all.tov / N) + "%", orebOf(P)] });
-    e1.appendChild(table(effHead("Family"), famRows));
-    gEF.appendChild(e1);
-
-    /* "Last" is in both the baseline and the sideline block of the playbook, so
-       a clip tagged with nothing else cannot be told apart. It goes to sideline. */
-    var e2 = section("By set");
-    var setRows = [], setMax = 1;
-    Object.keys(bySet).forEach(function (k) { if (bySet[k].list.length > setMax) setMax = bySet[k].list.length; });
+    /* =========================================================== 04 SETS */
+    var gS = g2Group("off", "04", "Sets");
+    var setRowsR = [];
     PG_FAMS.forEach(function (fam) {
       if (!byFam[fam] || !byFam[fam].length) return;
       var list = Object.keys(bySet).map(function (k) { return bySet[k]; })
         .filter(function (s) { return s.fam === fam; })
         .sort(function (a, b) { return b.list.length - a.list.length || a.cat.localeCompare(b.cat); });
-      /* every set keeps its own row: a row you cannot name is a row you
-         cannot act on, and the ring already says the sample is small */
-      setRows.push({ cls: "sx-famrow", cells: [{ v: fam, cls: "sx-famc" }, "", "", "", "", "", "", "", "", "", ""] });
-      var famN = byFam[fam].length;
-      list.forEach(function (s) { setRows.push(effCells(s.cat, s.list, famN, setMax, { indent: 1 })); });
+      setRowsR.push({ band: fam });
+      list.forEach(function (s) { setRowsR.push({ label: s.cat, list: s.list, ref: refIn("set", s.cat), indent: 1 }); });
     });
-    e2.appendChild(table(effHead("Set", "% fam"), setRows));
-    gEF.appendChild(e2);
+    var eS = section("By set");
+    eS.appendChild(refTable("Set", setRowsR, false));
+    gS.appendChild(eS);
 
+    var e1 = more(section("By family"));
+    var famRows = [], famMax = 1;
+    PG_FAMS.forEach(function (f) { if (byFam[f] && byFam[f].length > famMax) famMax = byFam[f].length; });
+    PG_FAMS.forEach(function (f) {
+      if (!byFam[f] || !byFam[f].length) return;
+      famRows.push(effCells(f, byFam[f], N, famMax, { ref: offAvg }));
+    });
+    famRows.push({ cls: "sx-totrow", cells: [
+      "Total", { v: N, cls: "sx-vol" }, "100%", all.pts,
+      { v: f2(all.ppp), cls: effO(all.ppp) },
+      all.fgm + "/" + all.fga, all.t2a, all.t3a, all.fta,
+      all.tov + " · " + Math.round(100 * all.tov / N) + "%", orebOf(P)] });
+    e1.appendChild(table(effHead("Family"), famRows));
+    gS.appendChild(e1);
     if (byPhase.length) {
-      var e3 = section("By phase");
+      var e3 = more(section("By phase · the shots"));
       var phMax = 1;
       byPhase.forEach(function (d) { if (d.list.length > phMax) phMax = d.list.length; });
-      e3.appendChild(table(effHead("Phase"), byPhase.map(function (d) { return effCells(d.label, d.list, N, phMax); })));
-      gEF.appendChild(e3);
+      e3.appendChild(table(effHead("Phase"), byPhase.map(function (d) { return effCells(d.label, d.list, N, phMax, { ref: refIn("phase", d.label) }); })));
+      gS.appendChild(e3);
     }
     if (byQ.length) {
-      var e4 = section("By quarter");
+      var e4 = more(section("By quarter"));
       var qMax = 1;
       byQ.forEach(function (d) { if (d.list.length > qMax) qMax = d.list.length; });
-      e4.appendChild(table(effHead("Quarter"), byQ.map(function (d) { return effCells(d.label, d.list, N, qMax); })));
-      gEF.appendChild(e4);
+      e4.appendChild(table(effHead("Quarter"), byQ.map(function (d) { return effCells(d.label, d.list, N, qMax, { ref: offAvg }); })));
+      gS.appendChild(e4);
 
-      /* THE SAME QUESTION ONE LEVEL DOWN. "By set" says what a system produced over the
-         game and "By quarter" says what the game produced in each of its four pieces;
-         neither says which system stopped working after half time, which is the thing a
-         staff changes at half time. Quarters across, sets down, the efficiency in the
-         cell: one grid, read along a row for a set's night and down a column for a
-         quarter's. A cell nobody ran is a dash, not a zero. */
-      var e5 = section("By set and quarter");
+      /* sets down, quarters across: which system stopped working after half time */
+      var e5 = more(section("By set and quarter"));
       var qHead = ["Set"].concat(qs).concat(["Poss", "PPP"]);
       var qRows = [];
       PG_FAMS.forEach(function (fam) {
@@ -2113,252 +2219,187 @@
         qs.forEach(function (qq) {
           var l = byFam[fam].filter(function (x) { return x.q === qq; });
           var sh = shotLine(l);
-          famCells.push(l.length
-            ? { v: f2(sh.ppp), cls: "sx-cell " + pppStep(sh.ppp) + (l.length < SMALL ? " sx-small" : "") }
-            : { v: "\u2014", cls: "sx-dash" });
+          famCells.push(l.length ? { v: f2(sh.ppp), cls: effO(sh.ppp) } : { v: "—", cls: "sx-dash" });
         });
         var fsh = shotLine(byFam[fam]);
         famCells.push(byFam[fam].length);
-        famCells.push({ v: f2(fsh.ppp), cls: "sx-cell " + pppStep(fsh.ppp) });
+        famCells.push({ v: f2(fsh.ppp), cls: effO(fsh.ppp) });
         qRows.push({ cls: "sx-famrow", cells: famCells });
         list.forEach(function (s2) {
+          var rf = refIn("set", s2.cat);
           var cells = [{ v: s2.cat, cls: "sx-indent" }];
           qs.forEach(function (qq) {
             var l = s2.list.filter(function (x) { return x.q === qq; });
             var sh = shotLine(l);
-            cells.push(l.length
-              ? { v: f2(sh.ppp), cls: "sx-cell " + pppStep(sh.ppp) + (l.length < SMALL ? " sx-small" : "") }
-              : { v: "\u2014", cls: "sx-dash" });
+            cells.push(l.length ? { v: f2(sh.ppp), cls: effO(sh.ppp, rf) } : { v: "—", cls: "sx-dash" });
           });
           var tsh = shotLine(s2.list);
           cells.push(s2.list.length);
-          cells.push({ v: f2(tsh.ppp), cls: "sx-cell " + pppStep(tsh.ppp) + (s2.list.length < SMALL ? " sx-small" : "") });
+          cells.push({ v: f2(tsh.ppp), cls: effO(tsh.ppp, rf) });
           qRows.push({ cells: cells });
         });
       });
-      if (qRows.length) {
-        e5.appendChild(table(qHead, qRows));
-        gEF.appendChild(e5);
-      }
+      if (qRows.length) { e5.appendChild(table(qHead, qRows)); gS.appendChild(e5); }
     }
-    box.appendChild(gEF);
+    box.appendChild(gS);
 
-    /* ------------------------------------------- 04 transition defense */
+    /* ============================================ 05 TRANSITION DEFENSE */
     var TD = model.trans || { tag: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0 },
                               back: { n: 0, pts: 0, of: 0, miss: 0, oreb: 0 } };
-    var gTD = g2Group("td", "04", "Transition defense — TAG and BACK");
-    /* The colour is the size of the number everywhere in the app except here: these are
-       points we gave up, so a high PPP is red and a low one green - see pppStepD. */
-    /* One row carries the whole possession, because the question is not how
-       often we got beaten but what became of every possession that ended that
-       way: how many we missed, how many of those misses we rebounded ourselves,
-       and how many turned into a transition situation against us. The rebound
-       percentage is over the misses and the misses sit in the column beside it,
-       so the denominator is never something to guess.
-
-       A missed long two is a TAG and a missed two at the rim is a BACK — the
-       shot decides it, not the distance the rebound travels. */
-    function tdRow(lbl, o, marks) {
+    var gTD = g2Group("def", "05", "Transition defense — TAG and BACK");
+    /* One row carries the whole possession: how many we missed, how many of those misses we
+       rebounded ourselves, and how many turned into a transition situation against us. A missed
+       long two is a TAG and a missed two at the rim is a BACK — the shot decides it. The PPP is
+       read against our season's TAG and BACK: green, we conceded less. */
+    var tagRef = R && R.tag.n ? R.tag.ppp : null, backRef = R && R.back.n ? R.back.ppp : null;
+    function tdRow(lbl, o, marks, ref) {
       var share = 100 * o.n / Math.max(1, TD.tag.n + TD.back.n);
       var ppp = o.n ? o.pts / o.n : null;
-      return { cells: [lbl,
-        o.of,
-        o.miss,
-        o.oreb,
-        { v: pct(o.oreb, o.miss), cls: "sx-cell" + (o.miss < SMALL ? " sx-small" : "") },
+      return { cells: [lbl, o.of, o.miss, o.oreb,
+        { v: pct(o.oreb, o.miss), cls: "sx-cell" },
         { v: o.n, cls: "sx-vol " + volStep(share) },
         o.pts,
-        { v: f2(ppp), cls: "sx-cell " + pppStepD(ppp) + (o.n < SMALL ? " sx-small" : "") },
+        { v: f2(ppp), cls: effD(ppp, ref) },
         marks] };
     }
+    var subRef = function (map) { var o = {}; Object.keys((R && R[map]) || {}).forEach(function (k) { if (R[map][k].n) o[k] = R[map][k].ppp; }); return o; };
     var tdRows = [
-      tdRow("TAG \u00b7 after a long shot", TD.tag, "M3 \u00b7 ML2 \u00b7 C3 \u00b7 CL2")
-    ].concat(backSubRows(TD.tag, TD.tag.n + TD.back.n, 9, TAG_SUB)).concat(scRows(TD.tag, 9)).concat([
-      tdRow("BACK \u00b7 after a miss at the rim or a turnover", TD.back, "M2 \u00b7 Turnover")
-    ]).concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 9)).concat(scRows(TD.back, 9));
+      tdRow("TAG · after a long shot", TD.tag, "M3 · ML2 · C3 · CL2", tagRef)
+    ].concat(backSubRows(TD.tag, TD.tag.n + TD.back.n, 9, TAG_SUB, R ? subRef("tagSub") : {})).concat(scRows(TD.tag, 9)).concat([
+      tdRow("BACK · after a miss at the rim or a turnover", TD.back, "M2 · Turnover", backRef)
+    ]).concat(backSubRows(TD.back, TD.tag.n + TD.back.n, 9, null, R ? subRef("backSub") : {})).concat(scRows(TD.back, 9));
     var sTD = section("The two situations");
     sTD.appendChild(table(["Situation", "Our poss.", "Missed", "Off. reb", "OREB%",
       "Situations", "Pts conceded", "PPP", "We finished on"], tdRows));
-    /* the OREB% above is ours against ourselves; this is what the league does */
     sTD.appendChild(leagueOrbLine());
     gTD.appendChild(sTD);
-
     box.appendChild(gTD);
+    {
+      var tdP = function (o) { return o && o.n ? o.pts / o.n : null; };
+      head(gTD, { figures: [
+        { label: "TAG · after a long shot", value: f2(tdP(TD.tag)), note: (TD.tag.pts || 0) + " conceded in " + (TD.tag.n || 0) + (tagRef != null ? " · season " + f2(tagRef) : ""), tone: edgeTone(tdP(TD.tag), tagRef, true, 0.10, 2) },
+        { label: "BACK · after a miss at the rim or a turnover", value: f2(tdP(TD.back)), note: (TD.back.pts || 0) + " conceded in " + (TD.back.n || 0) + (backRef != null ? " · season " + f2(backRef) : ""), tone: edgeTone(tdP(TD.back), backRef, true, 0.10, 2) }] });
+    }
 
-
-    /* -------------------------------------- 05 what we concede by situation */
-    var DP = model.dposs || [], DN = DP.length;
-    var gDF = g2Group("def", "05", "What we concede");
-
+    /* ============================================== 06 WHAT WE CONCEDE */
+    var gDF = g2Group("def", "06", "What we concede");
+    var byCat = {}, catOrder = [];
     if (DN) {
-      var byCat = {}, catOrder = [];
       DP.forEach(function (q) {
         var k = q.label || "—";
         if (!byCat[k]) { byCat[k] = []; catOrder.push(k); }
         byCat[k].push(q);
       });
       catOrder.sort(function (a, b) { return byCat[b].length - byCat[a].length; });
-      /* BALANCE is not a row: transition defense is read as TAG and BACK. Its possessions
-         still count in the total and in the points allowed per possession */
+      /* BALANCE is not a row: transition defense is read as TAG and BACK. Its possessions still
+         count in the total and in the points allowed per possession */
       catOrder = catOrder.filter(function (k) { return !/^balance$/i.test(k); });
-      if (!catOrder.length) catOrder = ["—"], byCat["—"] = byCat["—"] || [];
-      var dMax = byCat[catOrder[0]].length || 1;
       var s51 = section("By situation");
-      var dRows = catOrder.map(function (k) { return effCells(k, byCat[k], DN, dMax, { def: 1 }); });
-      dRows.push({ cls: "sx-tot", cells: effCells("Total", DP, DN, dMax, { def: 1 }).cells });
-      s51.appendChild(table(effHead("Situation"), dRows));
+      s51.appendChild(refTable("Situation", catOrder.map(function (k) { return { label: k, list: byCat[k], ref: refIn("dlab", k) }; }), true, { total: DN }));
       gDF.appendChild(s51);
-
-      var pnrL = DP.filter(function (q) { return q.pnr; });
-      if (pnrL.length) {
-        var s52 = section("Pick and roll only");
-        var byP = {}, pOrder = [];
-        pnrL.forEach(function (q) { if (!byP[q.label]) { byP[q.label] = []; pOrder.push(q.label); } byP[q.label].push(q); });
-        pOrder.sort(function (a, b) { return byP[b].length - byP[a].length; });
-        var pMax = byP[pOrder[0]].length || 1;
-        s52.appendChild(table(effHead("P&R situation", "% P&R"),
-          pOrder.map(function (k) { return effCells(k, byP[k], pnrL.length, pMax, { def: 1 }); })));
-        gDF.appendChild(s52);
-      }
-
-      /* the coverage twice: the half court ball screens, and the transition ones (drag PnR)
-         apart - a drag in the open floor is met with a defense of its own */
-      var isDrag = function (q) { return /drag|transition/i.test(String(q.first || "")); };
-      [["By coverage · half court", DP.filter(function (q) { return !isDrag(q); })],
-       ["By coverage · transition (drag PnR)", DP.filter(isDrag)]].forEach(function (pair) {
-        var covRows = [], covSeen = 0;
-        COVERAGE.forEach(function (c) {
-          var l = pair[1].filter(function (q) {
-            return c.marks.some(function (m) { return has(q.tags, m); });
-          });
-          if (l.length) { covRows.push({ c: c, l: l }); covSeen += l.length; }
-        });
-        if (!covRows.length) return;
-        covRows.sort(function (a, b) { return b.l.length - a.l.length; });
-        var cMax = covRows[0].l.length || 1;
-        /* RED and HEDGE are one coverage, and so are SWITCH and BLACK */
-        var s53 = section(pair[0]);
-        s53.appendChild(table(effHead("Coverage", "% cov"),
-          covRows.map(function (r) { return effCells(r.c.k, r.l, covSeen, cMax, { def: 1 }); })));
-        gDF.appendChild(s53);
-      });
-    }
+      var scL = DP.filter(function (q) { return (q.oreb || 0) > 0; });
+      var s5s = section("Their second chances");
+      s5s.appendChild(refTable("", [{ label: "After their offensive rebound", list: scL, ref: R && R.dsc.n ? R.dsc.ppp : null }], true, { total: DN, share: "% of theirs" }));
+      gDF.appendChild(s5s);
+      var s51x = more(section("By situation · the shots"));
+      var dMax = catOrder.length ? (byCat[catOrder[0]].length || 1) : 1;
+      var dRows = catOrder.map(function (k) { return effCells(k, byCat[k], DN, dMax, { def: 1, ref: refIn("dlab", k) }); });
+      dRows.push({ cls: "sx-tot", cells: effCells("Total", DP, DN, dMax, { def: 1, ref: defAvg }).cells });
+      s51x.appendChild(table(effHead("Situation"), dRows));
+      gDF.appendChild(s51x);
+    } else gDF.appendChild(el("div", "sx-empty", "No defensive possession tagged in this game."));
     box.appendChild(gDF);
+    if (DN) {
+      var dfg = dAll.fga ? 100 * dAll.fgm / dAll.fga : null, dto = 100 * dAll.tov / DN;
+      var scD = shotLine(DP.filter(function (q) { return (q.oreb || 0) > 0; }));
+      head(gDF, { figures: [
+        { label: "Points allowed per possession", value: f2(dAll.ppp), note: seasonWord + " " + f2(defAvg) + " · " + dAll.pts + " points · " + DN + " poss", tone: edgeTone(dAll.ppp, defAvg, true, 0.10, 2) },
+        { label: "Their field goals", value: dAll.fgm + "/" + dAll.fga, note: (dfg == null ? "—" : Math.round(dfg) + "%") + (R && R.dfgp != null ? " · season " + Math.round(R.dfgp) + "%" : ""), tone: R ? edgeTone(dfg, R.dfgp, true, 5, 0) : "neutral" },
+        { label: "Turnovers forced", value: dAll.tov, note: Math.round(dto) + " per 100" + (R && R.dtovp != null ? " · season " + Math.round(R.dtovp) : ""), tone: R ? edgeTone(dto, R.dtovp, false, 3, 0) : "neutral" },
+        { label: "Their second chances", value: f2(scD.ppp), note: scD.n + " poss · " + scD.pts + " points" + (R && R.dsc.n ? " · season " + f2(R.dsc.ppp) : ""), tone: edgeTone(scD.ppp, R && R.dsc.n ? R.dsc.ppp : defAvg, true, 0.10, 2) }],
+        visuals: [tmap(catOrder.map(function (k) { var s = shotLine(byCat[k]); return { label: k, poss: byCat[k].length, ppp: s.ppp, ref: refIn("dlab", k) }; }),
+          "What we defended", "area: share · colour: PPP allowed against our " + seasonWord, false)] });
+    }
 
-    /* 06 PLAY TYPES is gone. It read fifteen fixed phrases out of the descriptors -
-       "PnR Ball Handler", "Spot Up", "Post Up" and the rest - and counted a possession
-       once for each phrase it carried, so its rows added up to more than the game and
-       its percentages were over a different denominator from every other table in the
-       block. What it found depended entirely on whoever tagged writing those words
-       exactly, and the same question is answered from the tagging's own categories in
-       Efficiency, by family and by set. playAgg and PLAYTYPES stay in the model: the
-       marks are still parsed, and nothing in the block draws them. */
-
-    /* ------------------------------ each category, drawn before its tables
-       The tables answer a question once it has been asked; what was missing was the
-       answer itself at the top of each block - the rate, what it is worth, and how it
-       moved through the game - drawn with the same parts as every other summary. */
-    (function () {
-      var K = (typeof window !== "undefined") && window.UIKit;
-      if (!K || !K.strip) return;
-      var put = function (g, o) {
-        try { o.cls = "sx-cathead fit-span"; var c = K.summary(o); g.insertBefore(c, g.children[1] || null); } catch(e){_quiet(e)}
-      };
-      var rate = function (list, key) {
-        var m = list.filter(function (q) { return q.phase === "Fastbreak" || (q[key] || 0) > 0; }).length;
-        return list.length ? 100 * m / list.length : 0;
-      };
-      var grade = function (v) { return v >= 70 ? "good" : v >= 60 ? "neutral" : "bad"; };
-      var vs = function (v) { return v == null ? "neutral" : v >= anchor + 0.10 ? "good" : v <= anchor - 0.10 ? "bad" : "neutral"; };
-      var qStrip = function (key, title, graded) {
-        if (byQ.length < 2) return null;
-        return K.strip({ title: title, sub: "share of possessions, by quarter", items: byQ.map(function (it) {
-          var v = rate(it.list, key);
-          return { label: it.label, value: v, text: Math.round(v) + "%", tone: graded ? grade(v) : "vol" }; }) });
-      };
-      var worth = function (key, title) {
-        var it = [0, 1, 2].map(function (k) {
-          var g = P.filter(function (q) { return k < 2 ? (q[key] || 0) === k : (q[key] || 0) >= 2; });
-          var s = shotLine(g);
-          return g.length ? { label: (k === 2 ? "2+" : String(k)) + " · " + g.length + " poss", value: s.ppp || 0, text: f2(s.ppp), tone: vs(s.ppp) } : null;
-        }).filter(Boolean);
-        return it.length >= 2 ? K.strip({ title: title, sub: "points per possession by how many", items: it }) : null;
-      };
-      var pair = function (key) {
-        return [shotLine(P.filter(function (q) { return (q[key] || 0) > 0; })), shotLine(P.filter(function (q) { return (q[key] || 0) === 0; }))];
-      };
-      var ptR = rate(P, "pt"), brR = rate(P, "br"), pp = pair("pt"), bb = pair("br");
-      put(gPT, { figures: [
-        { label: "Paint touch rate", value: Math.round(ptR) + "%", note: "target 70% · fastbreaks count whole", tone: grade(ptR), scale: { lo: 0, hi: 100, v: ptR, ref: 70 } },
-        { label: "PPP with a paint touch", value: f2(pp[0].ppp), note: pp[0].n + " possessions", tone: vs(pp[0].ppp) },
-        { label: "PPP without", value: f2(pp[1].ppp), note: pp[1].n + " possessions", tone: vs(pp[1].ppp) },
-        { label: "Game PPP", value: f2(anchor), note: N + " possessions", tone: "vol" }],
-        visuals: [qStrip("pt", "Paint touch rate", true), worth("pt", "What a paint touch is worth")] });
-      put(gBR, { figures: [
-        { label: "Ball reversal rate", value: Math.round(brR) + "%", note: "fastbreaks count whole", tone: "vol", scale: { lo: 0, hi: 100, v: brR } },
-        { label: "PPP with a reversal", value: f2(bb[0].ppp), note: bb[0].n + " possessions", tone: vs(bb[0].ppp) },
-        { label: "PPP without", value: f2(bb[1].ppp), note: bb[1].n + " possessions", tone: vs(bb[1].ppp) }],
-        visuals: [qStrip("br", "Ball reversal rate", false), worth("br", "What a reversal is worth")] });
-      put(gEF, { figures: [
-        { label: "Points per possession", value: f2(all.ppp), note: all.pts + " points · " + N + " possessions", tone: "vol" },
-        { label: "Field goals", value: all.fgm + "/" + all.fga, note: pct(all.fgm, all.fga) + " · " + all.t3a + " threes taken", tone: "vol" },
-        { label: "Turnovers", value: all.tov, note: pct(all.tov, N) + " of possessions", tone: "vol" },
-        { label: "Offensive rebounds", value: orebOf(P), note: "possessions extended", tone: "vol" }],
-        visuals: [
-          byPhase.length >= 2 ? K.split({ title: "Our possessions by phase", sub: "share · points per possession",
-            parts: byPhase.map(function (it) { var s = shotLine(it.list); return { label: it.label, share: it.list.length / N, value: f2(s.ppp), tone: vs(s.ppp) }; }) }) : null,
-          byQ.length >= 2 ? K.strip({ title: "Points per possession", sub: "by quarter", items: byQ.map(function (it) { var s = shotLine(it.list);
-            return { label: it.label, value: s.ppp || 0, text: f2(s.ppp), tone: vs(s.ppp) }; }) }) : null] });
-      var tdP = function (o) { return o && o.n ? o.pts / o.n : null; };
-      var tdT = function (v) { return v == null ? "neutral" : v <= 0.9 ? "good" : v >= 1.15 ? "bad" : "neutral"; };
-      put(gTD, { figures: [
-        { label: "TAG · after a long shot", value: f2(tdP(TD.tag)), note: (TD.tag.pts || 0) + " conceded in " + (TD.tag.n || 0) + " situations", tone: (TD.tag.n || 0) < 5 ? "neutral" : tdT(tdP(TD.tag)) },
-        { label: "BACK · after a miss at the rim or a turnover", value: f2(tdP(TD.back)), note: (TD.back.pts || 0) + " conceded in " + (TD.back.n || 0) + " situations", tone: (TD.back.n || 0) < 5 ? "neutral" : tdT(tdP(TD.back)) }] });
-      if (DN) {
-        var dAll = shotLine(DP), cats = Object.keys(byCat || {}).filter(function (k) { return !/^balance$/i.test(k); }).sort(function (a, b) { return byCat[b].length - byCat[a].length; });
-        var head = cats.slice(0, 6), restN = 0; cats.slice(6).forEach(function (k) { restN += byCat[k].length; });
-        var parts = head.map(function (k) { var s = shotLine(byCat[k]);
-          return { label: k, share: byCat[k].length / DN, value: f2(s.ppp), tone: s.ppp == null ? "neutral" : s.ppp <= dAll.ppp - 0.10 ? "good" : s.ppp >= dAll.ppp + 0.10 ? "bad" : "neutral" }; });
-        if (restN) parts.push({ label: "Other (" + (cats.length - 6) + ")", share: restN / DN });
-        put(gDF, { figures: [
-          { label: "Points allowed per possession", value: f2(dAll.ppp), note: dAll.pts + " points · " + DN + " possessions defended", tone: tdT(dAll.ppp) },
-          { label: "Their field goals", value: dAll.fgm + "/" + dAll.fga, note: pct(dAll.fgm, dAll.fga), tone: "vol" },
-          { label: "Turnovers forced", value: dAll.tov, note: pct(dAll.tov, DN) + " of what we defended", tone: "vol" }],
-          visuals: [parts.length >= 2 ? K.split({ title: "What we defended", sub: "share · points allowed", parts: parts }) : null] });
-      }
-    })();
+    /* =================================================== 07 BALL SCREEN */
+    var gBS = g2Group("bs", "07", "Ball screen");
+    var pnrL = DP.filter(function (q) { return q.pnr; });
+    var isDrag = function (q) { return /drag|transition/i.test(String(q.first || "")); };
+    if (pnrL.length) {
+      var byP = {}, pOrder = [];
+      pnrL.forEach(function (q) { if (!byP[q.label]) { byP[q.label] = []; pOrder.push(q.label); } byP[q.label].push(q); });
+      pOrder.sort(function (a, b) { return byP[b].length - byP[a].length; });
+      var s52 = section("Their pick and roll · our defense");
+      s52.appendChild(refTable("Situation", pOrder.map(function (k) { return { label: k, list: byP[k], ref: refIn("dlab", k) }; }), true, { share: "% PnR" }));
+      gBS.appendChild(s52);
+    }
+    /* the coverage twice: the half court ball screens, and the transition ones (drag PnR) apart.
+       RED and HEDGE are one coverage, and so are SWITCH and BLACK */
+    [["By coverage · half court", DP.filter(function (q) { return !isDrag(q); }), "cov"],
+     ["By coverage · transition (drag PnR)", DP.filter(isDrag), "covT"]].forEach(function (pair) {
+      var covRows = [];
+      COVERAGE.forEach(function (c) {
+        var l = pair[1].filter(function (q) { return c.marks.some(function (m) { return has(q.tags, m); }); });
+        if (l.length) covRows.push({ label: c.k, list: l, ref: refIn(pair[2], c.k) });
+      });
+      if (!covRows.length) return;
+      covRows.sort(function (a, b) { return b.list.length - a.list.length; });
+      var s53 = section(pair[0]);
+      s53.appendChild(refTable("Coverage", covRows, true, { share: "% cov" }));
+      gBS.appendChild(s53);
+    });
+    var OURP = [["PnR Ball Handler", "Ball handler"], ["PnR Roll Man", "Roll man"], ["Pop", "Pick and pop"]];
+    var ourRows = OURP.map(function (t) {
+      return { label: t[1], list: P.filter(function (q) { return has(q.tags, t[0]); }), ref: refIn("play", t[0]) };
+    }).filter(function (r) { return r.list.length; });
+    if (ourRows.length) {
+      var s54 = section("Our pick and roll · who finished it");
+      s54.appendChild(refTable("Finished by", ourRows, false, { total: N, share: "% of ours" }));
+      gBS.appendChild(s54);
+    }
+    if (!pnrL.length && !ourRows.length && gBS.children.length < 2) gBS.appendChild(el("div", "sx-empty", "No pick and roll tagged in this game."));
+    box.appendChild(gBS);
+    {
+      var pS = shotLine(pnrL), pRef = R && R.pnrD.n ? R.pnrD.ppp : null;
+      var figs = [];
+      if (pnrL.length) figs.push({ label: "Their pick and roll", value: f2(pS.ppp), note: pnrL.length + " poss · " + pS.pts + " points" + (pRef != null ? " · season " + f2(pRef) : ""), tone: edgeTone(pS.ppp, pRef == null ? defAvg : pRef, true, 0.10, 2) });
+      ourRows.forEach(function (r) { var s = shotLine(r.list);
+        figs.push({ label: "Our " + r.label.toLowerCase(), value: f2(s.ppp), note: r.list.length + " poss" + (r.ref != null ? " · season " + f2(r.ref) : ""), tone: edgeTone(s.ppp, r.ref == null ? offAvg : r.ref, false, 0.10, 2) }); });
+      if (figs.length) head(gBS, { figures: figs });
+    }
 
     /* ---------------------------------------------------------- the menu */
-    /* the post game's own tab bar can choose the category from outside the block */
-    var cat = (typeof window !== "undefined" && window.__postCat && window.__postCat !== "ov" && window.__postCat !== "pbp") ? window.__postCat : "pt";
+    /* the post game's own tab bar chooses the tab from outside the block */
+    var CATS = [["off", "Our offense"], ["def", "Our defense"], ["bs", "Ball screen"], ["all", "Everything"]];
+    var want = (typeof window !== "undefined") && window.__postCat;
+    var cat = CATS.some(function (t) { return t[0] === want; }) ? want : "off";
     function apply() {
+      box.dataset.cat = cat;
       box.querySelectorAll(".sx-cat").forEach(function (g) {
         g.classList.toggle("hide", cat !== "all" && g.dataset.g !== cat);
       });
     }
-    [["pt", "Paint touches"], ["br", "Ball reversals"], ["eff", "Efficiency"],
-     ["td", "Transition D"], ["def", "What we concede"], ["all", "Everything"]]
-      .forEach(function (t) {
-        var b = el("button", "sx-tab" + (t[0] === cat ? " on" : ""), t[1]);
-        b.addEventListener("click", function () {
-          cat = t[0];
-          menu.querySelectorAll(".sx-tab").forEach(function (x) { x.classList.remove("on"); });
-          b.classList.add("on");
-          apply();
-        });
-        b.dataset.cat = t[0];
-        menu.appendChild(b);
+    CATS.forEach(function (t) {
+      var b = el("button", "sx-tab" + (t[0] === cat ? " on" : ""), t[1]);
+      b.addEventListener("click", function () {
+        cat = t[0];
+        menu.querySelectorAll(".sx-tab").forEach(function (x) { x.classList.remove("on"); });
+        b.classList.add("on");
+        apply();
       });
+      b.dataset.cat = t[0];
+      menu.appendChild(b);
+    });
     apply();
     box.__setCat = function (c) {
+      if (!CATS.some(function (t) { return t[0] === c; })) return;
       cat = c;
       menu.querySelectorAll(".sx-tab").forEach(function (x) { x.classList.toggle("on", x.dataset.cat === c); });
       apply();
     };
 
-    box.appendChild(legend());
     var foot = el("div", "sx-foot");
-    foot.appendChild(el("span", null, model.clips + " offensive clips \u2192 " + N + " possessions"));
+    foot.appendChild(el("span", null, model.clips + " offensive clips → " + N + " possessions"));
     box.appendChild(foot);
 
     root.appendChild(box);
@@ -2468,8 +2509,9 @@
         box.appendChild(el("div", "sx-empty", "No tagging file for this game in the Drive folder yet."));
         return;
       }
-      return getRows(f.id).then(function (rows) {
-        renderPostTeam(box, buildGame(rows), f.name.replace(/\.csv$/i, ""));
+      var sr = seasonRef(date).catch(function () { return null; });
+      return Promise.all([getRows(f.id), sr]).then(function (got) {
+        renderPostTeam(box, buildGame(got[0]), f.name.replace(/\.csv$/i, ""), got[1]);
       });
     }).catch(function (e) {
       box.innerHTML = "";
@@ -5121,6 +5163,15 @@
     grp("Attack", cPt || cBr || ss);
     grp("Defense", cTd);
     grp("Rebounding", cRb);
+    /* THE TRAINING WEEK, MOVED HERE FROM THE POST GAME (Oriol, 27/11/2026): the trainings before our last
+       game, from our tagging, under the rebounding card - the page draws it (window.__trRebWeek) */
+    try {
+      if (cRb && typeof window !== "undefined" && typeof window.__trRebWeek === "function") {
+        var wk = window.__trRebWeek();
+        if (wk) { var dw = el("details", "td-more td-week"); dw.open = true;
+          dw.appendChild(el("summary", null, "The training week · before our last game")); dw.appendChild(wk); cRb.appendChild(dw); }
+      }
+    } catch (e) { _quiet(e); }
   }
 
   /* ---- the dashboard's own pieces --------------------------------------- */
@@ -5262,6 +5313,66 @@
     });
     _seasonGamesP.catch(function () { _seasonGamesP = null; });
     return _seasonGamesP;
+  }
+  /* OUR SEASON, THE POST GAME'S REFERENCE (Oriol, 27/11/2026: "las fuentes seguimos el mismo concepto
+     que en pregame team stats"). Each tagged number of a game is read against the same number over our
+     tagged games of that season (August to July), the game itself among them: the offense and the
+     defense, TAG and BACK, the paint touches and the reversals by the formula Trends uses (measured on
+     the season added up), and each phase, set, defensive situation, coverage and play type of its own. */
+  function seasonYear(iso) { iso = String(iso || ""); var y = +iso.slice(0, 4), m = +iso.slice(5, 7); return y ? (m >= 8 ? y : y - 1) : null; }
+  var _seasonRefP = {};
+  function seasonRef(date) {
+    var sy = seasonYear(date), k0 = String(sy);
+    if (_seasonRefP[k0]) return _seasonRefP[k0];
+    var p = seasonGames().then(function (list) {
+      var use = (list || []).filter(function (g) { return sy == null || seasonYear(g.d) === sy; });
+      if (!use.length) return null;
+      var acc = function () { return { n: 0, pts: 0 }; };
+      var R = { n: use.length, games: use.map(function (g) { return { label: g.label, d: g.d }; }), off: acc(), def: acc(), tag: acc(), back: acc(), dsc: acc(), pnrD: acc(),
+        dto: 0, dfgm: 0, dfga: 0, phase: {}, set: {}, dlab: {}, cov: {}, covT: {}, play: {},
+        tagSub: {}, backSub: {}, w: { pt: [acc(), acc()], br: [acc(), acc()] } };
+      var add = function (o, q) { o.n++; o.pts += q.pts || 0; };
+      var addK = function (map, k, q) { if (!k) return; add(map[k] || (map[k] = acc()), q); };
+      var isDrag = function (q) { return /drag|transition/i.test(String(q.first || "")); };
+      use.forEach(function (g) {
+        var m = g.m || {};
+        (m.poss || []).forEach(function (q) {
+          add(R.off, q); addK(R.phase, q.phase, q); addK(R.set, String(q.first || "").trim(), q);
+          add(R.w.pt[(q.pt || 0) > 0 ? 0 : 1], q); add(R.w.br[(q.br || 0) > 0 ? 0 : 1], q);
+          PLAYTYPES.forEach(function (t) { if (has(q.tags, t)) addK(R.play, t, q); });
+        });
+        var dp = m.dposs || [];
+        dp.forEach(function (q) {
+          add(R.def, q); addK(R.dlab, q.label, q);
+          if (q.pnr) add(R.pnrD, q);
+          if ((q.oreb || 0) > 0) add(R.dsc, q);
+          COVERAGE.forEach(function (c) {
+            if (c.marks.some(function (mk) { return has(q.tags, mk); })) addK(isDrag(q) ? R.covT : R.cov, c.k, q); });
+        });
+        var ds = shotLine(dp); R.dto += ds.tov || 0; R.dfgm += ds.fgm || 0; R.dfga += ds.fga || 0;
+        var T = m.trans;
+        if (T) [["tag", "tagSub"], ["back", "backSub"]].forEach(function (x) {
+          var o = T[x[0]] || {}; R[x[0]].n += o.n || 0; R[x[0]].pts += o.pts || 0;
+          Object.keys(o.sub || {}).forEach(function (sk) {
+            var e = R[x[1]][sk] || (R[x[1]][sk] = acc()); e.n += o.sub[sk].n || 0; e.pts += o.sub[sk].pts || 0; });
+        });
+      });
+      var fin = function (o) { o.ppp = o.n ? o.pts / o.n : null; return o; };
+      [R.off, R.def, R.tag, R.back, R.dsc, R.pnrD].forEach(fin);
+      [R.phase, R.set, R.dlab, R.cov, R.covT, R.play, R.tagSub, R.backSub].forEach(function (mp) {
+        Object.keys(mp).forEach(function (k) { fin(mp[k]); }); });
+      R.w.pt.forEach(fin); R.w.br.forEach(fin);
+      R.s = addUp(use.map(function (g) { return g.s; }));
+      R.pt = measured(R.s, "pt"); R.br = measured(R.s, "br");
+      R.fgp = R.s.fga ? 100 * R.s.fgm / R.s.fga : null;
+      R.tovp = R.s.poss ? 100 * R.s.tov / R.s.poss : null;
+      R.dfgp = R.dfga ? 100 * R.dfgm / R.dfga : null;
+      R.dtovp = R.def.n ? 100 * R.dto / R.def.n : null;
+      return R;
+    });
+    _seasonRefP[k0] = p;
+    p.catch(function () { delete _seasonRefP[k0]; });
+    return p;
   }
   /* every training of the season as numbers, for the dashboard beside the games (Oriol,
      30/10/2026): the same files, dates and reading the Trends screen uses, kept once per
@@ -5864,6 +5975,25 @@
       ".sx-post .sx-tab.on{background:#141821;color:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25)}",
       ".sx-cathead{margin:0!important;border:0!important;padding:0!important;background:transparent!important;box-shadow:none!important}",
       ".sx-cathead .ui-figs{margin-bottom:10px}",
+      /* the post game's colour rule (27/11/2026): blue volume, green / red efficiency for us against our season */
+      ".sx-eff{font-weight:800;color:var(--ink,#12161d)}",
+      ".sx-table td.sx-eff.good{background:#d4ecdf;color:#11583d}",
+      ".sx-table td.sx-eff.bad{background:#f6dad4;color:#9a2a1d}",
+      "body.dark .sx-table td.sx-eff.good{background:rgba(47,158,106,.24);color:#86e3b6}",
+      "body.dark .sx-table td.sx-eff.bad{background:rgba(216,82,78,.24);color:#ffa197}",
+      ".sx-table td.sx-ref{color:var(--ink-faint,#8a93a2);font-weight:600;background:transparent}",
+      ".sx-table td.sx-swing{font-weight:700;background:transparent;color:var(--ink-soft,#5b6472)}",
+      ".sx-table td.sx-swing.up{color:#17805a}.sx-table td.sx-swing.dn{color:#c53727}",
+      "body.dark .sx-table td.sx-swing.up{color:#5fcf9f}body.dark .sx-table td.sx-swing.dn{color:#ff8f85}",
+      ".sx-post:not([data-cat=\"all\"]) .sx-allonly{display:none}",
+      "@media print{.sx-post .sx-allonly{display:grid!important}}",
+      "body.prt .sx-post .sx-allonly{display:grid!important}",
+      ".sx-key2{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;margin:-6px 0 12px;font-size:11.5px;color:var(--ink-soft,#5b6472)}",
+      ".sx-key2 > b{font:600 12px 'Inter',sans-serif;color:var(--ink)}",
+      ".sx-k2{display:inline-flex;align-items:center;gap:5px}",
+      ".sx-k2 i{width:10px;height:10px;border-radius:3px;display:inline-block}",
+      ".sx-k2 i.vol{background:#5b77a6}.sx-k2 i.good{background:#2f9e6a}.sx-k2 i.bad{background:#d8524e}",
+      ".sx-k2.mu{color:var(--ink-faint,#8a93a2)}",
       ".sx-cat{margin-top:26px;display:grid;grid-template-columns:1fr;gap:12px 16px;align-items:start}",
       ".sx-cat > *{min-width:0}",
       ".sx-post .sx-cath{display:flex;align-items:baseline;gap:9px;margin:0;padding-top:12px;",
@@ -5937,7 +6067,7 @@
        the file is parsed, without waiting for DOMContentLoaded */
     window.LowenPostStats = { mount: mountPostTeam, dropCache: dropCache,
                               gameModel: gameModel, shotLine: shotLine, measured: measured, summarise: summarise,
-                              seasonGames: seasonGames, seasonPractices: seasonPractices, addUp: addUp,
+                              seasonGames: seasonGames, seasonPractices: seasonPractices, addUp: addUp, seasonRef: seasonRef, setFamily: pgFamily,
                               /* the trainings' rebounding, one a session, and several added up */
                               trainingRebounds: trainingRebounds, reboundsAdd: rebAdd, reboundCats: rebCats,
                               datesWithFiles: datesWithFiles,

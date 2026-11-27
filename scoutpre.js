@@ -2055,15 +2055,19 @@
     var tm = el("div", "sxp-tm");
     items.forEach(function (r, i) {
       var q = rects[i]; if (!q) return;
-      var edge = (r.ref == null || r.other) ? null : (side === "O" ? r.ref - r.ppp : r.ppp - r.ref);
-      var tone = (edge == null || r.poss < 5 || Math.abs(edge) < 0.10) ? "neutral" : (edge > 0 ? "good" : "bad");
+      /* opt.hiGood says which way is good outright (the post game: true for our offense, false for
+         our defense); without it the pre game's side does, for the opponent */
+      var edge = (r.ref == null || r.other) ? null : (opt.hiGood != null ? (opt.hiGood ? r.ppp - r.ref : r.ref - r.ppp) : (side === "O" ? r.ref - r.ppp : r.ppp - r.ref));
+      /* the post game compares the two as they are shown, so 1.03 against 0.93 is 0.10 and coloured */
+      if (edge != null && opt.hiGood != null) edge = (edge >= 0 ? 1 : -1) * (Math.abs(Math.round(100 * (r.ppp || 0)) - Math.round(100 * r.ref)) + 0.001) / 100;
+      var tone = (edge == null || (!opt.noMin && r.poss < 5) || Math.abs(edge) < 0.10) ? "neutral" : (edge > 0 ? "good" : "bad");
       var size = (q[2] >= 34 && q[3] >= 20) ? "lg" : (q[2] >= 20 && q[3] >= 12) ? "md" : (q[2] >= 11 && q[3] >= 8) ? "sm" : "xs";
       var c = el("div", "sxp-tm-c " + tone + " " + size);
       c.style.left = (100 * q[0] / W).toFixed(3) + "%"; c.style.top = (100 * q[1] / H).toFixed(3) + "%";
       c.style.width = (100 * q[2] / W).toFixed(3) + "%"; c.style.height = (100 * q[3] / H).toFixed(3) + "%";
       var pct = Math.round(100 * r.poss / tot);
       c.title = r.label + " · " + pct + "% · " + (r.ppp == null ? "—" : Number(r.ppp).toFixed(2)) + " PPP · " + Math.round(r.poss) + " poss" +
-        (r.ref != null && !r.other ? " · scouted teams " + Number(r.ref).toFixed(2) : "") + (r.other ? " · " + r.other.join(", ") : "");
+        (r.ref != null && !r.other ? " · " + (opt.refWord || "scouted teams") + " " + Number(r.ref).toFixed(2) : "") + (r.other ? " · " + r.other.join(", ") : "");
       c.appendChild(el("b", "", r.label));
       /* a small one gives the share and the points a line each, so a narrow part is still read whole
          (Oriol, 25/11/2026: "se corta la info") */
@@ -2072,7 +2076,7 @@
       tm.appendChild(c);
     });
     box.appendChild(tm);
-    box.appendChild(el("div", "sxp-tm-k", "Area: share of possessions · inside: share · points per possession · colour against the teams we tagged: green good for us, red bad for us, grey within 0.10 or under 5 possessions"));
+    box.appendChild(el("div", "sxp-tm-k", opt.key || "Area: share of possessions · inside: share · points per possession · colour against the teams we tagged: green good for us, red bad for us, grey within 0.10 or under 5 possessions"));
     return box;
   }
 
@@ -3710,6 +3714,8 @@
       });
     });
   };
+  /* the area chart, for the post game's own tabs (stats.js) */
+  try { window.SXPTreemap = treemap; } catch(e){_quiet(e)}
   API.pbPoss = pbPoss;
   API.pbSplit = pbSplit;
   API.pbKeep = pbKeep;

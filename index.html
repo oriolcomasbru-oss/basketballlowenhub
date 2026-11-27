@@ -11158,30 +11158,34 @@ function _postUniBlock(g, opts){
   const cat=opts.cat||"__postCat";
   const uni=h("div",{class:"rs-block rs-block-auto pg-uni"+(opts.cls? " "+opts.cls : "")},
     h("div",{class:"rs-banner rs-banner-sec"}, h("span",{class:"rs-banner-t"}, opts.title||"TEAM STATS")));
-  const PT=[["ov","Overview"],["pbp","Game stats"],["min","Minute by minute"],["pace","Pace"],["reb","Rebounds"],["pt","Paint touches"],["br","Ball reversals"],["eff","Efficiency"],["td","Transition D"],["def","What we concede"],["all","Everything"]];
+  /* THE PRE GAME'S EIGHT TABS (Oriol, 27/11/2026: "debemos seguir la línea de pregame sobre todo"): the
+     overview, our offense, our defense and the ball screen from our tagging, the game, the pace and the
+     rebounding from the league's play by play, and Everything. Our offense, our defense and the ball
+     screen are the tagging's block (stats.js), moved in as before; the quarters, the paint touches and
+     the reversals are each in one place */
+  const PT=[["ov","Overview"],["off","Our offense"],["def","Our defense"],["bs","Ball screen"],["game","The game"],["pace","Pace"],["reb","Rebounding"],["all","Everything"]];
+  const TS={ off:1, def:1, bs:1, all:1 };
   const bar=h("div",{class:"sxp-tabs pg-tabs"});
   const pane=(k, build)=>{ const p=h("div",{class:"pg-pane", "data-pane":k});
     try{ p.appendChild(build()); }catch(e){ p.appendChild(h("div",{class:"lg-empty"}, "This block could not be drawn: "+((e&&e.message)||e))); }
     return p; };
   const pOv=pane("ov", ()=>{ const w=h("div",{}); const mp=opts.top? opts.top() : null; if(mp) w.appendChild(mp); w.appendChild(_postOverview(g)); return w; }),
-    pPbp=pane("pbp", ()=>_lgGameInline(g)), pMin=pane("min", ()=>_postMinutes(g)), pReb=pane("reb", ()=>_postRebounds(g)), pTs=h("div",{class:"pg-pane", "data-pane":"ts"}),
-    pQ=h("div",{class:"pg-pane", "data-pane":"q"}), pPace=h("div",{class:"pg-pane", "data-pane":"pace"});
-  /* the quarter-by-quarter table of the overview, drawn when the overview is, shown in Efficiency */
-  if(_postOvKeep.q && _postOvKeep.key===g.date+"|"+(g.opponent||"")) pQ.appendChild(_postOvKeep.q);
-  if(_postOvKeep.pace && _postOvKeep.key===g.date+"|"+(g.opponent||"")) pPace.appendChild(_postOvKeep.pace);
+    pGame=pane("game", ()=>_postGameTab(g)), pPace=pane("pace", ()=>_postPaceTab(g)), pReb=pane("reb", ()=>_postRebounds(g)),
+    pTs=h("div",{class:"pg-pane", "data-pane":"ts"});
   const show=k=>{
     window[cat]=k; uni.dataset.tab=k;
     bar.querySelectorAll(".sxp-tab").forEach(b=>b.classList.toggle("on", b.dataset.t===k));
-    const tsOn=(k!=="ov" && k!=="pbp" && k!=="min" && k!=="reb" && k!=="pace");
-    pOv.classList.toggle("on", k==="ov"||k==="all"); pPbp.classList.toggle("on", k==="pbp"||k==="all"); pMin.classList.toggle("on", k==="min"||k==="all"); pReb.classList.toggle("on", k==="reb"||k==="all"); pPace.classList.toggle("on", k==="pace"||k==="all"); pQ.classList.toggle("on", k==="eff"||k==="all"); pTs.classList.toggle("on", tsOn);
-    const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && tsOn) sp.__setCat(k);
+    pOv.classList.toggle("on", k==="ov"||k==="all"); pGame.classList.toggle("on", k==="game"||k==="all");
+    pPace.classList.toggle("on", k==="pace"||k==="all"); pReb.classList.toggle("on", k==="reb"||k==="all"); pTs.classList.toggle("on", !!TS[k]);
+    const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && TS[k]) sp.__setCat(k);
     try{ window.dispatchEvent(new Event("resize")); }catch(e){_quiet(e)}
   };
   PT.forEach(t=>{ const b=h("button",{class:"sxp-tab", type:"button", onclick:()=>show(t[0])}, t[1]); b.dataset.t=t[0]; bar.appendChild(b); });
-  uni.appendChild(bar); uni.appendChild(pOv); uni.appendChild(pPbp); uni.appendChild(pMin); uni.appendChild(pPace); uni.appendChild(pReb); uni.appendChild(pQ); uni.appendChild(pTs);
+  /* in the order of the tabs, so Everything reads the same way */
+  uni.appendChild(bar); uni.appendChild(pOv); uni.appendChild(pTs); uni.appendChild(pGame); uni.appendChild(pPace); uni.appendChild(pReb);
   uni.__ts=pTs;
   /* the team stats arrive later, from the Drive: when they land, they open on the tab chosen */
-  try{ new MutationObserver(()=>{ const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && !sp.__synced){ sp.__synced=1; const k=uni.dataset.tab; if(k!=="ov" && k!=="pbp" && k!=="min" && k!=="reb" && k!=="pace") sp.__setCat(k); } })
+  try{ new MutationObserver(()=>{ const sp=pTs.querySelector(".sx-post"); if(sp && sp.__setCat && !sp.__synced){ sp.__synced=1; const k=uni.dataset.tab; if(TS[k]) sp.__setCat(k); } })
     .observe(pTs, { childList:true, subtree:true }); }catch(e){_quiet(e)}
   const k0=window[cat] && PT.some(t=>t[0]===window[cat])? window[cat] : "ov";
   show(k0);
@@ -21330,7 +21334,9 @@ const _rebPct=(a,b)=>b? 100*a/b : null;
 const _rebTone=(v, ref, low)=>{ if(v==null || ref==null) return ""; const d=low? ref-v : v-ref; return d>=5? "up" : d<=-5? "dn" : ""; };
 /* EACH OF OURS AND THE TEAM'S REBOUNDING AROUND HIM: his own rebounds, a rate per 10 minutes,
    and the team's DREB% / OREB% with him on and with him off. Interiors first. */
-function _rebPlayersTable(pl, names, grpOf, tot){
+function _rebPlayersTable(pl, names, grpOf, tot, opt){
+  /* opt.pct: the post game reads the glass in shares (Oriol, 27/11/2026), so his own counts are left out */
+  const PC=!!(opt && opt.pct);
   const ids=Object.keys(pl).filter(id=>pl[id].s==="u" && pl[id].sec>0);
   if(!ids.length) return h("div",{class:"lg-empty"},"No minutes to read.");
   const rows=ids.map(id=>{ const p=pl[id], nm=names[id]||{}, g=grpOf(id, nm.num)||"G";
@@ -21338,18 +21344,18 @@ function _rebPlayersTable(pl, names, grpOf, tot){
     return { id:id, p:p, nm:nm, g:g, dOn:_rebPct(p.dOn[0],p.dOn[1]), dOff:dOff? _rebPct(dOff[0],dOff[1]) : null, oOn:_rebPct(p.oOn[0],p.oOn[1]), oOff:oOff? _rebPct(oOff[0],oOff[1]) : null }; });
   rows.sort((a,b)=>(a.g===b.g? 0 : a.g==="B"? -1 : 1) || b.p.sec-a.p.sec);
   const t=h("table",{class:"lg-tbl reb-t"});
-  t.appendChild(h("tr",{}, h("th",{class:"l"},"Player"), h("th",{},"Min"), h("th",{},"DREB"), h("th",{},"OREB"), h("th",{title:"his own rebounds every 10 minutes on the floor"},"REB/10′"),
+  t.appendChild(h("tr",{}, h("th",{class:"l"},"Player"), h("th",{},"Min"), PC? null : h("th",{},"DREB"), PC? null : h("th",{},"OREB"), h("th",{title:"his own rebounds every 10 minutes on the floor"},"REB/10′"),
     h("th",{class:"grp", title:"the team's defensive rebounding while he was on the floor"},"DREB% on"), h("th",{},"off"), h("th",{},"±"),
     h("th",{class:"grp", title:"the team's offensive rebounding while he was on the floor"},"OREB% on"), h("th",{},"off"), h("th",{},"±")));
   let lastG=null;
   const f0=v=>v==null? "—" : Math.round(v)+"%";
   const dif=(a,b)=>{ if(a==null || b==null) return h("td",{},"—"); const d=a-b; return h("td",{class:"reb-d "+(d>=4? "up" : d<=-4? "dn" : "")}, (d>0? "+" : d<0? "−" : "±")+Math.abs(Math.round(d))); };
   rows.forEach(r=>{
-    if(r.g!==lastG){ t.appendChild(h("tr",{class:"reb-grp"}, h("td",{colspan:"11"}, REB_GRP[r.g]))); lastG=r.g; }
+    if(r.g!==lastG){ t.appendChild(h("tr",{class:"reb-grp"}, h("td",{colspan:PC? "9" : "11"}, REB_GRP[r.g]))); lastG=r.g; }
     const mins=r.p.sec/60, small=mins<20;
     t.appendChild(h("tr",{class:small? "reb-small" : "", title:small? "under 20 minutes on the floor: a small sample" : ""},
       h("td",{class:"l"}, h("u",{}, "#"+(r.nm.num||"")), " "+_lgLastName(r.nm.name||"")+(small? " ·" : "")),
-      h("td",{}, String(Math.round(mins))), h("td",{}, String(r.p.dr)), h("td",{}, String(r.p.or)),
+      h("td",{}, String(Math.round(mins))), PC? null : h("td",{}, String(r.p.dr)), PC? null : h("td",{}, String(r.p.or)),
       h("td",{}, mins? (10*(r.p.dr+r.p.or)/mins).toFixed(1) : "—"),
       h("td",{class:"grp"}, f0(r.dOn)), h("td",{}, f0(r.dOff)), dif(r.dOn, r.dOff),
       h("td",{class:"grp"}, f0(r.oOn)), h("td",{}, f0(r.oOff)), dif(r.oOn, r.oOff))); });
@@ -25126,29 +25132,24 @@ function _postLeagueGame(sg, list){
   return mine.filter(x=>x.date && Math.abs(day(x.date)-day(sg.date))<=1 && opp &&
     (String(x.home||"")+" "+String(x.away||"")).toLowerCase().indexOf(opp)>=0)[0]||null;
 }
-/* THE POST GAME'S REBOUNDS: the game's OREB% and DREB% against our season and the league,
-   the second chances, the quarters, who took them - exteriors and interiors, ours and
-   theirs - which miss they came from, and each of ours with the team's rebounding around him */
+/* THE POST GAME'S REBOUNDING, AS THE PRE GAME'S, IN SHARES (Oriol, 27/11/2026: "del rebote preferimos tener
+   el % de OREB y de DREB que números absolutos"; "Pace y Rebounding iguales que en el pre game"). The two
+   battles of the game - our offensive glass, and theirs against our defensive glass - each as this game
+   against our season on one scale, the league's average the tick; then the quarters, which miss they came
+   from, who took them (exteriors and interiors, as shares) and each of ours with the team's rebounding
+   around him. All from the league's play by play. The training week went to Trends. */
 function _postRebounds(sg){
-  const outer=h("div",{class:"reb"}), box=h("div",{});
+  const outer=h("div",{class:"reb rbv pg-reb"}), box=h("div",{class:"rbv"});
   if(!sg || !sg.date) return outer;
-  /* THE GAME AND THE TRAINING WEEK APART (Oriol, 29/10/2026): the game's rebounding from the
-     league's play by play, and under it the trainings before the game, from our tagging */
-  outer.appendChild(h("div",{class:"reb-part"}, h("b",{},"The game"), h("span",{},"from the league's play by play")));
   outer.appendChild(box);
-  outer.appendChild(_postRebTrain(sg));
   box.appendChild(h("div",{class:"ld"},"Reading the play by play of this game…", h("span",{class:"ld-bar"})));
   (async ()=>{
-    const L=leagueState();
-    let G=_postLeagueGame(sg, (L.games||[]).concat(L.cup||[]));
-    if(!G){ const all=await _lgAll(); G=_postLeagueGame(sg, ((all&&all.games)||[]).concat((all&&all.cup)||[])); }
-    if(!G) return null;
-    const j=await (_lgGameMemo[G.id]||(_lgGameMemo[G.id]=fetch("/.netlify/functions/bbl?res=game&id="+encodeURIComponent(G.id)).then(r=>r.json())));
-    if(!(j && j.feed && (j.feed.actions||[]).length)) return null;
-    const our=String(_lgOurTeamId(L)||""), home=String(G.homeId)===our, opp=String(home? G.awayId : G.homeId);
+    const P=await _postPbp(sg);
+    if(!P) return null;
+    const L=leagueState(), our=String(_lgOurTeamId(L)||""), home=String(P.G.homeId)===our, opp=String(home? P.G.awayId : P.G.homeId);
     const ros=async tid=>{ if(((L.roster||{})[tid]||{}).players) return; try{ const r=await fetch("/.netlify/functions/bbl?res=roster&id="+encodeURIComponent(tid)+"&season="+encodeURIComponent(L.season||"")).then(x=>x.ok? x.json() : null); if(r && r.players){ L.roster=L.roster||{}; L.roster[tid]=Object.assign({}, L.roster[tid]||{}, { players:r.players }); } }catch(e){_quiet(e)} };
     await Promise.all([ros(our), ros(opp)]);
-    return { G:G, j:j, our:our, opp:opp, home:home };
+    return { G:P.G, j:P.j, our:our, opp:opp, home:home };
   })().then(P=>{ box.innerHTML="";
     if(!P){ box.appendChild(h("div",{class:"lg-empty"},"The league's play by play of this game is not in yet.")); return; }
     const L=leagueState(), M=_lgGameModel(P.G, P.j, null), uc=P.home? M.hc : (M.hc==="A"? "B" : "A");
@@ -25159,42 +25160,58 @@ function _postRebounds(sg){
     const pmU=_rebPosMap(L, P.our), pmT=_rebPosMap(L, P.opp);
     const grpU=(id, num)=>pmU.byId[id] || pmU.byNum[String(num||(names[id]||{}).num||"")] || null;
     const grpT=(id, num)=>pmT.byId[id] || pmT.byNum[String(num||(namesT[id]||{}).num||"")] || null;
-    const oPct=_rebPct(R.u.or, R.u.or+R.t.dr), dPct=_rebPct(R.u.dr, R.u.dr+R.t.or);
+    const oPct=_rebPct(R.u.or, R.u.or+R.t.dr), dPct=_rebPct(R.u.dr, R.u.dr+R.t.or), tPct=dPct==null? null : 100-dPct;
     const F=(L.four||[]).filter(x=>String(x.teamId)===P.our)[0], lgO=_rebLeagueAvg(L);
-    const sO=F&&F.off? 100*F.off.reb : null, sD=F&&F.def? 100*F.def.reb : null;
+    const sO=F&&F.off? 100*F.off.reb : null, sD=F&&F.def? 100*F.def.reb : null, sT=sD==null? null : 100-sD;
     const pc=v=>v==null? "—" : Math.round(v)+"%";
-    const fig=(lab, v, sub, tone)=>h("div",{class:"reb-fig"}, h("i",{}, lab), h("b",{class:tone||""}, v), h("span",{}, sub));
+    const tn=(v, ref, low)=>_pgTone(v, ref, low, 5, 0);
+    /* the head, with where it comes from */
+    const hd=h("div",{class:"rbv-h"});
+    try{ const c=window.UIKit.src("lg"); if(c) hd.appendChild(c); }catch(e){_quiet(e)}
+    hd.appendChild(h("b",{},"Rebounding · the two battles"));
+    hd.appendChild(h("span",{}, "this game against our season · bars on one scale, 0–60% · the tick the league's average"));
+    box.appendChild(hd);
+    const X=v=>Math.max(0, Math.min(100, 100*(v||0)/60));
+    const bar=(lab, v, cls, note, ref)=>h("div",{class:"rbv-r"}, h("span",{class:"rbv-l"}, lab),
+      h("span",{class:"rbv-bar"}, h("i",{class:cls, style:"width:"+X(v).toFixed(1)+"%"}), ref!=null? h("u",{style:"left:"+X(ref).toFixed(1)+"%", title:"league average "+Math.round(ref)+"%"}) : null),
+      h("b",{}, pc(v)), h("em",{}, note||""));
+    const battle=(title, v, s, lgRef, low, labs, cls)=>{ const t=tn(v, s, low), d=(v!=null && s!=null)? Math.round(v)-Math.round(s) : null;
+      const word=t==="neutral"? "Like our season" : (t==="good"? "Better" : "Worse")+" than our season "+(d>0? "+" : "−")+Math.abs(d);
+      return h("div",{class:"rbv-b"}, h("div",{class:"rbv-bh"}, h("b",{}, title), h("span",{class:"rbv-ed "+(t==="neutral"? "" : t), title:"5 points or more off our season is coloured"}, word)),
+        bar(labs[0], v, cls, "this game", lgRef), bar(labs[1], s, "seas", "our season", lgRef)); };
+    box.appendChild(h("div",{class:"rbv-two"},
+      battle("Our offensive glass · OREB%", oPct, sO, lgO, false, ["We got back", "Our season"], "us"),
+      battle("Their offensive glass · against our DREB% "+pc(dPct), tPct, sT, lgO, true, ["They got back", "We let teams have"], "them")));
     box.appendChild(h("div",{class:"reb-figs"},
-      fig("OREB%", pc(oPct), "season "+pc(sO)+" · league "+pc(lgO), _rebTone(oPct, sO)),
-      fig("DREB%", pc(dPct), "season "+pc(sD)+" · league "+pc(lgO!=null? 100-lgO : null), _rebTone(dPct, sD)),
-      fig("Rebounds", (R.u.or+R.u.dr)+"–"+(R.t.or+R.t.dr), "offensive "+R.u.or+"–"+R.t.or+" · defensive "+R.u.dr+"–"+R.t.dr, (R.u.or+R.u.dr)>(R.t.or+R.t.dr)? "up" : (R.u.or+R.u.dr)<(R.t.or+R.t.dr)? "dn" : ""),
-      fig("Second-chance points", R.sc.u+"–"+R.sc.t, "ours after our offensive rebound · theirs after theirs", R.sc.u>R.sc.t? "up" : R.sc.u<R.sc.t? "dn" : "")));
+      h("div",{class:"reb-fig"}, h("i",{},"DREB%"), h("b",{class:tn(dPct, sD, false)==="good"? "up" : tn(dPct, sD, false)==="bad"? "dn" : ""}, pc(dPct)), h("span",{}, "of their misses · our season "+pc(sD)+" · league "+pc(lgO!=null? 100-lgO : null))),
+      h("div",{class:"reb-fig"}, h("i",{},"OREB%"), h("b",{class:tn(oPct, sO, false)==="good"? "up" : tn(oPct, sO, false)==="bad"? "dn" : ""}, pc(oPct)), h("span",{}, "of our misses · our season "+pc(sO)+" · league "+pc(lgO))),
+      h("div",{class:"reb-fig"}, h("i",{},"Second-chance points"), h("b",{class:R.sc.u>R.sc.t? "up" : R.sc.u<R.sc.t? "dn" : ""}, R.sc.u+"–"+R.sc.t), h("span",{}, "ours after our offensive rebound · theirs after theirs"))));
     const grid=h("div",{class:"reb-grid"});
-    /* the quarters */
-    { const t=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},"Quarter"), h("th",{},"OREB%"), h("th",{},"DREB%"), h("th",{title:"our offensive rebounds"},"Our OREB"), h("th",{title:"their offensive rebounds"},"Their OREB")));
+    /* the quarters, in shares */
+    { const t=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},"Quarter"), h("th",{title:"the share of our misses we got back"},"OREB%"), h("th",{title:"the share of their misses we got back"},"DREB%")));
       R.q.forEach((q,i)=>{ if(!q) return; const o=_rebPct(q.u.or, q.u.or+q.t.dr), d=_rebPct(q.u.dr, q.u.dr+q.t.or);
-        t.appendChild(h("tr",{}, h("td",{class:"l"}, i<4? "Q"+(i+1) : "OT"+(i-3)), h("td",{class:_rebTone(o, sO)}, pc(o)), h("td",{class:_rebTone(d, sD)}, pc(d)), h("td",{}, String(q.u.or)), h("td",{}, String(q.t.or)))); });
+        t.appendChild(h("tr",{}, h("td",{class:"l"}, i<4? "Q"+(i+1) : "OT"+(i-3)),
+          h("td",{class:_rebTone(o, sO), title:q.u.or+" of "+(q.u.or+q.t.dr)}, pc(o)), h("td",{class:_rebTone(d, sD), title:q.u.dr+" of "+(q.u.dr+q.t.or)}, pc(d)))); });
       grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"By quarter"), t)); }
-    /* who took them */
+    /* which miss */
+    { const t=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},"After a missed"), h("th",{class:"grp", title:"our offensive rebounds on our misses"},"Our OREB%"), h("th",{class:"grp", title:"their offensive rebounds on their misses"},"Their OREB%")));
+      [[3,"three"],[2,"two"],[1,"free throw"]].forEach(x=>{ const a=R.miss.u[x[0]], b=R.miss.t[x[0]]; if(!a[1] && !b[1]) return;
+        t.appendChild(h("tr",{}, h("td",{class:"l"}, x[1]), h("td",{class:"grp", title:a[0]+" of "+a[1]}, pc(_rebPct(a[0],a[1]))), h("td",{class:"grp", title:b[0]+" of "+b[1]}, pc(_rebPct(b[0],b[1]))))); });
+      grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"Which miss"), t)); }
+    /* who took them, as shares of each side's rebounds */
     { const grp={ u:{ G:zero2(), B:zero2(), T:zero2() }, t:{ G:zero2(), B:zero2(), T:zero2() } };
       function zero2(){ return { or:0, dr:0 }; }
       Object.keys(R.pl).forEach(id=>{ const p=R.pl[id], g=(p.s==="u"? grpU(id) : grpT(id))||"T"; grp[p.s][g].or+=p.or; grp[p.s][g].dr+=p.dr; });
       /* a team rebound is in the side's total and in nobody's line: it goes in the last row */
       ["u","t"].forEach(s=>{ const S=grp[s]; S.T.or+=Math.max(0, R[s].or-(S.G.or+S.B.or+S.T.or)); S.T.dr+=Math.max(0, R[s].dr-(S.G.dr+S.B.dr+S.T.dr)); });
-      const t=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},""), h("th",{class:"grp"},"Our DREB"), h("th",{},"OREB"), h("th",{},"Share"), h("th",{class:"grp"},"Their DREB"), h("th",{},"OREB"), h("th",{},"Share")));
-      const tu=R.u.or+R.u.dr, tt=R.t.or+R.t.dr;
+      const t=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},""), h("th",{class:"grp", title:"of our offensive rebounds"},"Our OREB"), h("th",{title:"of our defensive rebounds"},"Our DREB"), h("th",{class:"grp", title:"of their offensive rebounds"},"Their OREB"), h("th",{title:"of their defensive rebounds"},"Their DREB")));
+      const sh=(a, b, n)=>h("td",{class:n? "grp" : "", title:a+" of "+b}, pc(_rebPct(a, b)));
       [["B",REB_GRP.B],["G",REB_GRP.G],["T","Team rebounds (no player)"]].forEach(x=>{ const a=grp.u[x[0]], b=grp.t[x[0]]; if(!(a.or+a.dr+b.or+b.dr)) return;
-        t.appendChild(h("tr",{}, h("td",{class:"l"}, x[1]), h("td",{class:"grp"}, String(a.dr)), h("td",{}, String(a.or)), h("td",{}, pc(_rebPct(a.or+a.dr, tu))),
-          h("td",{class:"grp"}, String(b.dr)), h("td",{}, String(b.or)), h("td",{}, pc(_rebPct(b.or+b.dr, tt))))); });
-      grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"Who took them"), h("div",{class:"pb-scroll"}, t))); }
-    /* which miss */
-    { const t=h("table",{class:"lg-tbl reb-t"}, h("tr",{}, h("th",{class:"l"},"After a missed"), h("th",{class:"grp", title:"our offensive rebounds on our misses"},"Our OREB%"), h("th",{},"n"), h("th",{class:"grp", title:"their offensive rebounds on their misses"},"Their OREB%"), h("th",{},"n")));
-      [[3,"three"],[2,"two"],[1,"free throw"]].forEach(x=>{ const a=R.miss.u[x[0]], b=R.miss.t[x[0]]; if(!a[1] && !b[1]) return;
-        t.appendChild(h("tr",{}, h("td",{class:"l"}, x[1]), h("td",{class:"grp"}, pc(_rebPct(a[0],a[1]))), h("td",{}, String(a[1])), h("td",{class:"grp"}, pc(_rebPct(b[0],b[1]))), h("td",{}, String(b[1])))); });
-      grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"Which miss"), t)); }
+        t.appendChild(h("tr",{}, h("td",{class:"l"}, x[1]), sh(a.or, R.u.or, 1), sh(a.dr, R.u.dr), sh(b.or, R.t.or, 1), sh(b.dr, R.t.dr))); });
+      grid.appendChild(h("div",{class:"reb-card"}, h("h5",{},"Who took them · share of each side's"), h("div",{class:"pb-scroll"}, t))); }
     box.appendChild(grid);
-    box.appendChild(h("div",{class:"reb-card"}, h("h5",{},"Ours on the floor · the team's rebounding with each of them on and off"), _rebPlayersTable(R.pl, names, grpU, _rebTot(R))));
-    box.appendChild(h("div",{class:"gpo-note"},"From the league's play by play. OREB% = our offensive rebounds of our misses; DREB% = our defensive rebounds of theirs. A team rebound counts for the team and for no player. Green or red: 4 points better or worse than our season. Positions: the league's roster, the staff's where it differs (Thiers a 5). A name with a dot played under 20 minutes."));
+    box.appendChild(h("div",{class:"reb-card"}, h("h5",{},"Ours on the floor · the team's rebounding with each of them on and off"), _rebPlayersTable(R.pl, names, grpU, _rebTot(R), { pct:true })));
+    box.appendChild(h("div",{class:"gpo-note"},"From the league's play by play. OREB% = the share of our misses we got back; DREB% = the share of theirs. A team rebound counts for the team and for no player. Green or red: 5 points better or worse than our season. Positions: the league's roster, the staff's where it differs (Thiers a 5). A name with a dot played under 20 minutes. The trainings' rebounding is in Trends."));
   }).catch(e=>{ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"},"The rebounds could not be read: "+((e&&e.message)||e))); });
   return outer;
 }
@@ -25204,6 +25221,13 @@ function _postRebounds(sg){
    count left out with their minute. Both fives are ours, so DREB% and OREB% add up to a
    hundred; DREB% is the one read, against the season's. The count itself is stats.js's
    (rebPractice), the same one the Trends chart draws. */
+/* THE TRAINING WEEK, IN TRENDS (Oriol, 27/11/2026: "The training week pasa a Trends"): the week before our
+   last game, drawn under the rebounding card of Trends (stats.js asks for it) */
+try{ window.__trRebWeek=function(){
+  const today=todayISO();
+  const g=((state && state.games)||[]).filter(x=>x && x.date && x.date<=today && !/^(ProB|NBBL)$/i.test(String(x.competition||"")) && !(typeof _gamePlaceholder==="function" && _gamePlaceholder(x.opponent)))
+    .sort((a,b)=>a.date<b.date? -1 : a.date>b.date? 1 : 0).pop();
+  return g? _postRebTrain(g) : null; }; }catch(e){_quiet(e)}
 function _postRebTrain(sg){
   const box=h("div",{class:"reb-tw"});
   box.appendChild(h("div",{class:"reb-part"}, h("b",{},"The training week"), h("span",{},"from our tagging of the trainings")));
@@ -25412,13 +25436,17 @@ function _postMinutes(sg, opt){
       ["BACK", b=>b.back[0]? b.back[1]/b.back[0] : null, v=>v<=0.8? "g" : v>=1.2? "b" : "", f2c, b=>b.back[0]]);
     const qs=[]; for(let qi=0; qi<=maxQ; qi++) qs.push(qi);
     const tot=qs.reduce((a,qi)=>a+minsOf(qi),0);
+    /* THE POST GAME SHOWS THE MARGIN, OER, DER, TAG AND BACK (Oriol, 27/11/2026); the rebounding, the paint
+       and who was on are one click away (opt.fold) */
+    const XROW={ "OREB%":1, "DREB%":1, "Opp OREB%":1, "Paint":1 };
+    let curX=false;
     const grid=h("div",{class:"pgmc", style:"grid-template-columns:var(--pgmc-l,62px) repeat("+tot+",minmax(0,1fr))"});
     let curQ=-1;
-    const put=(el, first)=>{ if(first) el.classList.add("q0"); if(curQ>=0) el.dataset.q=String(curQ); grid.appendChild(el); };
+    const put=(el, first)=>{ if(first) el.classList.add("q0"); if(curX) el.classList.add("pgmc-x"); if(curQ>=0) el.dataset.q=String(curQ); grid.appendChild(el); };
     grid.appendChild(h("span",{class:"pgmc-l"}, ""));
     qs.forEach(qi=>{ let qu=0, qt=0; for(let mm=0; mm<minsOf(qi); mm++){ const b=B[qi+"|"+mm]; if(b){ qu+=b.u.pts; qt+=b.t.pts; } }
       grid.appendChild(h("span",{class:"pgmc-qh q0 "+(qu>qt? "up" : qu<qt? "dn" : ""), style:"grid-column:span "+minsOf(qi), "data-q":String(qi)}, h("b",{}, ql(qi)), " "+qu+"–"+qt)); });
-    R.forEach(r=>{ grid.appendChild(h("span",{class:"pgmc-l"}, r[0]));
+    R.forEach(r=>{ curX=!!(opt.fold && XROW[r[0]]); grid.appendChild(h("span",{class:"pgmc-l"+(curX? " pgmc-x" : "")}, r[0]));
       qs.forEach(qi=>{ curQ=qi; for(let mm=0; mm<minsOf(qi); mm++){ const b=B[qi+"|"+mm], when=ql(qi)+" "+(minsOf(qi)-mm)+"′";
         if(!r[1]){ const L2=lead[qi+"|"+mm], d=L2.u-L2.t, u=b? b.u.pts : 0, t=b? b.t.pts : 0;
           /* the number is the margin; the colour, whether this minute made it better or worse */
@@ -25431,7 +25459,8 @@ function _postMinutes(sg, opt){
       const face=p=>{ const r=roster.filter(x=>x && x.num!=null && String(parseInt(x.num,10))===String(parseInt(p.num,10)))[0];
         const el=_lgFace(Lf, r? { n:r.num, name:r.name, first:r.first, last:r.last, photo:r.photo, pid:r.pid, id:r.id } : { n:p.num, name:p.name, id:p.id }, "pgmc-f");
         el.querySelectorAll("img").forEach(i=>i.setAttribute("loading","eager")); return el; };
-      grid.appendChild(h("span",{class:"pgmc-l"}, "On court"));
+      curX=!!opt.fold;
+      grid.appendChild(h("span",{class:"pgmc-l"+(curX? " pgmc-x" : "")}, "On court"));
       /* each man keeps his line while he stays on: his face the minute he comes in, a bar
          after it, so a change is a new face and everything else reads as the same five */
       qs.forEach(qi=>{ let slots=[null,null,null,null,null]; curQ=qi;
@@ -25442,6 +25471,7 @@ function _postMinutes(sg, opt){
         five.forEach(p=>{ if(slots.some(q=>q && String(q.id)===String(p.id))) return; const k=slots.indexOf(null); if(k>=0) slots[k]=p; });
         put(h("span",{class:"pgmc-c on", title:ql(qi)+" "+(minsOf(qi)-mm)+"′ · "+five.map(x=>"#"+x.num+" "+short(x.name)).join(", ")},
           slots.map((p,k)=>!p? h("i",{class:"pgmc-e"}) : (mm>0 && prev[k] && String(prev[k].id)===String(p.id))? h("i",{class:"pgmc-k", title:"#"+p.num+" "+short(p.name)}) : face(p))), mm===0); } }); }
+    curX=false;
     curQ=-1;
     /* ON A PHONE, A QUARTER AT A TIME (Oriol, 8/11/2026: "minute by minute lo mismo"). Forty
        columns in a phone's width are eight pixels each and say nothing; ten are readable. Under
@@ -25462,6 +25492,9 @@ function _postMinutes(sg, opt){
     showQ();
     box.appendChild(pick);
     box.appendChild(h("div",{class:"pgmc-w"}, grid));
+    if(opt.fold){ const more=h("button",{class:"pgm-more", type:"button"}, "Show OREB%, DREB%, paint and who was on");
+      more.addEventListener("click", ()=>{ const on=grid.classList.toggle("open"); more.textContent=on? "Hide OREB%, DREB%, paint and who was on" : "Show OREB%, DREB%, paint and who was on"; });
+      box.appendChild(more); }
     box.appendChild(h("div",{class:"pgm-leg"}, h("span",{}, "margin: + we are in front, − behind ·"), h("span",{}, h("i",{class:"up"}), "the minute made it better"), h("span",{}, h("i",{class:"dn"}), "worse"),
       h("span",{}, "· on court: a face where a man comes in, the bar while he stays"),
       h("span",{}, "· a column a minute, the clock running down · colour from 2 plays, one play in grey · OER/DER/OREB/DREB: play by play"+(m? " · Paint/TAG/BACK: our tagging, put on the clock by its baskets (a possession can land a minute out)" : " · no tagging of this game in the Drive yet")),
@@ -25469,15 +25502,9 @@ function _postMinutes(sg, opt){
   }).catch(e=>{ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"},"This table could not be built: "+((e&&e.message)||e))); });
   return box;
 }
-function _postOverview(sg){
-  const box=h("div",{class:"gpo sx"});
-  if(!sg || !sg.date) return box;
-  const kk=sg.date+"|"+(sg.opponent||"");
-  if(_postOvKeep.key===kk && _postOvKeep.el){ box.appendChild(_postOvKeep.el); return box; }
-  const inner=h("div",{}); box.appendChild(inner);
-  inner.appendChild(h("div",{class:"ld"},"Reading the play by play and the tagging of this game…", h("span",{class:"ld-bar"})));
-  const API=window.LowenPostStats, K=window.UIKit;
-  const pbp=(async ()=>{
+/* the league's play by play of a post game's game, read once and shared by its tabs: { G, j } or null */
+function _postPbp(sg){
+  return (async ()=>{
     const L=leagueState();
     let G=_postLeagueGame(sg, (L.games||[]).concat(L.cup||[]));
     if(!G){ const all=await _lgAll(); G=_postLeagueGame(sg, ((all&&all.games)||[]).concat((all&&all.cup)||[])); }
@@ -25486,259 +25513,256 @@ function _postOverview(sg){
     if(!j || !j.feed || !(j.feed.actions||[]).length) return null;
     return { G:G, j:j };
   })().catch(()=>null);
+}
+/* ONE RULE FOR EVERY COLOUR OF THE POST GAME (Oriol, 27/11/2026): better for us by the band or more is
+   green, worse red - 0.10 PPP, 3 per 100, 5 points of a % - compared as they are shown (dec decimals).
+   low: a lower number is the better one (what we concede, our turnovers) */
+function _pgTone(v, ref, low, band, dec){
+  if(v==null || ref==null || !isFinite(v) || !isFinite(ref)) return "neutral";
+  const f=Math.pow(10, dec==null? 2 : dec); let d=(Math.round(v*f)-Math.round(ref*f))/f; if(low) d=-d;
+  return d>=band-1e-9? "good" : d<=-band+1e-9? "bad" : "neutral";
+}
+/* THE OVERVIEW, AS THE PRE GAME'S "THE OPPONENT" (Oriol, 27/11/2026, "súbelo todo"): the game in one card.
+   - what it rests on, in one line: our tagging of the game and the league's play by play;
+   - two rows of figures, each from one source and against its own reference ("tageo del tageo, liga de
+     la liga"): our tagging against our season, the play by play against them in the same game;
+   - three findings at each end, the ones that won or lost us the most points against our season
+     (possessions x the difference), none on fewer than 5 possessions and none inside 0.10;
+   - the quarters, once. */
+function _postOverview(sg){
+  const box=h("div",{class:"gpo sx"});
+  if(!sg || !sg.date) return box;
+  const kk=sg.date+"|"+(sg.opponent||"");
+  if(_postOvKeep.key===kk && _postOvKeep.el){ box.appendChild(_postOvKeep.el); return box; }
+  const inner=h("div",{}); box.appendChild(inner);
+  inner.appendChild(h("div",{class:"ld"},"Reading the play by play and the tagging of this game…", h("span",{class:"ld-bar"})));
+  const API=window.LowenPostStats, K=window.UIKit;
   const tag=(API && API.gameModel)? API.gameModel(sg.opponent||"", sg.date).catch(()=>null) : Promise.resolve(null);
-  Promise.all([pbp, tag]).then(res=>{
-    try{ inner.innerHTML=""; inner.appendChild(_postOverviewDraw(sg, res[0], res[1], API, K)); _postOvKeep.key=kk; _postOvKeep.el=inner; }
+  const ssn=(API && API.seasonRef)? API.seasonRef(sg.date).catch(()=>null) : Promise.resolve(null);
+  Promise.all([_postPbp(sg), tag, ssn]).then(res=>{
+    try{ inner.innerHTML=""; inner.appendChild(_postOverviewDraw(sg, res[0], res[1], API, K, res[2])); _postOvKeep.key=kk; _postOvKeep.el=inner; }
     catch(e){ inner.innerHTML=""; inner.appendChild(h("div",{class:"lg-empty"},"The overview could not be built: "+((e&&e.message)||e))); try{ console.warn("post overview", e); }catch(_){_quiet(_)} }
   });
   return box;
 }
-function _postOverviewDraw(sg, P, Tg, API, K){
+function _postOverviewDraw(sg, P, Tg, API, K, SR){
   const out=h("div",{});
   const f2=v=>(v==null||!isFinite(v))? "—" : v.toFixed(2);
   const pc=v=>(v==null||!isFinite(v))? "—" : Math.round(v)+"%";
   const QN=["Q1","Q2","Q3","Q4","OT"];
-  const tagQ={ "1Q":0, "2Q":1, "3Q":2, "4Q":3, "OT":4 };
-  const cand=[], figs=[];
+  const tn=_pgTone, R=SR||null;
   /* ---- the play by play, whole and by quarter */
-  let home=true, U=null, T=null, Q=[], MF=null;
+  let U=null, T=null; const Q=[];
   if(P){
-    home=_lgOurs(P.G.home);
+    const home=_lgOurs(P.G.home);
     let maxQ=3; P.j.feed.actions.forEach(a=>{ const q=_lgGameElapsed(a.quarter,0).qi; if(q>maxQ) maxQ=q; });
     const all={}; for(let q=0;q<=maxQ;q++) all[q]=1;
-    const M=_lgGameModel(P.G, P.j, all); U=home?M.H:M.A; T=home?M.A:M.H; MF=M;
+    const M=_lgGameModel(P.G, P.j, all); U=home?M.H:M.A; T=home?M.A:M.H;
     for(let q=0;q<=maxQ;q++){ const o={}; o[q]=1; const m=_lgGameModel(P.G, P.j, o);
       Q[Math.min(q,4)]={ u:home?m.H:m.A, t:home?m.A:m.H }; }
   }
-  /* ---- the tagging, whole and by quarter */
+  /* ---- the tagging */
   const model=Tg && Tg.model;
   const poss=model? (model.poss||[]) : [], dposs=model? (model.dposs||[]) : [];
-  const sum=list=>API.summarise({ poss:list });
-  const ptOf=list=>{ const s=sum(list); return { v:API.measured(s,"pt"), br:API.measured(s,"br"), n:list.length, s:s }; };
-  const byQ=list=>{ const o=[[],[],[],[],[]]; list.forEach(q=>{ const i=tagQ[q.q]; if(i!=null) o[i].push(q); }); return o; };
-  const pQ=byQ(poss), dQ=byQ(dposs);
   const ppp=list=>list.length? list.reduce((a,q)=>a+(q.pts||0),0)/list.length : null;
-  /* ---- the headline figures */
+  const figRows=[];
+  if(model){
+    const s=API.summarise({ poss:poss }), ptV=API.measured(s,"pt"), brV=API.measured(s,"br");
+    const oP=ppp(poss), dP=ppp(dposs), oR=(R && R.off.n)? R.off.ppp : null, dR=(R && R.def.n)? R.def.ppp : null;
+    const tg=(model.trans||{}).tag||{ n:0, pts:0 }, bk=(model.trans||{}).back||{ n:0, pts:0 };
+    const tP=tg.n? tg.pts/tg.n : null, bP=bk.n? bk.pts/bk.n : null, tR=(R && R.tag.n)? R.tag.ppp : null, bR=(R && R.back.n)? R.back.ppp : null;
+    const verdict=v=>v>=70? "Perfect" : v>=65? "Ok" : v>=60? "Regular" : "Below";
+    figRows.push({ src:"tag", label:"Our tagging", sub:poss.length+" possessions · "+(R? "against our season, "+R.n+" game"+(R.n===1? "" : "s")+" tagged" : "our season is not read yet"),
+      figures:[
+        { label:"Our offense", value:f2(oP), note:R? "season "+f2(oR) : "per possession", tone:tn(oP, oR, false, 0.10), title:"Points per possession of our tagged possessions" },
+        { label:"Our defense", value:f2(dP), note:R? "season "+f2(dR) : "allowed per possession", tone:tn(dP, dR, true, 0.10), title:"Points allowed per possession of their tagged possessions" },
+        { label:"TAG conceded", value:f2(tP), note:tg.n+(R? " · season "+f2(tR) : " situations"), tone:tn(tP, tR, true, 0.10),
+          title:"After our long shot: what their next possession scored"+(_tagSplitTxt(tg)? " · "+_tagSplitTxt(tg) : "")+(_scTxt(tg)? " · "+_scTxt(tg) : "") },
+        { label:"BACK conceded", value:f2(bP), note:bk.n+(R? " · season "+f2(bR) : " situations"), tone:tn(bP, bR, true, 0.10),
+          title:"After our miss at the rim or our turnover"+(_backSplitTxt(bk)? " · "+_backSplitTxt(bk) : "")+(_scTxt(bk)? " · "+_scTxt(bk) : "") },
+        { label:"Paint touches", value:pc(ptV), note:"target 70 · "+verdict(Math.round(ptV)), tone:"vol", scale:{ lo:0, hi:100, v:ptV, ref:70 },
+          title:"A fastbreak counts whole; in every other phase the possession counts when it touched the paint - the formula Trends uses" },
+        { label:"Ball reversals", value:pc(brV), note:(R && isFinite(R.br))? "season "+pc(R.br) : "no target", tone:"vol", scale:{ lo:0, hi:100, v:brV, ref:(R && isFinite(R.br))? R.br : NaN },
+          title:"The same measure as the paint touches - the formula Trends uses" }
+      ] });
+  }
   if(U && T){
     const o=U.poss? 100*U.pts/U.poss : null, d=T.poss? 100*T.pts/T.poss : null;
-    figs.push({ label:"Score", value:U.pts+"–"+T.pts, note:U.pts>T.pts? "win" : "loss", tone:U.pts>T.pts? "good" : "bad" });
-    figs.push({ label:"Off. rating", value:o==null? null : o.toFixed(1), note:"per 100 · theirs "+(d==null? "—" : d.toFixed(1)), tone:K.tone(o, d, true, 3) });
-    figs.push({ label:"eFG%", value:pc(U.efg), note:"theirs "+pc(T.efg), tone:K.tone(U.efg, T.efg, true, 5) });
-    figs.push({ label:"Turnovers", value:U.tov, note:"theirs "+T.tov, tone:K.tone(U.tov, T.tov, false, 2) });
-    figs.push({ label:"Off. rebounds", value:U.or, note:"theirs "+T.or, tone:K.tone(U.or, T.or, true, 2) });
+    const tu=U.poss? 100*U.tov/U.poss : null, tt=T.poss? 100*T.tov/T.poss : null;
+    /* REBOUNDING AS A SHARE (Oriol, 27/11/2026: "del rebote preferimos tener el % de OREB y de DREB que números absolutos") */
+    const oU=_rebPct(U.or, U.or+T.dr), oT=_rebPct(T.or, T.or+U.dr), dU=_rebPct(U.dr, U.dr+T.or), dT=_rebPct(T.dr, T.dr+U.or);
+    const pace=U.pace!=null? U.pace : (U.poss+T.poss)/2;
+    figRows.push({ src:"lg", label:"Play by play", sub:"this game · each number against theirs",
+      figures:[
+        { label:"Score", value:U.pts+"–"+T.pts, note:U.pts>T.pts? "win" : U.pts<T.pts? "loss" : "tie", tone:U.pts>T.pts? "good" : U.pts<T.pts? "bad" : "neutral" },
+        { label:"Off. rating", value:o==null? null : o.toFixed(1), note:"per 100 · theirs "+(d==null? "—" : d.toFixed(1)), tone:tn(o, d, false, 3, 1) },
+        { label:"eFG%", value:pc(U.efg), note:"theirs "+pc(T.efg), tone:tn(U.efg, T.efg, false, 5, 0) },
+        { label:"Turnovers", value:U.tov, note:(tu==null? "—" : Math.round(tu))+" per 100 · theirs "+T.tov, tone:tn(tu, tt, true, 3, 0) },
+        { label:"OREB%", value:pc(oU), note:"theirs "+pc(oT), tone:tn(oU, oT, false, 5, 0), title:"The share of our own misses we got back · theirs: of their misses" },
+        { label:"DREB%", value:pc(dU), note:"theirs "+pc(dT), tone:tn(dU, dT, false, 5, 0), title:"The share of their misses we got back · theirs: of our misses" },
+        { label:"Pace", value:pace==null? null : pace.toFixed(1), note:"possessions", tone:"vol" }
+      ] });
   }
-  let PT=null;
-  if(poss.length){
-    PT=ptOf(poss);
-    const verdict=v=>v>=70? "Perfect" : v>=65? "Ok" : v>=60? "Regular" : "Below";
-    /* the references are the report's own: 70 is the target, 65 and 60 the lines under it */
-    figs.push({ label:"Paint touches", value:pc(PT.v), note:verdict(PT.v)+" · target 70, floor 60",
-      tone:PT.v>=70? "good" : PT.v<60? "bad" : "neutral", title:"A fastbreak counts whole; in every other phase the possession counts when it touched the paint - over the possessions played" });
-    figs.push({ label:"Ball reversals", value:pc(PT.br), note:"same measure, no target", tone:"vol" });
-    figs.push({ label:"Tagged poss.", value:poss.length, note:f2(ppp(poss))+" per possession", tone:"vol" });
-  }
-  /* TAG and BACK conceded beside the paint touches: what is key for us, at the front */
-  if(model && model.trans){
-    const tg0=model.trans.tag, bk0=model.trans.back;
-    [["TAG conceded", tg0],["BACK conceded", bk0]].forEach(x=>{ const o=x[1]; if(!o || !o.n) return; const v=o.pts/o.n;
-      figs.push({ label:x[0], value:f2(v), note:o.n+" transitions · points each"+(x[1]===bk0 && _backSplitTxt(bk0)? " · "+_backSplitTxt(bk0) : "")+(x[1]===tg0 && _tagSplitTxt(tg0)? " · "+_tagSplitTxt(tg0) : "")+(_scTxt(o)? " · "+_scTxt(o) : ""), tone:v<=0.9? "good" : v>=1.2? "bad" : "neutral" }); });
-  }
-  /* the order a coach reads them: the score, then TAG, BACK, paint touches, reversals, then the rest */
-  { const rank=f=>({ "Score":0, "TAG conceded":1, "BACK conceded":2, "Paint touches":3, "Ball reversals":4 }[f.label]);
-    const key=figs.filter(f=>rank(f)!=null).sort((a,b)=>rank(a)-rank(b)), rest=figs.filter(f=>rank(f)==null);
-    figs.length=0; key.concat(rest).forEach(f=>figs.push(f)); }
-  /* ---- by quarter: the table, and what changed between the best and the worst */
-  const qRows=[];
-  for(let q=0;q<5;q++){
-    const A=Q[q], tp=pQ[q]||[];
-    if(!A && !tp.length) continue;
-    const m=tp.length? ptOf(tp) : null;
-    const sets={}; tp.forEach(x=>{ const k=String(x.first||"").trim(); if(!k) return; (sets[k]=sets[k]||{ n:0, p:0 }); sets[k].n++; sets[k].p+=x.pts||0; });
-    const topSet=Object.keys(sets).sort((a,b)=>sets[b].n-sets[a].n)[0];
-    qRows.push({ q:q, A:A, m:m, n:tp.length, tppp:ppp(tp), dn:(dQ[q]||[]).length, dppp:ppp(dQ[q]||[]),
-      top:topSet? { k:topSet, n:sets[topSet].n, ppp:sets[topSet].p/sets[topSet].n } : null });
-  }
-  const gQ=[];
-  const withA=qRows.filter(r=>r.A && r.q<4);
-  if(withA.length>=2){
-    const net=r=>r.A.u.pts-r.A.t.pts;
-    const best=withA.slice().sort((a,b)=>net(b)-net(a))[0], worst=withA.slice().sort((a,b)=>net(a)-net(b))[0];
-    if(best!==worst && net(best)!==net(worst)){
-      gQ.push({ text:"Best quarter "+QN[best.q]+": "+best.A.u.pts+"–"+best.A.t.pts, tone:net(best)>0? "good" : "neutral", size:Math.min(1,Math.abs(net(best))/12), weight:1.1 });
-      gQ.push({ text:"Worst quarter "+QN[worst.q]+": "+worst.A.u.pts+"–"+worst.A.t.pts, tone:net(worst)<0? "bad" : "neutral", size:Math.min(1,Math.abs(net(worst))/12), weight:1.1 });
-      /* what was different between the two, largest differences first - set side by side, not explained */
-      const dif=[
-        { n:"our points in the paint", a:best.A.u.paint, b:worst.A.u.paint, sc:8, f:String },
-        { n:"our turnovers", a:best.A.u.tov, b:worst.A.u.tov, sc:4, f:String },
-        { n:"our threes", a:best.A.u.p3m, b:worst.A.u.p3m, sc:3, f:String, x:(r)=>r.A.u.p3m+"/"+r.A.u.p3a },
-        { n:"their eFG", a:best.A.t.efg, b:worst.A.t.efg, sc:25, f:pc },
-        { n:"their offensive rebounds", a:best.A.t.or, b:worst.A.t.or, sc:3, f:String },
-        { n:"our free throws", a:best.A.u.fta, b:worst.A.u.fta, sc:6, f:String }
-      ];
-      if(best.m && worst.m && best.n>=6 && worst.n>=6){
-        dif.push({ n:"paint touches", a:best.m.v, b:worst.m.v, sc:25, f:pc });
-        dif.push({ n:"ball reversals", a:best.m.br, b:worst.m.br, sc:25, f:pc });
-      }
-      const picked=dif.filter(d=>d.a!=null && d.b!=null && isFinite(d.a) && isFinite(d.b))
-        .map(d=>Object.assign(d, { z:Math.abs(d.a-d.b)/d.sc })).filter(d=>d.z>=0.5).sort((x,y)=>y.z-x.z).slice(0,4);
-      if(picked.length) gQ.push({ text:QN[best.q]+" against "+QN[worst.q]+": "+picked.map(d=>d.n+" "+(d.x? d.x(best) : d.f(d.a))+" vs "+(d.x? d.x(worst) : d.f(d.b))).join(" · "),
-        tone:"neutral", size:0.9, weight:1 });
-    }
-  }
-  /* ---- paint touches and reversals: with and without, as two rates side by side */
-  const gPT=[];
-  if(poss.length>=12){
-    const hc=poss.filter(q=>q.phase!=="Fastbreak");
-    const wPT=hc.filter(q=>q.pt>0), nPT=hc.filter(q=>!(q.pt>0));
-    if(wPT.length>=5 && nPT.length>=5){ const a=ppp(wPT), b=ppp(nPT);
-      gPT.push({ text:"With a paint touch "+f2(a)+" per possession, without "+f2(b), tone:a>b? "good" : "bad",
-        size:Math.min(1,Math.abs(a-b)/0.5), n:Math.min(wPT.length,nPT.length), solidN:15, unit:"poss", weight:1.2 }); }
-    const wBR=hc.filter(q=>(q.br||0)>0), nBR=hc.filter(q=>!((q.br||0)>0));
-    if(wBR.length>=5 && nBR.length>=5){ const a=ppp(wBR), b=ppp(nBR);
-      gPT.push({ text:"With a ball reversal "+f2(a)+" per possession, without "+f2(b), tone:a>b? "good" : "bad",
-        size:Math.min(1,Math.abs(a-b)/0.5), n:Math.min(wBR.length,nBR.length), solidN:15, unit:"poss", weight:1.1 }); }
-    const ms=qRows.filter(r=>r.m && r.n>=6 && r.q<4);
-    if(ms.length>=2){ const hi=ms.slice().sort((a,b)=>b.m.v-a.m.v)[0], lo=ms.slice().sort((a,b)=>a.m.v-b.m.v)[0];
-      if(hi!==lo && hi.m.v-lo.m.v>=12) gPT.push({ text:"Paint touches from "+pc(lo.m.v)+" in "+QN[lo.q]+" to "+pc(hi.m.v)+" in "+QN[hi.q],
-        tone:"neutral", size:Math.min(1,(hi.m.v-lo.m.v)/35), n:Math.min(hi.n,lo.n), solidN:12, unit:"poss" }); }
-    if(PT && PT.v<60) gPT.push({ text:"Paint touches under the floor: "+pc(PT.v)+" against 60", tone:"bad", size:Math.min(1,(60-PT.v)/20), n:poss.length, solidN:40, unit:"poss", weight:1.3 });
-    else if(PT && PT.v>=70) gPT.push({ text:"Paint touches at the target: "+pc(PT.v), tone:"good", size:0.7, n:poss.length, solidN:40, unit:"poss" });
-  }
-  /* ---- sets, phases, defense: ranked with their volume, small samples left out of the ranking */
-  const group=(list, keyOf)=>{ const m={}, ks=[]; list.forEach(q=>{ const k=keyOf(q); if(!k) return; if(!m[k]){ m[k]=[]; ks.push(k); } m[k].push(q); });
-    return ks.map(k=>{ const l=m[k], s=API.shotLine(l); return { k:k, n:l.length, ppp:ppp(l), fgm:s.fgm, fga:s.fga, list:l }; }); };
-  const allPpp=ppp(poss), MINSET=MS_POSS;
-  const sets=group(poss.filter(q=>q.phase==="Half court" || q.phase==="OOB (SLOB/BLOB)"), q=>String(q.first||"").trim());
-  const ranked=sets.filter(s=>s.n>=MINSET).sort((a,b)=>b.ppp-a.ppp || b.n-a.n);
-  const gSets=[];
-  if(ranked.length>=2){
-    const n5=Math.min(5, Math.floor(ranked.length/2)||1);
-    ranked.slice(0,n5).forEach(s=>{ if(s.ppp>(allPpp||0)) gSets.push({ text:s.k+" — "+f2(s.ppp)+" per possession, "+s.fgm+"/"+s.fga+" FG", tone:"good",
-      size:Math.min(1,(s.ppp-(allPpp||1))/0.6), n:s.n, solidN:8, unit:"runs" }); });
-    ranked.slice(-n5).reverse().forEach(s=>{ if(s.ppp<(allPpp||9)) gSets.push({ text:s.k+" — "+f2(s.ppp)+" per possession, "+s.fgm+"/"+s.fga+" FG", tone:"bad",
-      size:Math.min(1,((allPpp||1)-s.ppp)/0.6), n:s.n, solidN:8, unit:"runs" }); });
-    /* a set that changed between the halves, when both halves have enough of it */
-    sets.forEach(s=>{ const h1=s.list.filter(q=>tagQ[q.q]<2), h2=s.list.filter(q=>tagQ[q.q]>=2 && tagQ[q.q]<4);
-      if(h1.length>=3 && h2.length>=3){ const a=ppp(h1), b=ppp(h2);
-        if(Math.abs(a-b)>=0.4) gSets.push({ text:s.k+": "+f2(a)+" before the break, "+f2(b)+" after", tone:b>a? "good" : "bad",
-          size:Math.min(1,Math.abs(a-b)/0.8), n:Math.min(h1.length,h2.length), solidN:6, unit:"runs" }); } });
-  }
-  const phases=group(poss, q=>q.phase||"");
-  const gPh=[];
-  phases.filter(p=>p.n>=5).forEach(p=>{ const d=p.ppp-(allPpp||0);
-    if(Math.abs(d)>=0.2) gPh.push({ text:p.k+": "+f2(p.ppp)+" per possession ("+Math.round(100*p.n/poss.length)+"% of ours)", tone:d>0? "good" : "bad",
-      size:Math.min(1,Math.abs(d)/0.5), n:p.n, solidN:12, unit:"poss" }); });
-  const dAll=ppp(dposs);
-  const concepts=group(dposs, q=>q.label||"");
-  /* BALANCE IS TAG AND BACK AFTER A MISS: its number is theirs - TAG after our missed long
-     shot plus BACK - not what the clips labelled BALANCE in the video conceded */
-  try{ const T=model && model.trans, bc=concepts.filter(c=>/^balance$/i.test(String(c.k||"").trim()))[0];
-    if(T && bc){ const tm=(T.tag && T.tag.sub && T.tag.sub.miss) || { n:0, pts:0 }, bk=T.back || { n:0, pts:0 }, n=tm.n+bk.n;
-      bc.ppp=n? (tm.pts+bk.pts)/n : null; bc.tbN=n;
-      const xp=(tm.scp||0)+(bk.scp||0); if(xp) bc.k="BALANCE · +"+xp+" after their OREB"; } }catch(e){_quiet(e)}
-  const gDef=[];
-  concepts.filter(c=>c.n>=4).forEach(c=>{ const d=c.ppp-(dAll||0);
-    if(Math.abs(d)>=0.2) gDef.push({ text:c.k+": "+f2(c.ppp)+" conceded per possession", tone:d<0? "good" : "bad",
-      size:Math.min(1,Math.abs(d)/0.5), n:c.n, solidN:10, unit:"poss" }); });
-  if(model && model.trans){
-    const tg=model.trans.tag, bk=model.trans.back;
-    if(tg && bk && (tg.n>=3 || bk.n>=3)){
-      const a=tg.n? tg.pts/tg.n : null, b=bk.n? bk.pts/bk.n : null;
-      gDef.push({ text:"TAG "+(a==null? "—" : f2(a))+" ("+tg.n+") · BACK "+(b==null? "—" : f2(b))+" ("+bk.n+") conceded per possession in transition"+(_backSplitTxt(bk)? " — BACK "+_backSplitTxt(bk) : ""),
-        tone:(a!=null && b!=null && Math.max(a,b)>=1.2)? "bad" : (a!=null && b!=null && Math.max(a,b)<=0.9)? "good" : "neutral",
-        size:0.8, n:tg.n+bk.n, solidN:12, unit:"poss", weight:1.3 });
-    }
-  }
-  const dq=qRows.filter(r=>r.dn>=5 && r.q<4);
-  if(dq.length>=2){ const hi=dq.slice().sort((a,b)=>b.dppp-a.dppp)[0], lo=dq.slice().sort((a,b)=>a.dppp-b.dppp)[0];
-    if(hi!==lo && hi.dppp-lo.dppp>=0.3) gDef.push({ text:"Defense from "+f2(lo.dppp)+" in "+QN[lo.q]+" to "+f2(hi.dppp)+" in "+QN[hi.q]+" conceded per possession",
-      tone:"neutral", size:Math.min(1,(hi.dppp-lo.dppp)/0.7), n:Math.min(hi.dn,lo.dn), solidN:10, unit:"poss" }); }
-  /* ---- what the Game Stats block reads from the play by play and the overview did not:
-     who was in front and for how long, the runs, where the points came from, the free
-     throws, and the men who decided it. Each is a comparison of the two sides, said only
-     when the gap is big enough to matter. */
-  const gPbp=[];
-  if(MF && U && T){
-    try{
-      const F=MF.flow, tot=F.total||2400;
-      const sU=home? F.secH : F.secA, sT=home? F.secA : F.secH;
-      gPbp.push({ k:"Time in front", v:Math.round(100*sU/tot)+"%", text:"behind "+Math.round(100*sT/tot)+"% · "+F.changes+" lead change"+(F.changes===1?"":"s"),
-        tone:sU>sT? "good" : sU<sT? "bad" : "neutral", size:Math.min(1,Math.abs(sU-sT)/tot+0.3), weight:1.1 });
-      (F.runs||[]).slice(0,2).forEach(r=>{ const ours=(r.home===home);
-        gPbp.push({ k:(ours? "Our" : "Their")+" run", v:ours? r.pts+"–0" : "0–"+r.pts, text:_lgGameClock(r.t0)+" to "+_lgGameClock(r.t1), tone:ours? "good" : "bad", size:Math.min(1,r.pts/14), weight:1.2 }); });
-      [["Second chance points", U.sc, T.sc, 5],["Points off turnovers", U.pto, T.pto, 5],["Fast points, 7 s after winning the ball", U.fast, T.fast, 5],
-       ["Points in the paint", U.paint, T.paint, 8],["Bench points", U.bench, T.bench, 8],["Free throws made", U.ftm, T.ftm, 5]].forEach(x=>{
-        const d=(x[1]||0)-(x[2]||0); if(Math.abs(d)>=x[3]) gPbp.push({ k:x[0], v:(x[1]||0)+" – "+(x[2]||0), text:"us – them", tone:d>0? "good" : "bad", size:Math.min(1,Math.abs(d)/(2.5*x[3])), weight:1 }); });
-      const best=U.pl.slice().sort((a,b)=>b.pir-a.pir)[0], top=T.pl.slice().sort((a,b)=>b.pts-a.pts)[0];
-      if(best) gPbp.push({ k:"Our best", v:_lgLastName(best.name)||("#"+best.num), text:best.pts+" pts · PIR "+best.pir, tone:"good", size:Math.min(1,best.pir/30), weight:0.9 });
-      if(top && top.pts>=15) gPbp.push({ k:"Their top scorer", v:"#"+top.num+" "+(_lgLastName(top.name)||""), text:top.pts+" pts · "+top.fgm+"/"+top.fga+" FG", tone:"bad", size:Math.min(1,top.pts/30), weight:0.9 });
-    }catch(e){_quiet(e)}
-  }
-  /* ---- the card */
-  const src=[P? "play by play" : null, model? "tagging: "+(Tg.name||"") : null].filter(Boolean).join(" · ");
-  /* the game as charts: the margin of each quarter, the paint-touch measure of each, and
-     what our possessions were made of with what each kind returned */
-  const visuals=[];
+  /* ---- what it rests on */
+  const head=h("div",{class:"sxp-ovh"});
   try{
-    const qm=qRows.filter(r=>r.A).map(r=>{ const v=r.A.u.pts-r.A.t.pts; return { label:QN[r.q], value:v, text:r.A.u.pts+"–"+r.A.t.pts, tone:v>0? "good" : v<0? "bad" : "neutral" }; });
-    const qp=qRows.filter(r=>r.m && r.n>=4 && r.q<4).map(r=>({ label:QN[r.q], value:r.m.v, text:pc(r.m.v), tone:r.m.v>=70? "good" : r.m.v<60? "bad" : "neutral" }));
-    if(qp.length) visuals.push(K.strip({ title:"Paint touches", sub:"by quarter · target 70 · floor 60", items:qp }));
-    const qb=qRows.filter(r=>r.m && r.n>=4 && r.q<4).map(r=>({ label:QN[r.q], value:r.m.br, text:pc(r.m.br), tone:"neutral" }));
-    if(qb.length) visuals.push(K.strip({ title:"Ball reversals", sub:"by quarter", items:qb }));
-    if(qm.length) visuals.push(K.strip({ title:"Quarter by quarter", sub:"our score – theirs", signed:true, items:qm }));
-    if(poss.length && phases.length) visuals.push(K.split({ title:"What our possessions were", sub:"share · points per possession",
-      parts:phases.slice().sort((a,b)=>b.n-a.n).map(p=>({ label:p.k, share:p.n/poss.length, value:f2(p.ppp), tone:(p.n>=5 && allPpp!=null)? (p.ppp-allPpp>=0.15? "good" : p.ppp-allPpp<=-0.15? "bad" : "neutral") : "neutral" })) }));
-    if(dposs.length && concepts.length) visuals.push(K.split({ title:"What we defended", sub:"share · conceded per possession",
-      parts:concepts.slice().sort((a,b)=>b.n-a.n).slice(0,7).map(c=>({ label:c.k, share:c.n/dposs.length, value:f2(c.ppp), tone:(c.n>=4 && dAll!=null)? (c.ppp-dAll<=-0.15? "good" : c.ppp-dAll>=0.15? "bad" : "neutral") : "neutral" })) }));
+    const c1=K.src("tag"); if(c1){ c1.title="From our tagging of this game"; head.appendChild(c1); }
+    head.appendChild(h("b",{}, model? (Tg.name||"this game")+" · "+poss.length+" possessions" : "No tagging of this game in the Drive yet"));
+    const c2=K.src("lg"); if(c2){ c2.title="From the league's play by play of this game"; head.appendChild(c2); }
+    head.appendChild(h("b",{}, U? "play by play · "+U.pts+"–"+T.pts : "no play by play of this game yet"));
+    if(R && (R.games||[]).length){ const list=h("span",{class:"sxp-ovh-g"});
+      R.games.forEach(x=>list.appendChild(h("i",{class:x.d===sg.date? "on" : "", title:x.d===sg.date? "this game" : "one of our season's tagged games"}, x.label+" "+String(x.d).slice(8,10)+"/"+String(x.d).slice(5,7))));
+      head.appendChild(list); }
   }catch(e){_quiet(e)}
-  out.appendChild(K.summary({ title:"Game performance overview", sub:src||"", figures:figs, visuals:visuals,
-    groups:[ { title:"What is key for us · TAG/BACK, paint touches, ball reversals", ideas:gDef.filter(x=>/^TAG /.test(x.text)).concat(K.pick(gPT,4)) },
-             { title:"Sets", ideas:K.pick(gSets,6) }, { title:"Defense", ideas:K.pick(gDef.filter(x=>!/^TAG /.test(x.text)),5) },
-             { title:"The game · play by play", ideas:K.pick(gPbp,6) }, { title:"By quarter", ideas:K.pick(gQ,4) }, { title:"Phases", ideas:K.pick(gPh,4) } ],
-    empty:"Neither the play by play nor the tagging of this game is in yet." }));
+  /* ---- what stands out: the points won or lost against our season */
+  let offI=[], defI=[];
+  if(model && R){
+    const ref=(map,k)=>{ const o=R[map] && R[map][k]; return (o && o.n)? o.ppp : null; };
+    const grp=(list, keyOf)=>{ const m={}, ks=[]; list.forEach(q=>{ const k=keyOf(q); if(!k) return; if(!m[k]){ m[k]=[]; ks.push(k); } m[k].push(q); });
+      return ks.map(k=>{ const l=m[k]; return { k:k, n:l.length, pts:l.reduce((a,q)=>a+(q.pts||0),0), ppp:ppp(l) }; }); };
+    const NAME={ "Offensive rebound":"After our OREB", "OOB (SLOB/BLOB)":"Out of bounds (SLOB/BLOB)" };
+    const oc=grp(poss, q=>q.phase||"").map(r=>({ label:NAME[r.k]||r.k, n:r.n, pts:r.pts, ppp:r.ppp, ref:ref("phase", r.k) }))
+      .concat(grp(poss.filter(q=>!API.setFamily || API.setFamily(q.first)!=="Transition"), q=>String(q.first||"").trim()).map(r=>({ label:"Set "+r.k, n:r.n, pts:r.pts, ppp:r.ppp, ref:ref("set", r.k) })));
+    const dc=grp(dposs.filter(q=>!/^balance$/i.test(String(q.label||"").trim())), q=>q.label||"").map(r=>({ label:r.k, n:r.n, pts:r.pts, ppp:r.ppp, ref:ref("dlab", r.k) }));
+    const tr=model.trans||{};
+    [["tag","TAG · after our long shot"],["back","BACK · after our miss at the rim or turnover"]].forEach(x=>{ const o=tr[x[0]];
+      if(o && o.n) dc.push({ label:x[1], n:o.n, pts:o.pts, ppp:o.pts/o.n, ref:R[x[0]].n? R[x[0]].ppp : null }); });
+    /* common sense, not a minimum (Oriol, 27/11/2026): five possessions or more, at least 0.10 off our
+       season, and ranked by what it came to in points */
+    const pick=(rows, low)=>rows.filter(r=>r.n>=5 && r.ref!=null && r.ppp!=null && tn(r.ppp, r.ref, low, 0.10)!=="neutral")
+      .map(r=>Object.assign(r, { swing:low? r.n*r.ref-r.pts : r.pts-r.n*r.ref }))
+      .filter(r=>Math.abs(r.swing)>=1).sort((a,b)=>Math.abs(b.swing)-Math.abs(a.swing)).slice(0,3);
+    const mk=(r, low)=>{ const p=Math.abs(Math.round(r.swing));
+      return { k:r.label, v:f2(r.ppp), src:"tag", tone:r.swing>0? "good" : "bad", n:r.n, unit:"poss",
+        text:"season "+f2(r.ref)+" · "+p+" point"+(p===1? "" : "s")+" "+(low? (r.swing>0? "saved" : "more") : (r.swing>0? "won" : "lost")) }; };
+    offI=pick(oc, false).map(r=>mk(r, false)); defI=pick(dc, true).map(r=>mk(r, true));
+    const mx=Math.max(1, ...offI.concat(defI).map(x=>x.n||0));
+    offI.concat(defI).forEach(x=>{ x.nw=(x.n||0)/mx; });
+  }
+  const card=K.summary({ title:"The game", sub:"blue is volume · green / red is efficiency for us · each number against its own source",
+    head:head, figRows:figRows,
+    groups:[ { title:"Our offense · what stands out", ideas:offI }, { title:"Our defense · what stands out", ideas:defI } ],
+    empty:"Neither the play by play nor the tagging of this game is in yet." });
+  if(model && !R) card.appendChild(h("div",{class:"gpo-note"},"What stands out comes once our season's tagging is read."));
+  else if(model && R && !offI.length && !defI.length) card.appendChild(h("div",{class:"gpo-note"},"Nothing of five possessions or more was 0.10 or further from our season."));
+  /* ---- the quarters, once */
+  try{
+    const qm=Q.map((A,i)=>A? { label:QN[i], value:A.u.pts-A.t.pts, text:A.u.pts+"–"+A.t.pts, tone:A.u.pts>A.t.pts? "good" : A.u.pts<A.t.pts? "bad" : "neutral" } : null).filter(Boolean);
+    const st=qm.length? K.strip({ title:"Quarter by quarter", sub:"our score – theirs · the play by play", signed:true, items:qm }) : null;
+    if(st){ const hd=st.querySelector(".ui-vis-h"), c=K.src("lg"); if(hd && c) hd.insertBefore(c, hd.firstChild); st.classList.add("pg-qstrip"); card.appendChild(st); }
+  }catch(e){_quiet(e)}
+  out.appendChild(card);
   /* THE TAGGING AGAINST THE SCORE. Clips read on the wrong side or missing from the file change
      every tagged figure of the game and nothing on the page said so. Würzburg (1/11/2026) was read
      88-80 for a game that ended 72-96, with the possessions, TAG and BACK that came from it */
   if(U && T && model){ const tu=poss.reduce((a,q)=>a+(q.pts||0),0), tt=model.oppPts||0;
     if(tu!==U.pts || tt!==T.pts) out.insertBefore(h("div",{class:"gpo-warn"}, h("b",{},"The tagging does not match the score."), " Its clips add up to "+tu+"–"+tt+", the game ended "+U.pts+"–"+T.pts+": the tagged figures of this game are off by that much."), out.firstChild); }
   if(!P) out.appendChild(h("div",{class:"gpo-note"},"The league's play by play of this game was not found, so the official half of this overview is missing."));
-  if(!model) out.appendChild(h("div",{class:"gpo-note"},"No tagging file for this game in the Drive yet, so sets, paint touches, reversals and the defensive concepts are missing."));
-  /* ---- quarter by quarter, the two sources on one line */
-  if(qRows.length){
-    const netCell=r=>{ if(!r.A) return "—"; const d=r.A.u.pts-r.A.t.pts; return { v:r.A.u.pts+"–"+r.A.t.pts, cls:"sx-cell "+(d>0? "s4" : d<0? "s1" : "") }; };
-    const rate=(v, def)=>v==null? { v:"—", cls:"tr-none" } : { v:f2(v), cls:"sx-cell "+(def? (v<0.5?"s5":v<0.8?"s4":v<1.0?"s3":v<1.25?"s2":v<1.6?"s1":"s0") : (v<0.5?"s0":v<0.8?"s1":v<1.0?"s2":v<1.25?"s3":v<1.6?"s4":"s5")) };
-    const share=v=>(v==null||!isFinite(v))? { v:"—", cls:"tr-none" } : { v:pc(v), cls:"sx-vol "+(v<20?"b0":v<35?"b1":v<50?"b2":v<65?"b3":v<80?"b4":"b5") };
-    const head=["Quarter","Score","Our PPP","Their PPP","Our eFG","Our 3P","Our TO","Paint touch","Reversals","Tagged poss.","Most run set"];
-    const rows=qRows.map(r=>[ QN[r.q], netCell(r),
-      r.A? rate(r.A.u.poss? r.A.u.pts/r.A.u.poss : null, false) : "—",
-      r.A? rate(r.A.t.poss? r.A.t.pts/r.A.t.poss : null, true) : "—",
-      r.A? pc(r.A.u.efg) : "—", r.A? r.A.u.p3m+"/"+r.A.u.p3a : "—", r.A? r.A.u.tov : "—",
-      r.m && r.n>=4? share(r.m.v) : "—", r.m && r.n>=4? share(r.m.br) : "—", r.n||"—",
-      r.top? r.top.k+" · "+r.top.n+" · "+f2(r.top.ppp) : "—" ]);
-    /* it belongs with the efficiency of the game, under its tab, not loose in the overview */
-    const qbox=h("div",{class:"pg-qbox"}, h("div",{class:"gpo-sub"},"Quarter by quarter · play by play and tagging on one line"), API.table2(head, rows, { sort:false }));
-    _postOvKeep.q=qbox;
-    const qhost=document.querySelector('.pg-pane[data-pane="q"]');
-    if(qhost){ qhost.innerHTML=""; qhost.appendChild(qbox); }
-  }
-  /* ---- pace: the second of the possession the shot came in, ours and theirs */
-  /* it has its own tab in the team stats box, drawn here with the rest of the overview */
-  if(P){ const pp=_postPace(P, home); if(pp){ _postOvKeep.pace=pp; const ph=document.querySelector('.pg-pane[data-pane="pace"]'); if(ph){ ph.innerHTML=""; ph.appendChild(pp); } } }
-  const fold=(label, node)=>{ const d=document.createElement("details"); const s=document.createElement("summary"); s.textContent=label; d.appendChild(s); d.appendChild(node); return d; };
-  if(sets.length){
-    const rows=sets.slice().sort((a,b)=>b.n-a.n).map(s=>{ const per=[0,1,2,3].map(q=>{ const l=s.list.filter(x=>tagQ[x.q]===q); return l.length? l.length+" · "+f2(ppp(l)) : "—"; });
-      return [ s.k, s.n, s.n>=MINSET? { v:f2(s.ppp), cls:"sx-cell "+(s.ppp<0.5?"s0":s.ppp<0.8?"s1":s.ppp<1.0?"s2":s.ppp<1.25?"s3":s.ppp<1.6?"s4":"s5") } : { v:f2(s.ppp), cls:"tr-thin" },
-        s.fga? s.fgm+"/"+s.fga+" ("+Math.round(100*s.fgm/s.fga)+"%)" : "—" ].concat(per); });
-    out.appendChild(fold("Every set of the game, ranked — "+sets.length+" sets",
-      API.table2(["Set","Runs","PPP","FG","Q1","Q2","Q3","Q4"], rows)));
-  }
-  if(concepts.length){
-    const rows=concepts.slice().sort((a,b)=>b.n-a.n).map(c=>{ const per=[0,1,2,3].map(q=>{ const l=c.list.filter(x=>tagQ[x.q]===q); return l.length? l.length+" · "+f2(ppp(l)) : "—"; });
-      return [ c.k, c.n, c.n>=MS_POSS? { v:f2(c.ppp), cls:"sx-cell "+(c.ppp<0.5?"s5":c.ppp<0.8?"s4":c.ppp<1.0?"s3":c.ppp<1.25?"s2":c.ppp<1.6?"s1":"s0") } : { v:f2(c.ppp), cls:"tr-thin" } ].concat(per); });
-    out.appendChild(fold("Every defensive concept — "+concepts.length,
-      API.table2(["Concept","Poss","PPP allowed","Q1","Q2","Q3","Q4"], rows)));
-  }
+  if(!model) out.appendChild(h("div",{class:"gpo-note"},"No tagging file for this game in the Drive yet, so our offense, our defense, TAG, BACK, the paint touches and the reversals are missing."));
   return out;
+}
+/* THE GAME (Oriol, 27/11/2026): the league's sheet of the game, the quarters with each number against
+   theirs, and the minute by minute with its slumps and good spells - the margin, OER, DER, TAG and BACK
+   in sight, the rest of its rows one click away */
+function _postGameTab(sg){
+  const box=h("div",{class:"pg-game"});
+  if(!sg || !sg.date) return box;
+  box.appendChild(_lgGameInline(sg));
+  const qb=h("div",{class:"pg-qbox"}); box.appendChild(qb);
+  _postPbp(sg).then(P=>{ if(!P) return; const t=_postQuarterTable(P); if(t) qb.appendChild(t); }).catch(_quiet);
+  const K=window.UIKit, hd=h("div",{class:"gpo-sub pg-srch"});
+  try{ const a=K.src("lg"), b=K.src("tag"); if(a) hd.appendChild(a); if(b){ b.title="Paint, TAG and BACK from our tagging"; hd.appendChild(b); } }catch(e){_quiet(e)}
+  hd.appendChild(document.createTextNode("Minute by minute"));
+  box.appendChild(hd);
+  box.appendChild(_postMinutes(sg, { fold:true }));
+  return box;
+}
+/* the quarters of the play by play: one source on a line, each of ours against theirs in that quarter */
+function _postQuarterTable(P){
+  try{
+    const home=_lgOurs(P.G.home), K=window.UIKit;
+    let maxQ=3; P.j.feed.actions.forEach(a=>{ const q=_lgGameElapsed(a.quarter,0).qi; if(q>maxQ) maxQ=q; });
+    const ql=q=>q<4? "Q"+(q+1) : "OT"+(q-3);
+    const rows=[];
+    for(let q=0;q<=maxQ;q++){ const o={}; o[q]=1; const m=_lgGameModel(P.G, P.j, o); rows.push({ q:q, u:home?m.H:m.A, t:home?m.A:m.H }); }
+    { const all={}; for(let q=0;q<=maxQ;q++) all[q]=1; const M=_lgGameModel(P.G, P.j, all); rows.push({ q:-1, u:home?M.H:M.A, t:home?M.A:M.H }); }
+    const f2=v=>(v==null||!isFinite(v))? "—" : v.toFixed(2), pc=v=>(v==null||!isFinite(v))? "—" : Math.round(v)+"%";
+    const td=(txt, tone)=>h("td",{class:"pnum"+(tone==="good"? " good" : tone==="bad"? " bad" : "")}, txt);
+    const t=h("table",{class:"lg-tbl pg-qt"}, h("tr",{}, h("th",{class:"l"},"Quarter"), h("th",{},"Score"), h("th",{},"Our PPP"), h("th",{},"Their PPP"),
+      h("th",{},"Our eFG%"), h("th",{},"Their eFG%"), h("th",{},"Our TO"), h("th",{},"Their TO"), h("th",{title:"the share of our misses we got back"},"OREB%"), h("th",{title:"the share of their misses we got back"},"DREB%")));
+    rows.forEach(r=>{ const U=r.u, T=r.t, op=U.poss? U.pts/U.poss : null, dp=T.poss? T.pts/T.poss : null;
+      const oU=_rebPct(U.or, U.or+T.dr), oT=_rebPct(T.or, T.or+U.dr), dU=_rebPct(U.dr, U.dr+T.or), dT=_rebPct(T.dr, T.dr+U.or);
+      t.appendChild(h("tr",{class:r.q<0? "tot" : ""}, h("td",{class:"l"}, r.q<0? "Game" : ql(r.q)),
+        td(U.pts+"–"+T.pts, U.pts>T.pts? "good" : U.pts<T.pts? "bad" : ""),
+        td(f2(op), _pgTone(op, dp, false, 0.10)), td(f2(dp), _pgTone(dp, op, true, 0.10)),
+        td(pc(U.efg), _pgTone(U.efg, T.efg, false, 5, 0)), td(pc(T.efg), _pgTone(T.efg, U.efg, true, 5, 0)),
+        td(String(U.tov)), td(String(T.tov)),
+        td(pc(oU), _pgTone(oU, oT, false, 5, 0)), td(pc(dU), _pgTone(dU, dT, false, 5, 0)))); });
+    const hd=h("div",{class:"gpo-sub pg-srch"});
+    try{ const c=K.src("lg"); if(c) hd.appendChild(c); }catch(e){_quiet(e)}
+    hd.appendChild(document.createTextNode("Quarter by quarter · each of ours against theirs in the same quarter"));
+    return h("div",{class:"pg-qwrap"}, hd, h("div",{class:"pb-scroll"}, t));
+  }catch(e){ _quiet(e); return null; }
+}
+/* PACE, AS THE PRE GAME'S (Oriol, 27/11/2026): first whether we played fast - the game's pace and the
+   second of our first shot against our season and the league - and then, for each part of the shot
+   clock, how many of our possessions ended there (the bar, our season's share the tick) and what we
+   scored there against our season; our defense beside it. Green and red are for us, from 0.10. */
+function _postPaceTab(sg){
+  const box=h("div",{class:"pg-pace"});
+  if(!sg || !sg.date) return box;
+  box.appendChild(h("div",{class:"ld"},"Reading the play by play of this game…", h("span",{class:"ld-bar"})));
+  _postPbp(sg).then(P=>{ box.innerHTML="";
+    if(!P){ box.appendChild(h("div",{class:"lg-empty"},"The league's play by play of this game is not in yet.")); return; }
+    const v=_postPaceView(P, _lgOurs(P.G.home));
+    box.appendChild(v||h("div",{class:"lg-empty"},"The pace of this game could not be read."));
+  }).catch(e=>{ box.innerHTML=""; box.appendChild(h("div",{class:"lg-empty"},"The pace could not be read: "+((e&&e.message)||e))); });
+  return box;
+}
+function _postPaceView(P, home){
+  try{
+    const L=leagueState(), M=_lgGameModel(P.G, P.j, null);
+    const uc=home? M.hc : (M.hc==="A"? "B" : "A");
+    const W=_gpLiveWin(P.j.feed, uc, ()=>true, {});
+    const u=_paceStats(W.u.first, 0, 0, W.u.firstPts, W.u.firstNo, { n:W.u.or, pts:W.u.sc }), t=_paceStats(W.t.first, 0, 0, W.t.firstPts, W.t.firstNo, { n:W.t.or, pts:W.t.sc });
+    if(!u || !t) return null;
+    const us=_lgOurTeamId(L), F=_paceFirst(L, us), so=_paceOf(F,"team"), sd=_paceOf(F,"opp"), PL=_paceLeague(L), lg=PL.lg, lgD=PL.lgD;
+    const U=home? M.H : M.A, T=home? M.A : M.H;
+    const gp=U.pace!=null? U.pace : (U.poss+T.poss)/2;
+    _lgFourFresh(L);
+    const four=(L.four||[]).filter(x=>x && x.pace!=null), F4=four.filter(x=>String(x.teamId)===String(us))[0];
+    const sp=F4? F4.pace : null, lp=four.length? four.reduce((a,x)=>a+x.pace,0)/four.length : null;
+    const f1=v=>v==null? "—" : v.toFixed(1), pc=v=>v==null? "—" : Math.round(100*v)+"%";
+    const box=h("div",{class:"lg-panel ppv pg-ppv"});
+    /* 1. did we play fast */
+    const dp=(gp!=null && sp!=null)? gp-sp : 0, ds=(so && u.avg!=null)? u.avg-so.avg : 0;
+    const verdict=(dp>=2 || ds<=-0.8)? ["fast","We played fast"] : (dp<=-2 || ds>=0.8)? ["slow","We played slow"] : ["mid","Our usual pace"];
+    const tile=(lab, val, sub, cls)=>h("div",{class:"ppv-t "+(cls||"")}, h("i",{}, lab), h("b",{}, val), h("span",{}, sub));
+    const hd=h("div",{class:"ppv-h"}, h("b",{class:"ppv-v "+verdict[0]}, verdict[1]));
+    try{ const c=window.UIKit.src("lg"); if(c) hd.insertBefore(c, hd.firstChild); }catch(e){_quiet(e)}
+    hd.appendChild(h("span",{}, "from the league's play by play · this game against our season and the league"));
+    box.appendChild(hd);
+    box.appendChild(h("div",{class:"ppv-top"},
+      tile("Pace", f1(gp), "possessions a 40 minutes · our season "+f1(sp)+" · league "+f1(lp), dp>=2? "fast" : dp<=-2? "slow" : ""),
+      tile("Our first shot", f1(u.avg)+" s", "our season "+(so? f1(so.avg)+" s" : "—")+" · league "+(lg? f1(lg.avg)+" s" : "—"), ds<=-0.6? "fast" : ds>=0.6? "slow" : ""),
+      tile("Their first shot", f1(t.avg)+" s", "we let teams shoot at "+(sd? f1(sd.avg)+" s" : "—")+" this season · league "+(lgD? f1(lgD.avg)+" s" : "—"),
+        (sd && t.avg-sd.avg<=-0.6)? "fast" : (sd && t.avg-sd.avg>=0.6)? "slow" : "")));
+    /* 2. volume and efficiency by the part of the clock, against our season */
+    const tone=(v, ref, def)=>{ const x=_pgTone(v, ref, def, 0.10); return x==="neutral"? "" : x; };
+    const mx=Math.max(0.01, ...PACE_BANDS.map(b=>Math.max(u[b[2]]||0, t[b[2]]||0, so? so[b[2]]||0 : 0, sd? sd[b[2]]||0 : 0)));
+    const cell=(S, ref, b, def)=>{ if(!S) return h("div",{class:"ppv-c"}, "—");
+      const sh=S[b[2]], rs=ref? ref[b[2]] : null, v=S[b[1]], rv=ref? ref[b[1]] : null, tt=tone(v, rv, def);
+      return h("div",{class:"ppv-c", title:b[3]+": "+pc(sh)+" of the possessions (our season "+pc(rs)+") · "+(v==null? "—" : v.toFixed(2))+" points a possession (our season "+(rv==null? "—" : rv.toFixed(2))+")"},
+        h("div",{class:"ppv-vol"}, h("span",{class:"ppv-bar"}, h("i",{style:"width:"+Math.round(100*(sh||0)/mx)+"%"}), rs!=null? h("u",{style:"left:"+Math.round(100*rs/mx)+"%"}) : null),
+          h("b",{}, pc(sh)), h("em",{}, "season "+pc(rs))),
+        h("div",{class:"ppv-eff "+tt}, h("b",{}, v==null? "—" : v.toFixed(2)), h("em",{}, (def? "allowed" : "scored")+" · season "+(rv==null? "—" : rv.toFixed(2))))); };
+    const g=h("div",{class:"ppv-g"}, h("span",{class:"hd"}), h("span",{class:"hd"}, "Our offense · when we shot"), h("span",{class:"hd"}, "Our defense · when they shot"));
+    PACE_BANDS.forEach(b=>{ g.appendChild(h("span",{class:"ppv-k"}, h("b",{}, b[3]), h("i",{}, b[2]==="early"? "early" : b[2]==="mid"? "middle" : "late")));
+      g.appendChild(cell(u, so, b, false)); g.appendChild(cell(t, sd, b, true)); });
+    box.appendChild(g);
+    box.appendChild(h("div",{class:"ppv-key"}, "Bar: share of the possessions whose first shot (or the turnover) came in that part of the clock · the tick our season's · number: points a possession there against our season · green better for us, red worse, from 0.10"));
+    return box;
+  }catch(e){ try{ console.warn("post pace", e); }catch(_){_quiet(_)} return null; }
 }
 let _lgAllMemo=null, _lgAllAt=0, _lgInlineKeep=null;
 const _lgInlineOpen={}, LGG_INLINE_OPEN={ "The game in one look":1, "Who was in front":1 };
@@ -45823,6 +45847,24 @@ body.dark .sv-t td.sv-x{color:#ff8f85}
 .pg-uni[data-tab="all"] .pg-pane + .pg-pane.on{margin-top:18px}
 @media print{.pg-uni .pg-pane{display:block!important}.pg-uni .pg-tabs{display:none!important}}
 body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{display:none!important}
+/* the post game on the pre game's line (27/11/2026) */
+.pgmc:not(.open) .pgmc-x{display:none!important}
+.pgm-more{margin:8px 0 0;border:1px solid var(--line,#e4e7ec);background:var(--panel,#fff);color:var(--ink-soft,#5b6472);border-radius:7px;padding:5px 11px;font:600 11.5px 'Inter',sans-serif;cursor:pointer}
+.pgm-more:hover{color:var(--ink,#141821);border-color:var(--ink-faint,#8a93a2)}
+@media print{.pgm-more{display:none!important}}
+.pg-srch{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:16px 0 8px}
+.pg-qwrap{margin:14px 0 4px}
+.pg-qt td.good{background:rgba(47,158,134,.15);color:#17805a;font-weight:700}.pg-qt td.bad{background:rgba(216,82,78,.13);color:#c0403c;font-weight:700}
+.pg-qt tr.tot td{font-weight:800;border-top:2px solid var(--ink,#141821)}
+body.dark .pg-qt td.good{color:#5fcf9f}body.dark .pg-qt td.bad{color:#ff8f85}
+.sxp-ovh-g i.on{border-color:var(--ink,#141821);color:var(--ink,#141821);font-weight:800}
+.pg-qstrip{margin-top:12px}
+.pg-qstrip .ui-vis-h{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pg-reb .rbv-h{align-items:center}
+.rbv-bar i.seas{background:#9aa6b8}
+body.dark .rbv-bar i.seas{background:#5b6472}
+.pg-reb .reb-figs{margin-top:2px}
+.pg-ppv .ppv-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 /* the report's bar, folded */
 .scout-head .scout-min{order:99;margin-left:auto;flex:none;border:1px solid var(--line-strong,#cfd4dc);background:transparent;border-radius:6px;padding:3px 9px;cursor:pointer;
   font:700 10.5px 'Oswald',sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}
