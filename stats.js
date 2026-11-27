@@ -3459,6 +3459,10 @@
       var same = G.filter(function (g) { var c = compOf(g.competition); return !c || c === want; });
       var hit = fixtureHitsIn(same, name);
       if (hit.length) return hit;
+      /* A PRESEASON FILE IS NEVER A LEAGUE NIGHT (Oriol, 27/11/2026: Bamberg's post game said it had no tagging):
+         "G5 PRESEASON BAMBERG" found no friendly in the calendar and took the league game of 21/11, which
+         pushed "G17 BBL BAMBERG" onto the return game in May. A friendly's file stays a friendly's */
+      if (want === "fr") return [];
     }
     return fixtureHitsIn(G, name);
   }
@@ -3553,8 +3557,8 @@
     cand.forEach(function (c) {
       var anchor = c.dn || c.up;
       /* a file cannot belong to a night that has not been played */
+      /* a file cannot belong to a night that has not been played - not even when every played one is taken */
       var free = c.hits.filter(function (g) { return !taken[g.idx] && playedFix(g); });
-      if (!free.length) free = c.hits.filter(function (g) { return !taken[g.idx]; });
       var pick = null;
       if (free.length && anchor) {
         var bd = 1e9;
