@@ -35486,7 +35486,10 @@ function renderDashboard(){
       const PRE=[["report","Report"],["keys","Video keys"],["attack","Video how to attack"],["players","Video players"]];
       const POST=[["report","Report"],["team","Video team"],["players","Video players"]];
       const ph=g=>{ try{ return _gamePlaceholder(g.opponent); }catch(e){ return false; } };
-      const preG=G.upcoming.filter(x=>!ph(x.g)).slice(0,4), postG=G.past.slice(-1);
+      /* THE POST GAMES (Oriol, 27/11/2026: "en el dashboard no salen los posts en MY WORK"): our last real
+         game always - a TBD of a cup round is not a game of ours and could take its place - and the two
+         before it while any of their parts is still open */
+      const preG=G.upcoming.filter(x=>!ph(x.g)).slice(0,4), postG=G.past.filter(x=>!ph(x.g) && x.g.opponent).slice(-3);
       /* the windows: pre game from seven days before to the day before; post game from the
          game to the same hour the day after */
       const at=(g)=>(g.time && /^\d{1,2}:\d{2}/.test(g.time))? g.time.slice(0,5) : "20:00";
@@ -35507,9 +35510,9 @@ function renderDashboard(){
            before it and its own is handed in at the end of the window */
         FIBA_WINDOWS.forEach(fw=>{ if(w.p1 && fw.from>w.p1.date && fw.to<x.g.date && w.due<fw.to){ w.due=fw.to; w.dueAt=fw.to+"T23:59:59"; w.fiba=fw.name; } });
         W.push(w); });
-      postG.forEach(x=>W.push({ kind:"post", g:x.g, start:x.g.date, due:addDays(x.g.date,1), dueAt:addDays(x.g.date,1)+"T"+at(x.g)+":00" }));
+      postG.forEach((x,i)=>W.push({ kind:"post", g:x.g, last:i===postG.length-1, start:x.g.date, due:addDays(x.g.date,1), dueAt:addDays(x.g.date,1)+"T"+at(x.g)+":00" }));
       W.sort((a,b)=>String(a.dueAt).localeCompare(String(b.dueAt)));
-      let ticks={}; const reps={}, info={};
+      let ticks={}, ticksIn=false; const reps={}, info={};
       const line=h("div",{class:"ow-line"}), list=h("div",{class:"ow-list"});
       c.__b.appendChild(line); c.__b.appendChild(list);
       const stateOf=(done, doneAt, w)=>{
@@ -35526,6 +35529,9 @@ function renderDashboard(){
           return { p:p, k:k, auto:true, wait:rep===undefined, done:!!(m && m.done), at:m && m.at }; }
         const t=ticks[k]; return { p:p, k:k, auto:false, done:!!t, at:t && t.at, by:t && t.by };
       });
+      /* an earlier post game is shown while one of its parts is open, once that is known */
+      const shown=()=>W.filter(w=>{ if(w.kind!=="post" || w.last) return true;
+        if(!ticksIn) return false; const ps=partsOf(w); if(ps.some(p=>p.wait)) return false; return ps.some(p=>!p.done); });
       const toggle=async k=>{
         const srv=(await _staffDocGet(KEY))||{}; srv.ticks=srv.ticks||{};
         if(srv.ticks[k]) delete srv.ticks[k]; else srv.ticks[k]={ by:currentUser||"", at:new Date().toISOString() };
@@ -35534,14 +35540,15 @@ function renderDashboard(){
       const paint=()=>{
         /* ---- the line of days: from three days ago to two weeks ahead */
         line.innerHTML="";
-        const firstD=W.map(w=>w.start).concat([addDays(T,-3)]).sort()[0], lastD=W.map(w=>w.due).concat([addDays(T,14)]).sort().pop(), d0=firstD<addDays(T,-21)? addDays(T,-21) : firstD, d1=lastD, span=Math.round((new Date(d1)-new Date(d0))/86400000)+1;
+        const VW=shown();
+        const firstD=VW.map(w=>w.start).concat([addDays(T,-3)]).sort()[0], lastD=VW.map(w=>w.due).concat([addDays(T,14)]).sort().pop(), d0=firstD<addDays(T,-21)? addDays(T,-21) : firstD, d1=lastD, span=Math.round((new Date(d1)-new Date(d0))/86400000)+1;
         const X=d=>100*Math.round((new Date(d+"T00:00:00")-new Date(d0+"T00:00:00"))/86400000)/span;
         const head=h("div",{class:"ow-days"});
         for(let i=0;i<span;i++){ const d=addDays(d0,i), wd=new Date(d+"T00:00:00").getDay();
           head.appendChild(h("span",{class:(d===T? "t " : "")+((wd===0||wd===6)? "we" : ""), style:"left:"+X(d)+"%;width:"+(100/span)+"%"},
             h("b",{}, d.slice(8)), h("i",{}, ["Su","Mo","Tu","We","Th","Fr","Sa"][wd]))); }
         line.appendChild(head);
-        W.forEach(w=>{
+        VW.forEach(w=>{
           if(w.due<d0) return;
           const ps=partsOf(w), nd=ps.filter(x=>x.done).length, all=ps.length;
           const st=nd===all? "ok" : (new Date()>new Date(w.dueAt))? "late" : (T>=w.start)? "on" : "wait";
@@ -35556,7 +35563,7 @@ function renderDashboard(){
           row.appendChild(track); line.appendChild(row); });
         /* ---- each game with its parts */
         list.innerHTML="";
-        W.forEach(w=>{
+        VW.forEach(w=>{
           const ps=partsOf(w), g=w.g, I=info[g.id]||{}, dd=dayDelta(g.date);
           const go=(lbl, fn, cls)=>h("button",{type:"button", class:"dash-gp "+(cls||""), onclick:fn}, lbl+" ›");
           const btns=w.kind==="pre"
@@ -35583,10 +35590,10 @@ function renderDashboard(){
           box.appendChild(grid);
           box.appendChild(h("div",{class:"ow-btns"}, btns));
           list.appendChild(box); });
-        if(!W.length) list.appendChild(h("div",{class:"dash-miss"},"No games in the calendar."));
+        if(!VW.length) list.appendChild(h("div",{class:"dash-miss"},"No games in the calendar."));
       };
       paint();
-      _staffDocGet(KEY).then(d=>{ ticks=(d && d.ticks)||{}; paint(); }).catch(_quiet);
+      _staffDocGet(KEY).then(d=>{ ticks=(d && d.ticks)||{}; ticksIn=true; paint(); }).catch(e=>{ _quiet(e); ticksIn=true; paint(); });
       W.forEach(w=>_dashRep(w.g).then(rep=>{ reps[w.g.id]=rep||null;
         /* the game plan, as the report has it */
         if(w.kind==="pre"){ let gp=false; try{ const ps2=((rep && rep.data && rep.data.sections)||[]).filter(z=>z && z.kind==="plan")[0]; gp=(ps2 && ps2.plan)? !gpPlanEmpty(ps2.plan) : false; }catch(e){_quiet(e)}
@@ -35601,7 +35608,7 @@ function renderDashboard(){
           _dashNeed(()=>window.ScoutPre && window.ScoutPre.filesOf, 20000).then(ok=>ok? window.ScoutPre.filesOf(g.opponent) : null).then(fs=>{ I.tag=fs? fs.length : 0; paint(); }).catch(()=>{ I.tag=0; paint(); });
           new Promise(r2=>{ try{ if(!tid || _clubPulled[tid]) return r2(); _clubPull(tid, null, r2); setTimeout(r2, 8000); }catch(e){ r2(); } }).then(()=>{
             let n=0; try{ n=tid? _clubKeyLabels(leagueState(), tid).filter(l=>_pbClass({ label:l }).kind!=="Concepts").length : 0; }catch(e){_quiet(e)} I.keys=n; paint(); }); }); }
-      c.__b.appendChild(h("div",{class:"dash-src"},"Pre game: a game ahead - started when our game two before it ends, handed in when the game before it ends · post game: within 24 hours of the game · the report ticks itself when it is marked ready, the videos are ticked here · the bar fills as the parts are done, ⚑ is the deadline, ● the game, the line today"));
+      c.__b.appendChild(h("div",{class:"dash-src"},"Pre game: a game ahead - started when our game two before it ends, handed in when the game before it ends · post game: within 24 hours of the game, and an earlier one stays while any of its parts is open · the report ticks itself when it is marked ready, the videos are ticked here · the bar fills as the parts are done, ⚑ is the deadline, ● the game, the line today"));
     },
     /* GAMES (Joan Marc): each opponent's scouting game by game - the first three games by
        our game two before theirs, the last one by the game before - and our post games */
