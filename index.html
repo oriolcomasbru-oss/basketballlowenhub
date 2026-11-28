@@ -26209,7 +26209,8 @@ function _postMinutes(sg, opt){
         return Object.assign(r, { u:u, t:t, men:men }); });
       const runEl=r=>h("div",{class:"pgm-run "+r.s},
         h("b",{}, r.s==="up"? "▲" : "▼"), h("span",{class:"w"}, ql(r.qi)+" "+(minsOf(r.qi)-r.m0)+"′–"+(minsOf(r.qi)-r.m1-1)+"′"),
-        h("span",{class:"sc"}, r.u+"–"+r.t), h("span",{class:"men"}, r.men.map(x=>"#"+x.p.num+" "+short(x.p.name)).join(" · ")));
+        h("span",{class:"sc"}, r.u+"–"+r.t), h("span",{class:"men"}, r.men.map(x=>{ let f=null; try{ f=_lgFace(leagueState(), { n:x.p.num, name:x.p.name, photo:x.p.photo, pid:x.p.pid, id:x.p.id }, "pgm-f"); }catch(e){ f=null; }
+          return h("span",{class:"pgm-m"}, f, "#"+x.p.num+" "+short(x.p.name)); })));
       const ups=big.filter(r=>r.s==="up"), dns=big.filter(r=>r.s==="dn");
       box.appendChild(h("div",{class:"pgm-runs"},
         h("div",{class:"pgm-rc dn"}, h("h5",{},"Our slumps"), dns.length? dns.map(runEl) : h("i",{},"none of two minutes or more")),
@@ -26380,14 +26381,6 @@ function _postOverviewDraw(sg, P, Tg, API, K, SR){
       figures:[
         { label:"Our offense", value:f2(oP), note:R? "season "+f2(oR) : "per possession", tone:tn(oP, oR, false, 0.10), title:"Points per possession of our tagged possessions" },
         { label:"Our defense", value:f2(dP), note:R? "season "+f2(dR) : "allowed per possession", tone:tn(dP, dR, true, 0.10), title:"Points allowed per possession of their tagged possessions" },
-        { label:"TAG conceded", value:f2(tP), note:tg.n+(R? " · season "+f2(tR) : " situations"), tone:tn(tP, tR, true, 0.10),
-          title:"After our long shot: what their next possession scored"+(_tagSplitTxt(tg)? " · "+_tagSplitTxt(tg) : "")+(_scTxt(tg)? " · "+_scTxt(tg) : "") },
-        { label:"BACK conceded", value:f2(bP), note:bk.n+(R? " · season "+f2(bR) : " situations"), tone:tn(bP, bR, true, 0.10),
-          title:"After our miss at the rim or our turnover"+(_backSplitTxt(bk)? " · "+_backSplitTxt(bk) : "")+(_scTxt(bk)? " · "+_scTxt(bk) : "") },
-        { label:"Paint touches", value:pc(ptV), note:"target 70 · "+verdict(Math.round(ptV)), tone:"vol", scale:{ lo:0, hi:100, v:ptV, ref:70 },
-          title:"A fastbreak counts whole; in every other phase the possession counts when it touched the paint - the formula Trends uses" },
-        { label:"Ball reversals", value:pc(brV), note:(R && isFinite(R.br))? "season "+pc(R.br) : "no target", tone:"vol", scale:{ lo:0, hi:100, v:brV, ref:(R && isFinite(R.br))? R.br : NaN },
-          title:"The same measure as the paint touches - the formula Trends uses" }
       ] });
   }
   if(U && T){
@@ -26398,13 +26391,8 @@ function _postOverviewDraw(sg, P, Tg, API, K, SR){
     const pace=U.pace!=null? U.pace : (U.poss+T.poss)/2;
     figRows.push({ src:"lg", label:"Play by play", sub:"this game · each number against theirs",
       figures:[
-        { label:"Score", value:U.pts+"–"+T.pts, note:U.pts>T.pts? "win" : U.pts<T.pts? "loss" : "tie", tone:U.pts>T.pts? "good" : U.pts<T.pts? "bad" : "neutral" },
-        { label:"Off. rating", value:o==null? null : o.toFixed(1), note:"per 100 · theirs "+(d==null? "—" : d.toFixed(1)), tone:tn(o, d, false, 3, 1) },
         { label:"eFG%", value:pc(U.efg), note:"theirs "+pc(T.efg), tone:tn(U.efg, T.efg, false, 5, 0) },
         { label:"Turnovers", value:U.tov, note:(tu==null? "—" : Math.round(tu))+" per 100 · theirs "+T.tov, tone:tn(tu, tt, true, 3, 0) },
-        { label:"OREB%", value:pc(oU), note:"theirs "+pc(oT), tone:tn(oU, oT, false, 5, 0), title:"The share of our own misses we got back · theirs: of their misses" },
-        { label:"DREB%", value:pc(dU), note:"theirs "+pc(dT), tone:tn(dU, dT, false, 5, 0), title:"The share of their misses we got back · theirs: of our misses" },
-        { label:"Pace", value:pace==null? null : pace.toFixed(1), note:"possessions", tone:"vol" }
       ] });
   }
   /* ---- what it rests on */
@@ -26433,9 +26421,15 @@ function _postOverviewDraw(sg, P, Tg, API, K, SR){
       if(o && o.n) dc.push({ label:x[1], n:o.n, pts:o.pts, ppp:o.pts/o.n, ref:R[x[0]].n? R[x[0]].ppp : null }); });
     /* common sense, not a minimum (Oriol, 27/11/2026): five possessions or more, at least 0.10 off our
        season, and ranked by what it came to in points */
-    const pick=(rows, low)=>rows.filter(r=>r.n>=5 && r.ref!=null && r.ppp!=null && tn(r.ppp, r.ref, low, 0.10)!=="neutral")
-      .map(r=>Object.assign(r, { swing:low? r.n*r.ref-r.pts : r.pts-r.n*r.ref }))
-      .filter(r=>Math.abs(r.swing)>=1).sort((a,b)=>Math.abs(b.swing)-Math.abs(a.swing)).slice(0,3);
+    /* THREE GOOD AND THREE BAD, ALWAYS (Oriol, 28/11/2026: "deberían ser 3 cosas positivas y 3 negativas siempre de
+       cada una"): the three that won us the most points against our season and the three that cost us the most, from
+       five possessions up - from three when five do not give three */
+    const pool=(rows, low, minN)=>rows.filter(r=>r.n>=minN && r.ref!=null && r.ppp!=null)
+      .map(r=>Object.assign({}, r, { swing:low? r.n*r.ref-r.pts : r.pts-r.n*r.ref }));
+    const side=(rows, low, good)=>{ const ok=r=>good? r.swing>=0.5 : r.swing<=-0.5;
+      let l=pool(rows, low, 5).filter(ok); if(l.length<3) l=pool(rows, low, 3).filter(ok);
+      return l.sort((a,b)=>Math.abs(b.swing)-Math.abs(a.swing)).slice(0,3); };
+    const pick=(rows, low)=>side(rows, low, true).concat(side(rows, low, false));
     const mk=(r, low)=>{ const p=Math.abs(Math.round(r.swing));
       return { k:r.label, v:f2(r.ppp), src:"tag", tone:r.swing>0? "good" : "bad", n:r.n, unit:"poss",
         text:"season "+f2(r.ref)+" · "+p+" point"+(p===1? "" : "s")+" "+(low? (r.swing>0? "saved" : "more") : (r.swing>0? "won" : "lost"))
@@ -26444,21 +26438,82 @@ function _postOverviewDraw(sg, P, Tg, API, K, SR){
     const mx=Math.max(1, ...offI.concat(defI).map(x=>x.n||0));
     offI.concat(defI).forEach(x=>{ x.nw=(x.n||0)/mx; });
   }
-  const card=K.summary({ title:"The game", sub:"blue is volume · green / red is efficiency for us · each number against its own source",
+  const card=K.summary({ title:"What stands out", sub:"three good and three bad on each side, in points against our season · blue is volume · green / red is efficiency for us",
     head:head, figRows:figRows,
     groups:[ { title:"Our offense · what stands out", ideas:offI }, { title:"Our defense · what stands out", ideas:defI } ],
     empty:"Neither the play by play nor the tagging of this game is in yet." });
   if(model && !R) card.appendChild(h("div",{class:"gpo-note"},"What stands out comes once our season's tagging is read."));
   else if(model && R && !offI.length && !defI.length) card.appendChild(h("div",{class:"gpo-note"},"Nothing of five possessions or more was 0.10 or further from our season."));
-  /* ---- the quarters, once, as one line (Oriol, 27/11/2026: "quarter by quarter no tiene sentido tan grande") */
+  /* ---- THE GAME IN ONE LOOK AND OUR PILLARS (Oriol, 28/11/2026: "añade un resumen del partido como en pregame.
+     Dale el mismo peso visual a TAG y BACK. Además dale el mismo peso al rebote % of y def. Son nuestros pilares"):
+     the game's own card - the margin minute by minute, the quarters, ORtg, DRtg and pace, drawn as the pre game draws
+     a rival's games - beside the six pillars, all the same size: paint touches, ball reversals, TAG, BACK, OREB% and
+     DREB%, each against its target or our season */
   try{
-    if(Q.some(Boolean)){ const ln=h("div",{class:"pg-qline"}); const c=K.src("lg"); if(c) ln.appendChild(c);
-      ln.appendChild(h("b",{},"Quarter by quarter"));
-      ln.appendChild(h("div",{class:"pgh-qs"}, Q.map((A,i)=>{ if(!A) return null; const d=A.u.pts-A.t.pts;
-        return h("span",{class:d>0? "good" : d<0? "bad" : ""}, h("i",{}, QN[i]), A.u.pts+"–"+A.t.pts, h("em",{}, (d>0? "+" : d<0? "−" : "±")+Math.abs(d))); })));
-      card.appendChild(ln); }
+    const top=h("div",{class:"pgo-top"});
+    if(U && T && P){
+      const home=_lgOurs(P.G.home);
+      let M2=null; try{ M2=_lgGameModel(P.G, P.j); }catch(e){_quiet(e)}
+      const S2=M2? (home? M2.H : M2.A) : U, O2=M2? (home? M2.A : M2.H) : T;
+      const fl=((M2 && M2.flow && M2.flow.ev)||[]).map(e=>[Math.round(e.t), home? e.h-e.a : e.a-e.h]);
+      const r={ g:P.G, home:home, S:S2, O:O2, win:U.pts>T.pts, fl:fl, q:(P.G.quarters||[]).slice(0,4).map(q=>home? q[0]-q[1] : q[1]-q[0]) };
+      const gc=h("div",{class:"pgo-box pgo-game"}, h("div",{class:"pgo-bt"}, "The game", h("span",{}, "the line: our margin minute by minute")));
+      try{ const c=K.src("lg"); if(c) gc.firstChild.insertBefore(c, gc.firstChild.firstChild); }catch(e){_quiet(e)}
+      gc.appendChild(_pl5Card(r, 0, _lgShort((home? P.G.away : P.G.home)||"")));
+      top.appendChild(gc);
+    }
+    const W100=v=>Math.max(0, Math.min(100, v||0));
+    const tile=o=>{ const t=h("div",{class:"pgo-pil "+(o.tone||""), title:o.tip||""});
+      const hd=h("div",{class:"pgo-pil-h"}); try{ const c=K.src(o.src); if(c) hd.appendChild(c); }catch(e){_quiet(e)}
+      hd.appendChild(h("i",{}, o.label)); t.appendChild(hd);
+      t.appendChild(h("b",{}, o.value==null? "—" : o.value));
+      t.appendChild(h("span",{class:"pgo-pil-bar"}, h("em",{style:"width:"+W100(o.w).toFixed(1)+"%"}), o.r!=null && isFinite(o.r)? h("u",{style:"left:"+W100(o.r).toFixed(1)+"%", title:o.rl||""}) : null));
+      t.appendChild(h("span",{class:"pgo-pil-n"}, o.note||""));
+      return t; };
+    const tiles=[];
+    const toneOf=x=>x==="neutral"? "" : x;
+    if(model){
+      const s0=API.summarise({ poss:poss }), ptV=API.measured(s0,"pt"), brV=API.measured(s0,"br");
+      const TB=(R && isFinite(R.brWin))? Math.round(R.brWin) : null;
+      const tg=(model.trans||{}).tag||{ n:0, pts:0 }, bk=(model.trans||{}).back||{ n:0, pts:0 };
+      const tP=tg.n? tg.pts/tg.n : null, bP=bk.n? bk.pts/bk.n : null, tR=(R && R.tag.n)? R.tag.ppp : null, bR=(R && R.back.n)? R.back.ppp : null;
+      tiles.push(tile({ src:"tag", label:"Paint touches", value:pc(ptV), w:ptV, r:70, rl:"target 70%",
+        tone:ptV>=70? "good" : ptV<65? "bad" : "", note:"target 70%"+((R && isFinite(R.pt))? " · season "+pc(R.pt) : ""),
+        tip:"A fastbreak counts whole; in every other phase the possession counts when it touched the paint - the formula Trends uses" }));
+      tiles.push(tile({ src:"tag", label:"Ball reversals", value:pc(brV), w:brV, r:TB!=null? TB : ((R && isFinite(R.br))? R.br : null), rl:TB!=null? "target "+TB+"% · our average in wins" : "our season",
+        tone:TB==null? "" : brV>=TB? "good" : brV<TB-5? "bad" : "", note:(TB!=null? "target "+TB+"% (win avg)" : "no win to set a target yet")+((R && isFinite(R.br))? " · season "+pc(R.br) : ""),
+        tip:"The same measure as the paint touches - the formula Trends uses. The target is our rate over the games we won"+((R && R.nWin)? " ("+R.nWin+")" : "") }));
+      tiles.push(tile({ src:"tag", label:"TAG · PPP allowed", value:f2(tP), w:tP==null? 0 : 50*tP, r:tR==null? null : 50*tR, rl:"season "+f2(tR),
+        tone:toneOf(tn(tP, tR, true, 0.10)), note:tg.n+" situations"+(tR!=null? " · season "+f2(tR) : ""),
+        tip:"After our long shot: what their next possession scored"+(_tagSplitTxt(tg)? " · "+_tagSplitTxt(tg) : "")+(_scTxt(tg)? " · "+_scTxt(tg) : "") }));
+      tiles.push(tile({ src:"tag", label:"BACK · PPP allowed", value:f2(bP), w:bP==null? 0 : 50*bP, r:bR==null? null : 50*bR, rl:"season "+f2(bR),
+        tone:toneOf(tn(bP, bR, true, 0.10)), note:bk.n+" situations"+(bR!=null? " · season "+f2(bR) : ""),
+        tip:"After our miss at the rim or our turnover"+(_backSplitTxt(bk)? " · "+_backSplitTxt(bk) : "")+(_scTxt(bk)? " · "+_scTxt(bk) : "") }));
+    }
+    if(U && T){
+      const L4=leagueState(); try{ _lgFourFresh(L4); }catch(e){_quiet(e)}
+      const ourT=String(_lgOurTeamId(L4)||""), F4=(L4.four||[]).filter(x=>String(x.teamId)===ourT)[0]||null;
+      const sO=(F4 && F4.off && F4.off.reb!=null)? 100*F4.off.reb : null, sD=(F4 && F4.def && F4.def.reb!=null)? 100*F4.def.reb : null;
+      const oU=_rebPct(U.or, U.or+T.dr), oT=_rebPct(T.or, T.or+U.dr), dU=_rebPct(U.dr, U.dr+T.or);
+      tiles.push(tile({ src:"lg", label:"OREB%", value:pc(oU), w:oU, r:sO, rl:"our season "+pc(sO), tone:toneOf(tn(oU, sO, false, 5, 0)),
+        note:(sO!=null? "season "+pc(sO)+" · " : "")+"theirs "+pc(oT), tip:"The share of our own misses we got back" }));
+      tiles.push(tile({ src:"lg", label:"DREB%", value:pc(dU), w:dU, r:sD, rl:"our season "+pc(sD), tone:toneOf(tn(dU, sD, false, 5, 0)),
+        note:(sD!=null? "season "+pc(sD)+" · " : "")+"theirs "+pc(100-(dU==null? 0 : dU)), tip:"The share of their misses we got back" }));
+    }
+    if(tiles.length) top.appendChild(h("div",{class:"pgo-box pgo-pils"}, h("div",{class:"pgo-bt"}, "Our pillars", h("span",{}, "each against its target or our season · green better, red worse")), h("div",{class:"pgo-pil-g"}, tiles)));
+    if(top.children.length) out.appendChild(top);
+    /* the two rates as the Our offense tab draws them */
+    if(model && API.gaugeFor){
+      const TB2=(R && isFinite(R.brWin))? Math.round(R.brWin) : null;
+      const g1=API.gaugeFor(model, "pt", R), g2=API.gaugeFor(model, "br", R), row=h("div",{class:"pgo-gauges"});
+      if(g1) row.appendChild(h("div",{class:"pgo-box"}, h("div",{class:"pgo-bt"}, "Paint touches · rate vs the 70% target"), g1));
+      if(g2) row.appendChild(h("div",{class:"pgo-box"}, h("div",{class:"pgo-bt"}, "Ball reversals · "+(TB2!=null? "rate vs the "+TB2+"% target" : "rate"), TB2!=null? h("span",{}, "our average in the games we won") : null), g2));
+      if(row.children.length) out.appendChild(row);
+    }
   }catch(e){_quiet(e)}
   out.appendChild(card);
+  /* ---- their pick and roll against us, in one picture (Oriol, 28/11/2026) */
+  try{ if(model && API.pnrDefChart){ const pc0=API.pnrDefChart(model, R); if(pc0) out.appendChild(h("div",{class:"pgo-box pgo-pnr"}, pc0)); } }catch(e){_quiet(e)}
   /* THE TAGGING AGAINST THE SCORE. Clips read on the wrong side or missing from the file change
      every tagged figure of the game and nothing on the page said so. Würzburg (1/11/2026) was read
      88-80 for a game that ended 72-96, with the possessions, TAG and BACK that came from it */
@@ -31582,6 +31637,35 @@ function _preRebView(L, tid, cards){
    play; it replaces the tagged game-by-game tables and the quarter cards in Games. */
 /* the overview carries the five panels too (Oriol, 25/11/2026: "añade esto a overview"): opt.panels draws them
    without the table, in an element of its own */
+/* ONE GAME AS A CARD: the result, the margin minute by minute (above when the club leads), the four quarters and
+   ORtg, DRtg and pace. r: { g, home, S, O, win, fl:[[t, margin]], q:[margin a quarter] } from the club's side; mxM
+   the margin the line is scaled to (0: its own) */
+function _pl5Card(r, mxM, oppName){
+  const W=240, H=76, S=r.S||{}, O=r.O||{}, dd=String((r.g && r.g.date)||"");
+  mxM=mxM || Math.max(8, ...(r.fl && r.fl.length? r.fl : [[0,0]]).map(p=>Math.abs(p[1])));
+  const gid=String((r.g && r.g.id)||"x");
+  const spark=()=>{ const fl=(r.fl||[]).slice(), end=Math.max(2400, ...fl.map(p=>p[0]));
+    const x=t=>(W*t/end).toFixed(1), y=m=>(H/2-(H/2-3)*m/mxM).toFixed(1);
+    let d="M0 "+y(0), last=0; fl.forEach(p=>{ d+=" L"+x(p[0])+" "+y(last)+" L"+x(p[0])+" "+y(p[1]); last=p[1]; }); d+=" L"+W+" "+y(last);
+    const ar=d+" L"+W+" "+y(0)+" Z";
+    const qs=[600,1200,1800].concat(end>2400? [2400] : []).map(t=>sv("line",{x1:x(t), x2:x(t), y1:0, y2:H, class:"pl5-q"}));
+    return sv("svg",{viewBox:"0 0 "+W+" "+H, class:"pl5-svg", preserveAspectRatio:"none"},
+      sv("defs",{}, sv("clipPath",{id:"pl5u"+gid}, sv("rect",{x:0, y:0, width:W, height:H/2})), sv("clipPath",{id:"pl5d"+gid}, sv("rect",{x:0, y:H/2, width:W, height:H/2}))),
+      ...qs, sv("path",{d:ar, class:"pl5-up", "clip-path":"url(#pl5u"+gid+")"}), sv("path",{d:ar, class:"pl5-dn", "clip-path":"url(#pl5d"+gid+")"}),
+      sv("line",{x1:0, x2:W, y1:y(0), y2:y(0), class:"pl5-0"}), sv("path",{d:d, class:"pl5-l"})); };
+  return h("div",{class:"pl5-c "+(r.win? "w" : "l")},
+    h("div",{class:"pl5-ch"}, h("span",{class:"pl5-r"}, r.win? "W" : "L"), h("b",{}, S.pts+"–"+O.pts), h("i",{}, (r.home? "vs " : "@ ")+(oppName||"")), h("em",{}, dd.slice(8,10)+"/"+dd.slice(5,7))),
+    spark(),
+    h("div",{class:"pl5-qs"}, (r.q||[]).map((m,i)=>h("span",{class:m>0? "up" : m<0? "dn" : ""}, h("i",{}, "Q"+(i+1)), (m>0? "+" : "")+m))),
+    h("div",{class:"pl5-n"}, h("span",{}, h("i",{},"ORtg"), h("b",{}, S.ortg==null? "—" : Math.round(S.ortg))), h("span",{}, h("i",{},"DRtg"), h("b",{}, O.ortg==null? "—" : Math.round(O.ortg))), h("span",{}, h("i",{},"Pace"), h("b",{}, S.pace==null? "—" : Math.round(S.pace)))));
+}
+/* our result on a day, from the league: { us, them } - the ball reversals' target is our rate in the games we won */
+function LowenOurResult(iso){
+  try{ const L=leagueState(), us=String(_lgOurTeamId(L)||""); if(!us || !iso) return null;
+    const g=(L.games||[]).concat(L.cup||[]).filter(x=>x && x.date===iso && (String(x.homeId)===us || String(x.awayId)===us) && x.hs!=null && x.as!=null)[0];
+    if(!g) return null; const home=String(g.homeId)===us; return { us:home? g.hs : g.as, them:home? g.as : g.hs }; }catch(e){ return null; }
+}
+try{ window.LowenOurResult=LowenOurResult; }catch(e){_quiet(e)}
 let _pl5Keep={};
 function _preLast5(sg, opt){
   opt=opt||{};
@@ -31607,23 +31691,8 @@ function _preLast5(sg, opt){
       orb:la(x=>x.off && x.off.reb!=null? 100*x.off.reb : null), oefg:la(x=>x.def && x.def.efg!=null? 100*x.def.efg : null) };
     const opp=r=>{ const nm=r.home? r.g.away : r.g.home; return _lgShort(nm||""); };
     const mxM=Math.max(8, ...rows.map(r=>Math.max(...(r.fl||[[0,0]]).map(p=>Math.abs(p[1])))));
-    const W=240, H=76;
-    const spark=r=>{ const fl=(r.fl||[]).slice(), end=Math.max(2400, ...fl.map(p=>p[0]));
-      const x=t=>(W*t/end).toFixed(1), y=m=>(H/2-(H/2-3)*m/mxM).toFixed(1);
-      let d="M0 "+y(0), last=0; fl.forEach(p=>{ d+=" L"+x(p[0])+" "+y(last)+" L"+x(p[0])+" "+y(p[1]); last=p[1]; }); d+=" L"+W+" "+y(last);
-      const ar=d+" L"+W+" "+y(0)+" Z";
-      const qs=[600,1200,1800].concat(end>2400? [2400] : []).map(t=>sv("line",{x1:x(t), x2:x(t), y1:0, y2:H, class:"pl5-q"}));
-      return sv("svg",{viewBox:"0 0 "+W+" "+H, class:"pl5-svg", preserveAspectRatio:"none"},
-        sv("defs",{}, sv("clipPath",{id:"pl5u"+r.g.id}, sv("rect",{x:0, y:0, width:W, height:H/2})), sv("clipPath",{id:"pl5d"+r.g.id}, sv("rect",{x:0, y:H/2, width:W, height:H/2}))),
-        ...qs, sv("path",{d:ar, class:"pl5-up", "clip-path":"url(#pl5u"+r.g.id+")"}), sv("path",{d:ar, class:"pl5-dn", "clip-path":"url(#pl5d"+r.g.id+")"}),
-        sv("line",{x1:0, x2:W, y1:y(0), y2:y(0), class:"pl5-0"}), sv("path",{d:d, class:"pl5-l"})); };
     const grid=h("div",{class:"pl5-g"});
-    rows.forEach(r=>{ const S=r.S, O=r.O, dd=String(r.g.date||"");
-      grid.appendChild(h("div",{class:"pl5-c "+(r.win? "w" : "l")},
-        h("div",{class:"pl5-ch"}, h("span",{class:"pl5-r"}, r.win? "W" : "L"), h("b",{}, S.pts+"–"+O.pts), h("i",{}, (r.home? "vs " : "@ ")+opp(r)), h("em",{}, dd.slice(8,10)+"/"+dd.slice(5,7))),
-        spark(r),
-        h("div",{class:"pl5-qs"}, (r.q||[]).map((m,i)=>h("span",{class:m>0? "up" : m<0? "dn" : ""}, h("i",{}, "Q"+(i+1)), (m>0? "+" : "")+m))),
-        h("div",{class:"pl5-n"}, h("span",{}, h("i",{},"ORtg"), h("b",{}, S.ortg==null? "—" : Math.round(S.ortg))), h("span",{}, h("i",{},"DRtg"), h("b",{}, O.ortg==null? "—" : Math.round(O.ortg))), h("span",{}, h("i",{},"Pace"), h("b",{}, S.pace==null? "—" : Math.round(S.pace)))))); });
+    rows.forEach(r=>grid.appendChild(_pl5Card(r, mxM, opp(r))));
     box.appendChild(h("div",{class:"pl5-h"}, h("b",{}, "Their last "+rows.length+" games"), h("span",{}, "oldest first · the line: their margin minute by minute, above when they lead"+(opt.panels? " · the table in Games" : ""))));
     box.appendChild(grid);
     if(opt.panels) return;
@@ -32954,7 +33023,7 @@ const OWIP=[
   ["When he fades", "player development: when each man drops, to rotate ours and attack theirs", ()=>_dashOpen("playerdev",{})],
   ["Pace", "trends: how fast we play, game by game and inside the games", ()=>_dashOpen("trends",{})]];
 var DASHES={
-  Ramon:{ name:"Ramón", role:"Head coach", cards:["oppr","post","trends2","week","month"] },
+  Ramon:{ name:"Ramón", role:"Head coach", cards:["spec","oppr","post","trends2","week","month"] },
   Oriol:{ name:"Oriol", role:"Assistant coach · analysis", cards:["owork","omiss","scoutv","trends2","oppr","post","week","month"] },
   Keith:{ name:"Keith", role:"Coaching staff", cards:["pdevc","oppr","post","players","trends2","week","monthP"] },
   Liviu:{ name:"Liviu", role:"Coaching staff", cards:["quick","month","pdevc"] },
@@ -32963,8 +33032,8 @@ var DASHES={
   "Marc Ribas":{ name:"Marc", role:"Video · trainings", cards:["vtrain","month"] },
   Pedro:{ name:"Pedro", role:"Physical coach", cards:["week","avail","minutes","month"] },
   Jonas:{ name:"Jonas", role:"Staff", cards:["week","month3"] },
-  Alex:{ name:"Alex", role:"Staff", cards:["monthP","week","oppr","post","trends2","pdevc"] },
-  Nils:{ name:"Nils", role:"Staff", cards:["monthP","week","oppr","post","trends2","pdevc"] },
+  Alex:{ name:"Alex", role:"Staff", cards:["spec","monthP","week","oppr","post","trends2","pdevc"] },
+  Nils:{ name:"Nils", role:"Staff", cards:["spec","monthP","week","oppr","post","trends2","pdevc"] },
   Fabienne:{ name:"Fabienne", role:"Media · articles", cards:["month","fquick","us","rivals"] }
 };
 var _dashLanded=false;
@@ -33488,6 +33557,124 @@ function _dashPostGameInto(box, g){
 /* THE LAST GAME ON TWO SHEETS, as the next opponent: the numbers - score, quarters, our tagging
    of offense and defense - on the first, the key ideas of the post game on the second, in as
    many columns as leave the letters largest; each fitted to a landscape A4 */
+/* SPECIAL REPORTS ON THE STAFF'S DASHBOARDS (Oriol, 28/11/2026: "cuando haga informes especiales añades un informe a
+   RAMON/NILS/ALEX con el mismo formato como los otros y se los dejas un par de semanas allí. Es clave que no ocupe
+   mucho peso: si quieres acceder a leerlo, que abran el informe. Cuando no hay nada, no le sale. En estos informes no
+   quiero usar el formato de subrayar KEYS, solamente pones la primera parte. Ahora bien, si lo quiero imprimir me lo
+   pones todo, en una hoja o máximo dos; si usa dos páginas que sea porque realmente las necesita").
+   A report stays on the card fourteen days from the later of its day and the day it was written. The card shows its
+   title, its day and the first part of it - the first section, text only - and opens the report; the print takes all
+   of it, on one landscape sheet when the type still reads at that size, on two when it does not. */
+const SPEC_DAYS=14;
+const _dashSpecMemo={};
+function _dashSpecGet(id){
+  if(_dashSpecMemo[id]) return _dashSpecMemo[id];
+  const p=sbrpc("get_report",{ p_token:SB_TOKEN, p_key:"special|"+id }).then(r=>{
+    if(!(r && r.ok===true)) throw new Error((r && r.error) || "the server did not answer");
+    return r.report || { data:{} }; });
+  _dashSpecMemo[id]=p; p.catch(()=>{ delete _dashSpecMemo[id]; });
+  return p;
+}
+function _dashSpecRecent(){
+  const now=Date.now(), DAY=86400000;
+  return (_spIdx.list||[]).filter(x=>{ if(!x) return false;
+    const a=Date.parse(x.at||"")||0, d=Date.parse(String(x.date||"")+"T12:00:00")||0;
+    return now-Math.max(a, d)<=SPEC_DAYS*DAY; })
+    .sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")) || String(b.at||"").localeCompare(String(a.at||"")));
+}
+/* the sections that have something in them */
+function _dashSpecSecs(rep){
+  return (((rep && rep.data && rep.data.postSections)||[])).filter(s=>s && (s.items||[]).some(it=>_dashTxt(it && it.v).trim() || /data-media|<img/i.test(String((it && it.v)||""))));
+}
+/* the first part: the first section that has something in it, as text */
+function _dashSpecFirst(rep){
+  const s=_dashSpecSecs(rep)[0]; if(!s) return null;
+  const items=(s.items||[]).filter(it=>_dashTxt(it && it.v).trim());
+  const box=h("div",{class:"dsp-first"});
+  if(s.title) box.appendChild(h("div",{class:"dsp-st"}, s.title));
+  items.slice(0,2).forEach(it=>{ const t=(it.t && !/^item$/i.test(String(it.t).trim()))? String(it.t).trim() : "";
+    box.appendChild(h("p",{}, t? h("b",{}, t+" · ") : null, _dashTxt(it.v).replace(/\s*\n\s*/g," · ").replace(/(· )+/g,"· ").replace(/^\s*·\s*/,"").replace(/[\s·]+$/,"").trim())); });
+  return box;
+}
+function _dashSpecRow(x){
+  const open=()=>_dashOpen("teamscout",{ ts:{ mode:"special", id:x.id } });
+  const first=h("div",{class:"dsp-body"}, h("div",{class:"ld dash-ld"},"Reading it…", h("span",{class:"ld-bar"})));
+  const pb=h("button",{type:"button", class:"btn sm", title:"Print the whole report: one sheet, two only when it needs them"},"🖨 Print");
+  pb.addEventListener("click", e=>{ e.stopPropagation(); _dashSpecPrint(x, pb); });
+  const row=h("div",{class:"dsp"},
+    h("div",{class:"dsp-h"}, h("span",{class:"sp-tag"},"Report"), h("b",{class:"dsp-t"}, x.title||"Special report"), h("span",{class:"dsp-d"}, _spDay(x.date)),
+      h("span",{class:"dsp-sp"}), pb, h("button",{type:"button", class:"btn sm primary", onclick:open}, "Open the report ›")),
+    first);
+  _dashSpecGet(x.id).then(rep=>{ first.innerHTML=""; const p=_dashSpecFirst(rep);
+    first.appendChild(p || h("div",{class:"dash-miss"},"Nothing written in it yet.")); })
+    .catch(()=>{ first.innerHTML=""; first.appendChild(h("div",{class:"dash-miss"},"It did not come back - open it to read it.")); });
+  return row;
+}
+async function _dashSpecPrint(x, btn){
+  const area=$("#print-area"); if(!area) return;
+  const was=btn? btn.textContent : ""; if(btn){ btn.disabled=true; btn.textContent="Preparing…"; }
+  const back=()=>{ if(btn){ btn.disabled=false; btn.textContent=was; } };
+  let rep=null; try{ rep=await _dashSpecGet(x.id); }catch(e){ back(); toast("The report did not come back"); return; }
+  const secs=_dashSpecSecs(rep);
+  if(!secs.length){ back(); toast("Nothing written in this report yet"); return; }
+  const title=(x.title||"Special report")+" · "+_spDay(x.date);
+  /* one card a written part, the section's name on its first; a video goes to paper as its link */
+  const cards=[];
+  secs.forEach(s=>{ (s.items||[]).forEach((it,i)=>{ const html=String((it && it.v)||""); if(!_dashTxt(html).trim() && !/data-media|<img/i.test(html)) return;
+    const v=h("div",{class:"spp-v rs-rich"}); v.innerHTML=html;
+    v.querySelectorAll('[data-media="yt"]').forEach(m=>{ const id=m.getAttribute("data-yt")||""; m.replaceWith(h("span",{class:"spp-yt"}, "▶ "+(m.getAttribute("data-label")||"Video")+" · youtu.be/"+id)); });
+    try{ _rtHydrate(v); }catch(e){_quiet(e)}
+    v.querySelectorAll("[contenteditable]").forEach(n=>n.removeAttribute("contenteditable"));
+    const t=(it.t && !/^item$/i.test(String(it.t).trim()))? String(it.t).trim() : "";
+    cards.push(h("div",{class:"spp-c"}, i===0 && s.title? h("div",{class:"spp-s"}, s.title) : null, t? h("div",{class:"spp-t"}, t) : null, v)); }); });
+  const PW=1058, PH=715, GAP=12, MIN=0.74;
+  area.innerHTML="";
+  document.body.classList.add("dop-measure");
+  /* one sheet: the widths and the number of columns that give the largest type */
+  const sheet=(list, sub)=>{ const cols=h("div",{class:"spp-cols"});
+    const p=h("div",{class:"dop-fit spp"}, h("div",{class:"dop-top"}, h("b",{}, "Special report"), h("span",{}, sub)), cols);
+    area.appendChild(h("div",{class:"dop-page"}, p)); p.style.zoom="1";
+    const col=h("div",{class:"spp-col"}); cols.appendChild(col); list.forEach(c=>col.appendChild(c));
+    const memo={}, heights=w=>{ const k=Math.round(w); if(memo[k]) return memo[k]; p.style.width=(k+40)+"px"; col.style.flex="0 0 "+k+"px"; return (memo[k]=list.map(c=>Math.ceil(c.getBoundingClientRect().height))); };
+    const headH=p.querySelector(".dop-top").getBoundingClientRect().height+10;
+    let best={ s:0, W:1000, C:1, cols:[list.map((_,i)=>i)] };
+    for(let W=700; W<=2600; W=Math.round(W*1.04)){
+      if(PW/W<=best.s) break;
+      for(let C=1; C<=Math.min(4, list.length); C++){ const cw=(W-(C-1)*GAP)/C; if(cw<300) break;
+        const R=_pbCut(heights(cw), C, GAP), sc=Math.min(PW/W, PH/(headH+R.h)); if(sc>best.s+0.0005) best={ s:sc, W:W, C:C, cols:R.cols }; } }
+    cols.innerHTML="";
+    for(let i=0;i<best.C;i++){ const c=h("div",{class:"spp-col"}); (best.cols[i]||[]).forEach(n=>c.appendChild(list[n])); cols.appendChild(c); }
+    return { p:p, W:best.W, s:best.s };
+  };
+  let S=[sheet(cards, title)];
+  /* two sheets only when one would print the type too small to read; the parts are shared out so neither is a
+     near-empty page */
+  if(S[0].s<MIN && cards.length>1){
+    /* measured where they stand, before the sheet is taken down */
+    const hs=cards.map(c=>c.getBoundingClientRect().height||0);
+    area.innerHTML="";
+    const tot=hs.reduce((a,b)=>a+b,0); let acc=0, cut=1;
+    for(let i=0;i<hs.length;i++){ acc+=hs[i]; if(acc>=tot/2){ cut=Math.max(1, Math.min(hs.length-1, (acc-hs[i]/2>tot/2)? i : i+1)); break; } }
+    S=[sheet(cards.slice(0,cut), title+" · 1/2"), sheet(cards.slice(cut), title+" · 2/2")];
+  }
+  /* a short report keeps its size rather than being blown up to fill the sheet */
+  /* two sheets print the same size of type */
+  const fit=()=>{ const z=S.map(o=>{ o.p.style.zoom="1"; o.p.style.width=o.W+"px"; return Math.min(1.05, PW/o.W, PH/Math.max(1, o.p.scrollHeight)); }), zz=Math.min.apply(null, z);
+    S.forEach(o=>{ o.p.style.zoom=zz.toFixed(4); }); };
+  const imgs=[...area.querySelectorAll("img")].filter(im=>!im.complete);
+  await Promise.race([ Promise.all(imgs.map(im=>new Promise(r=>{ im.addEventListener("load", r); im.addEventListener("error", r); }))), new Promise(r=>setTimeout(r, 3000)) ]);
+  fit();
+  const mq=window.matchMedia? window.matchMedia("print") : null, onMq=e=>{ if(e.matches) fit(); };
+  if(mq){ if(mq.addEventListener) mq.addEventListener("change", onMq); else if(mq.addListener) mq.addListener(onMq); }
+  const st=document.createElement("style"); st.textContent="@page{size:A4 landscape;margin:7mm} html,body{margin:0!important;padding:0!important}"; document.body.appendChild(st);
+  const done=()=>{ document.body.classList.remove("printing","printing-dop","dop-measure"); area.innerHTML=""; st.remove(); window.removeEventListener("afterprint", done); back();
+    if(mq){ if(mq.removeEventListener) mq.removeEventListener("change", onMq); else if(mq.removeListener) mq.removeListener(onMq); } };
+  window.addEventListener("afterprint", done);
+  document.body.classList.remove("dop-measure");
+  document.body.classList.add("printing","printing-dop");
+  window.__spPrintPages=S.length;
+  setTimeout(()=>{ try{ window.print(); }catch(e){ done(); } }, 120);
+}
 function _dashPostPrint(card, title){
   const area=$("#print-area"); if(!area || !card) return;
   const body=card.__b;
@@ -34837,6 +35024,19 @@ function renderDashboard(){
         if(rows.length>8) cK.__b.appendChild(h("div",{class:"dash-src"}, "+"+(rows.length-8)+" more in the pre game"));
       });
       });
+    },
+    /* ---------------------------------------------------- special reports of the last two weeks (28/11/2026):
+       nothing at all when there is none */
+    spec:()=>{
+      if(!SB_TOKEN || isPlayerUser()) return;
+      const c=card("wide dash-spec", "Special reports", null);
+      c.style.display="none";
+      _spLoad(false).then(()=>{
+        const list=_dashSpecRecent();
+        if(!list.length){ c.remove(); return; }
+        c.style.display="";
+        list.forEach(x=>c.__b.appendChild(_dashSpecRow(x)));
+      }).catch(()=>{ c.remove(); });
     },
     /* ---------------------------------------------------- last game, post game */
     post:()=>{
@@ -46780,6 +46980,59 @@ body.prt .pg-uni .pg-pane{display:block!important}body.prt .pg-uni .pg-tabs{disp
 .rbx-d b{position:absolute;right:0;top:0;font:700 11px 'IBM Plex Mono',monospace;color:var(--ink-soft,#5b6472)}.rbx-d b.good{color:#17805a}.rbx-d b.bad{color:#c53727}
 body.dark .rbx-b .t,body.dark .rbx-s .t{background:rgba(255,255,255,.08)}body.dark .rbx-b .t u{background:#e6e9ef}
 body.dark .rbx-b b.good,body.dark .rbx-d b.good{color:#5fcf9f}body.dark .rbx-b b.bad,body.dark .rbx-d b.bad{color:#ff8f85}
+/* the post game overview: the game's card and the six pillars on one line, the two rates under them (28/11/2026) */
+.pgo-box{border:1px solid var(--line,#e4e7ec);border-radius:10px;background:var(--panel,#fff);box-shadow:0 1px 2px rgba(16,24,40,.06);padding:12px 14px 14px;min-width:0}
+.pgo-bt{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;padding:0 0 8px;margin:0 0 10px;border-bottom:1px solid var(--line,#e4e7ec);font:700 15px 'Oswald',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink,#141821)}
+.pgo-bt::before{content:'';width:4px;height:16px;border-radius:2px;background:#c6a15b;flex:none}
+.pgo-bt > span{font:400 11.5px 'Inter',sans-serif;letter-spacing:0;text-transform:none;color:var(--ink-faint,#8a93a2)}
+.pgo-bt > .ui-src{order:-1}
+.pgo-top{display:grid;grid-template-columns:minmax(260px,330px) minmax(0,1fr);gap:16px;margin:0 0 16px;align-items:stretch}
+@media (max-width:1000px){.pgo-top{grid-template-columns:minmax(0,1fr)}}
+.pgo-game .pl5-c{border-left:0;border-right:0;border-bottom:0;border-radius:0;padding:8px 0 0}
+.pgo-pil-g{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media (max-width:760px){.pgo-pil-g{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.pgo-pil{display:grid;gap:5px;align-content:start;padding:10px 12px 11px;border-radius:9px;background:var(--panel-2,#f4f5f7);border-left:4px solid #9aa6b8;min-width:0}
+.pgo-pil.good{border-left-color:#2f9e6a;background:rgba(47,158,106,.08)}.pgo-pil.bad{border-left-color:#d8524e;background:rgba(216,82,78,.08)}
+.pgo-pil-h{display:flex;align-items:center;gap:6px;min-width:0}
+.pgo-pil-h i{font:700 12px 'Oswald',sans-serif;font-style:normal;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft,#5b6472);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pgo-pil > b{font:800 30px/1 'Inter',sans-serif;color:var(--ink,#141821);font-variant-numeric:tabular-nums}
+.pgo-pil.good > b{color:#17805a}.pgo-pil.bad > b{color:#c53727}
+.pgo-pil-bar{position:relative;display:block;height:8px;border-radius:4px;background:rgba(20,24,33,.08)}
+.pgo-pil-bar em{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:#6f95cf}
+.pgo-pil.good .pgo-pil-bar em{background:#2f9e6a}.pgo-pil.bad .pgo-pil-bar em{background:#d8524e}
+.pgo-pil-bar u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink,#141821)}
+.pgo-pil-n{font:500 11px 'Inter',sans-serif;color:var(--ink-faint,#8a93a2)}
+.pgo-gauges{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px;margin:0 0 16px}
+.pgo-pnr{margin-top:16px}
+body.dark .pgo-pil.good > b{color:#5fcf9f}body.dark .pgo-pil.bad > b{color:#ff8f85}
+body.dark .pgo-pil-bar{background:rgba(255,255,255,.08)}body.dark .pgo-pil-bar u{background:#e6e9ef}
+/* the slumps' men with their faces (28/11/2026) */
+.pgm-run .men{display:flex;flex-wrap:wrap;gap:4px 8px}
+.pgm-m{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.pgm-m .pgm-f,.pgm-m .face{width:22px;height:22px;border-radius:50%;overflow:hidden;flex:none;font-size:9px}
+.pgm-m img{width:100%;height:100%;object-fit:cover;object-position:50% 20%}
+/* special reports on a dashboard: a line each, its first part under it (28/11/2026) */
+.dsp{display:grid;gap:6px;padding:10px 0;border-top:1px solid var(--line-soft,#eef0f3)}
+.dsp:first-child{border-top:0;padding-top:0}
+.dsp-h{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px}
+.dsp-t{font:700 15px 'Inter',sans-serif;color:var(--ink,#141821)}
+.dsp-d{font:600 11.5px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2)}
+.dsp-sp{flex:1}
+.dsp-first{display:grid;gap:3px;padding:8px 12px;border-left:3px solid #c6a15b;background:var(--panel-2,#f4f5f7);border-radius:0 8px 8px 0}
+.dsp-st{font:700 11px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}
+.dsp-first p{margin:0;font:400 13px/1.5 'Inter',sans-serif;color:var(--ink,#141821);overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.dsp-first p b{font-weight:700}
+/* the printed special report: its parts in columns on one landscape sheet, or two */
+.spp-cols{display:flex;gap:12px;align-items:flex-start}
+.spp-col{flex:1 1 0;min-width:0;display:grid;gap:12px;align-content:start}
+.spp-c{border:1px solid #d9dde3;border-radius:8px;padding:8px 12px 10px;break-inside:avoid}
+.spp-s{font:700 13px Oswald,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#fff;background:#141821;margin:-8px -12px 8px;padding:5px 12px;border-radius:7px 7px 0 0}
+.spp-t{font:700 13.5px Inter,sans-serif;margin:0 0 4px}
+.spp-v{font:400 13px/1.45 Inter,sans-serif}
+.spp-v p{margin:0 0 4px}.spp-v ul,.spp-v ol{margin:2px 0 4px;padding-left:18px}
+.spp-v img{max-width:100%;height:auto;border-radius:4px}
+.spp-v [data-media]{display:inline-block;vertical-align:top;margin:2px 6px 4px 0}
+.spp-yt{font:600 12px Inter,sans-serif;color:#2f5f9e}
 /* the game, compact (27/11/2026) */
 .pgh{display:grid;gap:10px;margin:0 0 6px}
 .pgh-top{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:10px 12px;border-radius:12px;background:var(--panel,#fff);border:1px solid var(--line,#e4e7ec);box-shadow:inset 4px 0 0 #5b6472}

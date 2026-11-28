@@ -1098,15 +1098,19 @@
      target is what the two add up to. */
   /* graded === false: the bar is drawn, the number is shown, and nothing is
      judged. Used where we have no agreed optimum to measure against. */
-  function gaugeSplit(name, fb, fbTotal, rest, restTotal, total, unit, graded) {
+  /* tgt: { v, word } - a target of its own (the ball reversals: our average in the games we won); the paint
+     touches keep 60 / 65 / 70 */
+  function gaugeSplit(name, fb, fbTotal, rest, restTotal, total, unit, graded, tgt) {
     graded = graded !== false;
+    var TV = (tgt && isFinite(tgt.v)) ? Math.round(tgt.v) : 70, TW = (tgt && tgt.word) || "perfect";
+    var TH = [TV - 10, TV - 5, TV];
     var pFb = total ? 100 * fb / total : 0;
     var pRest = total ? 100 * rest / total : 0;
     var p = pFb + pRest;
     // judge the number the coach actually reads, so 69.9% shown as 70% is not
     // labelled "Ok" next to a big 70
     var shown = Math.round(p);
-    var verdict = shown >= 70 ? ["Perfect", "perfect"] : shown >= 65 ? ["Ok", "ok"] : shown >= 60 ? ["Regular", "regular"] : ["Below", "below"];
+    var verdict = shown >= TH[2] ? [tgt ? "On target" : "Perfect", "perfect"] : shown >= TH[1] ? ["Ok", "ok"] : shown >= TH[0] ? ["Regular", "regular"] : ["Below", "below"];
     var g = el("div", "sx-gauge" + (graded ? "" : " ungraded"));
 
     var top = el("div", "sx-gtop");
@@ -1129,8 +1133,8 @@
     if (pFb > 0) b.style.borderRadius = "0";
     track.appendChild(b);
     if (graded) {
-      [60, 65, 70].forEach(function (v) {
-        var tick = el("div", "sx-gtick" + (v === 70 ? "" : " soft"));
+      TH.forEach(function (v) {
+        var tick = el("div", "sx-gtick" + (v === TV ? "" : " soft"));
         tick.style.left = v + "%";
         track.appendChild(tick);
       });
@@ -1143,7 +1147,7 @@
          The ticks on the bar say where the thresholds are; this is the key to them, on
          one line, in the order they come. */
       var sc = el("div", "sx-gscale");
-      [["60", "regular"], ["65", "ok"], ["70", "perfect"]].forEach(function (x) {
+      [[String(TH[0]), "regular"], [String(TH[1]), "ok"], [String(TH[2]), TW]].forEach(function (x) {
         var s2 = el("span", "sx-gsc");
         s2.appendChild(el("b", null, x[0]));
         s2.appendChild(el("i", null, x[1]));
@@ -1167,12 +1171,96 @@
     sum.appendChild(el("span", "sx-gkey blank"));
     sum.appendChild(el("span", "sx-gpt", "Together"));
     sum.appendChild(el("span", "sx-gpv", Math.round(pFb) + "% + " + Math.round(pRest) + "% = " + shown + "%" +
-      (graded ? "  ·  target 70%" : "")));
+      (graded ? "  ·  target " + TV + "%" + (tgt ? " (" + TW + ")" : "") : "")));
     note.appendChild(sum);
     g.appendChild(note);
     return g;
   }
 
+  /* won or lost: the league's score first, the tagging's own (our points against model.oppPts) when it has not got it */
+  function gameWon(g) {
+    try { var r = (typeof window !== "undefined" && window.LowenOurResult) ? window.LowenOurResult(g.d) : null; if (r) return r.us > r.them; } catch (e) {}
+    var m = g.m || {}, us = (m.poss || []).reduce(function (a, q) { return a + (q.pts || 0); }, 0);
+    return m.oppPts == null ? null : us > m.oppPts;
+  }
+  /* the rate box of a game's paint touches or ball reversals, for whoever needs it outside the block (the overview) */
+  function gaugeFor(model, key, R) {
+    var P0 = (model && model.poss) || [], N0 = P0.length; if (!N0) return null;
+    var fb = P0.filter(function (q) { return q.phase === "Fastbreak"; }).length, rest = P0.filter(function (q) { return q.phase !== "Fastbreak"; });
+    var hit = rest.filter(function (q) { return (q[key] || 0) > 0; }).length;
+    if (key === "pt") return gaugeSplit("Paint touch", fb, fb, hit, rest.length, N0, "Paint touch");
+    var T = (R && isFinite(R.brWin)) ? Math.round(R.brWin) : null;
+    return gaugeSplit("Ball reversal", fb, fb, hit, rest.length, N0, "Ball reversal", T != null, T != null ? { v: T, word: "win avg" } : null);
+  }
+  /* THEIR PICK AND ROLL, OUR DEFENSE, IN ONE PICTURE (Oriol, 28/11/2026: "una gráfica clara de qué sucede en el PNR en
+     defensa: spacing/defensas, media cancha y drag"). Half court: a row for each place the screen was set, with how
+     many, one bar of the coverages we played on it and the points a possession they scored against our season. The
+     drag ball screens apart, a row a coverage. Under them, each coverage of the half court once with what it cost. A
+     coverage keeps its colour wherever it is drawn. */
+  var COV_COL = ["#2f6cc0", "#c6a15b", "#2a8f8f", "#7a5cc2", "#5b6472", "#d9823b", "#c2549a", "#8a9a3b"];
+  function covColor(k) { for (var i = 0; i < COVERAGE.length; i++) if (COVERAGE[i].k === k) return COV_COL[i % COV_COL.length]; return "#aab2bf"; }
+  function pnrDefChart(model, R) {
+    var DP0 = (model && model.dposs) || [];
+    var pnr = DP0.filter(function (q) { return q.pnr; }); if (!pnr.length) return null;
+    var drag = function (q) { return /drag|transition/i.test(String(q.first || "")); };
+    var covOf = function (q) { for (var i = 0; i < COVERAGE.length; i++) if (COVERAGE[i].marks.some(function (m) { return has(q.tags || [], m); })) return COVERAGE[i].k; return "Not tagged"; };
+    var refOf = function (map, k) { var o = R && R[map] && R[map][k]; return (o && o.n) ? o.ppp : null; };
+    var F2 = function (v) { return (v == null || !isFinite(v)) ? "—" : v.toFixed(2); };
+    var short = function (k) { return String(k).replace(/ — .*$/, "").replace(/ \/ .*$/, ""); };
+    var box = el("div", "pdc");
+    var hh = el("div", "pdc-h"); hh.appendChild(el("b", null, "Their pick and roll · our defense"));
+    hh.appendChild(el("span", null, "a row a spacing · the bar: the coverages we played on it, each ball screen once by its first coverage · PPP allowed against our season"));
+    box.appendChild(hh);
+    var chip = function (list, ref) { var s = shotLine(list), t = edgeTone(s.ppp, ref, true, 0.10, 2);
+      var c = el("b", "pdc-p " + (t === "neutral" ? "" : t), F2(s.ppp)); c.title = list.length + " poss · " + s.pts + " points" + (ref != null ? " · season " + F2(ref) : ""); return c; };
+    var row = function (label, list, ref, segs) {
+      var r = el("div", "pdc-r");
+      r.appendChild(el("span", "pdc-l", label));
+      r.appendChild(el("span", "pdc-n", String(list.length)));
+      var bar = el("span", "pdc-bar");
+      segs.forEach(function (sg) { var w = 100 * sg.n / list.length; if (!w) return;
+        var i = el("i", null, w >= 18 ? sg.short : ""); i.style.width = w.toFixed(1) + "%"; i.style.background = sg.col;
+        i.title = sg.k + " · " + sg.n + " of " + list.length; bar.appendChild(i); });
+      r.appendChild(bar);
+      r.appendChild(chip(list, ref));
+      return r;
+    };
+    var mix = function (list) { var m = {}, ks = []; list.forEach(function (q) { var k = covOf(q); if (!m[k]) { m[k] = 0; ks.push(k); } m[k]++; });
+      ks.sort(function (a, b) { return m[b] - m[a]; }); return ks.map(function (k) { return { k: k, n: m[k], col: covColor(k), short: short(k) }; }); };
+    var part = function (title, list, rows) {
+      if (!list.length) return null;
+      var p = el("div", "pdc-part"), s = shotLine(list);
+      var t = el("div", "pdc-t"); t.appendChild(el("b", null, title)); t.appendChild(el("span", null, list.length + " ball screens · " + F2(s.ppp) + " PPP allowed"));
+      p.appendChild(t);
+      var hd = el("div", "pdc-r pdc-hd"); ["", "Poss", "Coverages we played", "PPP"].forEach(function (x) { hd.appendChild(el("span", null, x)); }); p.appendChild(hd);
+      rows.forEach(function (x) { p.appendChild(x); });
+      return p;
+    };
+    var hc = pnr.filter(function (q) { return !drag(q); }), dr = pnr.filter(drag);
+    var bySp = {}, spK = [];
+    hc.forEach(function (q) { var k = q.label || "—"; if (!bySp[k]) { bySp[k] = []; spK.push(k); } bySp[k].push(q); });
+    spK.sort(function (a, b) { return bySp[b].length - bySp[a].length; });
+    var grid = el("div", "pdc-g");
+    var p1 = part("Half court · by spacing", hc, spK.map(function (k) { return row(k, bySp[k], refOf("dlab", k), mix(bySp[k])); }));
+    var byC = {}, cK = [];
+    dr.forEach(function (q) { var k = covOf(q); if (!byC[k]) { byC[k] = []; cK.push(k); } byC[k].push(q); });
+    cK.sort(function (a, b) { return byC[b].length - byC[a].length; });
+    var p2 = part("Drag · transition ball screens", dr, cK.map(function (k) { return row(short(k), byC[k], refOf("covT", k), [{ k: k, n: byC[k].length, col: covColor(k), short: "" }]); }));
+    if (p1) grid.appendChild(p1);
+    if (p2) grid.appendChild(p2);
+    box.appendChild(grid);
+    var allC = mix(hc);
+    if (allC.length) {
+      var lg = el("div", "pdc-k");
+      lg.appendChild(el("span", "pdc-kt", "Half court coverages"));
+      allC.forEach(function (c) { var l = hc.filter(function (q) { return covOf(q) === c.k; }), s = shotLine(l), ref = refOf("cov", c.k), t = edgeTone(s.ppp, ref, true, 0.10, 2);
+        var it = el("span", "pdc-ki"), sw = el("i"); sw.style.background = c.col; it.appendChild(sw);
+        it.appendChild(el("span", null, short(c.k))); it.appendChild(el("em", null, c.n + " · ")); it.appendChild(el("b", t === "neutral" ? "" : t, F2(s.ppp)));
+        it.title = c.k + " · " + c.n + " poss · " + s.pts + " points" + (ref != null ? " · season " + F2(ref) : ""); lg.appendChild(it); });
+      box.appendChild(lg);
+    }
+    return box;
+  }
   function mixBar(lab, two, three, ppp, sub) {
     var row = el("div", "sx-mixrow");
     row.appendChild(el("span", "sx-ml", lab));
@@ -2045,7 +2133,7 @@
         if (hd) hd.appendChild(k);
         var at = 1;
         (o.visuals || []).filter(Boolean).forEach(function (v) {
-          var p = el("div", "sx-sec sx-vis"); p.appendChild(v); g.insertBefore(p, g.children[at] || null); at++; });
+          var p = el("div", "sx-sec sx-vis"); p.appendChild(v); if (v.classList && v.classList.contains("pdc")) p.classList.add("fit-span"); g.insertBefore(p, g.children[at] || null); at++; });
       } catch(e){_quiet(e)}
     }
     var tmap = function (rows, title, sub, hiGood) {
@@ -2197,9 +2285,10 @@
     /* ================================================= 03 BALL REVERSALS */
     var gBR = g2Group("off", "03", "Ball reversals");
     var brRest = restP.filter(function (q) { return (q.br || 0) > 0; }).length;
-    var r1 = section("Rate");
-    var gs1 = gaugeSplit("Ball reversal", fbP.length, fbP.length, brRest, restP.length, N, "Ball reversal", false);
-    gs1.classList.add("slim"); r1.appendChild(gs1);
+    var brT = (R && isFinite(R.brWin)) ? Math.round(R.brWin) : null;
+    var r1 = section(brT != null ? "Rate vs the " + brT + "% target · our average in wins" : "Rate");
+    var gs1 = gaugeSplit("Ball reversal", fbP.length, fbP.length, brRest, restP.length, N, "Ball reversal", brT != null, brT != null ? { v: brT, word: "win avg" } : null);
+    r1.appendChild(gs1);
     gBR.appendChild(r1);
     if (byPhase.length) {
       var r3 = section("By phase");
@@ -2224,7 +2313,7 @@
     {
       var brR = rateOf(P, "br"), bb = pairOf("br");
       head(gBR, { figures: [
-        { label: "Ball reversal rate", value: Math.round(brR) + "%", note: "fastbreaks count whole" + (R && isFinite(R.br) ? " · season " + Math.round(R.br) + "%" : ""), tone: "vol", scale: { lo: 0, hi: 100, v: brR, ref: (R && isFinite(R.br)) ? R.br : undefined } },
+        { label: "Ball reversal rate", value: Math.round(brR) + "%", note: (brT != null ? "target " + brT + "% (win avg) · " : "") + "fastbreaks count whole" + (R && isFinite(R.br) ? " · season " + Math.round(R.br) + "%" : ""), tone: "vol", scale: { lo: 0, hi: 100, v: brR, ref: brT != null ? brT : ((R && isFinite(R.br)) ? R.br : undefined) } },
         { label: "PPP with a reversal", value: f2(bb[0].ppp), note: bb[0].n + " poss" + (R ? " · season " + f2(R.w.br[0].ppp) : ""), tone: edgeTone(bb[0].ppp, R ? R.w.br[0].ppp : offAvg, false, 0.10, 2) },
         { label: "PPP without", value: f2(bb[1].ppp), note: bb[1].n + " poss" + (R ? " · season " + f2(R.w.br[1].ppp) : ""), tone: edgeTone(bb[1].ppp, R ? R.w.br[1].ppp : offAvg, false, 0.10, 2) }],
         visuals: [qStrip("br", "Ball reversal rate"), worth("br", "What a reversal is worth")] });
@@ -2402,22 +2491,26 @@
           "What we defended", "area: share · colour: PPP allowed against our " + seasonWord, false)] });
     }
 
-    /* =================================================== 07 BALL SCREEN */
-    var gBS = g2Group("bs", "07", "Ball screen");
+    /* =================================================== 07 BALL SCREEN · OUR DEFENSE, 08 · OUR OFFENSE */
+    /* TWO BLOCKS, NOT ONE (Oriol, 28/11/2026: "quiero diferenciar más ataque y defensa... una parte de defensa y otra
+       de ataque que se vea claramente cada parte"): their pick and roll against us, in the defense's colour, with the
+       picture of what happened on it; ours, apart, in the offense's */
+    var gBS = g2Group("bs", "07", "Ball screen · our defense");
+    gBS.dataset.side = "def";
     var pnrL = DP.filter(function (q) { return q.pnr; });
     var isDrag = function (q) { return /drag|transition/i.test(String(q.first || "")); };
     if (pnrL.length) {
       var byP = {}, pOrder = [];
       pnrL.forEach(function (q) { if (!byP[q.label]) { byP[q.label] = []; pOrder.push(q.label); } byP[q.label].push(q); });
       pOrder.sort(function (a, b) { return byP[b].length - byP[a].length; });
-      var s52 = section("Their pick and roll · our defense");
+      var s52 = section("Their pick and roll · by where it was set");
       s52.appendChild(refTable("Situation", pOrder.map(function (k) { return { label: k, list: byP[k], ref: refIn("dlab", k) }; }), true, { share: "% PnR" }));
       gBS.appendChild(s52);
     }
     /* the coverage twice: the half court ball screens, and the transition ones (drag PnR) apart.
        RED and HEDGE are one coverage, and so are SWITCH and BLACK */
-    [["By coverage · half court", DP.filter(function (q) { return !isDrag(q); }), "cov"],
-     ["By coverage · transition (drag PnR)", DP.filter(isDrag), "covT"]].forEach(function (pair) {
+    [["Our coverage · half court", DP.filter(function (q) { return !isDrag(q); }), "cov"],
+     ["Our coverage · transition (drag PnR)", DP.filter(isDrag), "covT"]].forEach(function (pair) {
       var covRows = [];
       COVERAGE.forEach(function (c) {
         var l = pair[1].filter(function (q) { return c.marks.some(function (m) { return has(q.tags, m); }); });
@@ -2429,24 +2522,48 @@
       s53.appendChild(refTable("Coverage", covRows, true, { share: "% cov" }));
       gBS.appendChild(s53);
     });
+    if (!pnrL.length && gBS.children.length < 2) gBS.appendChild(el("div", "sx-empty", "No pick and roll of theirs tagged in this game."));
+    box.appendChild(gBS);
+    {
+      var pS = shotLine(pnrL), pRef = R && R.pnrD.n ? R.pnrD.ppp : null;
+      var hcL = pnrL.filter(function (q) { return !isDrag(q); }), drL = pnrL.filter(isDrag), hcS = shotLine(hcL), drS = shotLine(drL);
+      var figs = [];
+      if (pnrL.length) {
+        figs.push({ label: "Their pick and roll", value: f2(pS.ppp), note: pnrL.length + " poss · " + pS.pts + " points" + (pRef != null ? " · season " + f2(pRef) : ""), tone: edgeTone(pS.ppp, pRef == null ? defAvg : pRef, true, 0.10, 2) });
+        if (hcL.length) figs.push({ label: "Half court", value: f2(hcS.ppp), note: hcL.length + " poss", tone: edgeTone(hcS.ppp, pRef == null ? defAvg : pRef, true, 0.10, 2) });
+        if (drL.length) figs.push({ label: "Drag", value: f2(drS.ppp), note: drL.length + " poss", tone: edgeTone(drS.ppp, pRef == null ? defAvg : pRef, true, 0.10, 2) });
+      }
+      var pic = pnrDefChart(model, R);
+      head(gBS, { figures: figs, visuals: pic ? [pic] : [] });
+    }
+
+    var gBO = g2Group("bs", "08", "Ball screen · our offense");
+    gBO.dataset.side = "off";
     var OURP = [["PnR Ball Handler", "Ball handler"], ["PnR Roll Man", "Roll man"], ["Pop", "Pick and pop"]];
     var ourRows = OURP.map(function (t) {
       return { label: t[1], list: P.filter(function (q) { return has(q.tags, t[0]); }), ref: refIn("play", t[0]) };
     }).filter(function (r) { return r.list.length; });
+    var ourPnr = P.filter(function (q) { return OURP.some(function (t) { return has(q.tags, t[0]); }); });
     if (ourRows.length) {
-      var s54 = section("Our pick and roll · who finished it");
+      var s54 = section("Who finished it");
       s54.appendChild(refTable("Finished by", ourRows, false, { total: N, share: "% of ours" }));
-      gBS.appendChild(s54);
-    }
-    if (!pnrL.length && !ourRows.length && gBS.children.length < 2) gBS.appendChild(el("div", "sx-empty", "No pick and roll tagged in this game."));
-    box.appendChild(gBS);
+      gBO.appendChild(s54);
+      var phO = {}, phK = [];
+      ourPnr.forEach(function (q) { var k = q.phase || "—"; if (!phO[k]) { phO[k] = []; phK.push(k); } phO[k].push(q); });
+      phK.sort(function (a, b) { return phO[b].length - phO[a].length; });
+      if (phK.length > 1) {
+        var s55 = section("In which phase");
+        s55.appendChild(refTable("Phase", phK.map(function (k) { return { label: k, list: phO[k], ref: null }; }), false, { total: ourPnr.length, share: "% of ours" }));
+        gBO.appendChild(s55);
+      }
+    } else gBO.appendChild(el("div", "sx-empty", "No pick and roll of ours finished in this game."));
+    box.appendChild(gBO);
     {
-      var pS = shotLine(pnrL), pRef = R && R.pnrD.n ? R.pnrD.ppp : null;
-      var figs = [];
-      if (pnrL.length) figs.push({ label: "Their pick and roll", value: f2(pS.ppp), note: pnrL.length + " poss · " + pS.pts + " points" + (pRef != null ? " · season " + f2(pRef) : ""), tone: edgeTone(pS.ppp, pRef == null ? defAvg : pRef, true, 0.10, 2) });
+      var oS = shotLine(ourPnr), figO = [];
+      if (ourPnr.length) figO.push({ label: "Our pick and roll", value: f2(oS.ppp), note: ourPnr.length + " poss · " + oS.pts + " points", tone: edgeTone(oS.ppp, offAvg, false, 0.10, 2) });
       ourRows.forEach(function (r) { var s = shotLine(r.list);
-        figs.push({ label: "Our " + r.label.toLowerCase(), value: f2(s.ppp), note: r.list.length + " poss" + (r.ref != null ? " · season " + f2(r.ref) : ""), tone: edgeTone(s.ppp, r.ref == null ? offAvg : r.ref, false, 0.10, 2) }); });
-      if (figs.length) head(gBS, { figures: figs });
+        figO.push({ label: "Our " + r.label.toLowerCase(), value: f2(s.ppp), note: r.list.length + " poss" + (r.ref != null ? " · season " + f2(r.ref) : ""), tone: edgeTone(s.ppp, r.ref == null ? offAvg : r.ref, false, 0.10, 2) }); });
+      if (figO.length) head(gBO, { figures: figO });
     }
 
     /* ---------------------------------------------------------- the menu */
@@ -5449,6 +5566,11 @@
       R.w.pt.forEach(fin); R.w.br.forEach(fin);
       R.s = addUp(use.map(function (g) { return g.s; }));
       R.pt = measured(R.s, "pt"); R.br = measured(R.s, "br");
+      /* THE BALL REVERSALS' TARGET (Oriol, 28/11/2026: "pon de número objetivo el promedio cuando ganamos"): the rate
+         over the games we won - the league's score decides, the tagging's own when the league has not got the game */
+      var won = use.filter(function (g) { return gameWon(g) === true; });
+      R.nWin = won.length;
+      if (won.length) { var sw = addUp(won.map(function (g) { return g.s; })); R.brWin = measured(sw, "br"); R.ptWin = measured(sw, "pt"); }
       R.fgp = R.s.fga ? 100 * R.s.fgm / R.s.fga : null;
       R.tovp = R.s.poss ? 100 * R.s.tov / R.s.poss : null;
       R.dfgp = R.dfga ? 100 * R.dfgm / R.dfga : null;
@@ -6098,6 +6220,24 @@
          flat inside it, a small label and a hairline each */
       ".sx-post .sx-cat{margin-top:16px;background:var(--panel,#fff);border:1px solid var(--line,#e4e7ec);border-radius:12px;padding:0 16px 14px 20px;box-shadow:inset 4px 0 0 var(--blk,#c6a15b);gap:10px 22px}",
       ".sx-post .sx-cat[data-g=\"def\"]{--blk:#8a2f2b}.sx-post .sx-cat[data-g=\"bs\"]{--blk:#5b6472}",
+      /* the pick and roll picture, and the two ball screen blocks in their sides' colours (28/11/2026) */
+      ".sx-post .sx-cat[data-g=\"bs\"][data-side=\"def\"]{--blk:#8a2f2b}.sx-post .sx-cat[data-g=\"bs\"][data-side=\"off\"]{--blk:#c6a15b}",
+      ".pdc{display:grid;gap:10px;min-width:0}",
+      ".pdc-h{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding-bottom:8px;border-bottom:1px solid var(--line,#e4e7ec)}.pdc-h::before{content:'';width:4px;height:16px;border-radius:2px;background:#8a2f2b;flex:none}.pdc-h b{font:700 15px 'Oswald',sans-serif;letter-spacing:.07em;text-transform:uppercase}.pdc-h span{font-size:11.5px;color:var(--ink-faint,#8a93a2)}",
+      ".pdc-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:12px 20px}",
+      ".pdc-part{display:grid;gap:4px;align-content:start;min-width:0}",
+      ".pdc-t{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding-bottom:4px;border-bottom:1px solid var(--line,#e4e7ec)}.pdc-t b{font:700 12.5px 'Oswald',sans-serif;letter-spacing:.08em;text-transform:uppercase}.pdc-t span{font:500 11px 'Inter',sans-serif;color:var(--ink-faint,#8a93a2)}",
+      ".pdc-r{display:grid;grid-template-columns:minmax(80px,120px) 30px minmax(0,1fr) 48px;gap:8px;align-items:center;font-size:12px}",
+      ".pdc-hd{font:600 9.5px 'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint,#8a93a2)}.pdc-hd span:nth-child(2),.pdc-hd span:nth-child(4){text-align:right}",
+      ".pdc-l{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pdc-n{font:600 11px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);text-align:right}",
+      ".pdc-bar{display:flex;height:20px;border-radius:5px;overflow:hidden;background:rgba(20,24,33,.06);gap:1px}",
+      ".pdc-bar i{display:flex;align-items:center;justify-content:center;font:700 9.5px 'Inter',sans-serif;font-style:normal;color:#fff;white-space:nowrap;overflow:hidden;min-width:3px}",
+      ".pdc-p{font:800 12.5px 'Inter',sans-serif;text-align:right;padding:2px 6px;border-radius:5px}.pdc-p.good{background:#d4ecdf;color:#11583d}.pdc-p.bad{background:#f6dad4;color:#9a2a1d}",
+      "body.dark .pdc-p.good{background:rgba(47,158,106,.24);color:#86e3b6}body.dark .pdc-p.bad{background:rgba(216,82,78,.24);color:#ffa197}body.dark .pdc-bar{background:rgba(255,255,255,.08)}",
+      ".pdc-k{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding-top:8px;border-top:1px dashed var(--line,#e4e7ec);font-size:11.5px}",
+      ".pdc-kt{font:700 10px 'Oswald',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft,#5b6472)}",
+      ".pdc-ki{display:inline-flex;align-items:center;gap:5px}.pdc-ki i{width:10px;height:10px;border-radius:3px;display:inline-block}.pdc-ki em{font-style:normal;color:var(--ink-faint,#8a93a2);font:600 10.5px 'IBM Plex Mono',monospace}",
+      ".pdc-ki b{font:800 11.5px 'Inter',sans-serif}.pdc-ki b.good{color:#17805a}.pdc-ki b.bad{color:#c53727}body.dark .pdc-ki b.good{color:#5fcf9f}body.dark .pdc-ki b.bad{color:#ff8f85}",
       /* Our defense on one line (27/11/2026): TAG and BACK at the width of its table, what we concede the rest */
       ".sx-catrow{display:grid;grid-template-columns:minmax(0,1fr);column-gap:16px;align-items:start}",
       ".sx-catrow > *{min-width:0}",
@@ -6218,6 +6358,7 @@
     window.LowenPostStats = { mount: mountPostTeam, dropCache: dropCache,
                               gameModel: gameModel, shotLine: shotLine, measured: measured, summarise: summarise,
                               seasonGames: seasonGames, seasonPractices: seasonPractices, addUp: addUp, seasonRef: seasonRef, setFamily: pgFamily, fdOf: function (q) { return count((q && q.tags) || [], "Foul Drawn"); },
+                              gaugeFor: gaugeFor, pnrDefChart: pnrDefChart,
                               /* the trainings' rebounding, one a session, and several added up */
                               trainingRebounds: trainingRebounds, reboundsAdd: rebAdd, reboundCats: rebCats,
                               datesWithFiles: datesWithFiles,

@@ -223,7 +223,11 @@
     var anyOn = f.fav || f.q || GROUPS.some(function (g) { return f.tg[g.k].length; });
     var clr = el("button", { type: "button", class: "drl-clear", onclick: function () { f.q = ""; f.fav = false; GROUPS.forEach(function (g) { f.tg[g.k] = []; }); persist(); render(); } }, "Clear all");
     if (!anyOn) clr.style.visibility = "hidden";
-    bar.appendChild(el("div", { class: "drl-frow top" }, q, favB, sortS, clr));
+    /* cards or a list - the same drills, the same order */
+    var viewSeg = el("div", { class: "drl-seg", role: "group", "aria-label": "Show as" });
+    [["cards", "▦ Cards"], ["list", "☰ List"]].forEach(function (v) {
+      viewSeg.appendChild(el("button", { type: "button", class: (f.view || "cards") === v[0] ? "on" : "", onclick: function () { f.view = v[0]; persist(); render(); } }, v[1])); });
+    bar.appendChild(el("div", { class: "drl-frow top" }, q, favB, sortS, viewSeg, clr));
     GROUPS.forEach(function (g) {
       var row = el("div", { class: "drl-frow" }, el("span", { class: "drl-fk" }, g.l));
       var sel = f.tg[g.k];
@@ -238,7 +242,8 @@
     });
     wrap.appendChild(bar);
 
-    var grid = el("div", { class: "drl-grid" }), note = el("div", { class: "drl-count" });
+    var asList = f.view === "list";
+    var grid = el("div", { class: asList ? "drl-list" : "drl-grid" }), note = el("div", { class: "drl-count" });
     wrap.appendChild(note); wrap.appendChild(grid);
     function draw() {
       var rows = list.filter(function (x) { return passes(x, f, null); });
@@ -254,7 +259,12 @@
         return;
       }
       if (!rows.length) { grid.appendChild(el("div", { class: "drl-empty" }, "No drill has all of that. Take a button off or clear them all.")); return; }
-      rows.forEach(function (x) { grid.appendChild(card(x)); });
+      if (asList) {
+        var hd = el("div", { class: "drl-row drl-rh" });
+        ["", "Drill", "Classification", "Min", "Players", "Used", "", ""].forEach(function (t) { hd.appendChild(el("span", {}, t)); });
+        grid.appendChild(hd);
+        rows.forEach(function (x) { grid.appendChild(row(x)); });
+      } else rows.forEach(function (x) { grid.appendChild(card(x)); });
     }
     draw();
   }
@@ -303,20 +313,64 @@
     if (s.k === "paste") return firstYt(x.links) ? "From a video" : "Pasted";
     return "";
   }
+  /* THE DRILL AS A SMALL CARD (Oriol, 28/11/2026: "quiero fichas muy compactas, y diferentes formatos, lista o por
+     fichas. En un futuro quisiera poder usar estas fichas para montar las sesiones de entrenamiento en una pantalla
+     drag and drop"): the way the game cards are drawn - a badge of its kind of shot in its colour, the name, the
+     minutes and the players, its tags on one line, the first line of how it is done. Every card and every row can
+     be picked up and dropped: it carries { id, t, min } as "application/x-lowen-drill", which is what a session
+     builder will take. */
+  var TYPE_BADGE = { cs: ["C&S", "#2f6cc0"], drib: ["DRB", "#b8892f"], scr: ["SCR", "#2a8f8f"], pnr: ["PNR", "#7a5cc2"], fin: ["FIN", "#d9823b"], ft: ["FT", "#5b6472"] };
+  function badge(x) {
+    var k = ((x.tg && x.tg.type) || [])[0], b = TYPE_BADGE[k] || ["SHT", "#8a93a2"];
+    var s = el("span", { class: "drl-bdg", title: k ? optLabel("type", k) : "Shooting" }, b[0]); s.style.background = b[1];
+    return s;
+  }
+  function draggable(node, x) {
+    node.setAttribute("draggable", "true");
+    node.addEventListener("dragstart", function (e) {
+      try {
+        e.dataTransfer.effectAllowed = "copy";
+        e.dataTransfer.setData("application/x-lowen-drill", JSON.stringify({ id: x.id, t: x.t || "", min: x.min || null }));
+        e.dataTransfer.setData("text/plain", (x.t || "Drill") + (x.min ? " · " + x.min + " min" : ""));
+      } catch (er) {}
+      node.classList.add("drag");
+    });
+    node.addEventListener("dragend", function () { node.classList.remove("drag"); });
+    return node;
+  }
+  function star(x) {
+    return el("button", { type: "button", class: "drl-star" + (x.fav ? " on" : ""), title: x.fav ? "Favourite - take it off" : "Mark as favourite", "aria-label": "Favourite",
+      onclick: function (e) { e.stopPropagation(); toggleFav(x.id); } }, "★");
+  }
+  function firstLine(x) { var d = String(x.d || "").split("\n").map(function (l) { return l.trim(); }).filter(Boolean); return d[0] || ""; }
   function card(x) {
     var c = el("article", { class: "drl-card", tabindex: "0", onclick: function () { openDrill(x.id); },
       onkeydown: function (e) { if (e.key === "Enter") openDrill(x.id); } });
-    c.appendChild(media(x, false));
-    var star = el("button", { type: "button", class: "drl-star" + (x.fav ? " on" : ""), title: x.fav ? "Favourite - take it off" : "Mark as favourite", "aria-label": "Favourite",
-      onclick: function (e) { e.stopPropagation(); toggleFav(x.id); } }, "★");
-    c.appendChild(star);
-    var body = el("div", { class: "drl-cb" });
-    body.appendChild(el("h3", { class: "drl-ct" }, x.t || "Untitled drill"));
+    var y = firstYt(x.links);
+    var top = el("div", { class: "drl-ctop" }, badge(x), el("h3", { class: "drl-ct" }, x.t || "Untitled drill"), star(x));
+    c.appendChild(top);
     var m = metaOf(x), sw = srcWord(x);
-    if (m || sw) body.appendChild(el("div", { class: "drl-meta" }, m, sw ? el("span", { class: "drl-src" }, sw) : null));
-    body.appendChild(chipsOf(x, 5));
-    c.appendChild(body);
-    return c;
+    var meta = el("div", { class: "drl-meta" }, m || "", sw ? el("span", { class: "drl-src" }, sw) : null);
+    if (y) meta.appendChild(el("span", { class: "drl-vid", title: "Has a video" }, "▶ video"));
+    else if (x.img) meta.appendChild(el("span", { class: "drl-vid", title: "Has a picture" }, "▣ picture"));
+    c.appendChild(meta);
+    c.appendChild(chipsOf(x, 4));
+    var fl = firstLine(x); if (fl) c.appendChild(el("p", { class: "drl-fl" }, fl));
+    return draggable(c, x);
+  }
+  /* the same drill as one line of the list */
+  function row(x) {
+    var r = el("div", { class: "drl-row", tabindex: "0", onclick: function () { openDrill(x.id); },
+      onkeydown: function (e) { if (e.key === "Enter") openDrill(x.id); } });
+    r.appendChild(badge(x));
+    r.appendChild(el("span", { class: "drl-rt" }, el("b", {}, x.t || "Untitled drill"), firstLine(x) ? el("i", {}, firstLine(x)) : null));
+    r.appendChild(chipsOf(x, 3));
+    r.appendChild(el("span", { class: "drl-rn" }, x.min ? x.min + "′" : "—"));
+    r.appendChild(el("span", { class: "drl-rp" }, x.pl || "—"));
+    r.appendChild(el("span", { class: "drl-rn" }, (x.used || []).length ? (x.used.length + "×") : "—"));
+    r.appendChild(el("span", { class: "drl-rs" }, firstYt(x.links) ? "▶" : x.img ? "▣" : ""));
+    r.appendChild(star(x));
+    return draggable(r, x);
   }
   function byId(id) { return ((D.doc && D.doc.list) || []).filter(function (x) { return x.id === id; })[0] || null; }
   function toggleFav(id) {
@@ -681,8 +735,32 @@
     ".drl-chip.fav.on{background:#c6a15b;border-color:#c6a15b;color:#1b1406}",
     ".drl-count{font:600 12px 'IBM Plex Mono',monospace;color:var(--ink-faint,#8a93a2);min-height:0}",
     ".drl-count:empty{display:none}",
-    ".drl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}",
-    ".drl-card{position:relative;border:1px solid var(--line,#e4e7ec);border-radius:12px;background:var(--panel,#fff);overflow:hidden;cursor:pointer;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(16,24,40,.05);transition:box-shadow .15s,transform .15s}",
+    ".drl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}",
+    /* the compact card (28/11/2026) */
+    ".drl-ctop{display:flex;align-items:flex-start;gap:8px;min-width:0}",
+    ".drl-bdg{flex:none;display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:20px;padding:0 5px;border-radius:5px;color:#fff;font:700 10px 'IBM Plex Mono',monospace;letter-spacing:.02em;margin-top:1px}",
+    ".drl-ctop .drl-ct{flex:1;min-width:0}",
+    ".drl-ctop .drl-star,.drl-row .drl-star{position:static;width:auto;height:auto;background:none;padding:0 2px;font-size:15px;flex:none}",
+    ".drl-fl{margin:0;font:400 12px/1.45 'Inter',sans-serif;color:var(--ink-soft,#5b6472);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+    ".drl-vid{font:600 10.5px 'Inter',sans-serif;color:#2f6cc0}",
+    ".drl-card.drag,.drl-row.drag{opacity:.45}",
+    ".drl-seg{display:inline-flex;border:1px solid var(--line,#e4e7ec);border-radius:8px;overflow:hidden}",
+    ".drl-seg button{border:0;background:var(--panel,#fff);color:var(--ink-soft,#5b6472);font:600 12px 'Inter',sans-serif;padding:6px 11px;cursor:pointer}",
+    ".drl-seg button.on{background:var(--ink,#141821);color:var(--panel,#fff)}",
+    /* the list */
+    ".drl-list{display:grid;border:1px solid var(--line,#e4e7ec);border-radius:12px;background:var(--panel,#fff);overflow:hidden}",
+    ".drl-row{display:grid;grid-template-columns:42px minmax(0,2.2fr) minmax(0,2fr) 44px minmax(70px,.8fr) 44px 22px 26px;gap:10px;align-items:center;padding:7px 12px;border-top:1px solid var(--line-soft,#eef0f3);cursor:pointer;font-size:12.5px}",
+    ".drl-row:hover,.drl-row:focus-visible{background:var(--panel-2,#f4f5f7);outline:none}",
+    ".drl-rh{cursor:default;border-top:0;font:600 9.5px 'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint,#8a93a2);background:var(--panel-2,#f4f5f7)}",
+    ".drl-rh:hover{background:var(--panel-2,#f4f5f7)}",
+    ".drl-rt{display:grid;min-width:0}.drl-rt b{font:700 13px 'Inter',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+    ".drl-rt i{font-style:normal;font-size:11.5px;color:var(--ink-faint,#8a93a2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+    ".drl-row .drl-tags,.drl-card .drl-tags{flex-wrap:nowrap;overflow:hidden}.drl-row .drl-tags > *,.drl-card .drl-tags > *{flex:none;white-space:nowrap}",
+    ".drl-rn{font:600 12px 'IBM Plex Mono',monospace;text-align:right;color:var(--ink-soft,#5b6472)}",
+    ".drl-rp{font-size:12px;color:var(--ink-soft,#5b6472);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+    ".drl-rs{color:#2f6cc0;text-align:center}",
+    "@media (max-width:760px){.drl-row{grid-template-columns:42px minmax(0,1fr) 40px 26px}.drl-row > .drl-tags,.drl-row > .drl-rp,.drl-row > .drl-rn:nth-of-type(2),.drl-row > .drl-rs,.drl-rh > span:nth-child(3),.drl-rh > span:nth-child(5),.drl-rh > span:nth-child(6),.drl-rh > span:nth-child(7){display:none}}",
+    ".drl-card{position:relative;border:1px solid var(--line,#e4e7ec);border-radius:10px;background:var(--panel,#fff);cursor:pointer;display:grid;gap:6px;align-content:start;padding:10px 12px;min-width:0;box-shadow:0 1px 2px rgba(16,24,40,.05);transition:box-shadow .15s,transform .15s}",
     ".drl-card:hover,.drl-card:focus-visible{box-shadow:0 6px 18px rgba(16,24,40,.12);transform:translateY(-1px);outline:none}",
     ".drl-media{position:relative;aspect-ratio:16/9;background:var(--panel-2,#f4f5f7);display:flex;align-items:center;justify-content:center;overflow:hidden;max-width:100%}",
     ".drl-media img{width:100%;height:100%;object-fit:cover;display:block}",
@@ -694,7 +772,7 @@
     ".drl-star.on{color:#c6a15b}",
     ".drl-star.big{position:static;background:none;font-size:24px;width:auto;height:auto}",
     ".drl-cb{padding:10px 12px 12px;display:grid;gap:6px;align-content:start}",
-    ".drl-ct{margin:0;font:700 14.5px/1.3 'Inter',sans-serif;color:var(--ink,#141821);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}",
+    ".drl-ct{margin:0;font:700 14px/1.3 'Inter',sans-serif;color:var(--ink,#141821);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}",
     ".drl-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font:500 11.5px 'Inter',sans-serif;color:var(--ink-faint,#8a93a2)}",
     ".drl-src{font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:4px;background:var(--panel-2,#f4f5f7);color:var(--ink-soft,#5b6472)}",
     ".drl-tags{display:flex;flex-wrap:wrap;gap:4px}",
